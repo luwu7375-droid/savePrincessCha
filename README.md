@@ -16,7 +16,7 @@ GitHub Pages 只能托管静态文件，无法直接提供 `/api/chat`。请把 
 `CHAT_API_ENDPOINT` 应填写：
 
 ```text
-https://<project-ref>.functions.supabase.co/chat
+https://<project-ref>.supabase.co/functions/v1/chat
 ```
 
 不要把 OpenRouter、DeepSeek 等模型供应商 API Key 放进前端代码、`config.js`、`public-config.js` 或 GitHub Pages 部署产物。聊天请求应通过 Supabase Edge Function、Cloudflare Worker 或 Vercel Function 代理，并在服务端环境变量中保存私钥。
