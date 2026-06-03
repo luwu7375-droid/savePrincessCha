@@ -35,4 +35,11 @@ supabase secrets set OPENROUTER_BASE_URL="OpenRouter 兼容接口地址"
 supabase secrets set MODEL_NAME="模型名称"
 ```
 
+部署 `chat` function 时需关闭 JWT 校验，或在 Supabase config 中设置 `verify_jwt = false`。本仓库已在 `supabase/config.toml` 中为 `functions.chat` 配置：
+
+```toml
+[functions.chat]
+verify_jwt = false
+```
+
 OpenRouter / DeepSeek 私钥只能保存在 Supabase Edge Function 的服务端环境变量中，不能写进前端文件或 GitHub Pages 部署产物。
