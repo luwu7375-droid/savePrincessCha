@@ -3,16 +3,33 @@ const messageInput = document.getElementById("messageInput");
 const messageList = document.getElementById("messageList");
 const sendButton = chatForm.querySelector("button");
 
+const appConfig = window.SAVE_PRINCESS_CONFIG || {};
 const chatMessages = [];
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎来到救公主。";
 
+function getConfigValue(key, placeholder) {
+  const value = appConfig[key];
+  if (!value || value === placeholder) {
+    return "";
+  }
+
+  return value;
+}
+
+function getMissingConfigMessage(key) {
+  return `${key} 未配置，请在 public-config.js 中填写。`;
+}
+
 function createSupabaseClient() {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !window.supabase) {
+  const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+  const supabaseAnonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+
+  if (!supabaseUrl || !supabaseAnonKey || !window.supabase) {
     return null;
   }
 
-  return window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return window.supabase.createClient(supabaseUrl, supabaseAnonKey);
 }
 
 function addMessage(text, role) {
@@ -55,17 +72,27 @@ async function saveMessage(role, content) {
 }
 
 async function callChatAPI(messages) {
-  if (!CHAT_API_ENDPOINT || CHAT_API_ENDPOINT === "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL") {
-    throw new Error("CHAT_API_ENDPOINT 未配置，请在 config.js 中填写 Supabase Edge Function 地址。");
+  const chatApiEndpoint = getConfigValue(
+    "CHAT_API_ENDPOINT",
+    "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL"
+  );
+  const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME");
+
+  if (!chatApiEndpoint) {
+    throw new Error("CHAT_API_ENDPOINT 未配置，请在 public-config.js 中填写 Supabase Edge Function 地址。");
   }
 
-  return fetch(CHAT_API_ENDPOINT, {
+  if (!modelName) {
+    throw new Error(getMissingConfigMessage("MODEL_NAME"));
+  }
+
+  return fetch(chatApiEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: MODEL_NAME,
+      model: modelName,
       messages,
       stream: true,
     }),
