@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>救公主</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="chat-shell">
+    <header class="top-bar">
+      <h1>救公主</h1>
+    </header>
+
+    <section class="message-list" id="messageList" aria-label="消息列表">
+      <div class="message assistant">欢迎来到救公主。</div>
+    </section>
+
+    <form class="input-bar" id="chatForm">
+      <input
+        id="messageInput"
+        type="text"
+        placeholder="输入消息..."
+        autocomplete="off"
+      >
+      <button type="submit">发送</button>
+    </form>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
