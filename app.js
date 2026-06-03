@@ -6,7 +6,6 @@ const sendButton = chatForm.querySelector("button");
 const chatMessages = [];
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎来到救公主。";
-const CHAT_API_ENDPOINT = "/api/chat";
 
 function createSupabaseClient() {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !window.supabase) {
@@ -56,6 +55,10 @@ async function saveMessage(role, content) {
 }
 
 async function callChatAPI(messages) {
+  if (!CHAT_API_ENDPOINT || CHAT_API_ENDPOINT === "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL") {
+    throw new Error("CHAT_API_ENDPOINT 未配置，请在 config.js 中填写 Supabase Edge Function 地址。");
+  }
+
   return fetch(CHAT_API_ENDPOINT, {
     method: "POST",
     headers: {
