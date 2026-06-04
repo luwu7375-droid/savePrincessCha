@@ -744,11 +744,13 @@ let isReplying = false;
 const IDLE_DELAY = 2500;
 
 const forceReplyBtn = document.getElementById("forceReplyBtn");
+const sendButton = document.getElementById("sendButton");
 
 function setReplyingState(replying) {
   isReplying = replying;
   messageInput.disabled = replying;
   forceReplyBtn.disabled = replying;
+  sendButton.disabled = replying;
 }
 
 async function triggerReply(replyMode) {
@@ -770,8 +772,17 @@ async function triggerReply(replyMode) {
   }
 }
 
-chatForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+let isComposing = false;
+messageInput.addEventListener("compositionstart", () => { isComposing = true; });
+messageInput.addEventListener("compositionend", () => { isComposing = false; });
+messageInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !isComposing) {
+    e.preventDefault();
+    handleSubmit();
+  }
+});
+
+async function handleSubmit() {
   const text = messageInput.value.trim();
   if (!text || isReplying) return;
 
@@ -785,6 +796,16 @@ chatForm.addEventListener("submit", async (event) => {
   setChatStatus("公主在听…");
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => triggerReply("auto"), IDLE_DELAY);
+}
+
+chatForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  handleSubmit();
+});
+
+sendButton.addEventListener("click", (e) => {
+  e.preventDefault();
+  handleSubmit();
 });
 
 forceReplyBtn.addEventListener("click", () => {

@@ -636,3 +636,39 @@ body {
 }
 #loginBtn:hover { background: var(--send-hover); }
 #loginBtn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Mobile ── */
+@media (max-width: 720px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(82vw, 320px) !important;
+    z-index: 400;
+    transform: translateX(-100%);
+    transition: transform 0.22s var(--ease-out);
+  }
+  .sidebar:not(.hidden) { transform: translateX(0); }
+
+  .chat-shell { width: 100vw; height: 100dvh; }
+
+  .top-bar h1 { font-size: 14px; }
+  .top-bar { gap: 6px; padding: 10px 12px; }
+  .icon-btn { padding: 5px 8px; font-size: 12px; }
+  .user-email-label { display: none; }
+
+  .message-list { padding: 12px 10px 8px; }
+  .message { max-width: 82vw; }
+
+  .input-bar {
+    padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+  .input-bar input { font-size: 16px; /* prevent iOS zoom */ }
+
+  #forceReplyBtn { padding: 0 10px; font-size: 12px; }
+
+  .modal { max-width: 94vw !important; max-height: 80dvh; overflow-y: auto; }
+  .dialog { max-width: 94vw !important; }
+}
