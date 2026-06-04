@@ -3,6 +3,11 @@ const messageInput = document.getElementById("messageInput");
 const messageList = document.getElementById("messageList");
 const sendButton = chatForm.querySelector("button");
 const clearButton = document.getElementById("clearButton");
+const memoryPanel = document.getElementById("memoryPanel");
+const memoryList = document.getElementById("memoryList");
+const memoryInput = document.getElementById("memoryInput");
+const addMemoryButton = document.getElementById("addMemoryButton");
+const toggleMemoryButton = document.getElementById("toggleMemoryButton");
 
 const appConfig = window.SAVE_PRINCESS_CONFIG || {};
 const chatMessages = [];
@@ -249,4 +254,39 @@ clearButton.addEventListener("click", async () => {
   await supabaseClient.from("messages").delete().eq("conversation_id", conversationId);
   chatMessages.length = 0;
   renderWelcomeMessage();
+});
+
+// Memory panel
+async function loadMemories() {
+  if (!supabaseClient) return;
+  const { data } = await supabaseClient
+    .from("memories")
+    .select("id, content, enabled")
+    .order("created_at", { ascending: true });
+  memoryList.innerHTML = "";
+  for (const mem of data || []) {
+    const item = document.createElement("div");
+    item.className = "memory-item" + (mem.enabled ? "" : " disabled");
+    item.innerHTML = `<span>${mem.content}</span><button data-id="${mem.id}" data-enabled="${mem.enabled}">${mem.enabled ? "禁用" : "启用"}</button>`;
+    item.querySelector("button").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      await supabaseClient.from("memories").update({ enabled: btn.dataset.enabled !== "true", updated_at: new Date().toISOString() }).eq("id", btn.dataset.id);
+      loadMemories();
+    });
+    memoryList.appendChild(item);
+  }
+}
+
+addMemoryButton.addEventListener("click", async () => {
+  const content = memoryInput.value.trim();
+  if (!content || !supabaseClient) return;
+  await supabaseClient.from("memories").insert({ content });
+  memoryInput.value = "";
+  loadMemories();
+});
+
+toggleMemoryButton.addEventListener("click", () => {
+  const hidden = memoryPanel.style.display === "none";
+  memoryPanel.style.display = hidden ? "block" : "none";
+  if (hidden) loadMemories();
 });

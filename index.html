@@ -10,8 +10,17 @@
   <main class="chat-shell">
     <header class="top-bar">
       <h1>救公主</h1>
+      <button id="toggleMemoryButton" type="button">记忆</button>
       <button id="clearButton" type="button">清空会话</button>
     </header>
+
+    <div id="memoryPanel" style="display:none">
+      <div id="memoryList"></div>
+      <div class="memory-add">
+        <input id="memoryInput" type="text" placeholder="新增记忆...">
+        <button id="addMemoryButton" type="button">添加</button>
+      </div>
+    </div>
 
     <section class="message-list" id="messageList" aria-label="消息列表">
       <div class="message assistant">欢迎来到救公主。</div>

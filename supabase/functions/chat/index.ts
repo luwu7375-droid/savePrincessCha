@@ -23,6 +23,21 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+async function fetchEnabledMemories(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/memories?enabled=eq.true&select=content&order=created_at.asc`,
+    {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+    }
+  );
+  if (!res.ok) return [];
+  const rows = await res.json() as { content: string }[];
+  return rows.map((r) => r.content);
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -70,6 +85,23 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "MODEL_NAME 未配置" }, 500);
   }
 
+  // Build system prompt with memories
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  let systemContent = "不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。";
+
+  if (supabaseUrl && serviceRoleKey) {
+    const memories = await fetchEnabledMemories(supabaseUrl, serviceRoleKey);
+    if (memories.length > 0) {
+      systemContent += "\n\n以下是长期记忆，请优先遵守：\n" + memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
+    }
+  }
+
+  const messages = [
+    { role: "system", content: systemContent },
+    ...(payload.messages as unknown[]),
+  ];
+
   try {
     const upstreamResponse = await fetch(openrouterBaseUrl, {
       method: "POST",
@@ -77,22 +109,16 @@ Deno.serve(async (request) => {
         Authorization: `Bearer ${openrouterApiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model,
-        messages: payload.messages,
-        stream: true,
-      }),
+      body: JSON.stringify({ model, messages, stream: true }),
     });
 
     if (!upstreamResponse.ok) {
       let errorBody: unknown = { error: "模型请求失败" };
-
       try {
         errorBody = await upstreamResponse.json();
       } catch {
         errorBody = { error: await upstreamResponse.text() };
       }
-
       return jsonResponse(errorBody, upstreamResponse.status);
     }
 
@@ -100,8 +126,7 @@ Deno.serve(async (request) => {
       status: upstreamResponse.status,
       headers: {
         ...corsHeaders,
-        "Content-Type": upstreamResponse.headers.get("Content-Type") ||
-          "text/event-stream",
+        "Content-Type": upstreamResponse.headers.get("Content-Type") || "text/event-stream",
       },
     });
   } catch (error) {
@@ -109,3 +134,4 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: message }, 500);
   }
 });
+
