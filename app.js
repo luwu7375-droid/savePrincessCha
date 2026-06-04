@@ -469,7 +469,12 @@ function removeTypingIndicator() {
   document.getElementById("typingIndicatorRow")?.remove();
 }
 
-async function requestStreamingReply(assistantMessage) {
+function setChatStatus(text) {
+  const el = document.getElementById("chatStatus");
+  if (el) el.textContent = text;
+}
+
+async function requestStreamingReply() {
   const response = await callChatAPI(chatMessages);
   if (!response.ok || !response.body) {
     throw new Error((await response.text()) || `请求失败：${response.status}`);
@@ -477,6 +482,7 @@ async function requestStreamingReply(assistantMessage) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "", fullReply = "", streamDone = false;
+  let assistantEl = null;
 
   while (!streamDone) {
     const { done, value } = await reader.read();
@@ -491,12 +497,12 @@ async function requestStreamingReply(assistantMessage) {
       if (data === "[DONE]") { streamDone = true; break; }
       const delta = readDelta(JSON.parse(data));
       if (delta) {
-        if (!fullReply) {
+        if (!assistantEl) {
           removeTypingIndicator();
-          assistantMessage.style.display = "";
+          assistantEl = addMessage("", "assistant");
         }
         fullReply += delta;
-        assistantMessage.textContent = stripThinking(fullReply);
+        assistantEl.textContent = stripThinking(fullReply);
         messageList.scrollTop = messageList.scrollHeight;
       }
     }
@@ -740,17 +746,16 @@ chatForm.addEventListener("submit", async (event) => {
   messageInput.value = "";
 
   showTypingIndicator();
-  const assistantMessage = addMessage("", "assistant");
-  assistantMessage.style.display = "none";
+  setChatStatus("正在输入…");
   setLoading(true);
   try {
-    await requestStreamingReply(assistantMessage);
+    await requestStreamingReply();
   } catch (error) {
     removeTypingIndicator();
-    assistantMessage.style.display = "";
-    assistantMessage.textContent = `回复失败：${error.message}`;
+    addMessage(`回复失败：${error.message}`, "assistant");
     chatMessages.pop();
   } finally {
+    setChatStatus("");
     setLoading(false);
     messageInput.focus();
   }
