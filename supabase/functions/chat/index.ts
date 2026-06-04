@@ -10,12 +10,15 @@ type ChatRequest = {
   stream?: boolean;
 };
 
+const FUNCTION_VERSION = "env-check-v1";
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       ...corsHeaders,
       "Content-Type": "application/json",
+      "x-save-princess-function-version": FUNCTION_VERSION,
     },
   });
 }
@@ -24,7 +27,7 @@ Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
-      headers: corsHeaders,
+      headers: { ...corsHeaders, "x-save-princess-function-version": FUNCTION_VERSION },
     });
   }
 
@@ -36,9 +39,14 @@ Deno.serve(async (request) => {
   const openrouterBaseUrl = Deno.env.get("OPENROUTER_BASE_URL");
   const serverModelName = Deno.env.get("MODEL_NAME");
 
-  if (!openrouterApiKey || !openrouterBaseUrl) {
+  if (!openrouterApiKey || !openrouterBaseUrl || !serverModelName) {
     return jsonResponse(
-      { error: "OPENROUTER_API_KEY 或 OPENROUTER_BASE_URL 未配置" },
+      {
+        error: "环境变量未配置",
+        hasOpenrouterApiKey: !!openrouterApiKey,
+        hasOpenrouterBaseUrl: !!openrouterBaseUrl,
+        hasModelName: !!serverModelName,
+      },
       500
     );
   }
