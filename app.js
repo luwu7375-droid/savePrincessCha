@@ -1,4 +1,4 @@
-console.log("build cloudflare-0002");
+console.log("build cloudflare-0003");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -813,7 +813,6 @@ sendButton.addEventListener("click", (e) => {
 forceReplyBtn.addEventListener("click", () => {
   if (isReplying || !chatMessages.length) return;
   triggerReply("forced");
-});
 });
 
 // ── Auth (password only, no magic link) ───────────────────────────────────────
