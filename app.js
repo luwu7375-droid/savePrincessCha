@@ -295,8 +295,7 @@ async function deleteConv(id) {
 async function switchConversation(id) {
   setActiveConversationId(id);
   renderConvList();
- await reloadHistory();
-await triggerReply("forced");
+  await reloadHistory();
   if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
 }
 
@@ -770,16 +769,32 @@ showDialog({
   confirmLabel: "确定",
   onConfirm: async (newContent) => {
       if (!newContent || newContent === oldContent) return;
-      chatMessages[idx].content = newContent;
-      row.querySelector(".message").textContent = newContent;
-      if (msgId) await supabaseClient.from("messages").update({ content: newContent }).eq("id", msgId);
-      const afterIdx = idx + 1;
-      const toRemove = chatMessages.slice(afterIdx);
-      chatMessages.splice(afterIdx);
-      for (const m of toRemove) {
-        if (m.id) await supabaseClient.from("messages").delete().eq("id", m.id);
-      }
-      await reloadHistory();
+      if (!msgId) return;
+
+const { error: updateError } = await supabaseClient
+  .from("messages")
+  .update({ content: newContent })
+  .eq("id", msgId);
+
+if (updateError) {
+  console.error("编辑消息失败：", updateError);
+  addMessage(`编辑失败：${updateError.message}`, "assistant");
+  return;
+}
+
+chatMessages[idx].content = newContent;
+row.querySelector(".message").textContent = newContent;
+
+const afterIdx = idx + 1;
+const toRemove = chatMessages.slice(afterIdx);
+chatMessages.splice(afterIdx);
+
+for (const m of toRemove) {
+  if (m.id) await supabaseClient.from("messages").delete().eq("id", m.id);
+}
+
+await reloadHistory();
+await triggerReply("forced");
     }
   });
 }
