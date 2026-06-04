@@ -628,6 +628,7 @@ function refreshMessageActions() {
     const isAssistant = row.classList.contains("assistant");
     const isUser = row.classList.contains("user");
     if (!isAssistant && !isUser) continue;
+    if (isAssistant && !row.dataset.msgId) continue;
 
     const actions = document.createElement("div");
     actions.className = "msg-actions";
@@ -891,6 +892,7 @@ messageList.addEventListener("click", (e) => {
   if (!isMobileMessageActions()) return;
   if (!(e.target instanceof Element)) return;
   if (e.target.closest(".message-action-menu")) return;
+  if (e.target.closest(".msg-actions")) return;
   const bubble = e.target.closest(".message");
   const row = bubble?.closest(".msg-row");
   if (!bubble || !row || row.id === "typingIndicatorRow") return;
