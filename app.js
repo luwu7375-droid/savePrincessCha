@@ -1,4 +1,4 @@
-console.log("build cloudflare-0004");
+console.log("build cloudflare-0005");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -478,7 +478,10 @@ function setChatStatus(text) {
 }
 
 async function requestStreamingReply(replyMode = "auto") {
-  const response = await callChatAPI(chatMessages, replyMode);
+  const messages = replyMode === "forced"
+    ? [...chatMessages, { role: "user", content: "继续推进，别重复刚才说过的" }]
+    : chatMessages;
+  const response = await callChatAPI(messages, replyMode);
   if (!response.ok || !response.body) {
     throw new Error((await response.text()) || `请求失败：${response.status}`);
   }
