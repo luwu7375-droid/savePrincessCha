@@ -295,7 +295,8 @@ async function deleteConv(id) {
 async function switchConversation(id) {
   setActiveConversationId(id);
   renderConvList();
-  await reloadHistory();
+ await reloadHistory();
+await triggerReply("forced");
   if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
 }
 
