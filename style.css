@@ -650,15 +650,37 @@ body {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-.user-email-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  align-self: center;
+.user-email-label { display: none; }
+
+/* ── More menu ── */
+.mobile-only { display: none; }
+
+.more-menu {
+  position: fixed;
+  z-index: 600;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  min-width: 120px;
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.3);
+  animation: fade-in 0.12s ease both;
 }
+.more-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.more-menu button:hover { background: var(--surface); }
 
 /* ── Login overlay ── */
 #loginOverlay .modal input[type="email"],
@@ -726,14 +748,19 @@ body {
   .sidebar.hidden { width: min(82vw, 340px); }
   .sidebar.mobile-open { transform: translateX(0); }
 
-  .top-bar h1 { font-size: 14px; }
+  .top-bar h1 { font-size: 14px; white-space: nowrap; flex-shrink: 0; }
   .top-bar {
     gap: 6px;
     padding: 10px 12px;
     padding-top: calc(10px + env(safe-area-inset-top));
   }
+  .chat-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .top-actions { flex-shrink: 0; }
   .icon-btn { padding: 5px 8px; font-size: 12px; }
-  .user-email-label { display: none; }
+
+  /* hide desktop-only buttons on mobile */
+  #distillButton, #toggleMemoryButton, #clearButton, #logoutBtn { display: none !important; }
+  .mobile-only { display: inline-flex; }
 
   .message-list { padding: 12px 10px 8px; }
   .message { max-width: 82vw; }

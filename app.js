@@ -1,4 +1,4 @@
-console.log("build cloudflare-0014");
+console.log("build cloudflare-0015");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -42,7 +42,6 @@ const loginMsg          = document.getElementById("loginMsg");
 const loginPassword      = document.getElementById("loginPassword");
 const loginBtn          = document.getElementById("loginBtn");
 const logoutBtn         = document.getElementById("logoutBtn");
-const userEmailLabel    = document.getElementById("userEmailLabel");
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -926,6 +925,42 @@ sidebarToggle.addEventListener("click", () => {
 
 sidebarBackdrop.addEventListener("click", closeMobileSidebar);
 
+// ── More menu (mobile) ────────────────────────────────────────────────────────
+
+let activeMoreMenu = null;
+
+function closeMoreMenu() {
+  if (activeMoreMenu) { activeMoreMenu.remove(); activeMoreMenu = null; }
+}
+
+document.getElementById("moreButton")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (activeMoreMenu) { closeMoreMenu(); return; }
+  const items = [
+    { label: "沉淀", id: "distillButton" },
+    { label: "记忆匣", id: "toggleMemoryButton" },
+    { label: "清理本段", id: "clearButton" },
+    { label: "退出", id: "logoutBtn" },
+  ];
+  const menu = document.createElement("div");
+  menu.className = "more-menu";
+  for (const item of items) {
+    const btn = document.createElement("button");
+    btn.textContent = item.label;
+    btn.addEventListener("click", () => {
+      closeMoreMenu();
+      document.getElementById(item.id)?.click();
+    });
+    menu.appendChild(btn);
+  }
+  document.body.appendChild(menu);
+  activeMoreMenu = menu;
+  const rect = e.currentTarget.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.right = `${document.documentElement.clientWidth - rect.right}px`;
+  setTimeout(() => document.addEventListener("click", closeMoreMenu, { once: true }), 0);
+});
+
 newConvButton.addEventListener("click", async () => {
   const id = await createConversation("新会话");
   if (!id) return;
@@ -1066,16 +1101,12 @@ logoutBtn.addEventListener("click", async () => {
   conversationsCache = [];
   chatMessages.length = 0;
   messageList.innerHTML = "";
-  userEmailLabel.textContent = "";
   logoutBtn.classList.add("hidden");
   loginOverlay.classList.remove("hidden");
 });
 
 async function hideLoginAndInit(session) {
   loginOverlay.classList.add("hidden");
-  if (userEmailLabel && session?.user?.email) {
-    userEmailLabel.textContent = session.user.email;
-  }
   if (logoutBtn) logoutBtn.classList.remove("hidden");
   setLoading(true);
   await initConversations();
