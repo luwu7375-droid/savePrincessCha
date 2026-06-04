@@ -4,6 +4,8 @@
 
 ```
 GitHub Pages → Supabase Edge Function /chat → 浣溪沙模型 → Supabase messages 表
+                                             ↑
+                                    memories 表（手动记忆库注入）
 ```
 
 ## 配置
