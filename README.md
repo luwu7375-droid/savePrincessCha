@@ -1,5 +1,11 @@
 # 救公主
 
+## 已打通链路
+
+```
+GitHub Pages → Supabase Edge Function /chat → 浣溪沙模型 → Supabase messages 表
+```
+
 ## 配置
 
 GitHub Pages 会公开仓库里的静态文件，包括 `public-config.js`。
