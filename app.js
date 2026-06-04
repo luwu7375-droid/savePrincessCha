@@ -762,11 +762,12 @@ async function editUserMessage(row) {
   if (idx === -1) return;
   closeMessageActionMenu();
   const oldContent = chatMessages[idx].content;
-  showDialog({
-    title: "编辑消息",
-    input: oldContent,
-    confirmLabel: "确定",
-    onConfirm: async (newContent) => {
+showDialog({
+  title: "编辑消息",
+  body: "编辑后，这条之后的回复会重新生成。",
+  input: oldContent,
+  confirmLabel: "确定",
+  onConfirm: async (newContent) => {
       if (!newContent || newContent === oldContent) return;
       chatMessages[idx].content = newContent;
       row.querySelector(".message").textContent = newContent;
@@ -926,22 +927,6 @@ messageList.addEventListener("touchmove", (e) => {
 
 messageList.addEventListener("touchend", cancelLongPress, { passive: true });
 messageList.addEventListener("touchcancel", cancelLongPress, { passive: true });
-
-messageList.addEventListener("click", (e) => {
-  if (!isMobileMessageActions()) return;
-  if (!(e.target instanceof Element)) return;
-  if (e.target.closest(".message-action-menu")) return;
-  if (e.target.closest(".msg-actions")) return;
-  const bubble = e.target.closest(".message");
-  const row = bubble?.closest(".msg-row");
-  if (!bubble || !row || row.id === "typingIndicatorRow") return;
-
-  e.preventDefault();
-  e.stopPropagation();
-  cancelLongPress();
-  const rect = bubble.getBoundingClientRect();
-  showMessageActionMenu(row, rect.left + rect.width / 2, rect.top);
-});
 
 document.addEventListener("pointerdown", (e) => {
   const target = e.target;
