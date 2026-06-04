@@ -330,9 +330,18 @@ body {
 }
 .avatar::after { content: "G"; }
 
+/* ── Msg stack ── */
+.msg-stack {
+  display: flex;
+  flex-direction: column;
+  max-width: min(68%, 480px);
+  align-items: flex-start;
+}
+.msg-row.user .msg-stack { align-items: flex-end; }
+
 /* ── Bubbles ── */
 .message {
-  max-width: min(68%, 480px);
+  max-width: 100%;
   padding: 10px 14px;
   font-size: 15px;
   line-height: 1.55;
@@ -366,17 +375,15 @@ body {
   display: flex;
   gap: 2px;
   margin-top: 2px;
-  padding-left: 36px;
   opacity: 0;
-  transform: translateY(3px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
   pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  transform: translateY(3px);
 }
-.msg-row.user .msg-actions { padding-left: 0; justify-content: flex-end; }
 .msg-row:hover .msg-actions {
   opacity: 1;
-  transform: none;
   pointer-events: auto;
+  transform: none;
 }
 .msg-actions button {
   background: none;

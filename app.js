@@ -405,6 +405,9 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   const el = document.createElement("div");
   el.className = `message ${role}`;
   el.textContent = text;
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+  stack.appendChild(el);
   const row = document.createElement("div");
   row.className = `msg-row ${role}`;
   if (msgId) row.dataset.msgId = msgId;
@@ -412,10 +415,8 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     const avatar = document.createElement("div");
     avatar.className = "avatar";
     row.appendChild(avatar);
-    row.appendChild(el);
-  } else {
-    row.appendChild(el);
   }
+  row.appendChild(stack);
   messageList.appendChild(row);
   messageList.scrollTop = messageList.scrollHeight;
   return el;
@@ -519,13 +520,16 @@ function showTypingIndicator() {
   const el = document.createElement("div");
   el.className = "typing-indicator";
   el.innerHTML = "<span></span><span></span><span></span>";
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+  stack.appendChild(el);
   const row = document.createElement("div");
   row.className = "msg-row assistant";
   row.id = "typingIndicatorRow";
   const avatar = document.createElement("div");
   avatar.className = "avatar";
   row.appendChild(avatar);
-  row.appendChild(el);
+  row.appendChild(stack);
   messageList.appendChild(row);
   messageList.scrollTop = messageList.scrollHeight;
   return el;
@@ -595,46 +599,67 @@ async function requestStreamingReply(replyMode = "auto") {
 
 function refreshMessageActions() {
   document.querySelectorAll(".msg-actions").forEach(el => el.remove());
-  const rows = Array.from(messageList.querySelectorAll(".msg-row"));
-  const lastAssistantRow = rows.reverse().find(r => r.classList.contains("assistant"));
-  const lastUserRow = rows.find(r => r.classList.contains("user"));
+  const rows = Array.from(messageList.querySelectorAll(".msg-row:not(#typingIndicatorRow)"));
+  const lastAssistantRow = [...rows].reverse().find(r => r.classList.contains("assistant"));
+  const lastUserRow = [...rows].reverse().find(r => r.classList.contains("user"));
 
-  rows.reverse().forEach(row => {
-    if (row.classList.contains("assistant")) {
-      const actions = document.createElement("div");
-      actions.className = "msg-actions";
+  for (const row of rows) {
+    const stack = row.querySelector(".msg-stack");
+    if (!stack) continue;
+    const isAssistant = row.classList.contains("assistant");
+    const isUser = row.classList.contains("user");
+    if (!isAssistant && !(isUser && row === lastUserRow && row.dataset.msgId)) continue;
+
+    const actions = document.createElement("div");
+    actions.className = "msg-actions";
+
+    if (isAssistant) {
       const copyBtn = document.createElement("button");
       copyBtn.textContent = "复制";
-      copyBtn.addEventListener("click", () => copyMessage(row));
+      copyBtn.addEventListener("click", (e) => { e.stopPropagation(); copyMessage(row, copyBtn); });
       actions.appendChild(copyBtn);
       if (row === lastAssistantRow) {
         const regenBtn = document.createElement("button");
         regenBtn.textContent = "重新生成";
-        regenBtn.addEventListener("click", () => regenerateMessage(row));
+        regenBtn.addEventListener("click", (e) => { e.stopPropagation(); regenerateMessage(row); });
         actions.appendChild(regenBtn);
       }
-      row.appendChild(actions);
-    } else if (row === lastUserRow && row.dataset.msgId) {
-      const actions = document.createElement("div");
-      actions.className = "msg-actions";
+    } else {
       const editBtn = document.createElement("button");
       editBtn.textContent = "编辑";
-      editBtn.addEventListener("click", () => editUserMessage(row));
+      editBtn.addEventListener("click", (e) => { e.stopPropagation(); editUserMessage(row); });
       actions.appendChild(editBtn);
-      row.appendChild(actions);
     }
-  });
+    stack.appendChild(actions);
+  }
 }
 
-function copyMessage(row) {
+function copyMessage(row, btn) {
   const text = row.querySelector(".message")?.textContent || "";
-  const btn = row.querySelector(".msg-actions button");
-  navigator.clipboard.writeText(text).then(() => {
+  const feedback = (label) => {
     if (!btn) return;
     const prev = btn.textContent;
-    btn.textContent = "已复制";
+    btn.textContent = label;
     setTimeout(() => { btn.textContent = prev; }, 1200);
-  }).catch(() => {});
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(() => feedback("已复制")).catch(() => {
+      fallbackCopy(text) ? feedback("已复制") : feedback("复制失败");
+    });
+  } else {
+    fallbackCopy(text) ? feedback("已复制") : feedback("复制失败");
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.cssText = "position:fixed;opacity:0";
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  return ok;
 }
 
 async function regenerateMessage(row) {
