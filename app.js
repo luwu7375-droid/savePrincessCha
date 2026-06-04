@@ -1,4 +1,4 @@
-console.log("build cloudflare-0021");
+console.log("build cloudflare-0022");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -24,7 +24,6 @@ const welcomeMessage = "欢迎回家，kk。";
 const chatForm          = document.getElementById("chatForm");
 const messageInput      = document.getElementById("messageInput");
 const messageList       = document.getElementById("messageList");
-const clearButton       = document.getElementById("clearButton");
 const toggleMemoryButton = document.getElementById("toggleMemoryButton");
 const closeMemoryButton = document.getElementById("closeMemoryButton");
 const memoryOverlay     = document.getElementById("memoryOverlay");
@@ -1206,7 +1205,6 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
   const items = [
     { label: "沉淀", id: "distillButton" },
     { label: "记忆匣", id: "toggleMemoryButton" },
-    { label: "清理本段", id: "clearButton" },
     { label: "退出", id: "logoutBtn" },
   ];
   const menu = document.createElement("div");
@@ -1235,14 +1233,6 @@ newConvButton.addEventListener("click", async () => {
   chatMessages.length = 0;
   renderWelcomeMessage();
   renderConvList();
-});
-
-clearButton.addEventListener("click", async () => {
-  if (!supabaseClient) return;
-  const conversationId = getActiveConversationId();
-  await supabaseClient.from("messages").delete().eq("conversation_id", conversationId);
-  chatMessages.length = 0;
-  renderWelcomeMessage();
 });
 
 // ── Submit & reply control ────────────────────────────────────────────────────
