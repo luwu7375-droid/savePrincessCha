@@ -1,7 +1,6 @@
 const chatForm = document.getElementById("chatForm");
 const messageInput = document.getElementById("messageInput");
 const messageList = document.getElementById("messageList");
-const sendButton = chatForm.querySelector("button");
 const clearButton = document.getElementById("clearButton");
 const toggleMemoryButton = document.getElementById("toggleMemoryButton");
 const closeMemoryButton = document.getElementById("closeMemoryButton");
@@ -18,6 +17,25 @@ const appConfig = window.SAVE_PRINCESS_CONFIG || {};
 const chatMessages = [];
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎来到救公主。";
+
+const themeButton = document.getElementById("themeButton");
+
+const savedTheme = localStorage.getItem("theme") || "dark";
+if (savedTheme === "light") document.documentElement.setAttribute("data-theme", "light");
+themeButton.textContent = savedTheme === "light" ? "🌙" : "☀️";
+
+themeButton.addEventListener("click", () => {
+  const isLight = document.documentElement.getAttribute("data-theme") === "light";
+  if (isLight) {
+    document.documentElement.removeAttribute("data-theme");
+    localStorage.setItem("theme", "dark");
+    themeButton.textContent = "☀️";
+  } else {
+    document.documentElement.setAttribute("data-theme", "light");
+    localStorage.setItem("theme", "light");
+    themeButton.textContent = "🌙";
+  }
+});
 
 // ── Conversations (localStorage) ─────────────────────────────────────────────
 
@@ -94,7 +112,20 @@ function addMessage(text, role) {
   const el = document.createElement("div");
   el.className = `message ${role}`;
   el.textContent = text;
-  messageList.appendChild(el);
+  if (role === "assistant") {
+    const row = document.createElement("div");
+    row.className = "msg-row assistant";
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    row.appendChild(avatar);
+    row.appendChild(el);
+    messageList.appendChild(row);
+  } else {
+    const row = document.createElement("div");
+    row.className = "msg-row user";
+    row.appendChild(el);
+    messageList.appendChild(row);
+  }
   messageList.scrollTop = messageList.scrollHeight;
   return el;
 }
@@ -106,8 +137,6 @@ function renderWelcomeMessage() {
 
 function setLoading(isLoading) {
   messageInput.disabled = isLoading;
-  sendButton.disabled = isLoading;
-  sendButton.textContent = isLoading ? "发送中" : "发送";
 }
 
 function stripThinking(text) {
@@ -173,15 +202,21 @@ async function callChatAPI(messages) {
 function showTypingIndicator() {
   const el = document.createElement("div");
   el.className = "typing-indicator";
-  el.id = "typingIndicator";
   el.innerHTML = "<span></span><span></span><span></span>";
-  messageList.appendChild(el);
+  const row = document.createElement("div");
+  row.className = "msg-row assistant";
+  row.id = "typingIndicatorRow";
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  row.appendChild(avatar);
+  row.appendChild(el);
+  messageList.appendChild(row);
   messageList.scrollTop = messageList.scrollHeight;
   return el;
 }
 
 function removeTypingIndicator() {
-  document.getElementById("typingIndicator")?.remove();
+  document.getElementById("typingIndicatorRow")?.remove();
 }
 
 async function requestStreamingReply(assistantMessage) {
