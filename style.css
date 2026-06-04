@@ -204,7 +204,9 @@ body {
 .dialog h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
 .dialog p  { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; }
 .dialog input[type="text"],
-.dialog input[type="password"] {
+.dialog input[type="password"],
+.dialog textarea,
+.dialog select {
   width: 100%;
   padding: 9px 12px;
   background: var(--surface);
@@ -216,8 +218,14 @@ body {
   outline: none;
   margin-bottom: 16px;
 }
+.dialog textarea {
+  min-height: 110px;
+  resize: vertical;
+}
 .dialog input[type="text"]:focus,
-.dialog input[type="password"]:focus { border-color: oklch(52% 0.16 248 / 0.6); }
+.dialog input[type="password"]:focus,
+.dialog textarea:focus,
+.dialog select:focus { border-color: oklch(52% 0.16 248 / 0.6); }
 .dialog input[type="checkbox"] {
   width: auto;
   flex: 0 0 auto;
@@ -241,6 +249,7 @@ body {
 .dialog-actions .btn-confirm:hover { background: var(--send-hover); }
 .dialog-actions .btn-danger { background: oklch(50% 0.2 25); color: #fff; }
 .dialog-actions .btn-danger:hover { background: oklch(44% 0.2 25); }
+.memory-edit-dialog { width: 420px; }
 
 /* ── Chat shell ── */
 .chat-shell {
@@ -638,6 +647,12 @@ body {
   white-space: nowrap;
 }
 
+.memory-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .memory-item button {
   background: none;
   border: 1px solid var(--border);
@@ -651,6 +666,8 @@ body {
   white-space: nowrap;
 }
 .memory-item button:hover { color: var(--text); border-color: var(--text-muted); }
+.memory-item button.danger { color: oklch(62% 0.2 25); }
+.memory-item button.danger:hover { border-color: oklch(62% 0.2 25); }
 
 .memory-add {
   display: flex;
