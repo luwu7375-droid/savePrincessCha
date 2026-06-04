@@ -791,7 +791,7 @@ body {
   .icon-btn { padding: 5px 8px; font-size: 12px; }
 
   /* hide desktop-only buttons on mobile */
-  #distillButton, #toggleMemoryButton, #clearButton, #logoutBtn { display: none !important; }
+  #distillButton, #toggleMemoryButton, #logoutBtn { display: none !important; }
   .mobile-only { display: inline-flex; }
 
   .message-list { padding: 12px 10px 8px; }
