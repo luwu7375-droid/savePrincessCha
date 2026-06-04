@@ -35,7 +35,7 @@ async function fetchEnabledMemories(supabaseUrl: string, serviceRoleKey: string)
 
 async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
   const res = await fetch(
-    `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary&order=importance.desc,last_accessed_at.desc.nullslast&limit=8`,
+    `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary&order=importance.desc,last_accessed_at.desc.nullslast&limit=2`,
     { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } }
   );
   if (!res.ok) return [];
@@ -49,7 +49,7 @@ async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): 
       body: JSON.stringify({ last_accessed_at: new Date().toISOString() }),
     }).catch(() => {});
   }
-  return rows.map((r) => `[${r.title}] ${r.summary}`);
+  return rows.map((r) => r.summary);
 }
 
 Deno.serve(async (request) => {
@@ -102,7 +102,17 @@ Deno.serve(async (request) => {
   // Build system prompt with memories
   const supabaseUrl = Deno.env.get("DB_URL");
   const serviceRoleKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
-  let systemContent = "不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。";
+  let systemContent = `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。
+
+【回复长度与节奏】
+- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。
+- 用户短句，回复也短，通常 1-3 句。
+- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。
+- 不要主动列很多"下一步"。
+- 不要把普通聊天写成安慰小作文。
+- 不要每次都"先共情再建议再总结"。
+- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。
+- 可以亲近，但要收口。`;
 
   if (supabaseUrl && serviceRoleKey) {
     const [memories, buckets] = await Promise.all([
@@ -113,7 +123,7 @@ Deno.serve(async (request) => {
       systemContent += "\n\n以下是长期记忆，请优先遵守：\n" + memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
     }
     if (buckets.length > 0) {
-      systemContent += "\n\n以下是相关事件记忆（供参考，不必逐条遵守）：\n" + buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
+      systemContent += "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" + buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
     }
   }
 
