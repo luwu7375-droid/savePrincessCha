@@ -102,6 +102,7 @@ body {
 #convList::-webkit-scrollbar { width: 4px; }
 #convList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+/* ── Conv list item ── */
 #convList li {
   padding: 10px 12px;
   font-size: 13.5px;
@@ -113,9 +114,116 @@ body {
   border-radius: 10px;
   margin-bottom: 2px;
   transition: background 0.14s, color 0.14s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 #convList li:hover { background: var(--surface); color: var(--text); }
 #convList li.active { background: var(--surface); color: var(--text); font-weight: 500; }
+#convList li.pinned .conv-title::before { content: "📌 "; font-size: 11px; }
+
+.conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+.conv-menu-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: opacity 0.12s, background 0.12s;
+}
+#convList li:hover .conv-menu-btn,
+#convList li.active .conv-menu-btn { opacity: 1; }
+.conv-menu-btn:hover { background: var(--border); color: var(--text); }
+
+/* ── Conv context menu ── */
+.conv-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  min-width: 110px;
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.3);
+  animation: fade-in 0.12s ease both;
+}
+.conv-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.conv-menu button:hover { background: var(--surface); }
+.conv-menu button.danger { color: oklch(62% 0.2 25); }
+
+/* ── Dialog ── */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0% 0 0 / 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fade-in 0.15s ease both;
+}
+.dialog {
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px 24px 18px;
+  width: 320px;
+  max-width: 90vw;
+  animation: modal-in 0.18s var(--ease-out) both;
+}
+.dialog h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.dialog p  { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; }
+.dialog input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  margin-bottom: 16px;
+}
+.dialog input:focus { border-color: oklch(52% 0.16 248 / 0.6); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.dialog-actions button {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.dialog-actions .btn-cancel { background: var(--surface); color: var(--text); }
+.dialog-actions .btn-cancel:hover { background: var(--border); }
+.dialog-actions .btn-confirm { background: var(--bubble-me); color: #fff; }
+.dialog-actions .btn-confirm:hover { background: var(--send-hover); }
+.dialog-actions .btn-danger { background: oklch(50% 0.2 25); color: #fff; }
+.dialog-actions .btn-danger:hover { background: oklch(44% 0.2 25); }
 
 /* ── Chat shell ── */
 .chat-shell {

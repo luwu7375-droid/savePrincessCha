@@ -79,11 +79,143 @@ function renderConvList() {
   convList.innerHTML = "";
   for (const conv of convs) {
     const li = document.createElement("li");
-    li.textContent = conv.title || "新会话";
+    if (conv.pinned) li.classList.add("pinned");
     if (conv.id === activeId) li.classList.add("active");
-    li.addEventListener("click", () => switchConversation(conv.id));
+
+    const title = document.createElement("span");
+    title.className = "conv-title";
+    title.textContent = conv.title || "新会话";
+    title.addEventListener("click", () => switchConversation(conv.id));
+
+    const menuBtn = document.createElement("button");
+    menuBtn.className = "conv-menu-btn";
+    menuBtn.textContent = "···";
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openConvMenu(conv.id, menuBtn);
+    });
+
+    li.appendChild(title);
+    li.appendChild(menuBtn);
     convList.appendChild(li);
   }
+}
+
+let activeMenu = null;
+
+function closeActiveMenu() {
+  if (activeMenu) { activeMenu.remove(); activeMenu = null; }
+}
+
+function openConvMenu(id, anchor) {
+  closeActiveMenu();
+  const convs = loadConversations();
+  const conv = convs.find(c => c.id === id);
+  const menu = document.createElement("div");
+  menu.className = "conv-menu";
+
+  const actions = [
+    { label: "重命名", fn: () => renameConv(id) },
+    { label: conv?.pinned ? "取消置顶" : "置顶", fn: () => pinConv(id) },
+    { label: "删除", fn: () => deleteConv(id), danger: true },
+  ];
+
+  for (const a of actions) {
+    const btn = document.createElement("button");
+    btn.textContent = a.label;
+    if (a.danger) btn.classList.add("danger");
+    btn.addEventListener("click", (e) => { e.stopPropagation(); closeActiveMenu(); a.fn(); });
+    menu.appendChild(btn);
+  }
+
+  document.body.appendChild(menu);
+  activeMenu = menu;
+
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.left = `${rect.left - menu.offsetWidth + anchor.offsetWidth}px`;
+
+  setTimeout(() => document.addEventListener("click", closeActiveMenu, { once: true }), 0);
+}
+
+function showDialog({ title, body, input, confirmLabel, confirmClass, onConfirm }) {
+  const overlay = document.createElement("div");
+  overlay.className = "dialog-overlay";
+  overlay.innerHTML = `
+    <div class="dialog">
+      <h3>${title}</h3>
+      ${body ? `<p>${body}</p>` : ""}
+      ${input !== undefined ? `<input type="text" value="${input.replace(/"/g, "&quot;")}">` : ""}
+      <div class="dialog-actions">
+        <button class="btn-cancel">取消</button>
+        <button class="${confirmClass || "btn-confirm"}">${confirmLabel}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const inp = overlay.querySelector("input");
+  if (inp) { inp.focus(); inp.select(); }
+  overlay.querySelector(".btn-cancel").addEventListener("click", () => overlay.remove());
+  overlay.querySelector(`.${confirmClass || "btn-confirm"}`).addEventListener("click", () => {
+    overlay.remove();
+    onConfirm(inp ? inp.value.trim() : null);
+  });
+  if (inp) inp.addEventListener("keydown", e => { if (e.key === "Enter") overlay.querySelector(`.${confirmClass || "btn-confirm"}`).click(); });
+}
+
+function renameConv(id) {
+  const convs = loadConversations();
+  const conv = convs.find(c => c.id === id);
+  if (!conv) return;
+  showDialog({
+    title: "重命名会话",
+    input: conv.title || "新会话",
+    confirmLabel: "确定",
+    onConfirm: (name) => {
+      conv.title = name || "新会话";
+      saveConversations(convs);
+      renderConvList();
+    }
+  });
+}
+
+function pinConv(id) {
+  const convs = loadConversations();
+  const conv = convs.find(c => c.id === id);
+  if (!conv) return;
+  conv.pinned = !conv.pinned;
+  convs.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  saveConversations(convs);
+  renderConvList();
+}
+
+async function deleteConv(id) {
+  const convs = loadConversations();
+  const conv = convs.find(c => c.id === id);
+  showDialog({
+    title: "删除会话？",
+    body: `这会删除"${conv?.title || "新会话"}"。`,
+    confirmLabel: "删除",
+    confirmClass: "btn-danger",
+    onConfirm: async () => {
+      let remaining = loadConversations().filter(c => c.id !== id);
+      saveConversations(remaining);
+      if (supabaseClient) await supabaseClient.from("messages").delete().eq("conversation_id", id);
+      if (getActiveConversationId() === id) {
+        if (remaining.length) {
+          localStorage.setItem("conversation_id", remaining[0].id);
+          await reloadHistory();
+        } else {
+          const newId = crypto.randomUUID();
+          remaining = [{ id: newId, title: "新会话" }];
+          saveConversations(remaining);
+          localStorage.setItem("conversation_id", newId);
+          chatMessages.length = 0;
+          renderWelcomeMessage();
+        }
+      }
+      renderConvList();
+    }
+  });
 }
 
 async function switchConversation(id) {
