@@ -1,4 +1,4 @@
-console.log("build cloudflare-0013");
+console.log("build cloudflare-0014");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -262,6 +262,7 @@ async function switchConversation(id) {
   setActiveConversationId(id);
   renderConvList();
   await reloadHistory();
+  if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
 }
 
 // ── Dialog helper ─────────────────────────────────────────────────────────────
@@ -894,7 +895,36 @@ function showCandidatesDialog(candidates) {
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("hidden"));
+const sidebarBackdrop = document.createElement("div");
+sidebarBackdrop.id = "sidebarBackdrop";
+sidebarBackdrop.className = "sidebar-backdrop hidden";
+document.body.appendChild(sidebarBackdrop);
+
+function isMobileLayout() {
+  return window.matchMedia("(max-width: 820px)").matches;
+}
+
+function closeMobileSidebar() {
+  sidebar.classList.remove("mobile-open");
+  sidebarBackdrop.classList.add("hidden");
+}
+
+// On mobile: ensure sidebar starts closed
+if (isMobileLayout()) {
+  sidebar.classList.remove("hidden");
+}
+
+sidebarToggle.addEventListener("click", () => {
+  if (isMobileLayout()) {
+    const opening = !sidebar.classList.contains("mobile-open");
+    sidebar.classList.toggle("mobile-open", opening);
+    sidebarBackdrop.classList.toggle("hidden", !opening);
+  } else {
+    sidebar.classList.toggle("hidden");
+  }
+});
+
+sidebarBackdrop.addEventListener("click", closeMobileSidebar);
 
 newConvButton.addEventListener("click", async () => {
   const id = await createConversation("新会话");
