@@ -29,7 +29,7 @@ https://<project-ref>.supabase.co/functions/v1/chat
 
 `config.js`、`config.local.js`、`.env`、`.env.local` 保留为本地私有配置备用，并由 `.gitignore` 忽略。
 
-Supabase 必须开启 RLS。`sql/messages.sql` 启用 RLS，并提供 MVP 开发期匿名读写策略（anon 可 select/insert，insert 限 role in ('user','assistant')）。**注意：这是 MVP 开发期策略，正式版需要按用户隔离。**
+Supabase 必须开启 RLS。`sql/messages.sql` 启用 RLS，并提供 MVP 开发期匿名读写策略（anon 可 select/insert/delete，insert 限 role in ('user','assistant')）。**注意：这是 MVP 开发期策略，基于 localStorage 的 conversation_id 做客户端会话隔离，不是真正用户级安全隔离。正式版需要 Supabase Auth + RLS 或 Edge Function 代理读写。**
 
 ## Supabase Edge Function
 

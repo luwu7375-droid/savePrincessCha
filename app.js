@@ -2,11 +2,23 @@ const chatForm = document.getElementById("chatForm");
 const messageInput = document.getElementById("messageInput");
 const messageList = document.getElementById("messageList");
 const sendButton = chatForm.querySelector("button");
+const clearButton = document.getElementById("clearButton");
 
 const appConfig = window.SAVE_PRINCESS_CONFIG || {};
 const chatMessages = [];
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎来到救公主。";
+
+function getConversationId() {
+  let id = localStorage.getItem("conversation_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("conversation_id", id);
+  }
+  return id;
+}
+
+const conversationId = getConversationId();
 
 function getConfigValue(key, placeholder) {
   const value = appConfig[key];
@@ -69,7 +81,7 @@ async function saveMessage(role, content) {
 
   const { error } = await supabaseClient
     .from("messages")
-    .insert({ role, content });
+    .insert({ role, content, conversation_id: conversationId });
 
   if (error) {
     console.error("保存消息失败：", error);
@@ -117,6 +129,7 @@ async function loadHistory() {
   const { data, error } = await supabaseClient
     .from("messages")
     .select("role, content, created_at")
+    .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(20);
 
@@ -229,4 +242,11 @@ setLoading(true);
 loadHistory().finally(() => {
   setLoading(false);
   messageInput.focus();
+});
+
+clearButton.addEventListener("click", async () => {
+  if (!supabaseClient) return;
+  await supabaseClient.from("messages").delete().eq("conversation_id", conversationId);
+  chatMessages.length = 0;
+  renderWelcomeMessage();
 });
