@@ -601,6 +601,7 @@ function showCandidatesDialog(candidates) {
     checkbox.style.marginTop = "3px";
 
     const text = document.createElement("div");
+    text.style.cssText = "flex:1;min-width:0;overflow-wrap:break-word;";
     const titleEl = document.createElement("div");
     titleEl.style.cssText = "font-weight:600;font-size:14px";
     titleEl.textContent = c.title;
