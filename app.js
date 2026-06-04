@@ -1,4 +1,4 @@
-console.log("build cloudflare-0015");
+console.log("build cloudflare-0016");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -694,6 +694,20 @@ async function editUserMessage(row) {
 }
 
 messageList.addEventListener("mouseenter", refreshMessageActions, true);
+
+document.addEventListener("pointerdown", (e) => {
+  const target = e.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest(".input-bar")) return;
+  if (target.closest(".top-bar")) return;
+  if (target.closest(".sidebar")) return;
+  if (target.closest(".dialog-overlay")) return;
+  if (target.closest(".overlay")) return;
+  if (target.closest(".conv-menu")) return;
+  if (target.closest(".more-menu")) return;
+  if (target.closest(".msg-actions")) return;
+  if (document.activeElement === messageInput) messageInput.blur();
+});
 
 // ── Memory panel ──────────────────────────────────────────────────────────────
 
