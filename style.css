@@ -122,7 +122,16 @@ body {
 #convList li.active { background: var(--surface); color: var(--text); font-weight: 500; }
 #convList li.pinned .conv-title::before { content: "📌 "; font-size: 11px; }
 
-.conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.conv-title-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+.conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-time { font-size: 10px; color: var(--text-muted); opacity: 0.6; white-space: nowrap; }
 
 .conv-menu-btn {
   flex-shrink: 0;
@@ -350,6 +359,16 @@ body {
   background: var(--bubble-ai);
   color: var(--text);
   border: 1px solid var(--border);
+}
+
+/* ── Time separator ── */
+.time-separator {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.55;
+  margin: 10px 0 4px;
+  user-select: none;
 }
 
 /* ── Date divider ── */

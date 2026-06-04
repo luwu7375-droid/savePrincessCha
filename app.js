@@ -1,4 +1,4 @@
-console.log("build cloudflare-0009");
+console.log("build cloudflare-0010");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ function setActiveConversationId(id) {
 async function loadConversationsFromDB() {
   const { data, error } = await supabaseClient
     .from("conversations")
-    .select("id, title, pinned, created_at")
+    .select("id, title, pinned, created_at, updated_at")
     .order("pinned", { ascending: false })
     .order("created_at", { ascending: false });
   if (error) { console.error("加载会话列表失败：", error); return []; }
@@ -140,10 +140,20 @@ function renderConvList() {
     if (conv.pinned) li.classList.add("pinned");
     if (conv.id === activeId) li.classList.add("active");
 
+    const titleRow = document.createElement("div");
+    titleRow.className = "conv-title-row";
+
     const title = document.createElement("span");
     title.className = "conv-title";
     title.textContent = conv.title || "新会话";
     title.addEventListener("click", () => switchConversation(conv.id));
+
+    const timeEl = document.createElement("span");
+    timeEl.className = "conv-time";
+    timeEl.textContent = formatConvTime(conv.updated_at || conv.created_at);
+
+    titleRow.appendChild(title);
+    titleRow.appendChild(timeEl);
 
     const menuBtn = document.createElement("button");
     menuBtn.className = "conv-menu-btn";
@@ -153,8 +163,9 @@ function renderConvList() {
       openConvMenu(conv.id, menuBtn);
     });
 
-    li.appendChild(title);
+    li.appendChild(titleRow);
     li.appendChild(menuBtn);
+    li.addEventListener("click", () => switchConversation(conv.id));
     convList.appendChild(li);
   }
 }
@@ -309,38 +320,72 @@ function showDialog({ title, body, input, confirmLabel, confirmClass, onConfirm 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
 const chatMessages = [];
-let lastRenderedDateKey = null;
+let lastMessageTime = null;
 
-function getDateKey(date) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-function formatDateDivider(date) {
-  const d = new Date(date);
+function formatMsgTime(iso) {
+  const d = new Date(iso);
   const now = new Date();
-  const today = getDateKey(now);
-  const yesterday = getDateKey(new Date(now - 86400000));
-  const key = getDateKey(d);
-  if (key === today) return "今天";
-  if (key === yesterday) return "昨天";
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "刚刚";
+  if (diffMin < 60) return `${diffMin}分钟前`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  const yestKey = (() => { const y = new Date(now - 86400000); return `${y.getFullYear()}-${y.getMonth()}-${y.getDate()}`; })();
+  const dKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  if (dKey === todayKey) return `今天 ${hh}:${mm}`;
+  if (dKey === yestKey) return `昨天 ${hh}:${mm}`;
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}.${mm}.${dd}`;
+  if (d.getFullYear() === now.getFullYear()) return `${mo}-${dd} ${hh}:${mm}`;
+  return `${d.getFullYear()}-${mo}-${dd} ${hh}:${mm}`;
 }
 
-function maybeAddDateDivider(createdAt) {
-  const key = getDateKey(createdAt);
-  if (key === lastRenderedDateKey) return;
-  lastRenderedDateKey = key;
-  const div = document.createElement("div");
-  div.className = "date-divider";
-  div.textContent = formatDateDivider(createdAt);
-  messageList.appendChild(div);
+function formatConvTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMin = Math.floor((now - d) / 60000);
+  if (diffMin < 1) return "刚刚";
+  if (diffMin < 60) return `${diffMin}分钟前`;
+  const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  const yestKey = (() => { const y = new Date(now - 86400000); return `${y.getFullYear()}-${y.getMonth()}-${y.getDate()}`; })();
+  const dKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  if (dKey === todayKey) return `今天 ${hh}:${mm}`;
+  if (dKey === yestKey) return "昨天";
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  if (d.getFullYear() === now.getFullYear()) return `${mo}-${dd}`;
+  return `${d.getFullYear()}-${mo}-${dd}`;
+}
+
+function maybeAddTimeSeparator(createdAt) {
+  const t = new Date(createdAt).getTime();
+  const isFirst = lastMessageTime === null;
+  const gap = lastMessageTime !== null ? t - lastMessageTime : Infinity;
+  const crossDay = lastMessageTime !== null && (() => {
+    const prev = new Date(lastMessageTime);
+    const cur = new Date(t);
+    return prev.getFullYear() !== cur.getFullYear() ||
+      prev.getMonth() !== cur.getMonth() ||
+      prev.getDate() !== cur.getDate();
+  })();
+  if (isFirst || crossDay || gap > 5 * 60 * 1000) {
+    lastMessageTime = t;
+    const div = document.createElement("div");
+    div.className = "time-separator";
+    div.textContent = formatMsgTime(createdAt);
+    messageList.appendChild(div);
+  } else {
+    lastMessageTime = t;
+  }
 }
 
 function addMessage(text, role, createdAt = new Date().toISOString(), options = {}) {
-  if (!options.skipDateDivider) maybeAddDateDivider(createdAt);
+  if (!options.skipTimeSeparator) maybeAddTimeSeparator(createdAt);
   const el = document.createElement("div");
   el.className = `message ${role}`;
   el.textContent = text;
@@ -364,8 +409,8 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
 
 function renderWelcomeMessage() {
   messageList.innerHTML = "";
-  lastRenderedDateKey = null;
-  addMessage(welcomeMessage, "assistant", new Date().toISOString(), { skipDateDivider: true });
+  lastMessageTime = null;
+  addMessage(welcomeMessage, "assistant", new Date().toISOString(), { skipTimeSeparator: true });
 }
 
 function setLoading(isLoading) {
@@ -403,7 +448,8 @@ async function saveMessage(role, content) {
   const { error } = await supabaseClient
     .from("messages")
     .insert({ role, content, conversation_id: conversationId, user_id: user.id });
-  if (error) console.error("保存消息失败：", error);
+  if (error) { console.error("保存消息失败：", error); return; }
+  supabaseClient.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId).then(() => {});
 }
 
 async function reloadHistory() {
@@ -422,11 +468,11 @@ async function reloadHistory() {
   const history = [...data].reverse();
   chatMessages.length = 0;
   messageList.innerHTML = "";
-  lastRenderedDateKey = null;
+  lastMessageTime = null;
   if (!history.length) { renderWelcomeMessage(); return; }
   for (const m of history) {
     addMessage(m.content, m.role, m.created_at);
-    chatMessages.push({ role: m.role, content: m.content });
+    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at });
   }
 }
 
@@ -444,7 +490,7 @@ async function callChatAPI(messages, replyMode = "auto") {
       model: modelName,
       messages: [
         { role: "system", content: "不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。" },
-        ...messages,
+        ...messages.map(({ role, content }) => ({ role, content })),
       ],
       stream: true,
       replyMode,
@@ -520,7 +566,9 @@ async function requestStreamingReply(replyMode = "auto") {
     if (assistantEl) assistantEl.closest(".msg-row")?.remove();
     return;
   }
-  chatMessages.push({ role: "assistant", content: cleanReply });
+  const replyTime = new Date().toISOString();
+  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime });
+  lastMessageTime = new Date(replyTime).getTime();
   await saveMessage("assistant", cleanReply);
 }
 
@@ -810,8 +858,9 @@ async function handleSubmit() {
 
   messageInput.value = "";
   const isFirst = chatMessages.length === 0;
-  addMessage(text, "user");
-  chatMessages.push({ role: "user", content: text });
+  const now = new Date().toISOString();
+  addMessage(text, "user", now);
+  chatMessages.push({ role: "user", content: text, created_at: now });
   saveMessage("user", text);
   if (isFirst) updateConvTitle(getActiveConversationId(), text);
 
