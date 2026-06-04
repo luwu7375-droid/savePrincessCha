@@ -52,6 +52,11 @@ function setLoading(isLoading) {
   sendButton.textContent = isLoading ? "发送中" : "发送";
 }
 
+function stripThinking(text) {
+  // Remove closed <think>...</think> blocks, then any unclosed <think> and everything after
+  return text.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*$/, "").trim();
+}
+
 function readDelta(chunk) {
   return chunk.choices?.[0]?.delta?.content || "";
 }
@@ -93,7 +98,10 @@ async function callChatAPI(messages) {
     },
     body: JSON.stringify({
       model: modelName,
-      messages,
+      messages: [
+        { role: "system", content: "不要输出 <think>、推理过程或内部思考。只输出最终回复。" },
+        ...messages,
+      ],
       stream: true,
     }),
   });
@@ -175,7 +183,7 @@ async function requestStreamingReply(assistantMessage) {
       const delta = readDelta(JSON.parse(data));
       if (delta) {
         fullReply += delta;
-        assistantMessage.textContent = fullReply;
+        assistantMessage.textContent = stripThinking(fullReply);
         messageList.scrollTop = messageList.scrollHeight;
       }
     }
@@ -185,8 +193,9 @@ async function requestStreamingReply(assistantMessage) {
     throw new Error("未收到模型回复");
   }
 
-  chatMessages.push({ role: "assistant", content: fullReply });
-  await saveMessage("assistant", fullReply);
+  const cleanReply = stripThinking(fullReply);
+  chatMessages.push({ role: "assistant", content: cleanReply });
+  await saveMessage("assistant", cleanReply);
 }
 
 chatForm.addEventListener("submit", async (event) => {
