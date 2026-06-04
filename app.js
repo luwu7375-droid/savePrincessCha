@@ -1,4 +1,4 @@
-console.log("build cloudflare-0019");
+console.log("build cloudflare-0020");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -491,7 +491,7 @@ async function reloadHistory() {
   if (!history.length) { renderWelcomeMessage(); return; }
   for (const m of history) {
     addMessage(m.content, m.role, m.created_at, {}, m.id);
-    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id });
+    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null });
   }
   refreshMessageActions();
 }
@@ -591,7 +591,7 @@ async function requestStreamingReply(replyMode = "auto") {
   }
   const replyTime = new Date().toISOString();
   const replyId = await saveMessage("assistant", cleanReply);
-  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyId });
+  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyId != null ? String(replyId) : null });
   lastMessageTime = new Date(replyTime).getTime();
   if (assistantEl && replyId) { const savedRow = assistantEl.closest(".msg-row"); if (savedRow) savedRow.dataset.msgId = replyId; }
   refreshMessageActions();
@@ -747,7 +747,6 @@ async function editUserMessage(row) {
   });
 }
 
-// 改为鼠标进入 messageList 整体时刷新一次：
 messageList.addEventListener("mouseenter", refreshMessageActions);
 window.addEventListener("resize", () => {
   closeMessageActionMenu();
@@ -1281,7 +1280,7 @@ async function handleSubmit() {
   const now = new Date().toISOString();
   const msgId = await saveMessage("user", text);
   addMessage(text, "user", now, {}, msgId);
-  chatMessages.push({ role: "user", content: text, created_at: now, id: msgId });
+  chatMessages.push({ role: "user", content: text, created_at: now, id: msgId != null ? String(msgId) : null });
   refreshMessageActions();
   if (isFirst) updateConvTitle(getActiveConversationId(), text);
 
