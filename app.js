@@ -141,25 +141,52 @@ function openConvMenu(id, anchor) {
 function showDialog({ title, body, input, confirmLabel, confirmClass, onConfirm }) {
   const overlay = document.createElement("div");
   overlay.className = "dialog-overlay";
-  overlay.innerHTML = `
-    <div class="dialog">
-      <h3>${title}</h3>
-      ${body ? `<p>${body}</p>` : ""}
-      ${input !== undefined ? `<input type="text" value="${input.replace(/"/g, "&quot;")}">` : ""}
-      <div class="dialog-actions">
-        <button class="btn-cancel">取消</button>
-        <button class="${confirmClass || "btn-confirm"}">${confirmLabel}</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  const inp = overlay.querySelector("input");
-  if (inp) { inp.focus(); inp.select(); }
-  overlay.querySelector(".btn-cancel").addEventListener("click", () => overlay.remove());
-  overlay.querySelector(`.${confirmClass || "btn-confirm"}`).addEventListener("click", () => {
+
+  const dialog = document.createElement("div");
+  dialog.className = "dialog";
+
+  const h3 = document.createElement("h3");
+  h3.textContent = title;
+  dialog.appendChild(h3);
+
+  if (body) {
+    const p = document.createElement("p");
+    p.textContent = body;
+    dialog.appendChild(p);
+  }
+
+  let inp = null;
+  if (input !== undefined) {
+    inp = document.createElement("input");
+    inp.type = "text";
+    inp.value = input;
+    dialog.appendChild(inp);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "dialog-actions";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "btn-cancel";
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", () => overlay.remove());
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.className = confirmClass || "btn-confirm";
+  confirmBtn.textContent = confirmLabel;
+  confirmBtn.addEventListener("click", () => {
     overlay.remove();
     onConfirm(inp ? inp.value.trim() : null);
   });
-  if (inp) inp.addEventListener("keydown", e => { if (e.key === "Enter") overlay.querySelector(`.${confirmClass || "btn-confirm"}`).click(); });
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(confirmBtn);
+  dialog.appendChild(actions);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  if (inp) { inp.focus(); inp.select(); }
+  if (inp) inp.addEventListener("keydown", e => { if (e.key === "Enter") confirmBtn.click(); });
 }
 
 function renameConv(id) {
