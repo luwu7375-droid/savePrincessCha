@@ -203,7 +203,8 @@ body {
 }
 .dialog h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
 .dialog p  { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; }
-.dialog input[type="text"] {
+.dialog input[type="text"],
+.dialog input[type="password"] {
   width: 100%;
   padding: 9px 12px;
   background: var(--surface);
@@ -215,7 +216,8 @@ body {
   outline: none;
   margin-bottom: 16px;
 }
-.dialog input[type="text"]:focus { border-color: oklch(52% 0.16 248 / 0.6); }
+.dialog input[type="text"]:focus,
+.dialog input[type="password"]:focus { border-color: oklch(52% 0.16 248 / 0.6); }
 .dialog input[type="checkbox"] {
   width: auto;
   flex: 0 0 auto;
@@ -338,6 +340,7 @@ body {
   align-items: flex-start;
 }
 .msg-row.user .msg-stack { align-items: flex-end; }
+.msg-row.assistant .msg-stack { align-items: flex-start; }
 
 /* ── Bubbles ── */
 .message {
@@ -398,6 +401,37 @@ body {
   opacity: 0.6;
 }
 .msg-actions button:hover { color: var(--text); background: var(--surface); opacity: 1; }
+
+.message-action-menu {
+  position: fixed;
+  z-index: 700;
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  padding: 6px;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.message-action-menu button {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.message-action-menu button:hover,
+.message-action-menu button:focus {
+  background: var(--surface);
+  outline: none;
+}
 
 /* ── Time separator ── */
 .time-separator {
@@ -763,7 +797,15 @@ body {
   .mobile-only { display: inline-flex; }
 
   .message-list { padding: 12px 10px 8px; }
-  .message { max-width: 82vw; }
+  .msg-stack { max-width: 82vw; }
+  .message {
+    max-width: 100%;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: pan-y;
+  }
+  .msg-actions { display: none !important; }
 
   .input-bar {
     padding: 8px 10px;

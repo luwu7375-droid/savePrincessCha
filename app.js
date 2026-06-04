@@ -1,4 +1,4 @@
-console.log("build cloudflare-0016");
+console.log("build cloudflare-0017");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -266,7 +266,7 @@ async function switchConversation(id) {
 
 // ── Dialog helper ─────────────────────────────────────────────────────────────
 
-function showDialog({ title, body, input, confirmLabel, confirmClass, onConfirm }) {
+function showDialog({ title, body, input, inputType = "text", confirmLabel, confirmClass, onConfirm }) {
   const overlay = document.createElement("div");
   overlay.className = "dialog-overlay";
 
@@ -286,8 +286,9 @@ function showDialog({ title, body, input, confirmLabel, confirmClass, onConfirm 
   let inp = null;
   if (input !== undefined) {
     inp = document.createElement("input");
-    inp.type = "text";
+    inp.type = inputType;
     inp.value = input;
+    if (inputType === "password") inp.autocomplete = "current-password";
     dialog.appendChild(inp);
   }
 
@@ -597,9 +598,26 @@ async function requestStreamingReply(replyMode = "auto") {
 
 // ── Message Actions ───────────────────────────────────────────────────────────
 
+function getMessageRows() {
+  return Array.from(messageList.querySelectorAll(".msg-row:not(#typingIndicatorRow)"));
+}
+
+function getLastMessageRow(role) {
+  return [...getMessageRows()].reverse().find(r => r.classList.contains(role));
+}
+
+function isMobileMessageActions() {
+  return window.matchMedia("(max-width: 820px)").matches;
+}
+
+function canRegenerateRow(row) {
+  return !!row?.dataset.msgId && row === getLastMessageRow("assistant") &&
+    chatMessages.some(m => m.id === row.dataset.msgId);
+}
+
 function refreshMessageActions() {
   document.querySelectorAll(".msg-actions").forEach(el => el.remove());
-  const rows = Array.from(messageList.querySelectorAll(".msg-row:not(#typingIndicatorRow)"));
+  const rows = getMessageRows();
   const lastAssistantRow = [...rows].reverse().find(r => r.classList.contains("assistant"));
   const lastUserRow = [...rows].reverse().find(r => r.classList.contains("user"));
 
@@ -608,33 +626,46 @@ function refreshMessageActions() {
     if (!stack) continue;
     const isAssistant = row.classList.contains("assistant");
     const isUser = row.classList.contains("user");
-    if (!isAssistant && !(isUser && row === lastUserRow && row.dataset.msgId)) continue;
+    if (!isAssistant && !isUser) continue;
 
     const actions = document.createElement("div");
     actions.className = "msg-actions";
 
+    const copyBtn = document.createElement("button");
+    copyBtn.textContent = "复制";
+    copyBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await copyMessage(row, copyBtn);
+    });
+    actions.appendChild(copyBtn);
+
     if (isAssistant) {
-      const copyBtn = document.createElement("button");
-      copyBtn.textContent = "复制";
-      copyBtn.addEventListener("click", (e) => { e.stopPropagation(); copyMessage(row, copyBtn); });
-      actions.appendChild(copyBtn);
-      if (row === lastAssistantRow) {
+      if (row === lastAssistantRow && canRegenerateRow(row)) {
         const regenBtn = document.createElement("button");
         regenBtn.textContent = "重新生成";
-        regenBtn.addEventListener("click", (e) => { e.stopPropagation(); regenerateMessage(row); });
+        regenBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          regenerateMessage(row);
+        });
         actions.appendChild(regenBtn);
       }
-    } else {
+    } else if (row === lastUserRow && row.dataset.msgId) {
       const editBtn = document.createElement("button");
       editBtn.textContent = "编辑";
-      editBtn.addEventListener("click", (e) => { e.stopPropagation(); editUserMessage(row); });
+      editBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        editUserMessage(row);
+      });
       actions.appendChild(editBtn);
     }
     stack.appendChild(actions);
   }
 }
 
-function copyMessage(row, btn) {
+async function copyMessage(row, btn) {
   const text = row.querySelector(".message")?.textContent || "";
   const feedback = (label) => {
     if (!btn) return;
@@ -642,19 +673,32 @@ function copyMessage(row, btn) {
     btn.textContent = label;
     setTimeout(() => { btn.textContent = prev; }, 1200);
   };
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).then(() => feedback("已复制")).catch(() => {
-      fallbackCopy(text) ? feedback("已复制") : feedback("复制失败");
-    });
-  } else {
-    fallbackCopy(text) ? feedback("已复制") : feedback("复制失败");
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      feedback("已复制");
+      return true;
+    }
+  } catch (error) {
+    console.warn("clipboard copy failed, trying fallback", error);
   }
+  try {
+    if (fallbackCopy(text)) {
+      feedback("已复制");
+      return true;
+    }
+  } catch (error) {
+    console.warn("fallback copy failed", error);
+  }
+  feedback("复制失败");
+  return false;
 }
 
 function fallbackCopy(text) {
   const ta = document.createElement("textarea");
   ta.value = text;
-  ta.style.cssText = "position:fixed;opacity:0";
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
   document.body.appendChild(ta);
   ta.focus(); ta.select();
   const ok = document.execCommand("copy");
@@ -663,9 +707,11 @@ function fallbackCopy(text) {
 }
 
 async function regenerateMessage(row) {
+  if (isReplying || row !== getLastMessageRow("assistant")) return;
   const msgId = row.dataset.msgId;
   const idx = chatMessages.findIndex(m => m.id === msgId);
   if (idx === -1) return;
+  closeMessageActionMenu();
   chatMessages.splice(idx, 1);
   row.remove();
   if (msgId) await supabaseClient.from("messages").delete().eq("id", msgId);
@@ -673,9 +719,11 @@ async function regenerateMessage(row) {
 }
 
 async function editUserMessage(row) {
+  if (row !== getLastMessageRow("user")) return;
   const msgId = row.dataset.msgId;
   const idx = chatMessages.findIndex(m => m.id === msgId);
   if (idx === -1) return;
+  closeMessageActionMenu();
   const oldContent = chatMessages[idx].content;
   const newContent = prompt("编辑消息：", oldContent);
   if (!newContent || newContent === oldContent) return;
@@ -694,10 +742,120 @@ async function editUserMessage(row) {
 }
 
 messageList.addEventListener("mouseenter", refreshMessageActions, true);
+window.addEventListener("resize", () => {
+  closeMessageActionMenu();
+  refreshMessageActions();
+});
+
+let messageActionMenu = null;
+let longPressTimer = null;
+let longPressStart = null;
+
+function closeMessageActionMenu() {
+  if (messageActionMenu) {
+    messageActionMenu.remove();
+    messageActionMenu = null;
+  }
+}
+
+function placeMessageActionMenu(menu, x, y) {
+  const margin = 8;
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(Math.max(margin, x - rect.width / 2), window.innerWidth - rect.width - margin);
+  let top = y - rect.height - 10;
+  if (top < margin) top = y + 10;
+  top = Math.min(Math.max(margin, top), window.innerHeight - rect.height - margin);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function addMessageMenuButton(menu, label, action) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = label;
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await action(btn);
+  });
+  menu.appendChild(btn);
+}
+
+function showMessageActionMenu(row, x, y) {
+  closeMessageActionMenu();
+  const isAssistant = row.classList.contains("assistant");
+  const isUser = row.classList.contains("user");
+  if (!isAssistant && !isUser) return;
+
+  const menu = document.createElement("div");
+  menu.className = "message-action-menu";
+  addMessageMenuButton(menu, "复制", async (btn) => {
+    await copyMessage(row, btn);
+  });
+
+  if (isUser && row === getLastMessageRow("user") && row.dataset.msgId) {
+    addMessageMenuButton(menu, "编辑", () => editUserMessage(row));
+  }
+  if (isAssistant && canRegenerateRow(row)) {
+    addMessageMenuButton(menu, "重新生成", () => regenerateMessage(row));
+  }
+
+  document.body.appendChild(menu);
+  messageActionMenu = menu;
+  placeMessageActionMenu(menu, x, y);
+}
+
+function clearLongPressTimer() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  longPressStart = null;
+}
+
+messageList.addEventListener("contextmenu", (e) => {
+  if (!isMobileMessageActions()) return;
+  if (e.target instanceof Element && e.target.closest(".message")) e.preventDefault();
+});
+
+messageList.addEventListener("scroll", () => {
+  closeMessageActionMenu();
+  clearLongPressTimer();
+});
+
+messageList.addEventListener("pointerdown", (e) => {
+  if (!isMobileMessageActions()) return;
+  if (!(e.target instanceof Element)) return;
+  if (e.target.closest(".msg-actions") || e.target.closest(".message-action-menu")) return;
+  const bubble = e.target.closest(".message");
+  const row = bubble?.closest(".msg-row");
+  if (!bubble || !row || row.id === "typingIndicatorRow") return;
+
+  clearLongPressTimer();
+  longPressStart = { x: e.clientX, y: e.clientY };
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    if (navigator.vibrate) navigator.vibrate(8);
+    showMessageActionMenu(row, e.clientX, e.clientY);
+  }, 450);
+});
+
+messageList.addEventListener("pointermove", (e) => {
+  if (!longPressStart) return;
+  const dx = Math.abs(e.clientX - longPressStart.x);
+  const dy = Math.abs(e.clientY - longPressStart.y);
+  if (dx > 10 || dy > 10) clearLongPressTimer();
+});
+
+for (const eventName of ["pointerup", "pointercancel", "pointerleave"]) {
+  messageList.addEventListener(eventName, clearLongPressTimer);
+}
 
 document.addEventListener("pointerdown", (e) => {
   const target = e.target;
   if (!(target instanceof Element)) return;
+  if (target.closest(".message-action-menu")) return;
+  if (messageActionMenu && !target.closest(".message")) closeMessageActionMenu();
   if (target.closest(".input-bar")) return;
   if (target.closest(".top-bar")) return;
   if (target.closest(".sidebar")) return;
@@ -767,6 +925,7 @@ toggleMemoryButton.addEventListener("click", () => {
     showDialog({
       title: "记忆管理口令",
       input: "",
+      inputType: "password",
       confirmLabel: "确定",
       onConfirm: (val) => {
         if (val) sessionStorage.setItem("memory_admin_token", val);
@@ -803,6 +962,7 @@ distillButton.addEventListener("click", async () => {
     showDialog({
       title: "记忆管理口令",
       input: "",
+      inputType: "password",
       confirmLabel: "确定",
       onConfirm: (val) => { if (val) sessionStorage.setItem("memory_admin_token", val); distillButton.click(); },
     });
