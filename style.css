@@ -415,6 +415,23 @@ body {
 .input-bar input::placeholder { color: var(--text-muted); }
 .input-bar input:focus { border-color: oklch(52% 0.16 248 / 0.6); }
 
+#forceReplyBtn {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 20px;
+  padding: 0 14px;
+  height: 44px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+#forceReplyBtn:hover { color: var(--text); border-color: var(--text-muted); }
+#forceReplyBtn:disabled { opacity: 0.35; cursor: default; }
+
 .input-bar button[type="submit"] {
   flex-shrink: 0;
   width: 44px;

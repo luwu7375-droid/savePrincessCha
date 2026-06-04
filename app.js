@@ -430,7 +430,7 @@ async function reloadHistory() {
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
 
-async function callChatAPI(messages) {
+async function callChatAPI(messages, replyMode = "auto") {
   const endpoint = getConfigValue("CHAT_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL");
   const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME");
   if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
@@ -445,6 +445,7 @@ async function callChatAPI(messages) {
         ...messages,
       ],
       stream: true,
+      replyMode,
     }),
   });
 }
@@ -474,8 +475,8 @@ function setChatStatus(text) {
   if (el) el.textContent = text;
 }
 
-async function requestStreamingReply() {
-  const response = await callChatAPI(chatMessages);
+async function requestStreamingReply(replyMode = "auto") {
+  const response = await callChatAPI(chatMessages, replyMode);
   if (!response.ok || !response.body) {
     throw new Error((await response.text()) || `请求失败：${response.status}`);
   }
@@ -509,6 +510,11 @@ async function requestStreamingReply() {
   }
   if (!fullReply) throw new Error("未收到模型回复");
   const cleanReply = stripThinking(fullReply);
+  if (cleanReply === "<NO_REPLY>") {
+    removeTypingIndicator();
+    if (assistantEl) assistantEl.closest(".msg-row")?.remove();
+    return;
+  }
   chatMessages.push({ role: "assistant", content: cleanReply });
   await saveMessage("assistant", cleanReply);
 }
@@ -731,12 +737,43 @@ clearButton.addEventListener("click", async () => {
   renderWelcomeMessage();
 });
 
-// ── Submit ────────────────────────────────────────────────────────────────────
+// ── Submit & reply control ────────────────────────────────────────────────────
+
+let idleTimer = null;
+let isReplying = false;
+const IDLE_DELAY = 2500;
+
+const forceReplyBtn = document.getElementById("forceReplyBtn");
+
+function setReplyingState(replying) {
+  isReplying = replying;
+  messageInput.disabled = replying;
+  forceReplyBtn.disabled = replying;
+}
+
+async function triggerReply(replyMode) {
+  if (isReplying) return;
+  clearTimeout(idleTimer);
+  idleTimer = null;
+  setChatStatus("正在输入…");
+  showTypingIndicator();
+  setReplyingState(true);
+  try {
+    await requestStreamingReply(replyMode);
+  } catch (error) {
+    removeTypingIndicator();
+    addMessage(`回复失败：${error.message}`, "assistant");
+  } finally {
+    setChatStatus("");
+    setReplyingState(false);
+    messageInput.focus();
+  }
+}
 
 chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const text = messageInput.value.trim();
-  if (!text) return;
+  if (!text || isReplying) return;
 
   const isFirst = chatMessages.length === 0;
   addMessage(text, "user");
@@ -745,20 +782,15 @@ chatForm.addEventListener("submit", async (event) => {
   if (isFirst) updateConvTitle(getActiveConversationId(), text);
   messageInput.value = "";
 
-  showTypingIndicator();
-  setChatStatus("正在输入…");
-  setLoading(true);
-  try {
-    await requestStreamingReply();
-  } catch (error) {
-    removeTypingIndicator();
-    addMessage(`回复失败：${error.message}`, "assistant");
-    chatMessages.pop();
-  } finally {
-    setChatStatus("");
-    setLoading(false);
-    messageInput.focus();
-  }
+  setChatStatus("公主在听…");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => triggerReply("auto"), IDLE_DELAY);
+});
+
+forceReplyBtn.addEventListener("click", () => {
+  if (isReplying || !chatMessages.length) return;
+  triggerReply("forced");
+});
 });
 
 // ── Auth (password only, no magic link) ───────────────────────────────────────

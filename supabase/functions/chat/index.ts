@@ -8,6 +8,7 @@ type ChatRequest = {
   messages?: unknown;
   model?: string;
   stream?: boolean;
+  replyMode?: string;
 };
 
 const FUNCTION_VERSION = "env-check-v1";
@@ -125,6 +126,12 @@ Deno.serve(async (request) => {
     if (buckets.length > 0) {
       systemContent += "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" + buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
     }
+  }
+
+  if (payload.replyMode === "auto") {
+    systemContent += "\n\n【回复决策】如果用户明显还在连续补充、只是碎片化记录、或没有期待回复，可以不回复。若不回复，只输出：<NO_REPLY>。不要解释。";
+  } else {
+    systemContent += "\n\n【回复决策】必须正常回复，禁止输出 <NO_REPLY>。";
   }
 
   const messages = [
