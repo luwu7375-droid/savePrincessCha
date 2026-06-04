@@ -7,35 +7,52 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="chat-shell">
-    <header class="top-bar">
-      <h1>救公主</h1>
-      <button id="toggleMemoryButton" type="button">记忆</button>
-      <button id="clearButton" type="button">清空会话</button>
-    </header>
+  <div class="layout">
+    <!-- 会话侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span>会话</span>
+        <button id="newConvButton" type="button">＋ 新建</button>
+      </div>
+      <ul id="convList"></ul>
+    </aside>
 
-    <div id="memoryPanel" style="display:none">
+    <!-- 主聊天区 -->
+    <main class="chat-shell">
+      <header class="top-bar">
+        <button id="sidebarToggle" type="button" class="icon-btn" title="会话列表">☰</button>
+        <h1>救公主</h1>
+        <div class="top-actions">
+          <button id="toggleMemoryButton" type="button" class="icon-btn">记忆</button>
+          <button id="clearButton" type="button" class="icon-btn">清空</button>
+        </div>
+      </header>
+
+      <section class="message-list" id="messageList" aria-label="消息列表">
+        <div class="message assistant">欢迎来到救公主。</div>
+      </section>
+
+      <form class="input-bar" id="chatForm">
+        <input id="messageInput" type="text" placeholder="输入消息..." autocomplete="off">
+        <button type="submit">发送</button>
+      </form>
+    </main>
+  </div>
+
+  <!-- 记忆弹窗 -->
+  <div id="memoryOverlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span>记忆库</span>
+        <button id="closeMemoryButton" type="button">✕</button>
+      </div>
       <div id="memoryList"></div>
       <div class="memory-add">
         <input id="memoryInput" type="text" placeholder="新增记忆...">
         <button id="addMemoryButton" type="button">添加</button>
       </div>
     </div>
-
-    <section class="message-list" id="messageList" aria-label="消息列表">
-      <div class="message assistant">欢迎来到救公主。</div>
-    </section>
-
-    <form class="input-bar" id="chatForm">
-      <input
-        id="messageInput"
-        type="text"
-        placeholder="输入消息..."
-        autocomplete="off"
-      >
-      <button type="submit">发送</button>
-    </form>
-  </main>
+  </div>
 
   <script src="public-config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

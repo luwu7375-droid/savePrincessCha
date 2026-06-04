@@ -3,59 +3,100 @@ const messageInput = document.getElementById("messageInput");
 const messageList = document.getElementById("messageList");
 const sendButton = chatForm.querySelector("button");
 const clearButton = document.getElementById("clearButton");
-const memoryPanel = document.getElementById("memoryPanel");
+const toggleMemoryButton = document.getElementById("toggleMemoryButton");
+const closeMemoryButton = document.getElementById("closeMemoryButton");
+const memoryOverlay = document.getElementById("memoryOverlay");
 const memoryList = document.getElementById("memoryList");
 const memoryInput = document.getElementById("memoryInput");
 const addMemoryButton = document.getElementById("addMemoryButton");
-const toggleMemoryButton = document.getElementById("toggleMemoryButton");
+const newConvButton = document.getElementById("newConvButton");
+const convList = document.getElementById("convList");
+const sidebar = document.getElementById("sidebar");
+const sidebarToggle = document.getElementById("sidebarToggle");
 
 const appConfig = window.SAVE_PRINCESS_CONFIG || {};
 const chatMessages = [];
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎来到救公主。";
 
-function getConversationId() {
-  let id = localStorage.getItem("conversation_id");
-  if (!id) {
+// ── Conversations (localStorage) ─────────────────────────────────────────────
+
+function loadConversations() {
+  try { return JSON.parse(localStorage.getItem("conversations") || "[]"); } catch { return []; }
+}
+
+function saveConversations(convs) {
+  localStorage.setItem("conversations", JSON.stringify(convs));
+}
+
+function getActiveConversationId() {
+  return localStorage.getItem("conversation_id");
+}
+
+function initConversations() {
+  let convs = loadConversations();
+  let id = getActiveConversationId();
+  if (!id || !convs.find(c => c.id === id)) {
     id = crypto.randomUUID();
+    convs = [{ id, title: "新会话" }, ...convs];
+    saveConversations(convs);
     localStorage.setItem("conversation_id", id);
   }
   return id;
 }
 
-const conversationId = getConversationId();
+function updateConvTitle(id, firstUserMessage) {
+  const convs = loadConversations();
+  const conv = convs.find(c => c.id === id);
+  if (conv && conv.title === "新会话" && firstUserMessage) {
+    conv.title = firstUserMessage.slice(0, 20);
+    saveConversations(convs);
+    renderConvList();
+  }
+}
+
+function renderConvList() {
+  const convs = loadConversations();
+  const activeId = getActiveConversationId();
+  convList.innerHTML = "";
+  for (const conv of convs) {
+    const li = document.createElement("li");
+    li.textContent = conv.title || "新会话";
+    if (conv.id === activeId) li.classList.add("active");
+    li.addEventListener("click", () => switchConversation(conv.id));
+    convList.appendChild(li);
+  }
+}
+
+async function switchConversation(id) {
+  localStorage.setItem("conversation_id", id);
+  renderConvList();
+  await reloadHistory();
+}
+
+// ── Config / Supabase ─────────────────────────────────────────────────────────
 
 function getConfigValue(key, placeholder) {
   const value = appConfig[key];
-  if (!value || value === placeholder) {
-    return "";
-  }
-
-  return value;
-}
-
-function getMissingConfigMessage(key) {
-  return `${key} 未配置，请在 public-config.js 中填写。`;
+  return (!value || value === placeholder) ? "" : value;
 }
 
 function createSupabaseClient() {
-  const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
-  const supabaseAnonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
-
-  if (!supabaseUrl || !supabaseAnonKey || !window.supabase) {
-    return null;
-  }
-
-  return window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+  const url = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+  const key = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+  if (!url || !key || !window.supabase) return null;
+  return window.supabase.createClient(url, key);
 }
 
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
 function addMessage(text, role) {
-  const message = document.createElement("div");
-  message.className = `message ${role}`;
-  message.textContent = text;
-  messageList.appendChild(message);
+  const el = document.createElement("div");
+  el.className = `message ${role}`;
+  el.textContent = text;
+  messageList.appendChild(el);
   messageList.scrollTop = messageList.scrollHeight;
-  return message;
+  return el;
 }
 
 function renderWelcomeMessage() {
@@ -70,7 +111,6 @@ function setLoading(isLoading) {
 }
 
 function stripThinking(text) {
-  // Remove closed <think>...</think> blocks, then any unclosed <think> and everything after
   return text.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*$/, "").trim();
 }
 
@@ -78,41 +118,47 @@ function readDelta(chunk) {
   return chunk.choices?.[0]?.delta?.content || "";
 }
 
+// ── DB ────────────────────────────────────────────────────────────────────────
+
 async function saveMessage(role, content) {
-  if (!supabaseClient) {
-    console.warn("Supabase 未配置，消息未保存。");
-    return;
-  }
+  if (!supabaseClient) return;
+  const conversationId = getActiveConversationId();
+  const { error } = await supabaseClient.from("messages").insert({ role, content, conversation_id: conversationId });
+  if (error) console.error("保存消息失败：", error);
+}
 
-  const { error } = await supabaseClient
+async function reloadHistory() {
+  if (!supabaseClient) { renderWelcomeMessage(); return; }
+  const conversationId = getActiveConversationId();
+  const { data, error } = await supabaseClient
     .from("messages")
-    .insert({ role, content, conversation_id: conversationId });
+    .select("role, content, created_at")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(20);
 
-  if (error) {
-    console.error("保存消息失败：", error);
+  if (error) { renderWelcomeMessage(); console.error(error); return; }
+
+  const history = [...data].reverse();
+  chatMessages.length = 0;
+  messageList.innerHTML = "";
+  if (!history.length) { renderWelcomeMessage(); return; }
+  for (const m of history) {
+    addMessage(m.content, m.role);
+    chatMessages.push({ role: m.role, content: m.content });
   }
 }
 
+// ── Chat API ──────────────────────────────────────────────────────────────────
+
 async function callChatAPI(messages) {
-  const chatApiEndpoint = getConfigValue(
-    "CHAT_API_ENDPOINT",
-    "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL"
-  );
+  const endpoint = getConfigValue("CHAT_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL");
   const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME");
-
-  if (!chatApiEndpoint) {
-    throw new Error("CHAT_API_ENDPOINT 未配置，请在 public-config.js 中填写 Supabase Edge Function 地址。");
-  }
-
-  if (!modelName) {
-    throw new Error(getMissingConfigMessage("MODEL_NAME"));
-  }
-
-  return fetch(chatApiEndpoint, {
+  if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
+  if (!modelName) throw new Error("MODEL_NAME 未配置");
+  return fetch(endpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: modelName,
       messages: [
@@ -124,80 +170,26 @@ async function callChatAPI(messages) {
   });
 }
 
-async function loadHistory() {
-  if (!supabaseClient) {
-    renderWelcomeMessage();
-    console.warn("Supabase 未配置，历史消息未加载。");
-    return;
-  }
-
-  const { data, error } = await supabaseClient
-    .from("messages")
-    .select("role, content, created_at")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  if (error) {
-    renderWelcomeMessage();
-    console.error("加载历史消息失败：", error);
-    return;
-  }
-
-  const history = [...data].reverse();
-  chatMessages.length = 0;
-  messageList.innerHTML = "";
-
-  if (!history.length) {
-    renderWelcomeMessage();
-    return;
-  }
-
-  for (const message of history) {
-    addMessage(message.content, message.role);
-    chatMessages.push({
-      role: message.role,
-      content: message.content,
-    });
-  }
-}
-
 async function requestStreamingReply(assistantMessage) {
   const response = await callChatAPI(chatMessages);
-
   if (!response.ok || !response.body) {
-    const errorText = await response.text();
-    throw new Error(errorText || `请求失败：${response.status}`);
+    throw new Error((await response.text()) || `请求失败：${response.status}`);
   }
-
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-  let fullReply = "";
-  let streamDone = false;
+  let buffer = "", fullReply = "", streamDone = false;
 
   while (!streamDone) {
     const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
+    if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
-
     for (const line of lines) {
       const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith("data:")) {
-        continue;
-      }
-
+      if (!trimmed.startsWith("data:")) continue;
       const data = trimmed.slice(5).trim();
-      if (data === "[DONE]") {
-        streamDone = true;
-        break;
-      }
-
+      if (data === "[DONE]") { streamDone = true; break; }
       const delta = readDelta(JSON.parse(data));
       if (delta) {
         fullReply += delta;
@@ -206,63 +198,17 @@ async function requestStreamingReply(assistantMessage) {
       }
     }
   }
-
-  if (!fullReply) {
-    throw new Error("未收到模型回复");
-  }
-
+  if (!fullReply) throw new Error("未收到模型回复");
   const cleanReply = stripThinking(fullReply);
   chatMessages.push({ role: "assistant", content: cleanReply });
   await saveMessage("assistant", cleanReply);
 }
 
-chatForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+// ── Memory panel ──────────────────────────────────────────────────────────────
 
-  const text = messageInput.value.trim();
-  if (!text) {
-    return;
-  }
-
-  addMessage(text, "user");
-  chatMessages.push({ role: "user", content: text });
-  await saveMessage("user", text);
-  messageInput.value = "";
-
-  const assistantMessage = addMessage("", "assistant");
-  setLoading(true);
-
-  try {
-    await requestStreamingReply(assistantMessage);
-  } catch (error) {
-    assistantMessage.textContent = `回复失败：${error.message}`;
-    chatMessages.pop();
-  } finally {
-    setLoading(false);
-    messageInput.focus();
-  }
-});
-
-setLoading(true);
-loadHistory().finally(() => {
-  setLoading(false);
-  messageInput.focus();
-});
-
-clearButton.addEventListener("click", async () => {
-  if (!supabaseClient) return;
-  await supabaseClient.from("messages").delete().eq("conversation_id", conversationId);
-  chatMessages.length = 0;
-  renderWelcomeMessage();
-});
-
-// Memory panel
 async function loadMemories() {
   if (!supabaseClient) return;
-  const { data } = await supabaseClient
-    .from("memories")
-    .select("id, content, enabled")
-    .order("created_at", { ascending: true });
+  const { data } = await supabaseClient.from("memories").select("id, content, enabled").order("created_at", { ascending: true });
   memoryList.innerHTML = "";
   for (const mem of data || []) {
     const item = document.createElement("div");
@@ -277,6 +223,15 @@ async function loadMemories() {
   }
 }
 
+toggleMemoryButton.addEventListener("click", () => {
+  memoryOverlay.classList.remove("hidden");
+  loadMemories();
+});
+
+closeMemoryButton.addEventListener("click", () => memoryOverlay.classList.add("hidden"));
+
+memoryOverlay.addEventListener("click", (e) => { if (e.target === memoryOverlay) memoryOverlay.classList.add("hidden"); });
+
 addMemoryButton.addEventListener("click", async () => {
   const content = memoryInput.value.trim();
   if (!content || !supabaseClient) return;
@@ -285,8 +240,64 @@ addMemoryButton.addEventListener("click", async () => {
   loadMemories();
 });
 
-toggleMemoryButton.addEventListener("click", () => {
-  const hidden = memoryPanel.style.display === "none";
-  memoryPanel.style.display = hidden ? "block" : "none";
-  if (hidden) loadMemories();
+memoryInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addMemoryButton.click(); });
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("hidden"));
+
+newConvButton.addEventListener("click", () => {
+  const id = crypto.randomUUID();
+  const convs = loadConversations();
+  convs.unshift({ id, title: "新会话" });
+  saveConversations(convs);
+  localStorage.setItem("conversation_id", id);
+  chatMessages.length = 0;
+  renderWelcomeMessage();
+  renderConvList();
+});
+
+clearButton.addEventListener("click", async () => {
+  if (!supabaseClient) return;
+  const conversationId = getActiveConversationId();
+  await supabaseClient.from("messages").delete().eq("conversation_id", conversationId);
+  chatMessages.length = 0;
+  renderWelcomeMessage();
+});
+
+// ── Submit ────────────────────────────────────────────────────────────────────
+
+chatForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const text = messageInput.value.trim();
+  if (!text) return;
+
+  const isFirst = chatMessages.length === 0;
+  addMessage(text, "user");
+  chatMessages.push({ role: "user", content: text });
+  await saveMessage("user", text);
+  if (isFirst) updateConvTitle(getActiveConversationId(), text);
+  messageInput.value = "";
+
+  const assistantMessage = addMessage("", "assistant");
+  setLoading(true);
+  try {
+    await requestStreamingReply(assistantMessage);
+  } catch (error) {
+    assistantMessage.textContent = `回复失败：${error.message}`;
+    chatMessages.pop();
+  } finally {
+    setLoading(false);
+    messageInput.focus();
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+initConversations();
+renderConvList();
+setLoading(true);
+reloadHistory().finally(() => {
+  setLoading(false);
+  messageInput.focus();
 });
