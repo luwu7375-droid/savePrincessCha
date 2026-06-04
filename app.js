@@ -99,7 +99,7 @@ async function callChatAPI(messages) {
     body: JSON.stringify({
       model: modelName,
       messages: [
-        { role: "system", content: "不要输出 <think>、推理过程或内部思考。只输出最终回复。" },
+        { role: "system", content: "不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。" },
         ...messages,
       ],
       stream: true,
