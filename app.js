@@ -37,6 +37,7 @@ const themeButton       = document.getElementById("themeButton");
 const loginOverlay      = document.getElementById("loginOverlay");
 const loginEmail        = document.getElementById("loginEmail");
 const loginMsg          = document.getElementById("loginMsg");
+const loginPassword      = document.getElementById("loginPassword");
 const loginBtn          = document.getElementById("loginBtn");
 const logoutBtn         = document.getElementById("logoutBtn");
 const userEmailLabel    = document.getElementById("userEmailLabel");
@@ -757,21 +758,25 @@ chatForm.addEventListener("submit", async (event) => {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-async function sendMagicLink(email) {
+async function signIn() {
+  const email = loginEmail.value.trim();
+  const password = loginPassword.value;
+  if (!email) { loginMsg.textContent = "请输入邮箱地址。"; return; }
+  if (!password) { loginMsg.textContent = "请输入密码。"; return; }
   loginBtn.disabled = true;
   loginMsg.textContent = "";
-  const { error } = await supabaseClient.auth.signInWithOtp({ email });
-  loginMsg.textContent = error ? error.message : "链接已发送，请查收邮件。";
-  loginBtn.disabled = false;
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    loginMsg.textContent = error.message === "Invalid login credentials"
+      ? "邮箱或密码错误。"
+      : error.message;
+    loginBtn.disabled = false;
+  }
 }
 
-loginBtn.addEventListener("click", () => {
-  const email = loginEmail.value.trim();
-  if (!email) { loginMsg.textContent = "请输入邮箱地址。"; return; }
-  sendMagicLink(email);
-});
-
-loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") loginBtn.click(); });
+loginBtn.addEventListener("click", signIn);
+loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") loginPassword.focus(); });
+loginPassword.addEventListener("keydown", (e) => { if (e.key === "Enter") signIn(); });
 
 logoutBtn.addEventListener("click", async () => {
   await supabaseClient.auth.signOut();
