@@ -501,6 +501,119 @@ addMemoryButton.addEventListener("click", async () => {
 
 memoryInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addMemoryButton.click(); });
 
+// ── Distill ───────────────────────────────────────────────────────────────────
+
+const distillButton = document.getElementById("distillButton");
+
+distillButton.addEventListener("click", async () => {
+  if (!chatMessages.length) return;
+  if (!getMemoryToken()) {
+    showDialog({
+      title: "记忆管理口令",
+      input: "",
+      confirmLabel: "确定",
+      onConfirm: (val) => { if (val) sessionStorage.setItem("memory_admin_token", val); distillButton.click(); },
+    });
+    return;
+  }
+  distillButton.disabled = true;
+  distillButton.textContent = "沉淀中…";
+  let result;
+  try {
+    const res = await memoryFetch("?type=distill", {
+      method: "POST",
+      body: JSON.stringify({ messages: chatMessages }),
+    });
+    result = await res.json();
+  } catch (e) {
+    distillButton.disabled = false;
+    distillButton.textContent = "沉淀";
+    return;
+  }
+  distillButton.disabled = false;
+  distillButton.textContent = "沉淀";
+
+  const candidates = result.candidates || [];
+  if (!candidates.length) return;
+
+  showCandidatesDialog(candidates);
+});
+
+function showCandidatesDialog(candidates) {
+  const overlay = document.createElement("div");
+  overlay.className = "dialog-overlay";
+
+  const dialog = document.createElement("div");
+  dialog.className = "dialog";
+  dialog.style.width = "400px";
+
+  const h3 = document.createElement("h3");
+  h3.textContent = "候选记忆";
+  dialog.appendChild(h3);
+
+  const p = document.createElement("p");
+  p.textContent = "选择要存入记忆桶的条目：";
+  dialog.appendChild(p);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:8px;margin-bottom:16px";
+
+  for (const c of candidates) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:flex-start;gap:10px;padding:10px;background:var(--surface);border-radius:10px;";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.style.marginTop = "3px";
+
+    const text = document.createElement("div");
+    const titleEl = document.createElement("div");
+    titleEl.style.cssText = "font-weight:600;font-size:14px";
+    titleEl.textContent = c.title;
+    const summaryEl = document.createElement("div");
+    summaryEl.style.cssText = "font-size:13px;color:var(--text-muted);margin-top:2px";
+    summaryEl.textContent = c.summary;
+    text.appendChild(titleEl);
+    text.appendChild(summaryEl);
+
+    row.appendChild(checkbox);
+    row.appendChild(text);
+    row._candidate = c;
+    row._checkbox = checkbox;
+    list.appendChild(row);
+  }
+  dialog.appendChild(list);
+
+  const actions = document.createElement("div");
+  actions.className = "dialog-actions";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "btn-cancel";
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", () => overlay.remove());
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.className = "btn-confirm";
+  confirmBtn.textContent = "存入记忆桶";
+  confirmBtn.addEventListener("click", async () => {
+    overlay.remove();
+    const selected = [...list.children].filter(r => r._checkbox.checked).map(r => r._candidate);
+    for (const c of selected) {
+      await memoryFetch("?type=buckets", {
+        method: "POST",
+        body: JSON.stringify({ title: c.title, summary: c.summary, domain: c.domain || "general" }),
+      });
+    }
+  });
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(confirmBtn);
+  dialog.appendChild(actions);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+}
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("hidden"));

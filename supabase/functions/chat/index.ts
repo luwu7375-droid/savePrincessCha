@@ -26,16 +26,30 @@ function jsonResponse(body: unknown, status = 200) {
 async function fetchEnabledMemories(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
   const res = await fetch(
     `${supabaseUrl}/rest/v1/memories?enabled=eq.true&select=content&order=created_at.asc`,
-    {
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-      },
-    }
+    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } }
   );
   if (!res.ok) return [];
   const rows = await res.json() as { content: string }[];
   return rows.map((r) => r.content);
+}
+
+async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary&order=importance.desc,last_accessed_at.desc.nullslast&limit=8`,
+    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } }
+  );
+  if (!res.ok) return [];
+  const rows = await res.json() as { id: string; title: string; summary: string }[];
+  // fire-and-forget update last_accessed_at
+  if (rows.length > 0) {
+    const ids = rows.map(r => r.id).join(",");
+    fetch(`${supabaseUrl}/rest/v1/memory_buckets?id=in.(${ids})`, {
+      method: "PATCH",
+      headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ last_accessed_at: new Date().toISOString() }),
+    }).catch(() => {});
+  }
+  return rows.map((r) => `[${r.title}] ${r.summary}`);
 }
 
 Deno.serve(async (request) => {
@@ -91,9 +105,15 @@ Deno.serve(async (request) => {
   let systemContent = "不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。";
 
   if (supabaseUrl && serviceRoleKey) {
-    const memories = await fetchEnabledMemories(supabaseUrl, serviceRoleKey);
+    const [memories, buckets] = await Promise.all([
+      fetchEnabledMemories(supabaseUrl, serviceRoleKey),
+      fetchMemoryBuckets(supabaseUrl, serviceRoleKey),
+    ]);
     if (memories.length > 0) {
       systemContent += "\n\n以下是长期记忆，请优先遵守：\n" + memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
+    }
+    if (buckets.length > 0) {
+      systemContent += "\n\n以下是相关事件记忆（供参考，不必逐条遵守）：\n" + buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
     }
   }
 
