@@ -1,4 +1,4 @@
-console.log("build cloudflare-0017");
+console.log("build cloudflare-0018");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -750,6 +750,7 @@ window.addEventListener("resize", () => {
 let messageActionMenu = null;
 let longPressTimer = null;
 let longPressStart = null;
+let longPressOpened = false;
 
 function closeMessageActionMenu() {
   if (messageActionMenu) {
@@ -805,7 +806,22 @@ function showMessageActionMenu(row, x, y) {
   placeMessageActionMenu(menu, x, y);
 }
 
-function clearLongPressTimer() {
+function startLongPress(row, x, y) {
+  cancelLongPress();
+  longPressOpened = false;
+  longPressStart = { x, y };
+  console.log("long press start");
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    if (longPressOpened) return;
+    longPressOpened = true;
+    console.log("long press menu open");
+    if (navigator.vibrate) navigator.vibrate(8);
+    showMessageActionMenu(row, x, y);
+  }, 450);
+}
+
+function cancelLongPress() {
   if (longPressTimer) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
@@ -820,7 +836,7 @@ messageList.addEventListener("contextmenu", (e) => {
 
 messageList.addEventListener("scroll", () => {
   closeMessageActionMenu();
-  clearLongPressTimer();
+  cancelLongPress();
 });
 
 messageList.addEventListener("pointerdown", (e) => {
@@ -831,25 +847,44 @@ messageList.addEventListener("pointerdown", (e) => {
   const row = bubble?.closest(".msg-row");
   if (!bubble || !row || row.id === "typingIndicatorRow") return;
 
-  clearLongPressTimer();
-  longPressStart = { x: e.clientX, y: e.clientY };
-  longPressTimer = setTimeout(() => {
-    longPressTimer = null;
-    if (navigator.vibrate) navigator.vibrate(8);
-    showMessageActionMenu(row, e.clientX, e.clientY);
-  }, 450);
+  startLongPress(row, e.clientX, e.clientY);
 });
 
 messageList.addEventListener("pointermove", (e) => {
   if (!longPressStart) return;
   const dx = Math.abs(e.clientX - longPressStart.x);
   const dy = Math.abs(e.clientY - longPressStart.y);
-  if (dx > 10 || dy > 10) clearLongPressTimer();
+  if (dx > 10 || dy > 10) cancelLongPress();
 });
 
 for (const eventName of ["pointerup", "pointercancel", "pointerleave"]) {
-  messageList.addEventListener(eventName, clearLongPressTimer);
+  messageList.addEventListener(eventName, cancelLongPress);
 }
+
+messageList.addEventListener("touchstart", (e) => {
+  if (!isMobileMessageActions()) return;
+  if (!(e.target instanceof Element)) return;
+  if (e.target.closest(".msg-actions") || e.target.closest(".message-action-menu")) return;
+  const touch = e.touches[0];
+  if (!touch) return;
+  const bubble = e.target.closest(".message");
+  const row = bubble?.closest(".msg-row");
+  if (!bubble || !row || row.id === "typingIndicatorRow") return;
+
+  startLongPress(row, touch.clientX, touch.clientY);
+}, { passive: true });
+
+messageList.addEventListener("touchmove", (e) => {
+  if (!longPressStart) return;
+  const touch = e.touches[0];
+  if (!touch) return;
+  const dx = Math.abs(touch.clientX - longPressStart.x);
+  const dy = Math.abs(touch.clientY - longPressStart.y);
+  if (dx > 10 || dy > 10) cancelLongPress();
+}, { passive: true });
+
+messageList.addEventListener("touchend", cancelLongPress, { passive: true });
+messageList.addEventListener("touchcancel", cancelLongPress, { passive: true });
 
 document.addEventListener("pointerdown", (e) => {
   const target = e.target;
