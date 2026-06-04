@@ -640,7 +640,7 @@ function showCandidatesDialog(candidates) {
 
   const dialog = document.createElement("div");
   dialog.className = "dialog";
-  dialog.style.width = "400px";
+  dialog.style.cssText = "width:400px;max-width:90vw";
 
   const h3 = document.createElement("h3");
   h3.textContent = "可沉淀的记忆";
@@ -787,6 +787,7 @@ logoutBtn.addEventListener("click", async () => {
   await supabaseClient.auth.signOut();
   conversationsCache = [];
   chatMessages.length = 0;
+  messageList.innerHTML = "";
   userEmailLabel.textContent = "";
   logoutBtn.classList.add("hidden");
   loginOverlay.classList.remove("hidden");
