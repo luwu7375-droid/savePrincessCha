@@ -1,4 +1,4 @@
-console.log("build cloudflare-0018");
+console.log("build cloudflare-0019");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -493,6 +493,7 @@ async function reloadHistory() {
     addMessage(m.content, m.role, m.created_at, {}, m.id);
     chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id });
   }
+  refreshMessageActions();
 }
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
@@ -886,6 +887,21 @@ messageList.addEventListener("touchmove", (e) => {
 messageList.addEventListener("touchend", cancelLongPress, { passive: true });
 messageList.addEventListener("touchcancel", cancelLongPress, { passive: true });
 
+messageList.addEventListener("click", (e) => {
+  if (!isMobileMessageActions()) return;
+  if (!(e.target instanceof Element)) return;
+  if (e.target.closest(".message-action-menu")) return;
+  const bubble = e.target.closest(".message");
+  const row = bubble?.closest(".msg-row");
+  if (!bubble || !row || row.id === "typingIndicatorRow") return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  cancelLongPress();
+  const rect = bubble.getBoundingClientRect();
+  showMessageActionMenu(row, rect.left + rect.width / 2, rect.top);
+});
+
 document.addEventListener("pointerdown", (e) => {
   const target = e.target;
   if (!(target instanceof Element)) return;
@@ -1259,6 +1275,7 @@ async function handleSubmit() {
   const msgId = await saveMessage("user", text);
   addMessage(text, "user", now, {}, msgId);
   chatMessages.push({ role: "user", content: text, created_at: now, id: msgId });
+  refreshMessageActions();
   if (isFirst) updateConvTitle(getActiveConversationId(), text);
 
   if (autoReplyEnabled) {
