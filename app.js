@@ -1,4 +1,4 @@
-console.log("build cloudflare-0012");
+console.log("build cloudflare-0013");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -628,7 +628,13 @@ function refreshMessageActions() {
 
 function copyMessage(row) {
   const text = row.querySelector(".message")?.textContent || "";
-  navigator.clipboard.writeText(text).catch(() => {});
+  const btn = row.querySelector(".msg-actions button");
+  navigator.clipboard.writeText(text).then(() => {
+    if (!btn) return;
+    const prev = btn.textContent;
+    btn.textContent = "已复制";
+    setTimeout(() => { btn.textContent = prev; }, 1200);
+  }).catch(() => {});
 }
 
 async function regenerateMessage(row) {

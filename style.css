@@ -363,25 +363,34 @@ body {
 
 /* ── Message actions ── */
 .msg-actions {
-  display: none;
-  gap: 4px;
-  margin-top: 4px;
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
   padding-left: 36px;
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
 }
 .msg-row.user .msg-actions { padding-left: 0; justify-content: flex-end; }
-.msg-row:hover .msg-actions { display: flex; }
+.msg-row:hover .msg-actions {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
 .msg-actions button {
   background: none;
-  border: 1px solid var(--border);
+  border: none;
   color: var(--text-muted);
-  border-radius: 6px;
-  padding: 2px 8px;
+  padding: 2px 6px;
   font-size: 11px;
   font-family: inherit;
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
+  border-radius: 4px;
+  transition: color 0.12s, background 0.12s;
+  opacity: 0.6;
 }
-.msg-actions button:hover { color: var(--text); border-color: var(--text-muted); }
+.msg-actions button:hover { color: var(--text); background: var(--surface); opacity: 1; }
 
 /* ── Time separator ── */
 .time-separator {
