@@ -593,7 +593,7 @@ async function requestStreamingReply(replyMode = "auto") {
   const replyId = await saveMessage("assistant", cleanReply);
   chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyId });
   lastMessageTime = new Date(replyTime).getTime();
-  if (assistantEl) assistantEl.closest(".msg-row") && (assistantEl.closest(".msg-row").dataset.msgId = replyId || "");
+  if (assistantEl && replyId) { const savedRow = assistantEl.closest(".msg-row"); if (savedRow) savedRow.dataset.msgId = replyId; }
   refreshMessageActions();
 }
 
@@ -727,20 +727,24 @@ async function editUserMessage(row) {
   if (idx === -1) return;
   closeMessageActionMenu();
   const oldContent = chatMessages[idx].content;
-  const newContent = prompt("编辑消息：", oldContent);
-  if (!newContent || newContent === oldContent) return;
-  chatMessages[idx].content = newContent;
-  row.querySelector(".message").textContent = newContent;
-  if (msgId) await supabaseClient.from("messages").update({ content: newContent }).eq("id", msgId);
-
-  // Remove all messages after this one
-  const afterIdx = idx + 1;
-  const toRemove = chatMessages.slice(afterIdx);
-  chatMessages.splice(afterIdx);
-  for (const m of toRemove) {
-    if (m.id) await supabaseClient.from("messages").delete().eq("id", m.id);
-  }
-  await reloadHistory();
+  showDialog({
+    title: "编辑消息",
+    input: oldContent,
+    confirmLabel: "确定",
+    onConfirm: async (newContent) => {
+      if (!newContent || newContent === oldContent) return;
+      chatMessages[idx].content = newContent;
+      row.querySelector(".message").textContent = newContent;
+      if (msgId) await supabaseClient.from("messages").update({ content: newContent }).eq("id", msgId);
+      const afterIdx = idx + 1;
+      const toRemove = chatMessages.slice(afterIdx);
+      chatMessages.splice(afterIdx);
+      for (const m of toRemove) {
+        if (m.id) await supabaseClient.from("messages").delete().eq("id", m.id);
+      }
+      await reloadHistory();
+    }
+  });
 }
 
 // 改为鼠标进入 messageList 整体时刷新一次：
