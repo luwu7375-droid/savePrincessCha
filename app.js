@@ -1,4 +1,4 @@
-console.log("build cloudflare-0010");
+console.log("build cloudflare-0011");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -319,60 +319,76 @@ function showDialog({ title, body, input, confirmLabel, confirmClass, onConfirm 
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
+const APP_TIME_ZONE = "Asia/Shanghai";
+
+function parseDbTime(value) {
+  if (!value) return null;
+  const s = String(value);
+  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
+  return new Date(s + "Z");
+}
+
+function getZonedParts(date) {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(date);
+  return Object.fromEntries(parts.map(p => [p.type, p.value]));
+}
+
+function zonedDayKey(date) {
+  const p = getZonedParts(date);
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
 const chatMessages = [];
 let lastMessageTime = null;
 
 function formatMsgTime(iso) {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now - d;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "刚刚";
-  if (diffMin < 60) return `${diffMin}分钟前`;
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
-  const yestKey = (() => { const y = new Date(now - 86400000); return `${y.getFullYear()}-${y.getMonth()}-${y.getDate()}`; })();
-  const dKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  if (dKey === todayKey) return `今天 ${hh}:${mm}`;
-  if (dKey === yestKey) return `昨天 ${hh}:${mm}`;
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  if (d.getFullYear() === now.getFullYear()) return `${mo}-${dd} ${hh}:${mm}`;
-  return `${d.getFullYear()}-${mo}-${dd} ${hh}:${mm}`;
-}
-
-function formatConvTime(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
+  const d = parseDbTime(iso);
+  if (!d) return "";
   const now = new Date();
   const diffMin = Math.floor((now - d) / 60000);
   if (diffMin < 1) return "刚刚";
   if (diffMin < 60) return `${diffMin}分钟前`;
-  const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
-  const yestKey = (() => { const y = new Date(now - 86400000); return `${y.getFullYear()}-${y.getMonth()}-${y.getDate()}`; })();
-  const dKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  if (dKey === todayKey) return `今天 ${hh}:${mm}`;
+  const p = getZonedParts(d);
+  const todayKey = zonedDayKey(now);
+  const yestKey = zonedDayKey(new Date(now - 86400000));
+  const dKey = zonedDayKey(d);
+  if (dKey === todayKey) return `今天 ${p.hour}:${p.minute}`;
+  if (dKey === yestKey) return `昨天 ${p.hour}:${p.minute}`;
+  const nowP = getZonedParts(now);
+  if (p.year === nowP.year) return `${p.month}-${p.day} ${p.hour}:${p.minute}`;
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+function formatConvTime(iso) {
+  const d = parseDbTime(iso);
+  if (!d) return "";
+  const now = new Date();
+  const diffMin = Math.floor((now - d) / 60000);
+  if (diffMin < 1) return "刚刚";
+  if (diffMin < 60) return `${diffMin}分钟前`;
+  const p = getZonedParts(d);
+  const todayKey = zonedDayKey(now);
+  const yestKey = zonedDayKey(new Date(now - 86400000));
+  const dKey = zonedDayKey(d);
+  if (dKey === todayKey) return `今天 ${p.hour}:${p.minute}`;
   if (dKey === yestKey) return "昨天";
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  if (d.getFullYear() === now.getFullYear()) return `${mo}-${dd}`;
-  return `${d.getFullYear()}-${mo}-${dd}`;
+  const nowP = getZonedParts(now);
+  if (p.year === nowP.year) return `${p.month}-${p.day}`;
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 function maybeAddTimeSeparator(createdAt) {
-  const t = new Date(createdAt).getTime();
+  const d = parseDbTime(createdAt);
+  if (!d) return;
+  const t = d.getTime();
   const isFirst = lastMessageTime === null;
   const gap = lastMessageTime !== null ? t - lastMessageTime : Infinity;
-  const crossDay = lastMessageTime !== null && (() => {
-    const prev = new Date(lastMessageTime);
-    const cur = new Date(t);
-    return prev.getFullYear() !== cur.getFullYear() ||
-      prev.getMonth() !== cur.getMonth() ||
-      prev.getDate() !== cur.getDate();
-  })();
+  const crossDay = lastMessageTime !== null &&
+    zonedDayKey(new Date(lastMessageTime)) !== zonedDayKey(d);
   if (isFirst || crossDay || gap > 5 * 60 * 1000) {
     lastMessageTime = t;
     const div = document.createElement("div");
@@ -489,7 +505,7 @@ async function callChatAPI(messages, replyMode = "auto") {
     body: JSON.stringify({
       model: modelName,
       messages: [
-        { role: "system", content: "不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。" },
+        { role: "system", content: `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n当前应用时间：${(() => { const p = getZonedParts(new Date()); return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`; })()}\n当前应用时区：UTC+8 / Asia/Shanghai\n涉及今天、昨天、现在几点、刚才、上次对话时，一律以当前应用时间为准。` },
         ...messages.map(({ role, content }) => ({ role, content })),
       ],
       stream: true,
