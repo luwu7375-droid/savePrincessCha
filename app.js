@@ -1,4 +1,4 @@
-console.log("build cloudflare-0011");
+console.log("build cloudflare-0012");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -400,25 +400,23 @@ function maybeAddTimeSeparator(createdAt) {
   }
 }
 
-function addMessage(text, role, createdAt = new Date().toISOString(), options = {}) {
+function addMessage(text, role, createdAt = new Date().toISOString(), options = {}, msgId = null) {
   if (!options.skipTimeSeparator) maybeAddTimeSeparator(createdAt);
   const el = document.createElement("div");
   el.className = `message ${role}`;
   el.textContent = text;
+  const row = document.createElement("div");
+  row.className = `msg-row ${role}`;
+  if (msgId) row.dataset.msgId = msgId;
   if (role === "assistant") {
-    const row = document.createElement("div");
-    row.className = "msg-row assistant";
     const avatar = document.createElement("div");
     avatar.className = "avatar";
     row.appendChild(avatar);
     row.appendChild(el);
-    messageList.appendChild(row);
   } else {
-    const row = document.createElement("div");
-    row.className = "msg-row user";
     row.appendChild(el);
-    messageList.appendChild(row);
   }
+  messageList.appendChild(row);
   messageList.scrollTop = messageList.scrollHeight;
   return el;
 }
@@ -458,14 +456,17 @@ function showLegacyDataNotice() {
 // ── DB ────────────────────────────────────────────────────────────────────────
 
 async function saveMessage(role, content) {
-  if (!supabaseClient) return;
+  if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
   const { data: { user } } = await supabaseClient.auth.getUser();
-  const { error } = await supabaseClient
+  const { data, error } = await supabaseClient
     .from("messages")
-    .insert({ role, content, conversation_id: conversationId, user_id: user.id });
-  if (error) { console.error("保存消息失败：", error); return; }
+    .insert({ role, content, conversation_id: conversationId, user_id: user.id })
+    .select("id")
+    .single();
+  if (error) { console.error("保存消息失败：", error); return null; }
   supabaseClient.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId).then(() => {});
+  return data?.id || null;
 }
 
 async function reloadHistory() {
@@ -474,7 +475,7 @@ async function reloadHistory() {
   if (!conversationId) { renderWelcomeMessage(); return; }
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("role, content, created_at")
+    .select("id, role, content, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -487,8 +488,8 @@ async function reloadHistory() {
   lastMessageTime = null;
   if (!history.length) { renderWelcomeMessage(); return; }
   for (const m of history) {
-    addMessage(m.content, m.role, m.created_at);
-    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at });
+    addMessage(m.content, m.role, m.created_at, {}, m.id);
+    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id });
   }
 }
 
@@ -583,10 +584,85 @@ async function requestStreamingReply(replyMode = "auto") {
     return;
   }
   const replyTime = new Date().toISOString();
-  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime });
+  const replyId = await saveMessage("assistant", cleanReply);
+  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyId });
   lastMessageTime = new Date(replyTime).getTime();
-  await saveMessage("assistant", cleanReply);
+  if (assistantEl) assistantEl.closest(".msg-row") && (assistantEl.closest(".msg-row").dataset.msgId = replyId || "");
+  refreshMessageActions();
 }
+
+// ── Message Actions ───────────────────────────────────────────────────────────
+
+function refreshMessageActions() {
+  document.querySelectorAll(".msg-actions").forEach(el => el.remove());
+  const rows = Array.from(messageList.querySelectorAll(".msg-row"));
+  const lastAssistantRow = rows.reverse().find(r => r.classList.contains("assistant"));
+  const lastUserRow = rows.find(r => r.classList.contains("user"));
+
+  rows.reverse().forEach(row => {
+    if (row.classList.contains("assistant")) {
+      const actions = document.createElement("div");
+      actions.className = "msg-actions";
+      const copyBtn = document.createElement("button");
+      copyBtn.textContent = "复制";
+      copyBtn.addEventListener("click", () => copyMessage(row));
+      actions.appendChild(copyBtn);
+      if (row === lastAssistantRow) {
+        const regenBtn = document.createElement("button");
+        regenBtn.textContent = "重新生成";
+        regenBtn.addEventListener("click", () => regenerateMessage(row));
+        actions.appendChild(regenBtn);
+      }
+      row.appendChild(actions);
+    } else if (row === lastUserRow && row.dataset.msgId) {
+      const actions = document.createElement("div");
+      actions.className = "msg-actions";
+      const editBtn = document.createElement("button");
+      editBtn.textContent = "编辑";
+      editBtn.addEventListener("click", () => editUserMessage(row));
+      actions.appendChild(editBtn);
+      row.appendChild(actions);
+    }
+  });
+}
+
+function copyMessage(row) {
+  const text = row.querySelector(".message")?.textContent || "";
+  navigator.clipboard.writeText(text).catch(() => {});
+}
+
+async function regenerateMessage(row) {
+  const msgId = row.dataset.msgId;
+  const idx = chatMessages.findIndex(m => m.id === msgId);
+  if (idx === -1) return;
+  chatMessages.splice(idx, 1);
+  row.remove();
+  if (msgId) await supabaseClient.from("messages").delete().eq("id", msgId);
+  triggerReply("forced");
+}
+
+async function editUserMessage(row) {
+  const msgId = row.dataset.msgId;
+  const idx = chatMessages.findIndex(m => m.id === msgId);
+  if (idx === -1) return;
+  const oldContent = chatMessages[idx].content;
+  const newContent = prompt("编辑消息：", oldContent);
+  if (!newContent || newContent === oldContent) return;
+  chatMessages[idx].content = newContent;
+  row.querySelector(".message").textContent = newContent;
+  if (msgId) await supabaseClient.from("messages").update({ content: newContent }).eq("id", msgId);
+
+  // Remove all messages after this one
+  const afterIdx = idx + 1;
+  const toRemove = chatMessages.slice(afterIdx);
+  chatMessages.splice(afterIdx);
+  for (const m of toRemove) {
+    if (m.id) await supabaseClient.from("messages").delete().eq("id", m.id);
+  }
+  await reloadHistory();
+}
+
+messageList.addEventListener("mouseenter", refreshMessageActions, true);
 
 // ── Memory panel ──────────────────────────────────────────────────────────────
 
@@ -875,9 +951,9 @@ async function handleSubmit() {
   messageInput.value = "";
   const isFirst = chatMessages.length === 0;
   const now = new Date().toISOString();
-  addMessage(text, "user", now);
-  chatMessages.push({ role: "user", content: text, created_at: now });
-  saveMessage("user", text);
+  const msgId = await saveMessage("user", text);
+  addMessage(text, "user", now, {}, msgId);
+  chatMessages.push({ role: "user", content: text, created_at: now, id: msgId });
   if (isFirst) updateConvTitle(getActiveConversationId(), text);
 
   if (autoReplyEnabled) {

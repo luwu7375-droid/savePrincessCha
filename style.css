@@ -361,6 +361,28 @@ body {
   border: 1px solid var(--border);
 }
 
+/* ── Message actions ── */
+.msg-actions {
+  display: none;
+  gap: 4px;
+  margin-top: 4px;
+  padding-left: 36px;
+}
+.msg-row.user .msg-actions { padding-left: 0; justify-content: flex-end; }
+.msg-row:hover .msg-actions { display: flex; }
+.msg-actions button {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.msg-actions button:hover { color: var(--text); border-color: var(--text-muted); }
+
 /* ── Time separator ── */
 .time-separator {
   text-align: center;
