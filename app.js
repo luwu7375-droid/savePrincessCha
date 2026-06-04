@@ -984,6 +984,70 @@ async function memoryFetch(path, options = {}) {
   });
 }
 
+const MEMORY_DOMAINS = ["general", "persona", "work", "writing", "life", "relation"];
+
+function showMemoryEditDialog(mem) {
+  const overlay = document.createElement("div");
+  overlay.className = "dialog-overlay";
+
+  const dialog = document.createElement("div");
+  dialog.className = "dialog memory-edit-dialog";
+
+  const h3 = document.createElement("h3");
+  h3.textContent = "编辑记忆";
+  dialog.appendChild(h3);
+
+  const input = document.createElement("textarea");
+  input.value = mem.content || "";
+  dialog.appendChild(input);
+
+  const select = document.createElement("select");
+  for (const domain of MEMORY_DOMAINS) {
+    const option = document.createElement("option");
+    option.value = domain;
+    option.textContent = domain;
+    select.appendChild(option);
+  }
+  select.value = MEMORY_DOMAINS.includes(mem.domain) ? mem.domain : "general";
+  dialog.appendChild(select);
+
+  const actions = document.createElement("div");
+  actions.className = "dialog-actions";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "btn-cancel";
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", () => overlay.remove());
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn-confirm";
+  saveBtn.textContent = "保存";
+  saveBtn.addEventListener("click", async () => {
+    const content = input.value.trim();
+    if (!content) {
+      input.focus();
+      return;
+    }
+    saveBtn.disabled = true;
+    const res = await memoryFetch(`?id=${encodeURIComponent(mem.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content, domain: select.value }),
+    });
+    saveBtn.disabled = false;
+    if (!res.ok) return;
+    overlay.remove();
+    loadMemories();
+  });
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  dialog.appendChild(actions);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  input.focus();
+  input.select();
+}
+
 async function loadMemories() {
   let res;
   try { res = await memoryFetch(""); } catch { return; }
@@ -1008,15 +1072,39 @@ async function loadMemories() {
     btn.dataset.enabled = mem.enabled;
     btn.addEventListener("click", async (e) => {
       const b = e.currentTarget;
-      await memoryFetch(`?id=${b.dataset.id}`, {
+      await memoryFetch(`?id=${encodeURIComponent(b.dataset.id)}`, {
         method: "PATCH",
         body: JSON.stringify({ enabled: b.dataset.enabled !== "true" }),
       });
       loadMemories();
     });
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "编辑";
+    editBtn.addEventListener("click", () => showMemoryEditDialog(mem));
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "danger";
+    deleteBtn.textContent = "删除";
+    deleteBtn.addEventListener("click", () => {
+      showDialog({
+        title: "删除记忆",
+        body: "确定删除这条记忆？",
+        confirmLabel: "删除",
+        confirmClass: "btn-danger",
+        onConfirm: async () => {
+          const res = await memoryFetch(`?id=${encodeURIComponent(mem.id)}`, { method: "DELETE" });
+          if (res.ok) loadMemories();
+        },
+      });
+    });
+    const actions = document.createElement("div");
+    actions.className = "memory-actions";
+    actions.appendChild(btn);
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
     item.appendChild(domain);
     item.appendChild(span);
-    item.appendChild(btn);
+    item.appendChild(actions);
     memoryList.appendChild(item);
   }
 }

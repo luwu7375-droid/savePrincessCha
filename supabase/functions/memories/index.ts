@@ -139,11 +139,39 @@ Deno.serve(async (req) => {
 
   if (req.method === "PATCH") {
     if (!id) return json({ error: "id required" }, 400);
-    const { enabled } = await req.json();
+    const body = await req.json() as { enabled?: unknown; content?: unknown; domain?: unknown };
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+    if (typeof body.enabled === "boolean") {
+      patch.enabled = body.enabled;
+    }
+
+    if (body.content !== undefined) {
+      if (typeof body.content !== "string") return json({ error: "content must be a string" }, 400);
+      const content = body.content.trim();
+      if (!content) return json({ error: "content required" }, 400);
+      patch.content = content;
+    }
+
+    if (body.domain !== undefined) {
+      patch.domain = normalizeMemoryDomain(body.domain);
+    }
+
+    if (Object.keys(patch).length === 1) return json({ error: "no fields to update" }, 400);
+
     const res = await fetch(`${supabaseUrl}/rest/v1/memories?id=eq.${id}`, {
       method: "PATCH",
       headers: { ...dbHeaders, Prefer: "return=minimal" },
-      body: JSON.stringify({ enabled, updated_at: new Date().toISOString() }),
+      body: JSON.stringify(patch),
+    });
+    return new Response(null, { status: res.ok ? 204 : 500, headers: corsHeaders });
+  }
+
+  if (req.method === "DELETE") {
+    if (!id) return json({ error: "id required" }, 400);
+    const res = await fetch(`${supabaseUrl}/rest/v1/memories?id=eq.${id}`, {
+      method: "DELETE",
+      headers: { ...dbHeaders, Prefer: "return=minimal" },
     });
     return new Response(null, { status: res.ok ? 204 : 500, headers: corsHeaders });
   }
