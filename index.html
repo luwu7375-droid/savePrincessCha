@@ -7,6 +7,19 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- 登录 overlay -->
+  <div id="loginOverlay" class="overlay hidden">
+    <div class="modal" style="max-width:360px;max-height:none">
+      <div class="modal-header"><span>救公主</span></div>
+      <div style="padding:0 18px 18px">
+        <p style="font-size:14px;color:var(--text-muted);margin:0 0 16px">输入你的邮箱，我们发一条登录链接给你。</p>
+        <input id="loginEmail" type="email" placeholder="邮箱地址">
+        <div id="loginMsg" style="font-size:13px;color:var(--text-muted);min-height:20px;margin-bottom:12px"></div>
+        <button id="loginBtn" type="button">发送登录链接</button>
+      </div>
+    </div>
+  </div>
+
   <div class="layout">
     <!-- 会话侧边栏 -->
     <aside class="sidebar" id="sidebar">
@@ -23,10 +36,12 @@
         <button id="sidebarToggle" type="button" class="icon-btn" title="会话列表">☰</button>
         <h1>救公主</h1>
         <div class="top-actions">
+          <span id="userEmailLabel" class="user-email-label"></span>
           <button id="themeButton" type="button" class="icon-btn">☀️</button>
           <button id="distillButton" type="button" class="icon-btn">沉淀</button>
           <button id="toggleMemoryButton" type="button" class="icon-btn">记忆匣</button>
           <button id="clearButton" type="button" class="icon-btn">清理本段</button>
+          <button id="logoutBtn" type="button" class="icon-btn hidden">退出</button>
         </div>
       </header>
 

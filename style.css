@@ -561,3 +561,48 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+.user-email-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* ── Login overlay ── */
+#loginOverlay .modal input[type="email"] {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+  margin-bottom: 10px;
+}
+#loginOverlay .modal input[type="email"]::placeholder { color: var(--text-muted); }
+#loginOverlay .modal input[type="email"]:focus { border-color: oklch(52% 0.16 248 / 0.6); }
+
+#loginBtn {
+  display: block;
+  width: 100%;
+  background: var(--bubble-me);
+  border: none;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+#loginBtn:hover { background: var(--send-hover); }
+#loginBtn:disabled { opacity: 0.5; cursor: default; }

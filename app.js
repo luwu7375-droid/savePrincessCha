@@ -1,24 +1,47 @@
-const chatForm = document.getElementById("chatForm");
-const messageInput = document.getElementById("messageInput");
-const messageList = document.getElementById("messageList");
-const clearButton = document.getElementById("clearButton");
-const toggleMemoryButton = document.getElementById("toggleMemoryButton");
-const closeMemoryButton = document.getElementById("closeMemoryButton");
-const memoryOverlay = document.getElementById("memoryOverlay");
-const memoryList = document.getElementById("memoryList");
-const memoryInput = document.getElementById("memoryInput");
-const addMemoryButton = document.getElementById("addMemoryButton");
-const newConvButton = document.getElementById("newConvButton");
-const convList = document.getElementById("convList");
-const sidebar = document.getElementById("sidebar");
-const sidebarToggle = document.getElementById("sidebarToggle");
+// ── Config / Supabase ─────────────────────────────────────────────────────────
 
 const appConfig = window.SAVE_PRINCESS_CONFIG || {};
-const chatMessages = [];
+
+function getConfigValue(key, placeholder) {
+  const value = appConfig[key];
+  return (!value || value === placeholder) ? "" : value;
+}
+
+function createSupabaseClient() {
+  const url = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+  const key = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+  if (!url || !key || !window.supabase) return null;
+  return window.supabase.createClient(url, key);
+}
+
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎回家，kk。";
 
-const themeButton = document.getElementById("themeButton");
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+
+const chatForm          = document.getElementById("chatForm");
+const messageInput      = document.getElementById("messageInput");
+const messageList       = document.getElementById("messageList");
+const clearButton       = document.getElementById("clearButton");
+const toggleMemoryButton = document.getElementById("toggleMemoryButton");
+const closeMemoryButton = document.getElementById("closeMemoryButton");
+const memoryOverlay     = document.getElementById("memoryOverlay");
+const memoryList        = document.getElementById("memoryList");
+const memoryInput       = document.getElementById("memoryInput");
+const addMemoryButton   = document.getElementById("addMemoryButton");
+const newConvButton     = document.getElementById("newConvButton");
+const convList          = document.getElementById("convList");
+const sidebar           = document.getElementById("sidebar");
+const sidebarToggle     = document.getElementById("sidebarToggle");
+const themeButton       = document.getElementById("themeButton");
+const loginOverlay      = document.getElementById("loginOverlay");
+const loginEmail        = document.getElementById("loginEmail");
+const loginMsg          = document.getElementById("loginMsg");
+const loginBtn          = document.getElementById("loginBtn");
+const logoutBtn         = document.getElementById("logoutBtn");
+const userEmailLabel    = document.getElementById("userEmailLabel");
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
 
 const savedTheme = localStorage.getItem("theme") || "dark";
 if (savedTheme === "light") document.documentElement.setAttribute("data-theme", "light");
@@ -37,47 +60,79 @@ themeButton.addEventListener("click", () => {
   }
 });
 
-// ── Conversations (localStorage) ─────────────────────────────────────────────
+// ── Conversations (Supabase) ──────────────────────────────────────────────────
 
-function loadConversations() {
-  try { return JSON.parse(localStorage.getItem("conversations") || "[]"); } catch { return []; }
-}
-
-function saveConversations(convs) {
-  localStorage.setItem("conversations", JSON.stringify(convs));
-}
+// In-memory cache of the conversation list for the current session
+let conversationsCache = [];
 
 function getActiveConversationId() {
-  return localStorage.getItem("conversation_id");
+  return localStorage.getItem("active_conversation_id");
 }
 
-function initConversations() {
-  let convs = loadConversations();
-  let id = getActiveConversationId();
-  if (!id || !convs.find(c => c.id === id)) {
-    id = crypto.randomUUID();
-    convs = [{ id, title: "新会话" }, ...convs];
-    saveConversations(convs);
-    localStorage.setItem("conversation_id", id);
-  }
-  return id;
+function setActiveConversationId(id) {
+  localStorage.setItem("active_conversation_id", id);
 }
 
-function updateConvTitle(id, firstUserMessage) {
-  const convs = loadConversations();
-  const conv = convs.find(c => c.id === id);
-  if (conv && conv.title === "新会话" && firstUserMessage) {
-    conv.title = firstUserMessage.slice(0, 20);
-    saveConversations(convs);
-    renderConvList();
+async function loadConversationsFromDB() {
+  const { data, error } = await supabaseClient
+    .from("conversations")
+    .select("id, title, pinned, created_at")
+    .order("pinned", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) { console.error("加载会话列表失败：", error); return []; }
+  return data || [];
+}
+
+async function initConversations() {
+  conversationsCache = await loadConversationsFromDB();
+
+  // Warn if old localStorage conversations exist
+  const oldConvs = (() => { try { return JSON.parse(localStorage.getItem("conversations") || "[]"); } catch { return []; } })();
+  if (oldConvs.length > 0 && conversationsCache.length === 0) {
+    showLegacyDataNotice();
   }
+
+  // Ensure active conversation is valid
+  let activeId = getActiveConversationId();
+  if (!activeId || !conversationsCache.find(c => c.id === activeId)) {
+    if (conversationsCache.length > 0) {
+      activeId = conversationsCache[0].id;
+    } else {
+      // No conversations at all — create one
+      activeId = await createConversation("新会话");
+    }
+    setActiveConversationId(activeId);
+  }
+
+  renderConvList();
+  return activeId;
+}
+
+async function createConversation(title) {
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  const { data, error } = await supabaseClient
+    .from("conversations")
+    .insert({ title, user_id: user.id })
+    .select("id, title, pinned, created_at")
+    .single();
+  if (error) { console.error("创建会话失败：", error); return null; }
+  conversationsCache.unshift(data);
+  return data.id;
+}
+
+async function updateConvTitle(id, firstUserMessage) {
+  const conv = conversationsCache.find(c => c.id === id);
+  if (!conv || conv.title !== "新会话" || !firstUserMessage) return;
+  const title = firstUserMessage.slice(0, 20);
+  conv.title = title;
+  renderConvList();
+  await supabaseClient.from("conversations").update({ title }).eq("id", id);
 }
 
 function renderConvList() {
-  const convs = loadConversations();
   const activeId = getActiveConversationId();
   convList.innerHTML = "";
-  for (const conv of convs) {
+  for (const conv of conversationsCache) {
     const li = document.createElement("li");
     if (conv.pinned) li.classList.add("pinned");
     if (conv.id === activeId) li.classList.add("active");
@@ -109,8 +164,7 @@ function closeActiveMenu() {
 
 function openConvMenu(id, anchor) {
   closeActiveMenu();
-  const convs = loadConversations();
-  const conv = convs.find(c => c.id === id);
+  const conv = conversationsCache.find(c => c.id === id);
   const menu = document.createElement("div");
   menu.className = "conv-menu";
 
@@ -137,6 +191,66 @@ function openConvMenu(id, anchor) {
 
   setTimeout(() => document.addEventListener("click", closeActiveMenu, { once: true }), 0);
 }
+
+function renameConv(id) {
+  const conv = conversationsCache.find(c => c.id === id);
+  if (!conv) return;
+  showDialog({
+    title: "重命名会话",
+    input: conv.title || "新会话",
+    confirmLabel: "确定",
+    onConfirm: async (name) => {
+      const title = name || "新会话";
+      conv.title = title;
+      renderConvList();
+      await supabaseClient.from("conversations").update({ title }).eq("id", id);
+    }
+  });
+}
+
+async function pinConv(id) {
+  const conv = conversationsCache.find(c => c.id === id);
+  if (!conv) return;
+  conv.pinned = !conv.pinned;
+  conversationsCache.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  renderConvList();
+  await supabaseClient.from("conversations").update({ pinned: conv.pinned }).eq("id", id);
+}
+
+async function deleteConv(id) {
+  showDialog({
+    title: "抹掉这段？",
+    body: "这段记录会从这里消失。",
+    confirmLabel: "抹掉",
+    confirmClass: "btn-danger",
+    onConfirm: async () => {
+      conversationsCache = conversationsCache.filter(c => c.id !== id);
+      await supabaseClient.from("messages").delete().eq("conversation_id", id);
+      await supabaseClient.from("conversations").delete().eq("id", id);
+
+      if (getActiveConversationId() === id) {
+        if (conversationsCache.length) {
+          setActiveConversationId(conversationsCache[0].id);
+          await reloadHistory();
+        } else {
+          const newId = await createConversation("新会话");
+          setActiveConversationId(newId);
+          chatMessages.length = 0;
+          renderWelcomeMessage();
+        }
+      }
+      renderConvList();
+    }
+  });
+}
+
+async function switchConversation(id) {
+  setActiveConversationId(id);
+  renderConvList();
+  await reloadHistory();
+}
+
+// ── Dialog helper ─────────────────────────────────────────────────────────────
 
 function showDialog({ title, body, input, confirmLabel, confirmClass, onConfirm }) {
   const overlay = document.createElement("div");
@@ -189,84 +303,9 @@ function showDialog({ title, body, input, confirmLabel, confirmClass, onConfirm 
   if (inp) inp.addEventListener("keydown", e => { if (e.key === "Enter") confirmBtn.click(); });
 }
 
-function renameConv(id) {
-  const convs = loadConversations();
-  const conv = convs.find(c => c.id === id);
-  if (!conv) return;
-  showDialog({
-    title: "重命名会话",
-    input: conv.title || "新会话",
-    confirmLabel: "确定",
-    onConfirm: (name) => {
-      conv.title = name || "新会话";
-      saveConversations(convs);
-      renderConvList();
-    }
-  });
-}
-
-function pinConv(id) {
-  const convs = loadConversations();
-  const conv = convs.find(c => c.id === id);
-  if (!conv) return;
-  conv.pinned = !conv.pinned;
-  convs.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-  saveConversations(convs);
-  renderConvList();
-}
-
-async function deleteConv(id) {
-  const convs = loadConversations();
-  const conv = convs.find(c => c.id === id);
-  showDialog({
-    title: "抹掉这段？",
-    body: "这段记录会从这里消失。",
-    confirmLabel: "抹掉",
-    confirmClass: "btn-danger",
-    onConfirm: async () => {
-      let remaining = loadConversations().filter(c => c.id !== id);
-      saveConversations(remaining);
-      if (supabaseClient) await supabaseClient.from("messages").delete().eq("conversation_id", id);
-      if (getActiveConversationId() === id) {
-        if (remaining.length) {
-          localStorage.setItem("conversation_id", remaining[0].id);
-          await reloadHistory();
-        } else {
-          const newId = crypto.randomUUID();
-          remaining = [{ id: newId, title: "新会话" }];
-          saveConversations(remaining);
-          localStorage.setItem("conversation_id", newId);
-          chatMessages.length = 0;
-          renderWelcomeMessage();
-        }
-      }
-      renderConvList();
-    }
-  });
-}
-
-async function switchConversation(id) {
-  localStorage.setItem("conversation_id", id);
-  renderConvList();
-  await reloadHistory();
-}
-
-// ── Config / Supabase ─────────────────────────────────────────────────────────
-
-function getConfigValue(key, placeholder) {
-  const value = appConfig[key];
-  return (!value || value === placeholder) ? "" : value;
-}
-
-function createSupabaseClient() {
-  const url = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
-  const key = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
-  if (!url || !key || !window.supabase) return null;
-  return window.supabase.createClient(url, key);
-}
-
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
+const chatMessages = [];
 let lastRenderedDateKey = null;
 
 function getDateKey(date) {
@@ -338,18 +377,36 @@ function readDelta(chunk) {
   return chunk.choices?.[0]?.delta?.content || "";
 }
 
+function showLegacyDataNotice() {
+  const notice = document.createElement("div");
+  notice.id = "legacyNotice";
+  notice.style.cssText = "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:13px;color:var(--text-muted);z-index:500;max-width:90vw;text-align:center";
+  notice.textContent = "检测到旧本地会话，当前版本暂不自动迁移。";
+  const close = document.createElement("button");
+  close.textContent = "✕";
+  close.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;margin-left:10px;font-size:14px;";
+  close.addEventListener("click", () => notice.remove());
+  notice.appendChild(close);
+  document.body.appendChild(notice);
+  setTimeout(() => notice.remove(), 8000);
+}
+
 // ── DB ────────────────────────────────────────────────────────────────────────
 
 async function saveMessage(role, content) {
   if (!supabaseClient) return;
   const conversationId = getActiveConversationId();
-  const { error } = await supabaseClient.from("messages").insert({ role, content, conversation_id: conversationId });
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  const { error } = await supabaseClient
+    .from("messages")
+    .insert({ role, content, conversation_id: conversationId, user_id: user.id });
   if (error) console.error("保存消息失败：", error);
 }
 
 async function reloadHistory() {
   if (!supabaseClient) { renderWelcomeMessage(); return; }
   const conversationId = getActiveConversationId();
+  if (!conversationId) { renderWelcomeMessage(); return; }
   const { data, error } = await supabaseClient
     .from("messages")
     .select("role, content, created_at")
@@ -521,7 +578,6 @@ toggleMemoryButton.addEventListener("click", () => {
 });
 
 closeMemoryButton.addEventListener("click", () => memoryOverlay.classList.add("hidden"));
-
 memoryOverlay.addEventListener("click", (e) => { if (e.target === memoryOverlay) memoryOverlay.classList.add("hidden"); });
 
 addMemoryButton.addEventListener("click", async () => {
@@ -568,7 +624,6 @@ distillButton.addEventListener("click", async () => {
 
   const candidates = result.candidates || [];
   if (!candidates.length) return;
-
   showCandidatesDialog(candidates);
 });
 
@@ -652,12 +707,10 @@ function showCandidatesDialog(candidates) {
 
 sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("hidden"));
 
-newConvButton.addEventListener("click", () => {
-  const id = crypto.randomUUID();
-  const convs = loadConversations();
-  convs.unshift({ id, title: "新会话" });
-  saveConversations(convs);
-  localStorage.setItem("conversation_id", id);
+newConvButton.addEventListener("click", async () => {
+  const id = await createConversation("新会话");
+  if (!id) return;
+  setActiveConversationId(id);
   chatMessages.length = 0;
   renderWelcomeMessage();
   renderConvList();
@@ -702,12 +755,62 @@ chatForm.addEventListener("submit", async (event) => {
   }
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 
-initConversations();
-renderConvList();
-setLoading(true);
-reloadHistory().finally(() => {
+async function sendMagicLink(email) {
+  loginBtn.disabled = true;
+  loginMsg.textContent = "";
+  const { error } = await supabaseClient.auth.signInWithOtp({ email });
+  loginMsg.textContent = error ? error.message : "链接已发送，请查收邮件。";
+  loginBtn.disabled = false;
+}
+
+loginBtn.addEventListener("click", () => {
+  const email = loginEmail.value.trim();
+  if (!email) { loginMsg.textContent = "请输入邮箱地址。"; return; }
+  sendMagicLink(email);
+});
+
+loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") loginBtn.click(); });
+
+logoutBtn.addEventListener("click", async () => {
+  await supabaseClient.auth.signOut();
+  conversationsCache = [];
+  chatMessages.length = 0;
+  userEmailLabel.textContent = "";
+  logoutBtn.classList.add("hidden");
+  loginOverlay.classList.remove("hidden");
+});
+
+async function hideLoginAndInit(session) {
+  loginOverlay.classList.add("hidden");
+  if (userEmailLabel && session?.user?.email) {
+    userEmailLabel.textContent = session.user.email;
+  }
+  if (logoutBtn) logoutBtn.classList.remove("hidden");
+  setLoading(true);
+  await initConversations();
+  await reloadHistory();
   setLoading(false);
   messageInput.focus();
-});
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+if (supabaseClient) {
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_IN" && session && !loginOverlay.classList.contains("hidden")) {
+      hideLoginAndInit(session);
+    }
+  });
+
+  supabaseClient.auth.getSession().then(({ data: { session } }) => {
+    if (session) {
+      hideLoginAndInit(session);
+    } else {
+      loginOverlay.classList.remove("hidden");
+    }
+  });
+} else {
+  loginOverlay.classList.remove("hidden");
+}
