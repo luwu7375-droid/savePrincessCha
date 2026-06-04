@@ -12,6 +12,19 @@ type ChatRequest = {
 };
 
 const FUNCTION_VERSION = "env-check-v1";
+const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
+type MemoryDomain = typeof MEMORY_DOMAINS[number];
+type MemoryRow = {
+  content: string;
+  domain?: string | null;
+};
+
+const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona" | "relation">, string[]> = {
+  work: ["救公主", "Codex", "GitHub", "部署", "Guidebook", "app.js", "bug", "报错", "代码", "PRD", "方案"],
+  writing: ["OC", "剧情", "角色", "真田", "安彦", "晃", "续写", "文风", "大纲"],
+  life: ["吃饭", "睡觉", "猫", "家务", "出门", "身体", "药"],
+  general: [],
+};
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -24,14 +37,55 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-async function fetchEnabledMemories(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
+function normalizeMemoryDomain(domain: string | null | undefined): MemoryDomain {
+  return MEMORY_DOMAINS.includes(domain as MemoryDomain) ? domain as MemoryDomain : "general";
+}
+
+function getLastUserMessage(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i] as { role?: unknown; content?: unknown };
+    if (message?.role !== "user") continue;
+    if (typeof message.content === "string") return message.content;
+    if (Array.isArray(message.content)) {
+      return message.content
+        .map((part) => typeof part === "string" ? part : (part && typeof part === "object" && "text" in part ? String((part as { text?: unknown }).text || "") : ""))
+        .join("\n");
+    }
+  }
+  return "";
+}
+
+function messageHitsKeywords(message: string, keywords: string[]): boolean {
+  const lowerMessage = message.toLocaleLowerCase();
+  return keywords.some((keyword) => lowerMessage.includes(keyword.toLocaleLowerCase()));
+}
+
+function selectContextualMemories(rows: MemoryRow[], lastUserMessage: string): string[] {
+  const hitDomains = new Set<MemoryDomain>();
+  for (const [domain, keywords] of Object.entries(MEMORY_DOMAIN_KEYWORDS) as [keyof typeof MEMORY_DOMAIN_KEYWORDS, string[]][]) {
+    if (messageHitsKeywords(lastUserMessage, keywords)) hitDomains.add(domain);
+  }
+
+  const hasAnyKeywordHit = hitDomains.size > 0;
+  return rows
+    .filter((row) => {
+      const domain = normalizeMemoryDomain(row.domain);
+      if (domain === "persona") return true;
+      if (domain === "general") return hasAnyKeywordHit;
+      return hitDomains.has(domain);
+    })
+    .map((row) => row.content);
+}
+
+async function fetchEnabledMemories(supabaseUrl: string, serviceRoleKey: string, lastUserMessage: string): Promise<string[]> {
   const res = await fetch(
-    `${supabaseUrl}/rest/v1/memories?enabled=eq.true&select=content&order=created_at.asc`,
+    `${supabaseUrl}/rest/v1/memories?enabled=eq.true&select=content,domain&order=created_at.asc`,
     { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } }
   );
   if (!res.ok) return [];
-  const rows = await res.json() as { content: string }[];
-  return rows.map((r) => r.content);
+  const rows = await res.json() as MemoryRow[];
+  return selectContextualMemories(rows, lastUserMessage);
 }
 
 async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
@@ -116,8 +170,9 @@ Deno.serve(async (request) => {
 - 可以亲近，但要收口。`;
 
   if (supabaseUrl && serviceRoleKey) {
+    const lastUserMessage = getLastUserMessage(payload.messages);
     const [memories, buckets] = await Promise.all([
-      fetchEnabledMemories(supabaseUrl, serviceRoleKey),
+      fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
       fetchMemoryBuckets(supabaseUrl, serviceRoleKey),
     ]);
     if (memories.length > 0) {
@@ -171,4 +226,3 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: message }, 500);
   }
 });
-

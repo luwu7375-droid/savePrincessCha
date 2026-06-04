@@ -627,6 +627,17 @@ body {
 .memory-item span { flex: 1; color: var(--text); }
 .memory-item.disabled span { color: var(--text-muted); text-decoration: line-through; }
 
+.memory-domain {
+  width: 58px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .memory-item button {
   background: none;
   border: 1px solid var(--border);
@@ -648,6 +659,7 @@ body {
   border-top: 1px solid var(--border);
 }
 
+.memory-add select,
 .memory-add input {
   flex: 1;
   padding: 9px 12px;
@@ -660,7 +672,12 @@ body {
   outline: none;
   transition: border-color 0.15s;
 }
+.memory-add select {
+  flex: 0 0 104px;
+  cursor: pointer;
+}
 .memory-add input::placeholder { color: var(--text-muted); }
+.memory-add select:focus,
 .memory-add input:focus { border-color: oklch(52% 0.16 248 / 0.6); }
 
 .memory-add button {

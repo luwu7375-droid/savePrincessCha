@@ -29,6 +29,7 @@ const closeMemoryButton = document.getElementById("closeMemoryButton");
 const memoryOverlay     = document.getElementById("memoryOverlay");
 const memoryList        = document.getElementById("memoryList");
 const memoryInput       = document.getElementById("memoryInput");
+const memoryDomainSelect = document.getElementById("memoryDomainSelect");
 const addMemoryButton   = document.getElementById("addMemoryButton");
 const newConvButton     = document.getElementById("newConvButton");
 const convList          = document.getElementById("convList");
@@ -996,6 +997,9 @@ async function loadMemories() {
   for (const mem of data || []) {
     const item = document.createElement("div");
     item.className = "memory-item" + (mem.enabled ? "" : " disabled");
+    const domain = document.createElement("small");
+    domain.className = "memory-domain";
+    domain.textContent = mem.domain || "general";
     const span = document.createElement("span");
     span.textContent = mem.content;
     const btn = document.createElement("button");
@@ -1010,6 +1014,7 @@ async function loadMemories() {
       });
       loadMemories();
     });
+    item.appendChild(domain);
     item.appendChild(span);
     item.appendChild(btn);
     memoryList.appendChild(item);
@@ -1041,7 +1046,8 @@ memoryOverlay.addEventListener("click", (e) => { if (e.target === memoryOverlay)
 addMemoryButton.addEventListener("click", async () => {
   const content = memoryInput.value.trim();
   if (!content) return;
-  await memoryFetch("", { method: "POST", body: JSON.stringify({ content }) });
+  const domain = memoryDomainSelect?.value || "general";
+  await memoryFetch("", { method: "POST", body: JSON.stringify({ content, domain }) });
   memoryInput.value = "";
   loadMemories();
 });

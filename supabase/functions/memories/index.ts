@@ -11,6 +11,15 @@ function json(body: unknown, status = 200) {
   });
 }
 
+const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
+type MemoryDomain = typeof MEMORY_DOMAINS[number];
+
+function normalizeMemoryDomain(domain: unknown): MemoryDomain {
+  return typeof domain === "string" && MEMORY_DOMAINS.includes(domain as MemoryDomain)
+    ? domain as MemoryDomain
+    : "general";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
@@ -111,19 +120,19 @@ Deno.serve(async (req) => {
 
   if (req.method === "GET") {
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/memories?select=id,content,enabled&order=created_at.asc`,
+      `${supabaseUrl}/rest/v1/memories?select=id,content,domain,enabled&order=created_at.asc`,
       { headers: dbHeaders }
     );
     return json(await res.json(), res.ok ? 200 : 500);
   }
 
   if (req.method === "POST") {
-    const { content } = await req.json();
+    const { content, domain } = await req.json();
     if (!content?.trim()) return json({ error: "content required" }, 400);
     const res = await fetch(`${supabaseUrl}/rest/v1/memories`, {
       method: "POST",
       headers: { ...dbHeaders, Prefer: "return=representation" },
-      body: JSON.stringify({ content: content.trim() }),
+      body: JSON.stringify({ content: content.trim(), domain: normalizeMemoryDomain(domain) }),
     });
     return json(await res.json(), res.ok ? 201 : 500);
   }
