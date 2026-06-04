@@ -391,26 +391,73 @@ async function requestStreamingReply(assistantMessage) {
 
 // ── Memory panel ──────────────────────────────────────────────────────────────
 
+function getMemoryEndpoint() {
+  return getConfigValue("MEMORIES_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_MEMORIES_URL");
+}
+
+function getMemoryToken() {
+  return sessionStorage.getItem("memory_admin_token") || "";
+}
+
+async function memoryFetch(path, options = {}) {
+  const endpoint = getMemoryEndpoint();
+  if (!endpoint) throw new Error("MEMORIES_API_ENDPOINT 未配置");
+  const token = getMemoryToken();
+  return fetch(endpoint + path, {
+    ...options,
+    headers: { "Content-Type": "application/json", "x-memory-admin-token": token, ...(options.headers || {}) },
+  });
+}
+
 async function loadMemories() {
-  if (!supabaseClient) return;
-  const { data } = await supabaseClient.from("memories").select("id, content, enabled").order("created_at", { ascending: true });
+  let res;
+  try { res = await memoryFetch(""); } catch { return; }
+  if (res.status === 401) {
+    memoryList.textContent = "口令错误或未输入";
+    memoryList.style.padding = "12px 18px";
+    return;
+  }
+  const data = await res.json();
   memoryList.innerHTML = "";
   for (const mem of data || []) {
     const item = document.createElement("div");
     item.className = "memory-item" + (mem.enabled ? "" : " disabled");
-    item.innerHTML = `<span>${mem.content}</span><button data-id="${mem.id}" data-enabled="${mem.enabled}">${mem.enabled ? "禁用" : "启用"}</button>`;
-    item.querySelector("button").addEventListener("click", async (e) => {
-      const btn = e.currentTarget;
-      await supabaseClient.from("memories").update({ enabled: btn.dataset.enabled !== "true", updated_at: new Date().toISOString() }).eq("id", btn.dataset.id);
+    const span = document.createElement("span");
+    span.textContent = mem.content;
+    const btn = document.createElement("button");
+    btn.textContent = mem.enabled ? "禁用" : "启用";
+    btn.dataset.id = mem.id;
+    btn.dataset.enabled = mem.enabled;
+    btn.addEventListener("click", async (e) => {
+      const b = e.currentTarget;
+      await memoryFetch(`?id=${b.dataset.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: b.dataset.enabled !== "true" }),
+      });
       loadMemories();
     });
+    item.appendChild(span);
+    item.appendChild(btn);
     memoryList.appendChild(item);
   }
 }
 
 toggleMemoryButton.addEventListener("click", () => {
-  memoryOverlay.classList.remove("hidden");
-  loadMemories();
+  if (!getMemoryToken()) {
+    showDialog({
+      title: "记忆管理口令",
+      input: "",
+      confirmLabel: "确定",
+      onConfirm: (val) => {
+        if (val) sessionStorage.setItem("memory_admin_token", val);
+        memoryOverlay.classList.remove("hidden");
+        loadMemories();
+      },
+    });
+  } else {
+    memoryOverlay.classList.remove("hidden");
+    loadMemories();
+  }
 });
 
 closeMemoryButton.addEventListener("click", () => memoryOverlay.classList.add("hidden"));
@@ -419,8 +466,8 @@ memoryOverlay.addEventListener("click", (e) => { if (e.target === memoryOverlay)
 
 addMemoryButton.addEventListener("click", async () => {
   const content = memoryInput.value.trim();
-  if (!content || !supabaseClient) return;
-  await supabaseClient.from("memories").insert({ content });
+  if (!content) return;
+  await memoryFetch("", { method: "POST", body: JSON.stringify({ content }) });
   memoryInput.value = "";
   loadMemories();
 });

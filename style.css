@@ -380,6 +380,25 @@ body {
 .input-bar input::placeholder { color: var(--text-muted); }
 .input-bar input:focus { border-color: oklch(52% 0.16 248 / 0.6); }
 
+.input-bar button[type="submit"] {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bubble-me);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.12s;
+}
+.input-bar button[type="submit"]:hover  { background: var(--send-hover); }
+.input-bar button[type="submit"]:active { transform: scale(0.92); }
+.input-bar button[type="submit"]:disabled { opacity: 0.4; cursor: default; transform: none; }
+
 /* ── Memory modal ── */
 .overlay {
   position: fixed;

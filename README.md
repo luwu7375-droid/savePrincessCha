@@ -51,3 +51,13 @@ verify_jwt = false
 ```
 
 OpenRouter / DeepSeek 私钥只能保存在 Supabase Edge Function 的服务端环境变量中，不能写进前端文件或 GitHub Pages 部署产物。
+
+## 记忆管理 Edge Function
+
+记忆管理函数位于 `supabase/functions/memories/index.ts`，需要在 Supabase secrets 中额外配置：
+
+```bash
+supabase secrets set MEMORY_ADMIN_TOKEN="自定义管理口令"
+```
+
+`MEMORY_ADMIN_TOKEN` 不能写进前端代码、`public-config.js` 或 GitHub。前端打开记忆管理面板时会弹出口令输入框，口令仅存在 sessionStorage，刷新后需重新输入。

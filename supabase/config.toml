@@ -1,2 +1,5 @@
 [functions.chat]
 verify_jwt = false
+
+[functions.memories]
+verify_jwt = false
