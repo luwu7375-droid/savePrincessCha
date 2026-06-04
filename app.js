@@ -1,4 +1,4 @@
-console.log("build cloudflare-0005");
+console.log("build cloudflare-0007");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -746,9 +746,11 @@ clearButton.addEventListener("click", async () => {
 
 let idleTimer = null;
 let isReplying = false;
-const IDLE_DELAY = 2500;
+let autoReplyEnabled = false;
+const IDLE_DELAY = 5000;
 
 const forceReplyBtn = document.getElementById("forceReplyBtn");
+const autoReplyToggle = document.getElementById("autoReplyToggle");
 const sendButton = document.getElementById("sendButton");
 
 function setReplyingState(replying) {
@@ -757,6 +759,20 @@ function setReplyingState(replying) {
   forceReplyBtn.disabled = replying;
   sendButton.disabled = replying;
 }
+
+function updateAutoReplyToggle() {
+  autoReplyToggle.classList.toggle("active", autoReplyEnabled);
+  autoReplyToggle.title = autoReplyEnabled ? "自动接话（开）" : "自动接话（关）";
+  autoReplyToggle.setAttribute("aria-label", autoReplyToggle.title);
+}
+
+autoReplyToggle.addEventListener("click", () => {
+  autoReplyEnabled = !autoReplyEnabled;
+  updateAutoReplyToggle();
+  if (!autoReplyEnabled) { clearTimeout(idleTimer); idleTimer = null; setChatStatus(""); }
+});
+
+updateAutoReplyToggle();
 
 async function triggerReply(replyMode) {
   if (isReplying) return;
@@ -791,16 +807,18 @@ async function handleSubmit() {
   const text = messageInput.value.trim();
   if (!text || isReplying) return;
 
+  messageInput.value = "";
   const isFirst = chatMessages.length === 0;
   addMessage(text, "user");
   chatMessages.push({ role: "user", content: text });
-  await saveMessage("user", text);
+  saveMessage("user", text);
   if (isFirst) updateConvTitle(getActiveConversationId(), text);
-  messageInput.value = "";
 
-  setChatStatus("公主在听…");
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => triggerReply("auto"), IDLE_DELAY);
+  if (autoReplyEnabled) {
+    setChatStatus("公主在听…");
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => triggerReply("auto"), IDLE_DELAY);
+  }
 }
 
 chatForm.addEventListener("submit", (event) => {
