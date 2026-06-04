@@ -756,7 +756,7 @@ chatForm.addEventListener("submit", async (event) => {
   }
 });
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Auth (password only, no magic link) ───────────────────────────────────────
 
 async function signIn() {
   const email = loginEmail.value.trim();
