@@ -194,7 +194,7 @@ body {
 }
 .dialog h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
 .dialog p  { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; }
-.dialog input {
+.dialog input[type="text"] {
   width: 100%;
   padding: 9px 12px;
   background: var(--surface);
@@ -206,7 +206,13 @@ body {
   outline: none;
   margin-bottom: 16px;
 }
-.dialog input:focus { border-color: oklch(52% 0.16 248 / 0.6); }
+.dialog input[type="text"]:focus { border-color: oklch(52% 0.16 248 / 0.6); }
+.dialog input[type="checkbox"] {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 3px 0 0 0;
+  padding: 0;
+}
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .dialog-actions button {
   border: none;
