@@ -36,16 +36,17 @@ Deno.serve(async (request) => {
   }
 
   const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY");
-  const openrouterBaseUrl = Deno.env.get("OPENROUTER_BASE_URL");
-  const serverModelName = Deno.env.get("MODEL_NAME");
+  const openrouterBaseUrl =
+    Deno.env.get("OPENROUTER_BASE_URL") ||
+    "https://api.fuka.win/v1/chat/completions";
 
-  if (!openrouterApiKey || !openrouterBaseUrl || !serverModelName) {
+  if (!openrouterApiKey) {
     return jsonResponse(
       {
         error: "环境变量未配置",
-        hasOpenrouterApiKey: !!openrouterApiKey,
-        hasOpenrouterBaseUrl: !!openrouterBaseUrl,
-        hasModelName: !!serverModelName,
+        hasOpenrouterApiKey: false,
+        hasOpenrouterBaseUrl: true,
+        hasModelName: !!Deno.env.get("MODEL_NAME"),
       },
       500
     );
@@ -63,7 +64,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "messages 必须是数组" }, 400);
   }
 
-  const model = serverModelName || payload.model;
+  const model = Deno.env.get("MODEL_NAME") || payload.model;
 
   if (!model) {
     return jsonResponse({ error: "MODEL_NAME 未配置" }, 500);
