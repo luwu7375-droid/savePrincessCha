@@ -8,9 +8,9 @@
   --border:    oklch(26% 0.014 250);
   --text:      oklch(92% 0.008 250);
   --text-muted:oklch(58% 0.012 250);
-  --bubble-me: oklch(52% 0.16 248);
+  --bubble-me: oklch(34% 0.055 240);
   --bubble-ai: oklch(22% 0.016 250);
-  --send-hover:oklch(46% 0.16 248);
+  --send-hover:oklch(40% 0.08 240);
 }
 
 [data-theme="light"] {
@@ -21,9 +21,9 @@
   --border:    oklch(82% 0.010 250);
   --text:      oklch(18% 0.010 250);
   --text-muted:oklch(48% 0.012 250);
-  --bubble-me: oklch(52% 0.16 248);
+  --bubble-me: oklch(82% 0.03 240);
   --bubble-ai: oklch(88% 0.012 250);
-  --send-hover:oklch(46% 0.16 248);
+  --send-hover:oklch(74% 0.05 240);
 }
 
 :root {
@@ -278,6 +278,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: radial-gradient(ellipse at 50% 0%, oklch(16% 0.018 250) 0%, var(--bg) 70%);
 }
 .message-list::-webkit-scrollbar { width: 4px; }
 .message-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -292,14 +293,21 @@ body {
 .msg-row.assistant { justify-content: flex-start; }
 
 .avatar {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: var(--surface);
+  background: oklch(22% 0.02 250);
+  border: 1px solid var(--border);
   flex-shrink: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='12' r='6' fill='%23888'/%3E%3Cellipse cx='16' cy='26' rx='10' ry='7' fill='%23888'/%3E%3C/svg%3E");
-  background-size: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0;
 }
+.avatar::after { content: "G"; }
 
 /* ── Bubbles ── */
 .message {
@@ -319,12 +327,23 @@ body {
 
 .message.user {
   background: var(--bubble-me);
-  color: oklch(97% 0.005 250);
+  color: var(--text);
 }
 
 .message.assistant {
   background: var(--bubble-ai);
   color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* ── Date divider ── */
+.date-divider {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.65;
+  margin: 8px 0 4px;
+  user-select: none;
 }
 
 /* ── Typing indicator ── */
@@ -386,7 +405,7 @@ body {
   height: 44px;
   border-radius: 50%;
   border: none;
-  background: var(--bubble-me);
+  background: oklch(38% 0.06 240);
   color: #fff;
   font-size: 18px;
   cursor: pointer;
@@ -395,7 +414,7 @@ body {
   justify-content: center;
   transition: background 0.15s, transform 0.12s;
 }
-.input-bar button[type="submit"]:hover  { background: var(--send-hover); }
+.input-bar button[type="submit"]:hover  { background: oklch(44% 0.08 240); }
 .input-bar button[type="submit"]:active { transform: scale(0.92); }
 .input-bar button[type="submit"]:disabled { opacity: 0.4; cursor: default; transform: none; }
 

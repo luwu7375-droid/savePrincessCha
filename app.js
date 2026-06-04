@@ -16,7 +16,7 @@ const sidebarToggle = document.getElementById("sidebarToggle");
 const appConfig = window.SAVE_PRINCESS_CONFIG || {};
 const chatMessages = [];
 const supabaseClient = createSupabaseClient();
-const welcomeMessage = "欢迎来到救公主。";
+const welcomeMessage = "欢迎回家，kk。";
 
 const themeButton = document.getElementById("themeButton");
 
@@ -117,7 +117,7 @@ function openConvMenu(id, anchor) {
   const actions = [
     { label: "重命名", fn: () => renameConv(id) },
     { label: conv?.pinned ? "取消置顶" : "置顶", fn: () => pinConv(id) },
-    { label: "删除", fn: () => deleteConv(id), danger: true },
+    { label: "抹掉", fn: () => deleteConv(id), danger: true },
   ];
 
   for (const a of actions) {
@@ -219,9 +219,9 @@ async function deleteConv(id) {
   const convs = loadConversations();
   const conv = convs.find(c => c.id === id);
   showDialog({
-    title: "删除会话？",
-    body: `这会删除"${conv?.title || "新会话"}"。`,
-    confirmLabel: "删除",
+    title: "抹掉这段？",
+    body: "这段记录会从这里消失。",
+    confirmLabel: "抹掉",
     confirmClass: "btn-danger",
     onConfirm: async () => {
       let remaining = loadConversations().filter(c => c.id !== id);
@@ -267,7 +267,38 @@ function createSupabaseClient() {
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
-function addMessage(text, role) {
+let lastRenderedDateKey = null;
+
+function getDateKey(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function formatDateDivider(date) {
+  const d = new Date(date);
+  const now = new Date();
+  const today = getDateKey(now);
+  const yesterday = getDateKey(new Date(now - 86400000));
+  const key = getDateKey(d);
+  if (key === today) return "今天";
+  if (key === yesterday) return "昨天";
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}.${mm}.${dd}`;
+}
+
+function maybeAddDateDivider(createdAt) {
+  const key = getDateKey(createdAt);
+  if (key === lastRenderedDateKey) return;
+  lastRenderedDateKey = key;
+  const div = document.createElement("div");
+  div.className = "date-divider";
+  div.textContent = formatDateDivider(createdAt);
+  messageList.appendChild(div);
+}
+
+function addMessage(text, role, createdAt = new Date().toISOString(), options = {}) {
+  if (!options.skipDateDivider) maybeAddDateDivider(createdAt);
   const el = document.createElement("div");
   el.className = `message ${role}`;
   el.textContent = text;
@@ -291,7 +322,8 @@ function addMessage(text, role) {
 
 function renderWelcomeMessage() {
   messageList.innerHTML = "";
-  addMessage(welcomeMessage, "assistant");
+  lastRenderedDateKey = null;
+  addMessage(welcomeMessage, "assistant", new Date().toISOString(), { skipDateDivider: true });
 }
 
 function setLoading(isLoading) {
@@ -330,9 +362,10 @@ async function reloadHistory() {
   const history = [...data].reverse();
   chatMessages.length = 0;
   messageList.innerHTML = "";
+  lastRenderedDateKey = null;
   if (!history.length) { renderWelcomeMessage(); return; }
   for (const m of history) {
-    addMessage(m.content, m.role);
+    addMessage(m.content, m.role, m.created_at);
     chatMessages.push({ role: m.role, content: m.content });
   }
 }
@@ -548,11 +581,11 @@ function showCandidatesDialog(candidates) {
   dialog.style.width = "400px";
 
   const h3 = document.createElement("h3");
-  h3.textContent = "候选记忆";
+  h3.textContent = "可沉淀的记忆";
   dialog.appendChild(h3);
 
   const p = document.createElement("p");
-  p.textContent = "选择要存入记忆桶的条目：";
+  p.textContent = "挑出值得留下的部分：";
   dialog.appendChild(p);
 
   const list = document.createElement("div");
@@ -595,7 +628,7 @@ function showCandidatesDialog(candidates) {
 
   const confirmBtn = document.createElement("button");
   confirmBtn.className = "btn-confirm";
-  confirmBtn.textContent = "存入记忆桶";
+  confirmBtn.textContent = "留下";
   confirmBtn.addEventListener("click", async () => {
     overlay.remove();
     const selected = [...list.children].filter(r => r._checkbox.checked).map(r => r._candidate);
