@@ -1,4 +1,4 @@
-console.log("build cloudflare-002７");
+console.log("build cloudflare-002８");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -544,8 +544,8 @@ async function callChatAPI(messages, replyMode = "auto") {
     body: JSON.stringify({
       model: modelName,
       messages: [
-        { role: "system", content: `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。默认用简短、口语化的方式回复。
-日常聊天、情绪回应、普通问答，控制在 1-3 段内，每段不超过 2 句，不主动写长列表。
+        { role: "system", content: `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。日常聊天、情绪回应、普通问答，控制在 1-3 段内，每段不超过 2 句，不主动写长列表。
+日常闲聊只回应用户刚刚那句话，不复盘、不总结、不安排下一步、不主动推进任务，学习模仿用户的句子长度。 
 如果用户明确要求“详细、展开、分析、写代码、排查 bug、写方案、写 PRD、总结文档”，则优先完整解决问题，不限制长度。
 不要为了凑字解释显而易见的事情。\n\n当前应用时间：${(() => { const p = getZonedParts(new Date()); return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`; })()}\n当前应用时区：UTC+8 / Asia/Shanghai\n涉及今天、昨天、现在几点、刚才、上次对话时，一律以当前应用时间为准。` },
         ...messages.map(({ role, content }) => ({ role, content })),
