@@ -434,7 +434,7 @@ body {
 }
 .ghost-icon-btn:hover { color: var(--text); border-color: var(--text-muted); background: var(--surface); }
 .ghost-icon-btn:disabled { opacity: 0.35; cursor: default; }
-.ghost-icon-btn.active { color: var(--text); border-color: var(--text-muted); background: var(--surface); }
+.ghost-icon-btn.active { color: oklch(62% 0.18 248); border-color: oklch(52% 0.16 248 / 0.6); background: oklch(52% 0.16 248 / 0.1); }
 
 .input-bar button[type="submit"] {
   flex-shrink: 0;

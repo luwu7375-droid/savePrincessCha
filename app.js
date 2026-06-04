@@ -1,4 +1,4 @@
-console.log("build cloudflare-0007");
+console.log("build cloudflare-0009");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -762,7 +762,8 @@ function setReplyingState(replying) {
 
 function updateAutoReplyToggle() {
   autoReplyToggle.classList.toggle("active", autoReplyEnabled);
-  autoReplyToggle.title = autoReplyEnabled ? "自动接话（开）" : "自动接话（关）";
+  autoReplyToggle.textContent = autoReplyEnabled ? "●" : "◌";
+  autoReplyToggle.title = autoReplyEnabled ? "自动接话：开" : "自动接话：关";
   autoReplyToggle.setAttribute("aria-label", autoReplyToggle.title);
 }
 
