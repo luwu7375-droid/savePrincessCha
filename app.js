@@ -743,7 +743,8 @@ async function editUserMessage(row) {
   await reloadHistory();
 }
 
-messageList.addEventListener("mouseenter", refreshMessageActions, true);
+// 改为鼠标进入 messageList 整体时刷新一次：
+messageList.addEventListener("mouseenter", refreshMessageActions);
 window.addEventListener("resize", () => {
   closeMessageActionMenu();
   refreshMessageActions();
