@@ -86,8 +86,8 @@ Deno.serve(async (request) => {
   }
 
   // Build system prompt with memories
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseUrl = Deno.env.get("DB_URL");
+  const serviceRoleKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
   let systemContent = "不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。";
 
   if (supabaseUrl && serviceRoleKey) {
