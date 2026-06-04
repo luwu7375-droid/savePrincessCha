@@ -1,4 +1,4 @@
-console.log("build cloudflare-0020");
+console.log("build cloudflare-0021");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -45,22 +45,58 @@ const logoutBtn         = document.getElementById("logoutBtn");
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
-const savedTheme = localStorage.getItem("theme") || "dark";
-if (savedTheme === "light") document.documentElement.setAttribute("data-theme", "light");
-themeButton.textContent = savedTheme === "light" ? "🌙" : "☀️";
+const themeMediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+const themeOrder = ["system", "light", "dark"];
+const themeLabelMap = {
+  system: "系统",
+  light: "浅色",
+  dark: "深色",
+};
+
+function getThemeMode() {
+  const stored = localStorage.getItem("theme");
+  return themeOrder.includes(stored) ? stored : "system";
+}
+
+function getEffectiveTheme(mode = getThemeMode()) {
+  if (mode === "light") return "light";
+  if (mode === "dark") return "dark";
+  return themeMediaQuery.matches ? "light" : "dark";
+}
+
+function applyTheme(mode = getThemeMode()) {
+  const effectiveTheme = getEffectiveTheme(mode);
+  if (effectiveTheme === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+  themeButton.textContent = themeLabelMap[mode] || "系统";
+  themeButton.title = `主题：${mode === "system" ? "跟随系统" : mode === "light" ? "浅色" : "深色"}`;
+  themeButton.setAttribute("aria-label", themeButton.title);
+}
+
+function setThemeMode(mode) {
+  localStorage.setItem("theme", mode);
+  applyTheme(mode);
+}
+
+applyTheme();
 
 themeButton.addEventListener("click", () => {
-  const isLight = document.documentElement.getAttribute("data-theme") === "light";
-  if (isLight) {
-    document.documentElement.removeAttribute("data-theme");
-    localStorage.setItem("theme", "dark");
-    themeButton.textContent = "☀️";
-  } else {
-    document.documentElement.setAttribute("data-theme", "light");
-    localStorage.setItem("theme", "light");
-    themeButton.textContent = "🌙";
-  }
+  const currentMode = getThemeMode();
+  const nextMode = themeOrder[(themeOrder.indexOf(currentMode) + 1) % themeOrder.length];
+  setThemeMode(nextMode);
 });
+
+const onSystemThemeChange = () => {
+  if (getThemeMode() === "system") applyTheme("system");
+};
+if (typeof themeMediaQuery.addEventListener === "function") {
+  themeMediaQuery.addEventListener("change", onSystemThemeChange);
+} else if (typeof themeMediaQuery.addListener === "function") {
+  themeMediaQuery.addListener(onSystemThemeChange);
+}
 
 // ── Conversations (Supabase) ──────────────────────────────────────────────────
 
