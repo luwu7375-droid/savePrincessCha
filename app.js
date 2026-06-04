@@ -170,6 +170,20 @@ async function callChatAPI(messages) {
   });
 }
 
+function showTypingIndicator() {
+  const el = document.createElement("div");
+  el.className = "typing-indicator";
+  el.id = "typingIndicator";
+  el.innerHTML = "<span></span><span></span><span></span>";
+  messageList.appendChild(el);
+  messageList.scrollTop = messageList.scrollHeight;
+  return el;
+}
+
+function removeTypingIndicator() {
+  document.getElementById("typingIndicator")?.remove();
+}
+
 async function requestStreamingReply(assistantMessage) {
   const response = await callChatAPI(chatMessages);
   if (!response.ok || !response.body) {
@@ -192,6 +206,10 @@ async function requestStreamingReply(assistantMessage) {
       if (data === "[DONE]") { streamDone = true; break; }
       const delta = readDelta(JSON.parse(data));
       if (delta) {
+        if (!fullReply) {
+          removeTypingIndicator();
+          assistantMessage.style.display = "";
+        }
         fullReply += delta;
         assistantMessage.textContent = stripThinking(fullReply);
         messageList.scrollTop = messageList.scrollHeight;
@@ -279,11 +297,15 @@ chatForm.addEventListener("submit", async (event) => {
   if (isFirst) updateConvTitle(getActiveConversationId(), text);
   messageInput.value = "";
 
+  showTypingIndicator();
   const assistantMessage = addMessage("", "assistant");
+  assistantMessage.style.display = "none";
   setLoading(true);
   try {
     await requestStreamingReply(assistantMessage);
   } catch (error) {
+    removeTypingIndicator();
+    assistantMessage.style.display = "";
     assistantMessage.textContent = `回复失败：${error.message}`;
     chatMessages.pop();
   } finally {
