@@ -7,11 +7,17 @@ create table if not exists public.messages (
 
 alter table public.messages enable row level security;
 
-drop policy if exists "Allow anonymous inserts into messages"
-on public.messages;
+-- MVP 开发期策略，正式版需要按用户隔离。
 
-drop policy if exists "Allow anonymous reads from messages"
-on public.messages;
+drop policy if exists "Allow anonymous inserts into messages" on public.messages;
+drop policy if exists "Allow anonymous reads from messages" on public.messages;
 
--- Keep RLS enabled. Add scoped policies later after authentication or an API proxy
--- defines who may read and write conversation rows.
+create policy "Allow anonymous inserts into messages"
+  on public.messages for insert
+  to anon
+  with check (role in ('user', 'assistant'));
+
+create policy "Allow anonymous reads from messages"
+  on public.messages for select
+  to anon
+  using (true);
