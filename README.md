@@ -61,3 +61,17 @@ supabase secrets set MEMORY_ADMIN_TOKEN="自定义管理口令"
 ```
 
 `MEMORY_ADMIN_TOKEN` 不能写进前端代码、`public-config.js` 或 GitHub。前端打开记忆管理面板时会弹出口令输入框，口令仅存在 sessionStorage，刷新后需重新输入。
+
+## Cloudflare Pages 部署
+
+本仓库同时支持 Cloudflare Pages 部署（与 GitHub Pages 并行，互不影响）。
+
+Cloudflare Pages 项目设置：
+
+| 选项 | 值 |
+|------|-----|
+| Framework preset | None |
+| Build command | 留空 |
+| Build output directory | `/` |
+
+`_headers` 文件已内置缓存策略：`index.html` 和 `version.json` 设置 `no-store`，JS/CSS 资源设置长期缓存 + `immutable`。每次发布只需更新资源文件的版本查询参数（`?v=xxx`），浏览器会自动拉取新文件。

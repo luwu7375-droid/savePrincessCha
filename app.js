@@ -1,3 +1,5 @@
+console.log("build cloudflare-0001");
+
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
 const appConfig = window.SAVE_PRINCESS_CONFIG || {};
