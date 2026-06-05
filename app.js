@@ -1,4 +1,4 @@
-console.log("build cloudflare-0039");
+console.log("build cloudflare-0040");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -24,6 +24,9 @@ const _storedTier = localStorage.getItem("modelTier");
 let currentModelTier = _VALID_TIERS_INIT.includes(_storedTier) ? _storedTier : "general";
 // Sanitise: if stored value was invalid, overwrite it so localStorage stays clean.
 if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", "general");
+
+// ── Story Seeds 开关（关系史实验，默认关闭） ───────────────────────────────────
+let storySeedsEnabled = localStorage.getItem("storySeedsEnabled") === "true";
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -575,6 +578,7 @@ async function callChatAPI(messages, replyMode = "auto") {
       replyMode,
       userId: currentUserId,
       modelTier: currentModelTier,
+      storySeedsEnabled,
     }),
   });
 }
@@ -1936,7 +1940,36 @@ autoReplyToggle.addEventListener("click", () => {
 
 updateAutoReplyToggle();
 
-async function triggerReply(replyMode) {
+// ── Story Seeds 开关 ──────────────────────────────────────────────────────────
+
+const storySeedsToggleBtn = document.getElementById("storySeedsToggle");
+
+function updateStorySeedsToggle() {
+  if (!storySeedsToggleBtn) return;
+  storySeedsToggleBtn.textContent = storySeedsEnabled ? "关系史 ●" : "关系史 ○";
+  storySeedsToggleBtn.title = storySeedsEnabled
+    ? "关系史实验：已开启（Story Seeds 注入中）"
+    : "关系史实验：已关闭（点击开启）";
+}
+
+let _storySeedClickTimer = null;
+storySeedsToggleBtn?.addEventListener("click", () => {
+  // 使用延迟区分单击（切换开关）和双击（打开调试面板）
+  if (_storySeedClickTimer) {
+    clearTimeout(_storySeedClickTimer);
+    _storySeedClickTimer = null;
+    openStorySeedsDebugPanel();
+  } else {
+    _storySeedClickTimer = setTimeout(() => {
+      _storySeedClickTimer = null;
+      storySeedsEnabled = !storySeedsEnabled;
+      localStorage.setItem("storySeedsEnabled", String(storySeedsEnabled));
+      updateStorySeedsToggle();
+    }, 250);
+  }
+});
+
+updateStorySeedsToggle();
   if (isReplying) return;
   clearTimeout(idleTimer);
   idleTimer = null;
@@ -2122,3 +2155,53 @@ if (supabaseClient) {
 }
 
 initTierBar();
+
+// ── Story Seeds 调试面板 ───────────────────────────────────────────────────────
+
+const storySeedsOverlay = document.getElementById("storySeedsOverlay");
+const storySeedsList = document.getElementById("storySeedsList");
+const closeStorySeedsButton = document.getElementById("closeStorySeedsButton");
+
+closeStorySeedsButton?.addEventListener("click", () => {
+  storySeedsOverlay?.classList.add("hidden");
+});
+
+async function openStorySeedsDebugPanel() {
+  if (!storySeedsOverlay || !storySeedsList) return;
+  storySeedsList.textContent = "加载中…";
+  storySeedsOverlay.classList.remove("hidden");
+
+  const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+  const anonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+
+  if (!supabaseUrl || !anonKey) {
+    storySeedsList.textContent = "无法加载：Supabase 未配置。";
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,importance,themes&order=importance.desc,created_at.asc&limit=4`,
+      { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } },
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const seeds = await res.json();
+
+    if (!seeds.length) {
+      storySeedsList.textContent = "暂无已启用的 Story Seeds。";
+      return;
+    }
+
+    storySeedsList.innerHTML = seeds.map((s) => `
+      <div style="border:1px solid var(--border,#e5e5e5);border-radius:8px;padding:12px;margin-bottom:10px;">
+        <div style="font-weight:600;margin-bottom:4px;">${s.title}</div>
+        <div style="color:var(--text-muted,#888);font-size:12px;margin-bottom:4px;">importance: ${s.importance}</div>
+        <div style="font-size:12px;display:flex;flex-wrap:wrap;gap:4px;">
+          ${(s.themes || []).map((t) => `<span style="background:var(--bg-secondary,#f0f0f0);border-radius:4px;padding:2px 6px;">${t}</span>`).join("")}
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    storySeedsList.textContent = `加载失败：${err.message}`;
+  }
+}

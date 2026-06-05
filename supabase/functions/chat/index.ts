@@ -11,6 +11,7 @@ type ChatRequest = {
   replyMode?: string;
   userId?: string;
   modelTier?: string; // "instant" | "general" | "advanced"
+  storySeedsEnabled?: boolean; // 关系史实验开关
 };
 
 // ── Model tier ────────────────────────────────────────────────────────────────
@@ -253,6 +254,9 @@ type RequestLog = {
   input_tokens: number | null;
   output_tokens: number | null;
   estimated_cost: null;
+  story_seeds_enabled: boolean;
+  story_seeds_count: number;
+  story_seeds_titles: string[];
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
@@ -368,6 +372,43 @@ async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): 
     }).catch(() => {});
   }
   return rows.map((r) => r.summary);
+}
+
+// ── Story Seeds ───────────────────────────────────────────────────────────────
+
+type StorySeedRow = {
+  id: string;
+  title: string;
+  content: string;
+  importance: string;
+  themes: string[];
+};
+
+/**
+ * Fetches up to 3 enabled story seeds, ordered by importance desc then created_at asc.
+ * Only called when storySeedsEnabled = true in the request.
+ */
+async function fetchStorySeeds(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<StorySeedRow[]> {
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,content,importance,themes&order=importance.desc,created_at.asc&limit=4`,
+    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+  );
+  if (!res.ok) return [];
+  return (await res.json()) as StorySeedRow[];
+}
+
+/**
+ * Compiles story seeds into <relationship_history> block for injection into the system prompt.
+ */
+function compileStorySeeds(seeds: StorySeedRow[]): string {
+  if (seeds.length === 0) return "";
+  const stories = seeds
+    .map((s) => `[Story]\nTitle: ${s.title}\n\nContent:\n${s.content}\n[/Story]`)
+    .join("\n\n");
+  return `\n\n<relationship_history>\n\n${stories}\n\n</relationship_history>`;
 }
 
 // ── Model call (with one-shot fallback) ───────────────────────────────────────
@@ -532,6 +573,9 @@ Deno.serve(async (request) => {
     input_tokens: null,
     output_tokens: null,
     estimated_cost: null,
+    story_seeds_enabled: false,
+    story_seeds_count: 0,
+    story_seeds_titles: [],
     model_call_ms: 0,
     total_ms: 0,
   };
@@ -618,6 +662,17 @@ Deno.serve(async (request) => {
     logRecord.memory_cache_size = _memCache.size;
 
     systemContent += compiledMemoryText;
+
+    // ── Story Seeds 注入（需开关打开） ──────────────────────────────────────
+    if (payload.storySeedsEnabled === true) {
+      logRecord.story_seeds_enabled = true;
+      const seeds = await fetchStorySeeds(supabaseUrl, serviceRoleKey);
+      if (seeds.length > 0) {
+        systemContent += compileStorySeeds(seeds);
+        logRecord.story_seeds_count = seeds.length;
+        logRecord.story_seeds_titles = seeds.map((s) => s.title);
+      }
+    }
   }
 
   if (payload.replyMode === "auto") {

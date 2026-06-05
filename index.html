@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>救公主</title>
-  <link rel="stylesheet" href="style.css?v=cloudflare-0039">
+  <link rel="stylesheet" href="style.css?v=cloudflare-0040">
 </head>
 <body>
   <!-- 登录 overlay -->
@@ -32,6 +32,7 @@
         <button id="themeButton" type="button" class="sidebar-footer-btn">系统</button>
         <button id="distillButton" type="button" class="sidebar-footer-btn">沉淀</button>
         <button id="toggleMemoryButton" type="button" class="sidebar-footer-btn">记忆匣</button>
+        <button id="storySeedsToggle" type="button" class="sidebar-footer-btn" title="关系史实验（Story Seeds）">关系史 ○</button>
         <button id="logoutBtn" type="button" class="sidebar-footer-btn hidden">退出</button>
       </div>
     </aside>
@@ -92,8 +93,19 @@
     </div>
   </div>
 
-  <script src="public-config.js?v=cloudflare-0039" charset="utf-8"></script>
+  <!-- Story Seeds 调试面板（开发模式） -->
+  <div id="storySeedsOverlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span>关系史 Story Seeds（调试）</span>
+        <button id="closeStorySeedsButton" type="button">✕</button>
+      </div>
+      <div id="storySeedsList" style="padding:12px 18px;font-size:13px;"></div>
+    </div>
+  </div>
+
+  <script src="public-config.js?v=cloudflare-0040" charset="utf-8"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=cloudflare-0039" charset="utf-8"></script>
+  <script src="app.js?v=cloudflare-0040" charset="utf-8"></script>
 </body>
 </html>
