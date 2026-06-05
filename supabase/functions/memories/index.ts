@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
   if (type === "buckets") {
     if (req.method === "GET") {
       const res = await fetch(
-        `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary,domain,importance&order=importance.desc,last_accessed_at.desc.nullslast&limit=20`,
+        `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary,content,domain,importance,status,created_at,updated_at,last_accessed_at&order=importance.desc,last_accessed_at.desc.nullslast&limit=20`,
         { headers: dbHeaders }
       );
       return json(await res.json(), res.ok ? 200 : 500);
@@ -70,10 +70,13 @@ Deno.serve(async (req) => {
       const body = await req.json();
       const res = await fetch(`${supabaseUrl}/rest/v1/memory_buckets?id=eq.${id}`, {
         method: "PATCH",
-        headers: { ...dbHeaders, Prefer: "return=minimal" },
+        headers: { ...dbHeaders, Prefer: "return=representation" },
         body: JSON.stringify({ ...body, updated_at: new Date().toISOString() }),
       });
-      return new Response(null, { status: res.ok ? 204 : 500, headers: corsHeaders });
+      if (!res.ok) return json(await res.json(), 500);
+      const rows = await res.json() as unknown[];
+      if (!rows.length) return json({ error: "bucket not found" }, 404);
+      return json(rows[0], 200);
     }
 
     if (req.method === "DELETE" && id) {
@@ -99,7 +102,7 @@ Deno.serve(async (req) => {
 
     const recent = messages.slice(-20).map(m => `${m.role === "user" ? "用户" : "AI"}：${m.content}`).join("\n");
 
-    const prompt = `以下是一段对话记录：\n\n${recent}\n\n请从这段对话中提取 1-3 条值得长期记忆的事件或认知，以 JSON 数组返回，每条格式：{"title":"简短标题","summary":"一句话摘要","domain":"general|emotion|creative|knowledge|preference"}。只返回 JSON 数组，不要其他文字。`;
+    const prompt = `以下是一段对话记录：\n\n${recent}\n\n请从这段对话中提取 1-3 条值得长期记忆的事件或认知，以 JSON 数组返回，每条格式：{"title":"简短标题","summary":"一句话摘要","domain":"general|persona|work|writing|life|relation"}。只返回 JSON 数组，不要其他文字。`;
 
     const res = await fetch(baseUrl, {
       method: "POST",

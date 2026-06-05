@@ -1,4 +1,4 @@
-console.log("build cloudflare-0034");
+console.log("build cloudflare-0035");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1024,6 +1024,12 @@ async function memoryFetch(path, options = {}) {
 
 const MEMORY_DOMAINS = ["general", "persona", "work", "writing", "life", "relation"];
 
+function normalizeBucketDomain(domain) {
+  const compat = { emotion: "relation", creative: "writing", knowledge: "general", preference: "persona" };
+  const d = typeof domain === "string" ? (compat[domain] || domain) : "general";
+  return MEMORY_DOMAINS.includes(d) ? d : "general";
+}
+
 // ── Memory cache & DOM helpers ────────────────────────────────────────────────
 
 let memoriesCache = [];
@@ -1312,6 +1318,194 @@ function showMemoryEditDialog(mem, itemEl) {
   input.select();
 }
 
+function renderBucketItem(b) {
+  const item = document.createElement("div");
+  item.className = "memory-item";
+  item.dataset.bucketId = b.id;
+
+  const domainEl = document.createElement("small");
+  domainEl.className = "memory-domain";
+  domainEl.textContent = normalizeBucketDomain(b.domain);
+
+  const span = document.createElement("span");
+  span.style.cssText = "flex:1;min-width:0;overflow-wrap:break-word;";
+  const titleEl = document.createElement("div");
+  titleEl.className = "bucket-title";
+  titleEl.style.cssText = "font-weight:500;";
+  titleEl.textContent = b.title || "";
+  const summaryEl = document.createElement("div");
+  summaryEl.className = "bucket-summary";
+  summaryEl.style.cssText = "font-size:12px;color:var(--text-muted);margin-top:2px;";
+  summaryEl.textContent = b.summary || "";
+  span.appendChild(titleEl);
+  span.appendChild(summaryEl);
+
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.textContent = "编辑";
+  editBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    editBucket({ ...b, domain: normalizeBucketDomain(b.domain) });
+  });
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "danger";
+  deleteBtn.textContent = "删除";
+  deleteBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showDialog({
+      title: "删除沉淀记忆",
+      body: "��定删除这条沉淀记忆？",
+      confirmLabel: "删除",
+      confirmClass: "btn-danger",
+      onConfirm: async () => {
+        let r;
+        try {
+          r = await memoryFetch(`?type=buckets&id=${encodeURIComponent(b.id)}`, { method: "DELETE" });
+        } catch (err) {
+          showGlobalMemoryError(`网络错误：${err.message}`);
+          return;
+        }
+        if (!r.ok) {
+          let msg = `删除失败（${r.status}）`;
+          try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
+          showGlobalMemoryError(msg);
+          return;
+        }
+        const el = memoryList.querySelector(`.memory-item[data-bucket-id="${CSS.escape(b.id)}"]`);
+        if (el) {
+          el.style.transition = "opacity 0.12s, max-height 0.12s";
+          el.style.overflow = "hidden";
+          el.style.maxHeight = el.offsetHeight + "px";
+          el.style.opacity = "0";
+          setTimeout(() => { el.style.maxHeight = "0"; el.style.padding = "0"; setTimeout(() => el.remove(), 130); }, 120);
+        }
+      },
+    });
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "memory-actions";
+  actions.appendChild(editBtn);
+  actions.appendChild(deleteBtn);
+  item.appendChild(domainEl);
+  item.appendChild(span);
+  item.appendChild(actions);
+  return item;
+}
+
+function updateBucketItem(bucket) {
+  const el = memoryList.querySelector(`.memory-item[data-bucket-id="${CSS.escape(bucket.id)}"]`);
+  if (!el) return;
+  const domainEl = el.querySelector(".memory-domain");
+  if (domainEl) domainEl.textContent = normalizeBucketDomain(bucket.domain);
+  const titleEl = el.querySelector(".bucket-title");
+  if (titleEl) titleEl.textContent = bucket.title || "";
+  const summaryEl = el.querySelector(".bucket-summary");
+  if (summaryEl) summaryEl.textContent = bucket.summary || "";
+}
+
+function editBucket(b) {
+  const overlay = document.createElement("div");
+  overlay.className = "dialog-overlay";
+  overlay.style.zIndex = "800";
+
+  const dialog = document.createElement("div");
+  dialog.className = "dialog";
+  dialog.style.width = "400px";
+
+  const h3 = document.createElement("h3");
+  h3.textContent = "编辑沉淀记忆";
+  dialog.appendChild(h3);
+
+  const titleInput = document.createElement("input");
+  titleInput.type = "text";
+  titleInput.value = b.title || "";
+  titleInput.placeholder = "标题";
+  dialog.appendChild(titleInput);
+
+  const summaryInput = document.createElement("textarea");
+  summaryInput.value = b.summary || "";
+  summaryInput.placeholder = "摘要";
+  dialog.appendChild(summaryInput);
+
+  const domainSelect = document.createElement("select");
+  for (const d of MEMORY_DOMAINS) {
+    const option = document.createElement("option");
+    option.value = d;
+    option.textContent = d;
+    domainSelect.appendChild(option);
+  }
+  domainSelect.value = MEMORY_DOMAINS.includes(b.domain) ? b.domain : "general";
+  dialog.appendChild(domainSelect);
+
+  const errorEl = document.createElement("p");
+  errorEl.style.cssText = "color:oklch(62% 0.2 25);font-size:13px;margin:0 0 8px;display:none";
+  dialog.appendChild(errorEl);
+
+  const actions = document.createElement("div");
+  actions.className = "dialog-actions";
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "btn-cancel";
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); overlay.remove(); });
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "btn-confirm";
+  saveBtn.textContent = "保存";
+  saveBtn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const title = titleInput.value.trim();
+    const summary = summaryInput.value.trim();
+    if (!title) { titleInput.focus(); return; }
+    saveBtn.disabled = true;
+    errorEl.style.display = "none";
+    let res;
+    try {
+      res = await memoryFetch(`?type=buckets&id=${encodeURIComponent(b.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title, summary, domain: domainSelect.value }),
+      });
+    } catch (err) {
+      saveBtn.disabled = false;
+      errorEl.textContent = `网络错误：${err.message}`;
+      errorEl.style.display = "block";
+      return;
+    }
+    saveBtn.disabled = false;
+    if (!res.ok) {
+      let msg = `保存失败（${res.status}）`;
+      try { const j = await res.json(); msg = j.error || j.message || msg; } catch { try { msg = await res.text() || msg; } catch {} }
+      errorEl.textContent = msg;
+      errorEl.style.display = "block";
+      return;
+    }
+    let updated;
+    try { updated = await res.json(); } catch {
+      errorEl.textContent = "保存成功但无法读取返回数据，请手动刷新。";
+      errorEl.style.display = "block";
+      return;
+    }
+    overlay.remove();
+    updateBucketItem(updated);
+  });
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  dialog.appendChild(actions);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  titleInput.focus();
+  titleInput.select();
+}
+
 async function loadMemories() {
   memoryList.innerHTML = "";
   memoryList.style.padding = "";
@@ -1361,62 +1555,7 @@ async function loadMemories() {
   memoryList.appendChild(bucketTitle);
 
   for (const b of buckets) {
-    const item = document.createElement("div");
-    item.className = "memory-item";
-    const domainEl = document.createElement("small");
-    domainEl.className = "memory-domain";
-    domainEl.textContent = b.domain || "general";
-    const span = document.createElement("span");
-    span.style.cssText = "flex:1;overflow:hidden";
-    const titleEl = document.createElement("div");
-    titleEl.style.cssText = "font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
-    titleEl.textContent = b.title || "";
-    const summaryEl = document.createElement("div");
-    summaryEl.style.cssText = "font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
-    summaryEl.textContent = b.summary || "";
-    span.appendChild(titleEl);
-    span.appendChild(summaryEl);
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "danger";
-    deleteBtn.textContent = "删除";
-    deleteBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      showDialog({
-        title: "删除沉淀记忆",
-        body: "确定删除这条沉淀记忆？",
-        confirmLabel: "删除",
-        confirmClass: "btn-danger",
-        onConfirm: async () => {
-          let r;
-          try {
-            r = await memoryFetch(`?type=buckets&id=${encodeURIComponent(b.id)}`, { method: "DELETE" });
-          } catch (err) {
-            showGlobalMemoryError(`网络错误：${err.message}`);
-            return;
-          }
-          if (!r.ok) {
-            let msg = `删除失败（${r.status}）`;
-            try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
-            showGlobalMemoryError(msg);
-            return;
-          }
-          item.style.transition = "opacity 0.12s";
-          item.style.opacity = "0";
-          setTimeout(() => item.remove(), 130);
-        },
-      });
-    });
-
-    const actions = document.createElement("div");
-    actions.className = "memory-actions";
-    actions.appendChild(deleteBtn);
-    item.appendChild(domainEl);
-    item.appendChild(span);
-    item.appendChild(actions);
-    memoryList.appendChild(item);
+    memoryList.appendChild(renderBucketItem(b));
   }
 }
 
