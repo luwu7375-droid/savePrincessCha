@@ -1,4 +1,4 @@
-console.log("build cloudflare-0029");
+console.log("build cloudflare-0030");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -666,7 +666,7 @@ function getLastMessageRow(role) {
 }
 
 function isMobileMessageActions() {
-  return window.matchMedia("(max-width: 820px)").matches;
+  return window.matchMedia("(hover: none), (pointer: coarse)").matches;
 }
 
 function canRegenerateRow(row) {

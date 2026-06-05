@@ -832,6 +832,10 @@ body {
 .sidebar-backdrop.hidden { display: none; }
 
 /* ── Mobile ── */
+@media (hover: none), (pointer: coarse) {
+  .msg-actions { display: none !important; }
+}
+
 @media (max-width: 820px) {
   .layout { display: block; overflow: hidden; }
   .chat-shell { width: 100vw; height: 100dvh; }
@@ -873,7 +877,7 @@ body {
     user-select: none;
     touch-action: pan-y;
   }
-  .msg-actions { display: none !important; }
+  /* .msg-actions intentionally shown on pointer devices; hidden via capability query below */
 
   .input-bar {
     padding: 8px 10px;
