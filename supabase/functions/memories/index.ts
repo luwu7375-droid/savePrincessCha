@@ -21,6 +21,9 @@ function normalizeMemoryDomain(domain: unknown): MemoryDomain {
 }
 
 Deno.serve(async (req) => {
+  const _url = new URL(req.url);
+  console.log("memories hit", { method: req.method, search: _url.search });
+
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
   const adminToken = Deno.env.get("MEMORY_ADMIN_TOKEN");

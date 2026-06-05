@@ -1,4 +1,4 @@
-console.log("build cloudflare-0031");
+console.log("build cloudflare-0032");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1011,7 +1011,12 @@ async function memoryFetch(path, options = {}) {
   const endpoint = getMemoryEndpoint();
   if (!endpoint) throw new Error("MEMORIES_API_ENDPOINT 未配置");
   const token = getMemoryToken();
-  return fetch(endpoint + path, {
+  const url = new URL(endpoint);
+  if (path.startsWith("?")) {
+    const params = new URLSearchParams(path.slice(1));
+    for (const [k, v] of params) url.searchParams.set(k, v);
+  }
+  return fetch(url.toString(), {
     ...options,
     headers: { "Content-Type": "application/json", "x-memory-admin-token": token, ...(options.headers || {}) },
   });
