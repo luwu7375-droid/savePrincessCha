@@ -10,9 +10,163 @@ type ChatRequest = {
   stream?: boolean;
   replyMode?: string;
   userId?: string;
+  modelTier?: string; // "instant" | "general" | "advanced"
 };
 
-const FUNCTION_VERSION = "env-check-v1";
+// ── Model tier ────────────────────────────────────────────────────────────────
+//
+// Tier → provider mapping:
+//
+//   instant  → deepseek_official  (DEEPSEEK_API_KEY + DEEPSEEK_BASE_URL + DEEPSEEK_MODEL)
+//   general  → openrouter         (OPENROUTER_API_KEY + OPENROUTER_BASE_URL + DEFAULT_MODEL)
+//   advanced → openrouter         (OPENROUTER_API_KEY + OPENROUTER_BASE_URL + ADVANCED_MODEL)
+//
+// Fallback (one-shot, triggered on 429 / 5xx / credits errors):
+//   Priority 1 — OR_FALLBACK:    OR_FALLBACK_API_KEY + OR_FALLBACK_BASE_URL + OR_FALLBACK_MODEL
+//   Priority 2 — legacy:         OPENROUTER_API_KEY  + OPENROUTER_BASE_URL  + FALLBACK_MODEL
+//
+// Token caps (all optional):
+//   MAX_OUTPUT_TOKENS_INSTANT  (default 300)
+//   MAX_OUTPUT_TOKENS_GENERAL  (default 300)
+//   MAX_OUTPUT_TOKENS_ADVANCED (default 1200)
+//
+// Legacy / compatibility env vars (still honoured):
+//   MODEL_NAME   — fallback if DEFAULT_MODEL unset
+//   FAST_MODEL   — fallback if DEEPSEEK_MODEL unset
+
+type ModelTier = "instant" | "general" | "advanced";
+
+const VALID_TIERS: ModelTier[] = ["instant", "general", "advanced"];
+
+function normalizeTier(raw: string | undefined): ModelTier {
+  if (raw && VALID_TIERS.includes(raw as ModelTier)) return raw as ModelTier;
+  return "general";
+}
+
+// ── Provider config ───────────────────────────────────────────────────────────
+
+type ProviderName = "deepseek_official" | "openrouter";
+
+type ProviderConfig = {
+  providerName: ProviderName;
+  baseUrl: string; // full completions endpoint URL
+  apiKey: string;
+  model: string;
+  maxTokens: number;
+  tier: ModelTier;
+};
+
+/**
+ * Normalises an API base URL to a full /chat/completions endpoint.
+ *
+ * Handles three input patterns:
+ *   "https://api.fuka.win/v1/chat/completions" → unchanged (already full)
+ *   "https://api.deepseek.com"                 → appends /v1/chat/completions
+ *   "https://openrouter.ai/api/v1"             → appends /chat/completions
+ */
+function toCompletionsUrl(base: string): string {
+  if (base.endsWith("/chat/completions")) return base;
+  const stripped = base.replace(/\/$/, "");
+  if (/\/v\d+$/.test(stripped)) return stripped + "/chat/completions";
+  return stripped + "/v1/chat/completions";
+}
+
+function resolveProviderForTier(tier: ModelTier): ProviderConfig {
+  const orBaseUrl = toCompletionsUrl(
+    Deno.env.get("OPENROUTER_BASE_URL") || "https://api.fuka.win/v1/chat/completions",
+  );
+  const orApiKey = Deno.env.get("OPENROUTER_API_KEY") || "";
+  const defaultModel =
+    Deno.env.get("DEFAULT_MODEL") || Deno.env.get("MODEL_NAME") || "";
+
+  switch (tier) {
+    case "instant": {
+      const baseUrl = toCompletionsUrl(
+        Deno.env.get("DEEPSEEK_BASE_URL") || "https://api.deepseek.com",
+      );
+      const apiKey = Deno.env.get("DEEPSEEK_API_KEY") || "";
+      const model =
+        Deno.env.get("DEEPSEEK_MODEL") ||
+        Deno.env.get("FAST_MODEL") ||
+        defaultModel;
+      const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_INSTANT") || "300", 10);
+      return { providerName: "deepseek_official", baseUrl, apiKey, model, maxTokens, tier };
+    }
+    case "advanced": {
+      const model = Deno.env.get("ADVANCED_MODEL") || defaultModel;
+      const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_ADVANCED") || "1200", 10);
+      return { providerName: "openrouter", baseUrl: orBaseUrl, apiKey: orApiKey, model, maxTokens, tier };
+    }
+    default: {
+      // general
+      const model = defaultModel;
+      const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "300", 10);
+      return { providerName: "openrouter", baseUrl: orBaseUrl, apiKey: orApiKey, model, maxTokens, tier: "general" };
+    }
+  }
+}
+
+/**
+ * Returns the one-shot fallback provider to try when the primary call fails.
+ *
+ * Priority 1: OR_FALLBACK  (OR_FALLBACK_API_KEY + OR_FALLBACK_BASE_URL + OR_FALLBACK_MODEL)
+ * Priority 2: legacy       (OPENROUTER_API_KEY  + OPENROUTER_BASE_URL  + FALLBACK_MODEL)
+ * Returns null if neither is configured.
+ */
+function getFallbackProvider(): ProviderConfig | null {
+  const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "300", 10);
+
+  // Priority 1 — OR_FALLBACK
+  const orFbKey   = Deno.env.get("OR_FALLBACK_API_KEY") || "";
+  const orFbBase  = Deno.env.get("OR_FALLBACK_BASE_URL") || "";
+  const orFbModel = Deno.env.get("OR_FALLBACK_MODEL") || "";
+  if (orFbKey && orFbBase && orFbModel) {
+    return {
+      providerName: "openrouter",
+      baseUrl: toCompletionsUrl(orFbBase),
+      apiKey: orFbKey,
+      model: orFbModel,
+      maxTokens,
+      tier: "general",
+    };
+  }
+
+  // Priority 2 — legacy FALLBACK_MODEL on primary OpenRouter
+  const fbModel  = Deno.env.get("FALLBACK_MODEL") || "";
+  const orApiKey = Deno.env.get("OPENROUTER_API_KEY") || "";
+  const orBase   = toCompletionsUrl(
+    Deno.env.get("OPENROUTER_BASE_URL") || "https://api.fuka.win/v1/chat/completions",
+  );
+  if (fbModel && orApiKey) {
+    return {
+      providerName: "openrouter",
+      baseUrl: orBase,
+      apiKey: orApiKey,
+      model: fbModel,
+      maxTokens,
+      tier: "general",
+    };
+  }
+
+  return null;
+}
+
+/** Returns true for upstream errors that warrant a one-shot fallback attempt. */
+function isFallbackableStatus(status: number, bodyText: string): boolean {
+  if (status === 429 || status >= 500) return true;
+  const lower = bodyText.toLocaleLowerCase();
+  return (
+    lower.includes("insufficient credits") ||
+    lower.includes("insufficient_credits") ||
+    lower.includes("bad_response_status_code") ||
+    lower.includes("quota exceeded") ||
+    lower.includes("rate limit")
+  );
+}
+
+// ── Memory ────────────────────────────────────────────────────────────────────
+
+const FUNCTION_VERSION = "provider-routing-v1";
 const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
 type MemoryDomain = typeof MEMORY_DOMAINS[number];
 type MemoryRow = {
@@ -44,9 +198,9 @@ const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona" | "relation
 // This is sufficient for a 2-minute in-process cache with low cardinality keys.
 // If this cache is ever made persistent or cross-process, use the full 64-char hash.
 type MemoryCacheEntry = {
-  compiledText: string; // compiled memory+bucket text to inject into systemContent
-  hitMemoryIds: string[]; // memory row IDs that were included
-  ts: number; // Date.now() at cache time
+  compiledText: string;
+  hitMemoryIds: string[];
+  ts: number;
 };
 const _memCache = new Map<string, MemoryCacheEntry>();
 const CACHE_TTL_MS = 120_000; // 2 minutes
@@ -57,14 +211,15 @@ async function hashCacheKey(input: string): Promise<string> {
 }
 
 function hitDomainsFingerprint(lastUserMessage: string): string {
-  const hits = (Object.entries(MEMORY_DOMAIN_KEYWORDS) as [keyof typeof MEMORY_DOMAIN_KEYWORDS, string[]][])
+  const hits = (
+    Object.entries(MEMORY_DOMAIN_KEYWORDS) as [keyof typeof MEMORY_DOMAIN_KEYWORDS, string[]][]
+  )
     .filter(([, kws]) => messageHitsKeywords(lastUserMessage, kws))
     .map(([d]) => d)
     .sort();
   return "v1|" + hits.join(",");
 }
 
-/** Evict all expired entries from _memCache. Call before writes to prevent unbounded growth. */
 function evictExpiredCacheEntries(): void {
   const now = Date.now();
   for (const [key, entry] of _memCache) {
@@ -72,25 +227,35 @@ function evictExpiredCacheEntries(): void {
   }
 }
 
-// --- Safe logging ---
+// ── Logging ───────────────────────────────────────────────────────────────────
 // Never logs user message content or memory content.
 // user_id is truncated to first 6 chars to allow correlation without exposing full UUID.
+
 type RequestLog = {
   request_id: string;
-  user_id_prefix: string;   // first 6 chars of userId, or "absent"
+  user_id_prefix: string;
   has_user_id: boolean;
+  model_tier: string;
+  provider: string;
+  model: string;
+  fallback_used: boolean;
+  fallback_model: string | null;
+  fallback_provider: string | null;
+  fallback_reason: string | null;
   memory_cache_hit: boolean;
   memory_count: number;
   hit_memory_ids_count: number;
-  memory_fetch_ms: number;   // 0 on cache hit
-  memory_compile_ms: number; // 0 on cache hit
+  memory_fetch_ms: number;
+  memory_compile_ms: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  estimated_cost: null;
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
 };
 
 function makeRequestId(): string {
-  // crypto.randomUUID() is available in Deno
   return crypto.randomUUID().slice(0, 8);
 }
 
@@ -102,6 +267,8 @@ function safeUserIdPrefix(userId: string): string {
 function emitLog(log: RequestLog): void {
   console.log(JSON.stringify({ ...log, fn: "chat", v: FUNCTION_VERSION }));
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -115,7 +282,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function normalizeMemoryDomain(domain: string | null | undefined): MemoryDomain {
-  return MEMORY_DOMAINS.includes(domain as MemoryDomain) ? domain as MemoryDomain : "general";
+  return MEMORY_DOMAINS.includes(domain as MemoryDomain) ? (domain as MemoryDomain) : "general";
 }
 
 function getLastUserMessage(messages: unknown): string {
@@ -126,7 +293,13 @@ function getLastUserMessage(messages: unknown): string {
     if (typeof message.content === "string") return message.content;
     if (Array.isArray(message.content)) {
       return message.content
-        .map((part) => typeof part === "string" ? part : (part && typeof part === "object" && "text" in part ? String((part as { text?: unknown }).text || "") : ""))
+        .map((part) =>
+          typeof part === "string"
+            ? part
+            : part && typeof part === "object" && "text" in part
+            ? String((part as { text?: unknown }).text || "")
+            : ""
+        )
         .join("\n");
     }
   }
@@ -140,7 +313,10 @@ function messageHitsKeywords(message: string, keywords: string[]): boolean {
 
 function selectContextualMemoryRows(rows: MemoryRow[], lastUserMessage: string): MemoryRow[] {
   const hitDomains = new Set<MemoryDomain>();
-  for (const [domain, keywords] of Object.entries(MEMORY_DOMAIN_KEYWORDS) as [keyof typeof MEMORY_DOMAIN_KEYWORDS, string[]][]) {
+  for (const [domain, keywords] of Object.entries(MEMORY_DOMAIN_KEYWORDS) as [
+    keyof typeof MEMORY_DOMAIN_KEYWORDS,
+    string[],
+  ][]) {
     if (messageHitsKeywords(lastUserMessage, keywords)) hitDomains.add(domain);
   }
 
@@ -163,7 +339,7 @@ async function fetchEnabledMemories(
     { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
   );
   if (!res.ok) return { lines: [], ids: [] };
-  const rows = await res.json() as MemoryRow[];
+  const rows = (await res.json()) as MemoryRow[];
   const selected = selectContextualMemoryRows(rows, lastUserMessage);
   return { lines: selected.map((r) => r.content), ids: selected.map((r) => r.id) };
 }
@@ -174,18 +350,109 @@ async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): 
     { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
   );
   if (!res.ok) return [];
-  const rows = await res.json() as { id: string; title: string; summary: string }[];
-  // fire-and-forget update last_accessed_at
+  const rows = (await res.json()) as { id: string; title: string; summary: string }[];
   if (rows.length > 0) {
     const ids = rows.map((r) => r.id).join(",");
     fetch(`${supabaseUrl}/rest/v1/memory_buckets?id=in.(${ids})`, {
       method: "PATCH",
-      headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
       body: JSON.stringify({ last_accessed_at: new Date().toISOString() }),
     }).catch(() => {});
   }
   return rows.map((r) => r.summary);
 }
+
+// ── Model call (with one-shot fallback) ───────────────────────────────────────
+
+type CallResult = {
+  response: Response;
+  usedModel: string;
+  usedProvider: ProviderName;
+  fallbackUsed: boolean;
+  fallbackModel: string | null;
+  fallbackProvider: ProviderName | null;
+  fallbackReason: string | null;
+  modelCallMs: number;
+};
+
+async function callModel(
+  provider: ProviderConfig,
+  messages: unknown[],
+): Promise<{ res: Response; ms: number }> {
+  const t = Date.now();
+  const res = await fetch(provider.baseUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${provider.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: provider.model,
+      messages,
+      stream: true,
+      max_tokens: provider.maxTokens,
+    }),
+  });
+  return { res, ms: Date.now() - t };
+}
+
+async function callModelWithFallback(
+  primary: ProviderConfig,
+  messages: unknown[],
+): Promise<CallResult> {
+  const { res: primaryRes, ms: primaryMs } = await callModel(primary, messages);
+
+  if (primaryRes.ok) {
+    return {
+      response: primaryRes,
+      usedModel: primary.model,
+      usedProvider: primary.providerName,
+      fallbackUsed: false,
+      fallbackModel: null,
+      fallbackProvider: null,
+      fallbackReason: null,
+      modelCallMs: primaryMs,
+    };
+  }
+
+  const bodyText = await primaryRes.text();
+  const fallback = getFallbackProvider();
+
+  if (!fallback || !isFallbackableStatus(primaryRes.status, bodyText)) {
+    return {
+      response: new Response(bodyText, { status: primaryRes.status, headers: primaryRes.headers }),
+      usedModel: primary.model,
+      usedProvider: primary.providerName,
+      fallbackUsed: false,
+      fallbackModel: null,
+      fallbackProvider: null,
+      fallbackReason: null,
+      modelCallMs: primaryMs,
+    };
+  }
+
+  // One-shot fallback
+  const fallbackReason = `primary_status_${primaryRes.status}`;
+  const { res: fallbackRes, ms: fallbackMs } = await callModel(fallback, messages);
+
+  return {
+    response: fallbackRes,
+    usedModel: fallback.model,
+    usedProvider: fallback.providerName,
+    fallbackUsed: true,
+    fallbackModel: fallback.model,
+    fallbackProvider: fallback.providerName,
+    fallbackReason,
+    modelCallMs: primaryMs + fallbackMs,
+  };
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -202,25 +469,7 @@ Deno.serve(async (request) => {
   const t0 = Date.now();
   const requestId = makeRequestId();
 
-  const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY");
-  const openrouterBaseUrl =
-    Deno.env.get("OPENROUTER_BASE_URL") ||
-    "https://api.fuka.win/v1/chat/completions";
-
-  if (!openrouterApiKey) {
-    return jsonResponse(
-      {
-        error: "环境变量未配置",
-        hasOpenrouterApiKey: false,
-        hasOpenrouterBaseUrl: true,
-        hasModelName: !!Deno.env.get("MODEL_NAME"),
-      },
-      500,
-    );
-  }
-
   let payload: ChatRequest;
-
   try {
     payload = await request.json();
   } catch {
@@ -231,46 +480,71 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "messages 必须是数组" }, 400);
   }
 
-  const model = Deno.env.get("MODEL_NAME") || payload.model;
+  const tier = normalizeTier(payload.modelTier);
+  const providerConfig = resolveProviderForTier(tier);
 
-  if (!model) {
-    return jsonResponse({ error: "MODEL_NAME 未配置" }, 500);
+  if (!providerConfig.apiKey) {
+    return jsonResponse(
+      {
+        error: `${providerConfig.providerName} API key 未配置`,
+        provider: providerConfig.providerName,
+        tier,
+      },
+      500,
+    );
   }
 
-  // Initialise log record — populated incrementally below
+  if (!providerConfig.model) {
+    return jsonResponse(
+      { error: "模型未配置，请设置相应的模型 env 变量", provider: providerConfig.providerName, tier },
+      500,
+    );
+  }
+
+  // Initialise log record
   const logRecord: RequestLog = {
     request_id: requestId,
     user_id_prefix: "absent",
     has_user_id: false,
+    model_tier: tier,
+    provider: providerConfig.providerName,
+    model: providerConfig.model,
+    fallback_used: false,
+    fallback_model: null,
+    fallback_provider: null,
+    fallback_reason: null,
     memory_cache_hit: false,
     memory_count: 0,
     hit_memory_ids_count: 0,
     memory_fetch_ms: 0,
     memory_compile_ms: 0,
+    input_tokens: null,
+    output_tokens: null,
+    estimated_cost: null,
     model_call_ms: 0,
     total_ms: 0,
   };
 
-  // Build system prompt with memories
+  // Build system prompt
   const supabaseUrl = Deno.env.get("DB_URL");
   const serviceRoleKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
-  let systemContent = `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。
 
-【回复长度与节奏】
-- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。
-- 用户短句，回复也短，通常 1-3 句。
-- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。
-- 不要主动列很多"下一步"。
-- 不要把普通聊天写成安慰小作文。
-- 不要每次都"先共情再建议再总结"。
-- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。
-- 可以亲近，但要收口。`;
+  // Token cap hint in system prompt.
+  // instant/general: ask for ~150 chars to control cost.
+  // advanced: give the model room to breathe, still bounded by max_tokens.
+  const tokenCapInstruction =
+    tier === "advanced"
+      ? ""
+      : "\n\n【回复长度硬限制】本次回复控制在 150 中文字以内，不要超出。";
+
+  let systemContent =
+    `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n【回复长度与节奏】\n- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。\n- 用户短句，回复也短，通常 1-3 句。\n- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。\n- 不要主动列很多"下一步"。\n- 不要把普通聊天写成安慰小作文。\n- 不要每次都"先共情再建议再总结"。\n- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。\n- 可以亲近，但要收口。` + tokenCapInstruction;
+
+  const lastUserMessage = getLastUserMessage(payload.messages);
 
   if (supabaseUrl && serviceRoleKey) {
-    const lastUserMessage = getLastUserMessage(payload.messages);
-    // user_id is required in the cache key to prevent cross-user cache contamination.
-    // Fall back to "anon" only as a safety net; in practice the frontend always sends userId.
-    const userId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+    const userId =
+      typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
 
     logRecord.has_user_id = userId !== "anon";
     logRecord.user_id_prefix = safeUserIdPrefix(userId);
@@ -281,13 +555,11 @@ Deno.serve(async (request) => {
     let compiledMemoryText: string;
 
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-      // cache hit: skip DB fetches
       compiledMemoryText = cached.compiledText;
       logRecord.memory_cache_hit = true;
       logRecord.memory_count = cached.hitMemoryIds.length;
       logRecord.hit_memory_ids_count = cached.hitMemoryIds.length;
     } else {
-      // cache miss: fetch and compile
       const tFetch = Date.now();
       const [{ lines: memories, ids: memoryIds }, buckets] = await Promise.all([
         fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
@@ -298,22 +570,28 @@ Deno.serve(async (request) => {
       const tCompile = Date.now();
       let compiled = "";
       if (memories.length > 0) {
-        compiled += "\n\n以下是长期记忆，请优先遵守：\n" + memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
+        compiled +=
+          "\n\n以下是长期记忆，请优先遵守：\n" +
+          memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
       }
       if (buckets.length > 0) {
-        compiled += "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" + buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
+        compiled +=
+          "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" +
+          buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
       }
       logRecord.memory_compile_ms = Date.now() - tCompile;
-
       logRecord.memory_count = memories.length;
       logRecord.hit_memory_ids_count = memoryIds.length;
 
       compiledMemoryText = compiled;
-      // Only cache when at least one fetch returned data, to avoid caching a fetch failure
-      // as an empty context and silently serving stale "no memories" for up to TTL_MS.
+      // Only cache on data — don't cache a fetch failure as empty context
       if (memories.length > 0 || buckets.length > 0) {
         evictExpiredCacheEntries();
-        _memCache.set(cacheKey, { compiledText: compiled, hitMemoryIds: memoryIds, ts: Date.now() });
+        _memCache.set(cacheKey, {
+          compiledText: compiled,
+          hitMemoryIds: memoryIds,
+          ts: Date.now(),
+        });
       }
     }
 
@@ -321,7 +599,8 @@ Deno.serve(async (request) => {
   }
 
   if (payload.replyMode === "auto") {
-    systemContent += "\n\n【回复决策】如果用户明显还在连续补充、只是碎片化记录、或没有期待回复，可以不回复。若不回复，只输出：<NO_REPLY>。不要解释。";
+    systemContent +=
+      "\n\n【回复决策】如果用户明显还在连续补充、只是碎片化记录、或没有期待回复，可以不回复。若不回复，只输出：<NO_REPLY>。不要解释。";
   } else {
     systemContent += "\n\n【回复决策】必须正常回复，禁止输出 <NO_REPLY>。";
   }
@@ -332,38 +611,38 @@ Deno.serve(async (request) => {
   ];
 
   try {
-    const tModel = Date.now();
-    const upstreamResponse = await fetch(openrouterBaseUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${openrouterApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ model, messages, stream: true }),
-    });
-    logRecord.model_call_ms = Date.now() - tModel;
+    const result = await callModelWithFallback(providerConfig, messages);
 
-    if (!upstreamResponse.ok) {
+    logRecord.model_call_ms = result.modelCallMs;
+    logRecord.model = result.usedModel;
+    logRecord.provider = result.usedProvider;
+    logRecord.fallback_used = result.fallbackUsed;
+    logRecord.fallback_model = result.fallbackModel;
+    logRecord.fallback_provider = result.fallbackProvider;
+    logRecord.fallback_reason = result.fallbackReason;
+
+    if (!result.response.ok) {
       let errorBody: unknown = { error: "模型请求失败" };
+      const text = await result.response.text();
       try {
-        errorBody = await upstreamResponse.json();
+        errorBody = JSON.parse(text);
       } catch {
-        errorBody = { error: await upstreamResponse.text() };
+        errorBody = { error: text };
       }
-      logRecord.error_stage = "model_upstream";
+      logRecord.error_stage = result.fallbackUsed ? "fallback_upstream" : "model_upstream";
       logRecord.total_ms = Date.now() - t0;
       emitLog(logRecord);
-      return jsonResponse(errorBody, upstreamResponse.status);
+      return jsonResponse(errorBody, result.response.status);
     }
 
     logRecord.total_ms = Date.now() - t0;
     emitLog(logRecord);
 
-    return new Response(upstreamResponse.body, {
-      status: upstreamResponse.status,
+    return new Response(result.response.body, {
+      status: result.response.status,
       headers: {
         ...corsHeaders,
-        "Content-Type": upstreamResponse.headers.get("Content-Type") || "text/event-stream",
+        "Content-Type": result.response.headers.get("Content-Type") || "text/event-stream",
       },
     });
   } catch (error) {

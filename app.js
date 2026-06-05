@@ -19,6 +19,7 @@ function createSupabaseClient() {
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎回家，kk。";
 let currentUserId = "";
+let currentModelTier = localStorage.getItem("modelTier") || "general";
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -555,6 +556,7 @@ async function callChatAPI(messages, replyMode = "auto") {
       stream: true,
       replyMode,
       userId: currentUserId,
+      modelTier: currentModelTier,
     }),
   });
 }
@@ -593,7 +595,18 @@ async function requestStreamingReply(replyMode = "auto") {
     : chatMessages;
   const response = await callChatAPI(messages, replyMode);
   if (!response.ok || !response.body) {
-    throw new Error((await response.text()) || `请求失败：${response.status}`);
+    const raw = await response.text();
+    // Translate common upstream errors to user-friendly messages
+    const lower = raw.toLocaleLowerCase();
+    let friendly = `请求失败（${response.status}）`;
+    if (lower.includes("insufficient credits") || lower.includes("insufficient_credits")) {
+      friendly = "当前模型额度不足，已尝试切换备用模型，请稍后重试。";
+    } else if (response.status === 429 || lower.includes("rate limit")) {
+      friendly = "请求太频繁，请稍等片刻再试。";
+    } else if (response.status >= 500) {
+      friendly = "模型服务暂时异常，请稍后重试。";
+    }
+    throw new Error(friendly);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
@@ -1360,6 +1373,24 @@ function updateAutoReplyToggle() {
   autoReplyToggle.setAttribute("aria-label", autoReplyToggle.title);
 }
 
+// ── Model tier selector ────────────────────────────────────────────────────────
+
+const VALID_TIERS = ["instant", "general", "advanced"];
+
+function initTierBar() {
+  const buttons = document.querySelectorAll("#tierBar .tier-btn");
+  buttons.forEach((btn) => {
+    if (btn.dataset.tier === currentModelTier) btn.classList.add("active");
+    btn.addEventListener("click", () => {
+      const tier = btn.dataset.tier;
+      if (!VALID_TIERS.includes(tier)) return;
+      currentModelTier = tier;
+      localStorage.setItem("modelTier", tier);
+      buttons.forEach((b) => b.classList.toggle("active", b.dataset.tier === tier));
+    });
+  });
+}
+
 autoReplyToggle.addEventListener("click", () => {
   autoReplyEnabled = !autoReplyEnabled;
   updateAutoReplyToggle();
@@ -1493,3 +1524,5 @@ if (supabaseClient) {
 } else {
   loginOverlay.classList.remove("hidden");
 }
+
+initTierBar();
