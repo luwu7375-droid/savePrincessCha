@@ -142,7 +142,7 @@ function isFallbackableStatus(status: number, bodyText: string): boolean {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "fuka-unified-v2";
+const FUNCTION_VERSION = "fuka-unified-v3";
 const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
 type MemoryDomain = typeof MEMORY_DOMAINS[number];
 type MemoryRow = {
@@ -151,10 +151,16 @@ type MemoryRow = {
   domain?: string | null;
 };
 
-const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona" | "relation">, string[]> = {
+const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona">, string[]> = {
   work: ["救公主", "Codex", "GitHub", "部署", "Guidebook", "app.js", "bug", "报错", "代码", "PRD", "方案"],
   writing: ["OC", "剧情", "角色", "真田", "安彦", "晃", "续写", "文风", "大纲"],
   life: ["吃饭", "睡觉", "猫", "家务", "出门", "身体", "药"],
+  // relation 域：只在问到关系相关问题时召回，不无脑注入
+  relation: [
+    "几天", "第几天", "多少天", "第一次", "认识", "在一起", "纪念日", "哪一年", "哪一天",
+    "几号", "什么时候", "怎么认识", "怎么在一起", "关系史", "历史", "回忆", "过去",
+    "爱你", "喜欢你", "表白", "见面", "相遇",
+  ],
   general: [],
 };
 
@@ -324,14 +330,19 @@ function selectContextualMemoryRows(rows: MemoryRow[], lastUserMessage: string):
     keyof typeof MEMORY_DOMAIN_KEYWORDS,
     string[],
   ][]) {
-    if (messageHitsKeywords(lastUserMessage, keywords)) hitDomains.add(domain);
+    if (keywords.length > 0 && messageHitsKeywords(lastUserMessage, keywords)) {
+      hitDomains.add(domain);
+    }
   }
 
   const hasAnyKeywordHit = hitDomains.size > 0;
   return rows.filter((row) => {
     const domain = normalizeMemoryDomain(row.domain);
+    // persona 永远注入（稳定设定）
     if (domain === "persona") return true;
+    // general 只在有任何关键词命中时才注入，避免无差别污染
     if (domain === "general") return hasAnyKeywordHit;
+    // 其他域（work / writing / life / relation）必须命中对应关键词
     return hitDomains.has(domain);
   });
 }
@@ -351,15 +362,27 @@ async function fetchEnabledMemories(
   return { lines: selected.map((r) => r.content), ids: selected.map((r) => r.id) };
 }
 
-async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
+async function fetchMemoryBuckets(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  lastUserMessage: string,
+): Promise<{ summaries: string[]; titles: string[] }> {
   const res = await fetch(
-    `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary&order=importance.desc,last_accessed_at.desc.nullslast&limit=2`,
+    `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary,keywords&order=importance.desc,last_accessed_at.desc.nullslast&limit=10`,
     { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
   );
-  if (!res.ok) return [];
-  const rows = (await res.json()) as { id: string; title: string; summary: string }[];
-  if (rows.length > 0) {
-    const ids = rows.map((r) => r.id).join(",");
+  if (!res.ok) return { summaries: [], titles: [] };
+  const rows = (await res.json()) as { id: string; title: string; summary: string; keywords?: string[] | null }[];
+
+  // 按关键词过滤：bucket 里有 keywords 字段时，必须命中才注入；没有 keywords 字段的跳过（不盲注）
+  const matched = rows.filter((r) => {
+    const kws = r.keywords;
+    if (!kws || kws.length === 0) return false;
+    return messageHitsKeywords(lastUserMessage, kws);
+  }).slice(0, 2);
+
+  if (matched.length > 0) {
+    const ids = matched.map((r) => r.id).join(",");
     fetch(`${supabaseUrl}/rest/v1/memory_buckets?id=in.(${ids})`, {
       method: "PATCH",
       headers: {
@@ -371,7 +394,11 @@ async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): 
       body: JSON.stringify({ last_accessed_at: new Date().toISOString() }),
     }).catch(() => {});
   }
-  return rows.map((r) => r.summary);
+
+  return {
+    summaries: matched.map((r) => r.summary),
+    titles: matched.map((r) => r.title),
+  };
 }
 
 // ── Story Seeds ───────────────────────────────────────────────────────────────
@@ -603,7 +630,7 @@ Deno.serve(async (request) => {
       : "\n\n【回复长度硬限制】本次回复控制在 150 中文字以内，不要超出。";
 
   let systemContent =
-    `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n【回复长度与节奏】\n- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。\n- 用户短句，回复也短，通常 1-3 句。\n- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。\n- 不要主动列很多"下一步"。\n- 不要把普通聊天写成安慰小作文。\n- 不要每次都"先共情再建议再总结"。\n- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。\n- 可以亲近，但要收口。` + tokenCapInstruction;
+    `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n【回复长度与节奏】\n- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。\n- 用户短句，回复也短，通常 1-3 句。\n- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。\n- 不要主动列很多"下一步"。\n- 不要把普通聊天写成安慰小作文。\n- 不要每次都"先共情再建议再总结"。\n- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。\n- 可以亲近，但要收口。\n\n【关系史与事实准确性】\n- 涉及“第几天、认识多久、第一次见面、哪年哪天、纪念日”等时间或事实问题，只有在记忆中有明确记录时才回答具体数字。\n- 如果记忆中没有相关事实，必须回复“不确定，你可以翻一下关系史看看”，不允许猜测或拼凑日期和事件。\n- 关系史注入的内容是参考资料，不是铁板事实。不要把多条不同时间线的记忆混合拼出一个答案。` + tokenCapInstruction;
 
   const lastUserMessage = getLastUserMessage(payload.messages);
 
@@ -628,9 +655,9 @@ Deno.serve(async (request) => {
     } else {
       _cacheMisses += 1;
       const tFetch = Date.now();
-      const [{ lines: memories, ids: memoryIds }, buckets] = await Promise.all([
+      const [{ lines: memories, ids: memoryIds }, { summaries: buckets }] = await Promise.all([
         fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
-        fetchMemoryBuckets(supabaseUrl, serviceRoleKey),
+        fetchMemoryBuckets(supabaseUrl, serviceRoleKey, lastUserMessage),
       ]);
       logRecord.memory_fetch_ms = Date.now() - tFetch;
 

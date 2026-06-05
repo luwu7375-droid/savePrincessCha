@@ -1,4 +1,4 @@
-console.log("build cloudflare-0048");
+console.log("build cloudflare-0049");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -600,6 +600,13 @@ async function callChatAPI(messages, replyMode = "auto") {
   const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME");
   if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
   if (!modelName) throw new Error("MODEL_NAME 未配置");
+  console.log("[debug] callChatAPI", {
+    storySeedsEnabled,
+    replyMode,
+    modelTier: currentModelTier,
+    userId: currentUserId ? currentUserId.slice(0, 6) : "absent",
+    messageCount: messages.length,
+  });
   return fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
