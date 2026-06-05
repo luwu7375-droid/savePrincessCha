@@ -18,6 +18,7 @@ function createSupabaseClient() {
 
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎回家，kk。";
+let currentUserId = "";
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -553,6 +554,7 @@ async function callChatAPI(messages, replyMode = "auto") {
       ],
       stream: true,
       replyMode,
+      userId: currentUserId,
     }),
   });
 }
@@ -1462,6 +1464,7 @@ logoutBtn.addEventListener("click", async () => {
 });
 
 async function hideLoginAndInit(session) {
+  currentUserId = session?.user?.id || "";
   loginOverlay.classList.add("hidden");
   if (logoutBtn) logoutBtn.classList.remove("hidden");
   setLoading(true);

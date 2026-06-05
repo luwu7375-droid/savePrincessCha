@@ -9,12 +9,14 @@ type ChatRequest = {
   model?: string;
   stream?: boolean;
   replyMode?: string;
+  userId?: string;
 };
 
 const FUNCTION_VERSION = "env-check-v1";
 const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
 type MemoryDomain = typeof MEMORY_DOMAINS[number];
 type MemoryRow = {
+  id: string;
   content: string;
   domain?: string | null;
 };
@@ -25,6 +27,50 @@ const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona" | "relation
   life: ["吃饭", "睡觉", "猫", "家务", "出门", "身体", "药"],
   general: [],
 };
+
+// --- Memory context cache (module-level in-memory, survives across warm requests) ---
+//
+// Cache key = SHA-256(user_id + "|" + domain_fingerprint), truncated to 16 hex chars.
+// user_id is mandatory in the key to prevent cross-user cache contamination.
+// conversation_id is intentionally NOT included: memories/buckets are global per user,
+// not scoped to a conversation, so two conversations for the same user share the same context.
+//
+// This is a best-effort cache keyed on *which domains are selected*, not on memory content.
+// If memories are updated within the TTL window, the old compiled context may be reused.
+// This is acceptable for a short-lived in-process cache; do NOT use this design for a
+// persistent or shared cache without adding a content-version fingerprint to the key.
+//
+// NOTE: hashCacheKey uses only the first 16 hex chars of SHA-256 (64-bit prefix).
+// This is sufficient for a 2-minute in-process cache with low cardinality keys.
+// If this cache is ever made persistent or cross-process, use the full 64-char hash.
+type MemoryCacheEntry = {
+  compiledText: string; // compiled memory+bucket text to inject into systemContent
+  hitMemoryIds: string[]; // memory row IDs that were included
+  ts: number; // Date.now() at cache time
+};
+const _memCache = new Map<string, MemoryCacheEntry>();
+const CACHE_TTL_MS = 120_000; // 2 minutes
+
+async function hashCacheKey(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+
+function hitDomainsFingerprint(lastUserMessage: string): string {
+  const hits = (Object.entries(MEMORY_DOMAIN_KEYWORDS) as [keyof typeof MEMORY_DOMAIN_KEYWORDS, string[]][])
+    .filter(([, kws]) => messageHitsKeywords(lastUserMessage, kws))
+    .map(([d]) => d)
+    .sort();
+  return "v1|" + hits.join(",");
+}
+
+/** Evict all expired entries from _memCache. Call before writes to prevent unbounded growth. */
+function evictExpiredCacheEntries(): void {
+  const now = Date.now();
+  for (const [key, entry] of _memCache) {
+    if (now - entry.ts >= CACHE_TTL_MS) _memCache.delete(key);
+  }
+}
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -61,31 +107,34 @@ function messageHitsKeywords(message: string, keywords: string[]): boolean {
   return keywords.some((keyword) => lowerMessage.includes(keyword.toLocaleLowerCase()));
 }
 
-function selectContextualMemories(rows: MemoryRow[], lastUserMessage: string): string[] {
+function selectContextualMemoryRows(rows: MemoryRow[], lastUserMessage: string): MemoryRow[] {
   const hitDomains = new Set<MemoryDomain>();
   for (const [domain, keywords] of Object.entries(MEMORY_DOMAIN_KEYWORDS) as [keyof typeof MEMORY_DOMAIN_KEYWORDS, string[]][]) {
     if (messageHitsKeywords(lastUserMessage, keywords)) hitDomains.add(domain);
   }
 
   const hasAnyKeywordHit = hitDomains.size > 0;
-  return rows
-    .filter((row) => {
-      const domain = normalizeMemoryDomain(row.domain);
-      if (domain === "persona") return true;
-      if (domain === "general") return hasAnyKeywordHit;
-      return hitDomains.has(domain);
-    })
-    .map((row) => row.content);
+  return rows.filter((row) => {
+    const domain = normalizeMemoryDomain(row.domain);
+    if (domain === "persona") return true;
+    if (domain === "general") return hasAnyKeywordHit;
+    return hitDomains.has(domain);
+  });
 }
 
-async function fetchEnabledMemories(supabaseUrl: string, serviceRoleKey: string, lastUserMessage: string): Promise<string[]> {
+async function fetchEnabledMemories(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  lastUserMessage: string,
+): Promise<{ lines: string[]; ids: string[] }> {
   const res = await fetch(
-    `${supabaseUrl}/rest/v1/memories?enabled=eq.true&select=content,domain&order=created_at.asc`,
-    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } }
+    `${supabaseUrl}/rest/v1/memories?enabled=eq.true&select=id,content,domain&order=created_at.asc`,
+    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
   );
-  if (!res.ok) return [];
+  if (!res.ok) return { lines: [], ids: [] };
   const rows = await res.json() as MemoryRow[];
-  return selectContextualMemories(rows, lastUserMessage);
+  const selected = selectContextualMemoryRows(rows, lastUserMessage);
+  return { lines: selected.map((r) => r.content), ids: selected.map((r) => r.id) };
 }
 
 async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
@@ -171,16 +220,42 @@ Deno.serve(async (request) => {
 
   if (supabaseUrl && serviceRoleKey) {
     const lastUserMessage = getLastUserMessage(payload.messages);
-    const [memories, buckets] = await Promise.all([
-      fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
-      fetchMemoryBuckets(supabaseUrl, serviceRoleKey),
-    ]);
-    if (memories.length > 0) {
-      systemContent += "\n\n以下是长期记忆，请优先遵守：\n" + memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
+    // user_id is required in the cache key to prevent cross-user cache contamination.
+    // Fall back to "anon" only as a safety net; in practice the frontend always sends userId.
+    const userId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+    const cacheKey = await hashCacheKey(userId + "|" + hitDomainsFingerprint(lastUserMessage));
+    const cached = _memCache.get(cacheKey);
+
+    let compiledMemoryText: string;
+
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+      // cache hit: skip DB fetches
+      compiledMemoryText = cached.compiledText;
+    } else {
+      // cache miss: fetch and compile
+      const [{ lines: memories, ids: memoryIds }, buckets] = await Promise.all([
+        fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
+        fetchMemoryBuckets(supabaseUrl, serviceRoleKey),
+      ]);
+
+      let compiled = "";
+      if (memories.length > 0) {
+        compiled += "\n\n以下是长期记忆，请优先遵守：\n" + memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
+      }
+      if (buckets.length > 0) {
+        compiled += "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" + buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
+      }
+
+      compiledMemoryText = compiled;
+      // Only cache when at least one fetch returned data, to avoid caching a fetch failure
+      // as an empty context and silently serving stale "no memories" for up to TTL_MS.
+      if (memories.length > 0 || buckets.length > 0) {
+        evictExpiredCacheEntries();
+        _memCache.set(cacheKey, { compiledText: compiled, hitMemoryIds: memoryIds, ts: Date.now() });
+      }
     }
-    if (buckets.length > 0) {
-      systemContent += "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" + buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
-    }
+
+    systemContent += compiledMemoryText;
   }
 
   if (payload.replyMode === "auto") {
