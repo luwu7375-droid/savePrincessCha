@@ -123,10 +123,13 @@ Deno.serve(async (req) => {
 
   if (req.method === "GET") {
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/memories?select=id,content,domain,enabled&order=created_at.asc`,
+      `${supabaseUrl}/rest/v1/memories?select=id,content,category,enabled&order=created_at.asc`,
       { headers: dbHeaders }
     );
-    return json(await res.json(), res.ok ? 200 : 500);
+    if (!res.ok) return json(await res.json(), 500);
+    const rows = await res.json() as { id: string; content: string; category: string; enabled: boolean }[];
+    // Expose category as domain so the frontend API stays stable
+    return json(rows.map(r => ({ ...r, domain: r.category || "general" })), 200);
   }
 
   if (req.method === "POST") {
@@ -135,7 +138,7 @@ Deno.serve(async (req) => {
     const res = await fetch(`${supabaseUrl}/rest/v1/memories`, {
       method: "POST",
       headers: { ...dbHeaders, Prefer: "return=representation" },
-      body: JSON.stringify({ content: content.trim(), domain: normalizeMemoryDomain(domain) }),
+      body: JSON.stringify({ content: content.trim(), category: normalizeMemoryDomain(domain) }),
     });
     return json(await res.json(), res.ok ? 201 : 500);
   }
@@ -157,7 +160,7 @@ Deno.serve(async (req) => {
     }
 
     if (body.domain !== undefined) {
-      patch.domain = normalizeMemoryDomain(body.domain);
+      patch.category = normalizeMemoryDomain(body.domain);
     }
 
     if (Object.keys(patch).length === 1) return json({ error: "no fields to update" }, 400);
