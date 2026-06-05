@@ -1,4 +1,4 @@
-console.log("build cloudflare-0040");
+console.log("build cloudflare-0041");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -44,7 +44,6 @@ const newConvButton     = document.getElementById("newConvButton");
 const convList          = document.getElementById("convList");
 const sidebar           = document.getElementById("sidebar");
 const sidebarToggle     = document.getElementById("sidebarToggle");
-const themeButton       = document.getElementById("themeButton");
 const loginOverlay      = document.getElementById("loginOverlay");
 const loginEmail        = document.getElementById("loginEmail");
 const loginMsg          = document.getElementById("loginMsg");
@@ -80,9 +79,10 @@ function applyTheme(mode = getThemeMode()) {
   } else {
     document.documentElement.removeAttribute("data-theme");
   }
-  themeButton.textContent = themeLabelMap[mode] || "系统";
-  themeButton.title = `主题：${mode === "system" ? "跟随系统" : mode === "light" ? "浅色" : "深色"}`;
-  themeButton.setAttribute("aria-label", themeButton.title);
+  // 更新系统弹窗内主题选项的选中态
+  document.querySelectorAll(".theme-option-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.themeMode === mode);
+  });
 }
 
 function setThemeMode(mode) {
@@ -92,10 +92,23 @@ function setThemeMode(mode) {
 
 applyTheme();
 
-themeButton.addEventListener("click", () => {
-  const currentMode = getThemeMode();
-  const nextMode = themeOrder[(themeOrder.indexOf(currentMode) + 1) % themeOrder.length];
-  setThemeMode(nextMode);
+// ── 系统设置弹窗 ──────────────────────────────────────────────────────────────
+
+const systemOverlay = document.getElementById("systemOverlay");
+
+document.getElementById("systemButton")?.addEventListener("click", () => {
+  applyTheme(); // 确保选中态最新
+  systemOverlay?.classList.remove("hidden");
+});
+
+document.getElementById("closeSystemButton")?.addEventListener("click", () => {
+  systemOverlay?.classList.add("hidden");
+});
+
+document.getElementById("themeOptions")?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".theme-option-btn");
+  if (!btn) return;
+  setThemeMode(btn.dataset.themeMode);
 });
 
 const onSystemThemeChange = () => {
@@ -1808,10 +1821,8 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
   closeMobileSidebar();
   if (activeMoreMenu) { closeMoreMenu(); return; }
   const items = [
-    { label: "主题", id: "themeButton" },
     { label: "沉淀", id: "distillButton" },
     { label: "记忆匣", id: "toggleMemoryButton" },
-    { label: "退出", id: "logoutBtn" },
   ];
   const menu = document.createElement("div");
   menu.className = "more-menu";
@@ -1940,36 +1951,11 @@ autoReplyToggle.addEventListener("click", () => {
 
 updateAutoReplyToggle();
 
-// ── Story Seeds 开关 ──────────────────────────────────────────────────────────
+// ── 关系史入口 ────────────────────────────────────────────────────────────────
 
-const storySeedsToggleBtn = document.getElementById("storySeedsToggle");
-
-function updateStorySeedsToggle() {
-  if (!storySeedsToggleBtn) return;
-  storySeedsToggleBtn.textContent = storySeedsEnabled ? "关系史 ●" : "关系史 ○";
-  storySeedsToggleBtn.title = storySeedsEnabled
-    ? "关系史实验：已开启（Story Seeds 注入中）"
-    : "关系史实验：已关闭（点击开启）";
-}
-
-let _storySeedClickTimer = null;
-storySeedsToggleBtn?.addEventListener("click", () => {
-  // 使用延迟区分单击（切换开关）和双击（打开调试面板）
-  if (_storySeedClickTimer) {
-    clearTimeout(_storySeedClickTimer);
-    _storySeedClickTimer = null;
-    openStorySeedsDebugPanel();
-  } else {
-    _storySeedClickTimer = setTimeout(() => {
-      _storySeedClickTimer = null;
-      storySeedsEnabled = !storySeedsEnabled;
-      localStorage.setItem("storySeedsEnabled", String(storySeedsEnabled));
-      updateStorySeedsToggle();
-    }, 250);
-  }
+document.getElementById("storySeedsBtn")?.addEventListener("click", () => {
+  openStorySeedsPanel();
 });
-
-updateStorySeedsToggle();
 
 async function triggerReply(replyMode) {
   if (isReplying) return;
@@ -2158,17 +2144,16 @@ if (supabaseClient) {
 
 initTierBar();
 
-// ── Story Seeds 调试面板 ───────────────────────────────────────────────────────
+// ── 关系史面板 ────────────────────────────────────────────────────────────────
 
 const storySeedsOverlay = document.getElementById("storySeedsOverlay");
 const storySeedsList = document.getElementById("storySeedsList");
-const closeStorySeedsButton = document.getElementById("closeStorySeedsButton");
 
-closeStorySeedsButton?.addEventListener("click", () => {
+document.getElementById("closeStorySeedsButton")?.addEventListener("click", () => {
   storySeedsOverlay?.classList.add("hidden");
 });
 
-async function openStorySeedsDebugPanel() {
+async function openStorySeedsPanel() {
   if (!storySeedsOverlay || !storySeedsList) return;
   storySeedsList.textContent = "加载中…";
   storySeedsOverlay.classList.remove("hidden");
@@ -2183,24 +2168,21 @@ async function openStorySeedsDebugPanel() {
 
   try {
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,importance,themes&order=importance.desc,created_at.asc&limit=4`,
+      `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,content,importance,themes&order=importance.desc,created_at.asc&limit=4`,
       { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } },
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const seeds = await res.json();
 
     if (!seeds.length) {
-      storySeedsList.textContent = "暂无已启用的 Story Seeds。";
+      storySeedsList.textContent = "暂无内容。";
       return;
     }
 
     storySeedsList.innerHTML = seeds.map((s) => `
-      <div style="border:1px solid var(--border,#e5e5e5);border-radius:8px;padding:12px;margin-bottom:10px;">
-        <div style="font-weight:600;margin-bottom:4px;">${s.title}</div>
-        <div style="color:var(--text-muted,#888);font-size:12px;margin-bottom:4px;">importance: ${s.importance}</div>
-        <div style="font-size:12px;display:flex;flex-wrap:wrap;gap:4px;">
-          ${(s.themes || []).map((t) => `<span style="background:var(--bg-secondary,#f0f0f0);border-radius:4px;padding:2px 6px;">${t}</span>`).join("")}
-        </div>
+      <div style="border-bottom:1px solid var(--border,#e5e5e5);padding:16px 0;">
+        <div style="font-weight:600;margin-bottom:8px;">${s.title}</div>
+        <div style="white-space:pre-wrap;line-height:1.7;color:var(--text-secondary,#444);">${s.content}</div>
       </div>
     `).join("");
   } catch (err) {
