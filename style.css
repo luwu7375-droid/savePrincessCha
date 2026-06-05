@@ -370,6 +370,7 @@ body {
   display: flex;
   flex-direction: column;
   max-width: min(68%, 480px);
+  min-width: 0;
   align-items: flex-start;
 }
 .msg-row.user .msg-stack { align-items: flex-end; }
@@ -382,6 +383,8 @@ body {
   font-size: 15px;
   line-height: 1.55;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   border-radius: 18px;
   animation: bubble-in 0.22s var(--ease-out) both;
 }

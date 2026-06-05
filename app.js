@@ -1,4 +1,4 @@
-console.log("build cloudflare-0044");
+console.log("build cloudflare-0045");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -2004,11 +2004,22 @@ async function handleSubmit() {
   messageInput.value = "";
   const isFirst = chatMessages.length === 0;
   const now = new Date().toISOString();
-  const msgId = await saveMessage("user", text);
-  addMessage(text, "user", now, {}, msgId);
-  chatMessages.push({ role: "user", content: text, created_at: now, id: msgId != null ? String(msgId) : null });
+
+  // Optimistic update：先渲染，不等接口
+  const msgEl = addMessage(text, "user", now, {});
+  const msgRow = msgEl.closest(".msg-row");
+  chatMessages.push({ role: "user", content: text, created_at: now, id: null });
   refreshMessageActions();
   if (isFirst) updateConvTitle(getActiveConversationId(), text);
+
+  // 后台保存，完成后补 msgId
+  saveMessage("user", text).then((msgId) => {
+    if (msgId != null && msgRow) msgRow.dataset.msgId = String(msgId);
+    const entry = chatMessages.findLast?.((m) => m.role === "user" && m.content === text && m.id === null);
+    if (entry) entry.id = msgId != null ? String(msgId) : null;
+  }).catch(() => {
+    // 保存失败时静默，不影响聊天流程
+  });
 
   if (autoReplyEnabled) {
     setChatStatus("公主在听…");
