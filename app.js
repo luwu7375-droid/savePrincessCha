@@ -1,4 +1,4 @@
-console.log("build cloudflare-0028");
+console.log("build cloudflare-0029");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
