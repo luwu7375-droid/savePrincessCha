@@ -1,4 +1,4 @@
-console.log("build cloudflare-0045");
+console.log("build cloudflare-0046");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1675,9 +1675,10 @@ memoryInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addMemor
 // ── Distill ───────────────────────────────────────────────────────────────────
 
 const distillButton = document.getElementById("distillButton");
+let _distilling = false;
 
 distillButton.addEventListener("click", async () => {
-  if (!chatMessages.length) return;
+  if (_distilling || !chatMessages.length) return;
   if (!getMemoryToken()) {
     showDialog({
       title: "记忆管理口令",
@@ -1688,8 +1689,26 @@ distillButton.addEventListener("click", async () => {
     });
     return;
   }
-  distillButton.disabled = true;
-  distillButton.textContent = "沉淀中…";
+
+  _distilling = true;
+
+  // 立刻弹出 loading 面板
+  const overlay = document.createElement("div");
+  overlay.className = "dialog-overlay";
+  const dialog = document.createElement("div");
+  dialog.className = "dialog";
+  dialog.style.cssText = "width:400px;max-width:90vw;min-height:120px";
+
+  const body = document.createElement("div");
+  body.id = "distill-body";
+  body.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;color:var(--text-muted);font-size:14px;">
+    <span class="spinner" style="width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--text-muted);border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0;"></span>
+    <span>正在沉淀这段对话…</span>
+  </div>`;
+  dialog.appendChild(body);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
   let result;
   try {
     const res = await memoryFetch("?type=distill", {
@@ -1697,15 +1716,18 @@ distillButton.addEventListener("click", async () => {
       body: JSON.stringify({ messages: chatMessages }),
     });
     result = await res.json();
-  } catch (e) {
-    distillButton.disabled = false;
-    distillButton.textContent = "沉淀";
+  } catch {
+    body.innerHTML = `<div style="color:oklch(62% 0.2 25);font-size:14px;margin-bottom:12px;">沉淀失败了，稍后再试。</div>
+      <div class="dialog-actions"><button class="btn-cancel" id="distill-retry">重试</button><button class="btn-cancel" id="distill-close">关闭</button></div>`;
+    body.querySelector("#distill-retry").addEventListener("click", () => { overlay.remove(); _distilling = false; distillButton.click(); });
+    body.querySelector("#distill-close").addEventListener("click", () => { overlay.remove(); });
+    _distilling = false;
     return;
   }
-  distillButton.disabled = false;
-  distillButton.textContent = "沉淀";
 
+  _distilling = false;
   const candidates = result.candidates || [];
+  overlay.remove();
   if (!candidates.length) return;
   showCandidatesDialog(candidates);
 });

@@ -732,6 +732,10 @@ body {
   to   { opacity: 1; transform: none; }
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .modal-header {
   display: flex;
   align-items: center;
