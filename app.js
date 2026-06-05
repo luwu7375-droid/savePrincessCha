@@ -1,4 +1,4 @@
-console.log("build cloudflare-0047");
+console.log("build cloudflare-0048");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", 
 let storySeedsEnabled = localStorage.getItem("storySeedsEnabled") === "true";
 
 // ── Pending image state ────────────────────────────────────────────────────────
-let pendingImage = null; // { dataUrl: string } | null
+let pendingImage = null; // { dataUrl: string|null, loading: boolean, error: string|null, file: File|null } | null
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -570,7 +570,7 @@ async function reloadHistory() {
   const conversationId = getActiveConversationId();
   if (!conversationId) { renderWelcomeMessage(); return; }
   pendingImage = null;
-  if (imagePreviewBar) imagePreviewBar.classList.add("hidden");
+  updateAttachmentCard();
   if (imageInput) imageInput.value = "";
   const { data, error } = await supabaseClient
     .from("messages")
@@ -2047,7 +2047,7 @@ messageInput.addEventListener("keydown", (e) => {
 
 function compressImage(file) {
   return new Promise((resolve, reject) => {
-    const MAX_PX = 1024;
+    const MAX_PX = 1600;
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("读取图片失败"));
     reader.onload = (e) => {
@@ -2070,35 +2070,189 @@ function compressImage(file) {
   });
 }
 
-imageAttachBtn?.addEventListener("click", () => { imageInput.value = ""; imageInput.click(); });
+function updateAttachmentCard() {
+  if (!imagePreviewBar) return;
+  if (!pendingImage) {
+    imagePreviewBar.classList.add("hidden");
+    imagePreviewBar.classList.remove("loading", "error");
+    return;
+  }
+  imagePreviewBar.classList.remove("hidden");
+  imagePreviewBar.classList.toggle("loading", !!pendingImage.loading);
+  imagePreviewBar.classList.toggle("error", !!pendingImage.error);
+  const thumb = imagePreviewBar.querySelector(".img-preview-thumb");
+  if (thumb && pendingImage.dataUrl) thumb.src = pendingImage.dataUrl;
+  const errorMsg = imagePreviewBar.querySelector(".img-preview-error-msg");
+  const errorRow = imagePreviewBar.querySelector(".img-preview-error-row");
+  if (errorMsg) errorMsg.textContent = pendingImage.error || "";
+  if (errorRow) errorRow.classList.toggle("hidden", !pendingImage.error);
+}
 
-imageInput?.addEventListener("change", async () => {
-  const file = imageInput.files?.[0];
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+async function handleImageFile(file) {
   if (!file) return;
-  if (file.size > 10 * 1024 * 1024) { addMessage("图片超过 10MB 限制，请选择更小的图片。", "assistant"); return; }
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    pendingImage = { dataUrl: null, loading: false, error: "仅支持 JPEG、PNG、WebP、GIF 格式。", file: null };
+    updateAttachmentCard();
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    pendingImage = { dataUrl: null, loading: false, error: "图片超过 20MB 限制，请选择更小的图片。", file: null };
+    updateAttachmentCard();
+    return;
+  }
+  pendingImage = { dataUrl: null, loading: true, error: null, file };
+  updateAttachmentCard();
   try {
     const dataUrl = await compressImage(file);
-    pendingImage = { dataUrl };
-    const thumb = imagePreviewBar.querySelector(".img-preview-thumb");
-    if (thumb) thumb.src = dataUrl;
-    imagePreviewBar.classList.remove("hidden");
-  } catch (err) { addMessage(`图片处理失败：${err.message}`, "assistant"); }
+    pendingImage = { dataUrl, loading: false, error: null, file };
+    updateAttachmentCard();
+  } catch (err) {
+    pendingImage = { dataUrl: null, loading: false, error: `压缩失败：${err.message}`, file };
+    updateAttachmentCard();
+  }
+}
+
+function showLightbox(src) {
+  const overlay = document.createElement("div");
+  overlay.className = "lightbox-overlay";
+  const img = document.createElement("img");
+  img.className = "lightbox-img";
+  img.src = src;
+  img.alt = "";
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "lightbox-close";
+  closeBtn.textContent = "✕";
+  closeBtn.setAttribute("aria-label", "关闭");
+  const close = () => overlay.remove();
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  const onKey = (e) => { if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); } };
+  document.addEventListener("keydown", onKey);
+  overlay.appendChild(img);
+  overlay.appendChild(closeBtn);
+  document.body.appendChild(overlay);
+}
+
+function showImageBottomSheet() {
+  const sheetOverlay = document.createElement("div");
+  sheetOverlay.className = "img-bottom-sheet-overlay";
+  const sheet = document.createElement("div");
+  sheet.className = "img-bottom-sheet";
+  const close = () => { sheetOverlay.remove(); albumInput.remove(); cameraInput.remove(); };
+
+  const albumInput = document.createElement("input");
+  albumInput.type = "file";
+  albumInput.accept = "image/*";
+  albumInput.style.display = "none";
+  albumInput.addEventListener("change", () => {
+    const f = albumInput.files?.[0];
+    if (f) { imageInput.value = ""; handleImageFile(f); }
+  });
+  document.body.appendChild(albumInput);
+
+  const cameraInput = document.createElement("input");
+  cameraInput.type = "file";
+  cameraInput.accept = "image/*";
+  cameraInput.capture = "environment";
+  cameraInput.style.display = "none";
+  cameraInput.addEventListener("change", () => {
+    const f = cameraInput.files?.[0];
+    if (f) { imageInput.value = ""; handleImageFile(f); }
+  });
+  document.body.appendChild(cameraInput);
+
+  const albumBtn = document.createElement("button");
+  albumBtn.textContent = "从相册选择";
+  albumBtn.addEventListener("click", () => { close(); albumInput.click(); });
+
+  const cameraBtn = document.createElement("button");
+  cameraBtn.textContent = "拍照";
+  cameraBtn.addEventListener("click", () => { close(); cameraInput.click(); });
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  cancelBtn.className = "img-bottom-sheet-cancel";
+  cancelBtn.addEventListener("click", close);
+
+  sheetOverlay.addEventListener("click", (e) => { if (e.target === sheetOverlay) close(); });
+
+  sheet.appendChild(albumBtn);
+  sheet.appendChild(cameraBtn);
+  sheet.appendChild(cancelBtn);
+  sheetOverlay.appendChild(sheet);
+  document.body.appendChild(sheetOverlay);
+}
+
+imageAttachBtn?.addEventListener("click", () => {
+  if (isMobileLayout()) {
+    showImageBottomSheet();
+  } else {
+    imageInput.value = "";
+    imageInput.click();
+  }
+});
+
+imageInput?.addEventListener("change", () => {
+  const file = imageInput.files?.[0];
+  imageInput.value = "";
+  if (file) handleImageFile(file);
 });
 
 document.getElementById("imgPreviewRemove")?.addEventListener("click", () => {
   pendingImage = null;
-  imagePreviewBar.classList.add("hidden");
+  updateAttachmentCard();
   imageInput.value = "";
+});
+
+document.getElementById("imgPreviewRetry")?.addEventListener("click", () => {
+  if (pendingImage?.file) handleImageFile(pendingImage.file);
+});
+
+const chatShell = document.querySelector(".chat-shell");
+if (chatShell) {
+  chatShell.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    chatShell.classList.add("drag-over");
+  });
+  chatShell.addEventListener("dragleave", (e) => {
+    if (!chatShell.contains(e.relatedTarget)) chatShell.classList.remove("drag-over");
+  });
+  chatShell.addEventListener("drop", (e) => {
+    e.preventDefault();
+    chatShell.classList.remove("drag-over");
+    const file = e.dataTransfer?.files?.[0];
+    if (file && file.type.startsWith("image/")) handleImageFile(file);
+  });
+}
+
+messageInput.addEventListener("paste", (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) handleImageFile(file);
+      break;
+    }
+  }
+});
+
+messageList.addEventListener("click", (e) => {
+  const img = e.target.closest("img.msg-image");
+  if (img) showLightbox(img.src);
 });
 
 async function handleSubmit() {
   const text = messageInput.value.trim();
-  if ((!text && !pendingImage) || isReplying) return;
+  if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading || isReplying) return;
 
   messageInput.value = "";
-  const snapshot = pendingImage;
+  const snapshot = pendingImage?.dataUrl ? { dataUrl: pendingImage.dataUrl } : null;
   pendingImage = null;
-  imagePreviewBar.classList.add("hidden");
+  updateAttachmentCard();
   imageInput.value = "";
 
   const isFirst = chatMessages.length === 0;
