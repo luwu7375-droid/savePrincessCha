@@ -1,4 +1,4 @@
-console.log("build cloudflare-0043");
+console.log("build cloudflare-0044");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1552,7 +1552,18 @@ async function loadMemories() {
     return;
   }
   if (res.status === 401) {
-    memoryList.innerHTML = `<div style="padding:12px 18px;color:oklch(62% 0.2 25)">口令错误或未输入</div>`;
+    sessionStorage.removeItem("memory_admin_token");
+    memoryList.innerHTML = `<div style="padding:12px 18px;color:oklch(62% 0.2 25)">口令错误，请重新输入。</div>`;
+    showDialog({
+      title: "记忆管理口令",
+      input: "",
+      inputType: "password",
+      confirmLabel: "重试",
+      onConfirm: (val) => {
+        if (val) sessionStorage.setItem("memory_admin_token", val);
+        loadMemories();
+      },
+    });
     return;
   }
   if (!res.ok) {
