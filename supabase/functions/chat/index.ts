@@ -15,15 +15,16 @@ type ChatRequest = {
 
 // ── Model tier ────────────────────────────────────────────────────────────────
 //
-// Tier → provider mapping:
+// All three tiers route through openrouter/fuka:
 //
-//   instant  → deepseek_official  (DEEPSEEK_API_KEY + DEEPSEEK_BASE_URL + DEEPSEEK_MODEL)
-//   general  → openrouter         (OPENROUTER_API_KEY + OPENROUTER_BASE_URL + DEFAULT_MODEL)
-//   advanced → openrouter         (OPENROUTER_API_KEY + OPENROUTER_BASE_URL + ADVANCED_MODEL)
+//   instant  → OPENROUTER_API_KEY + OPENROUTER_BASE_URL + FAST_MODEL
+//   general  → OPENROUTER_API_KEY + OPENROUTER_BASE_URL + DEFAULT_MODEL (fallback: MODEL_NAME)
+//   advanced → OPENROUTER_API_KEY + OPENROUTER_BASE_URL + ADVANCED_MODEL
+//
+// DeepSeek official API is NOT used for /chat frontend routing.
 //
 // Fallback (one-shot, triggered on 429 / 5xx / credits errors):
-//   Priority 1 — OR_FALLBACK:    OR_FALLBACK_API_KEY + OR_FALLBACK_BASE_URL + OR_FALLBACK_MODEL
-//   Priority 2 — legacy:         OPENROUTER_API_KEY  + OPENROUTER_BASE_URL  + FALLBACK_MODEL
+//   OPENROUTER_API_KEY + OPENROUTER_BASE_URL + FALLBACK_MODEL
 //
 // Token caps (all optional):
 //   MAX_OUTPUT_TOKENS_INSTANT  (default 300)
@@ -31,8 +32,8 @@ type ChatRequest = {
 //   MAX_OUTPUT_TOKENS_ADVANCED (default 1200)
 //
 // Legacy / compatibility env vars (still honoured):
-//   MODEL_NAME   — fallback if DEFAULT_MODEL unset
-//   FAST_MODEL   — fallback if DEEPSEEK_MODEL unset
+//   MODEL_NAME   — used if DEFAULT_MODEL unset
+//   FAST_MODEL   — model for instant tier
 
 type ModelTier = "instant" | "general" | "advanced";
 
@@ -45,7 +46,7 @@ function normalizeTier(raw: string | undefined): ModelTier {
 
 // ── Provider config ───────────────────────────────────────────────────────────
 
-type ProviderName = "deepseek_official" | "openrouter";
+type ProviderName = "openrouter";
 
 type ProviderConfig = {
   providerName: ProviderName;
@@ -63,10 +64,6 @@ type ProviderConfig = {
  *   "https://api.fuka.win/v1/chat/completions" → unchanged (already full)
  *   "https://openrouter.ai/api/v1"             → appends /chat/completions
  *   "https://api.example.com"                  → appends /v1/chat/completions
- *
- * NOTE: Do NOT pass the bare DeepSeek official base ("https://api.deepseek.com")
- * here — use DEEPSEEK_COMPLETIONS_URL constant instead, which resolves to
- * https://api.deepseek.com/chat/completions (no /v1 prefix).
  */
 function toCompletionsUrl(base: string): string {
   if (base.endsWith("/chat/completions")) return base;
@@ -74,9 +71,6 @@ function toCompletionsUrl(base: string): string {
   if (/\/v\d+$/.test(stripped)) return stripped + "/chat/completions";
   return stripped + "/v1/chat/completions";
 }
-
-// DeepSeek official endpoint (no /v1 prefix — differs from OpenAI-compatible convention).
-const DEEPSEEK_DEFAULT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 
 function resolveProviderForTier(tier: ModelTier): ProviderConfig {
   const orBaseUrl = toCompletionsUrl(
@@ -88,19 +82,10 @@ function resolveProviderForTier(tier: ModelTier): ProviderConfig {
 
   switch (tier) {
     case "instant": {
-      // If DEEPSEEK_BASE_URL is set, treat it as a custom base and normalise it.
-      // Otherwise fall back to the official DeepSeek endpoint (no /v1 prefix).
-      const deepseekBaseEnv = Deno.env.get("DEEPSEEK_BASE_URL") || "";
-      const baseUrl = deepseekBaseEnv
-        ? toCompletionsUrl(deepseekBaseEnv)
-        : DEEPSEEK_DEFAULT_COMPLETIONS_URL;
-      const apiKey = Deno.env.get("DEEPSEEK_API_KEY") || "";
-      const model =
-        Deno.env.get("DEEPSEEK_MODEL") ||
-        Deno.env.get("FAST_MODEL") ||
-        defaultModel;
+      // Routes through OpenRouter/fuka (same as general/advanced).
+      const model = Deno.env.get("FAST_MODEL") || defaultModel;
       const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_INSTANT") || "300", 10);
-      return { providerName: "deepseek_official", baseUrl, apiKey, model, maxTokens, tier };
+      return { providerName: "openrouter", baseUrl: orBaseUrl, apiKey: orApiKey, model, maxTokens, tier };
     }
     case "advanced": {
       const model = Deno.env.get("ADVANCED_MODEL") || defaultModel;
@@ -118,30 +103,11 @@ function resolveProviderForTier(tier: ModelTier): ProviderConfig {
 
 /**
  * Returns the one-shot fallback provider to try when the primary call fails.
- *
- * Priority 1: OR_FALLBACK  (OR_FALLBACK_API_KEY + OR_FALLBACK_BASE_URL + OR_FALLBACK_MODEL)
- * Priority 2: legacy       (OPENROUTER_API_KEY  + OPENROUTER_BASE_URL  + FALLBACK_MODEL)
- * Returns null if neither is configured.
+ * Uses OPENROUTER_API_KEY + OPENROUTER_BASE_URL + FALLBACK_MODEL.
+ * Returns null if FALLBACK_MODEL is not configured.
  */
 function getFallbackProvider(): ProviderConfig | null {
   const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "300", 10);
-
-  // Priority 1 — OR_FALLBACK
-  const orFbKey   = Deno.env.get("OR_FALLBACK_API_KEY") || "";
-  const orFbBase  = Deno.env.get("OR_FALLBACK_BASE_URL") || "";
-  const orFbModel = Deno.env.get("OR_FALLBACK_MODEL") || "";
-  if (orFbKey && orFbBase && orFbModel) {
-    return {
-      providerName: "openrouter",
-      baseUrl: toCompletionsUrl(orFbBase),
-      apiKey: orFbKey,
-      model: orFbModel,
-      maxTokens,
-      tier: "general",
-    };
-  }
-
-  // Priority 2 — legacy FALLBACK_MODEL on primary OpenRouter
   const fbModel  = Deno.env.get("FALLBACK_MODEL") || "";
   const orApiKey = Deno.env.get("OPENROUTER_API_KEY") || "";
   const orBase   = toCompletionsUrl(
@@ -157,7 +123,6 @@ function getFallbackProvider(): ProviderConfig | null {
       tier: "general",
     };
   }
-
   return null;
 }
 
@@ -176,7 +141,7 @@ function isFallbackableStatus(status: number, bodyText: string): boolean {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "cache-observability-v1";
+const FUNCTION_VERSION = "fuka-unified-v2";
 const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
 type MemoryDomain = typeof MEMORY_DOMAINS[number];
 type MemoryRow = {
@@ -475,7 +440,8 @@ async function callModelWithFallback(
   }
 
   // One-shot fallback
-  const fallbackReason = `primary_status_${primaryRes.status}`;
+  const bodySnippet = bodyText.slice(0, 120).replace(/[\r\n]+/g, " ");
+  const fallbackReason = `primary_${primaryRes.status}: ${bodySnippet}`;
   const { res: fallbackRes, ms: fallbackMs } = await callModel(fallback, messages);
 
   return {
@@ -702,7 +668,6 @@ Deno.serve(async (request) => {
         "x-memory-cache-hit": logRecord.memory_cache_hit ? "true" : "false",
         "x-model-tier": tier,
         "x-provider": result.usedProvider,
-        "x-model": result.usedModel,
       },
     });
   } catch (error) {

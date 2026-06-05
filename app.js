@@ -522,7 +522,7 @@ async function reloadHistory() {
     .select("id, role, content, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(500);
 
   if (error) { renderWelcomeMessage(); console.error(error); return; }
 
