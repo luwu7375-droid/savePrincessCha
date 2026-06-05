@@ -176,7 +176,7 @@ function isFallbackableStatus(status: number, bodyText: string): boolean {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "provider-routing-v1";
+const FUNCTION_VERSION = "cache-observability-v1";
 const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
 type MemoryDomain = typeof MEMORY_DOMAINS[number];
 type MemoryRow = {
@@ -196,8 +196,9 @@ const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona" | "relation
 //
 // Cache key = SHA-256(user_id + "|" + domain_fingerprint), truncated to 16 hex chars.
 // user_id is mandatory in the key to prevent cross-user cache contamination.
-// conversation_id is intentionally NOT included: memories/buckets are global per user,
-// not scoped to a conversation, so two conversations for the same user share the same context.
+// model_tier is intentionally NOT included: memories/buckets are global per user and
+// the same compiled context can be reused across instant/general/advanced tiers.
+// conversation_id is intentionally NOT included: memories are global per user.
 //
 // This is a best-effort cache keyed on *which domains are selected*, not on memory content.
 // If memories are updated within the TTL window, the old compiled context may be reused.
@@ -213,7 +214,25 @@ type MemoryCacheEntry = {
   ts: number;
 };
 const _memCache = new Map<string, MemoryCacheEntry>();
-const CACHE_TTL_MS = 120_000; // 2 minutes
+
+// TTL is configurable via MEMORY_CACHE_TTL_MS env var (default 120 000 ms = 2 min).
+// Invalid / non-positive values fall back to the default.
+const _DEFAULT_CACHE_TTL_MS = 120_000;
+function resolveCacheTtl(): number {
+  const raw = Deno.env.get("MEMORY_CACHE_TTL_MS");
+  if (!raw) return _DEFAULT_CACHE_TTL_MS;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : _DEFAULT_CACHE_TTL_MS;
+}
+const CACHE_TTL_MS = resolveCacheTtl();
+
+// ── Cache stats (module-level, per-worker-process) ────────────────────────────
+// These counters survive across warm requests but reset on cold start.
+// They are emitted per-request in the log for observability.
+let _cacheHits = 0;
+let _cacheMisses = 0;
+let _cacheWrites = 0;
+let _cacheEvictions = 0;
 
 async function hashCacheKey(input: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
@@ -233,7 +252,10 @@ function hitDomainsFingerprint(lastUserMessage: string): string {
 function evictExpiredCacheEntries(): void {
   const now = Date.now();
   for (const [key, entry] of _memCache) {
-    if (now - entry.ts >= CACHE_TTL_MS) _memCache.delete(key);
+    if (now - entry.ts >= CACHE_TTL_MS) {
+      _memCache.delete(key);
+      _cacheEvictions += 1;
+    }
   }
 }
 
@@ -253,6 +275,12 @@ type RequestLog = {
   fallback_provider: string | null;
   fallback_reason: string | null;
   memory_cache_hit: boolean;
+  // Per-worker cumulative stats (reset on cold start)
+  memory_cache_hits: number;
+  memory_cache_misses: number;
+  memory_cache_hit_rate: number; // 0–1, -1 if no requests yet
+  memory_cache_size: number;
+  memory_cache_ttl_ms: number;
   memory_count: number;
   hit_memory_ids_count: number;
   memory_fetch_ms: number;
@@ -524,6 +552,13 @@ Deno.serve(async (request) => {
     fallback_provider: null,
     fallback_reason: null,
     memory_cache_hit: false,
+    memory_cache_hits: _cacheHits,
+    memory_cache_misses: _cacheMisses,
+    memory_cache_hit_rate: (_cacheHits + _cacheMisses) > 0
+      ? _cacheHits / (_cacheHits + _cacheMisses)
+      : -1,
+    memory_cache_size: _memCache.size,
+    memory_cache_ttl_ms: CACHE_TTL_MS,
     memory_count: 0,
     hit_memory_ids_count: 0,
     memory_fetch_ms: 0,
@@ -565,11 +600,13 @@ Deno.serve(async (request) => {
     let compiledMemoryText: string;
 
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+      _cacheHits += 1;
       compiledMemoryText = cached.compiledText;
       logRecord.memory_cache_hit = true;
       logRecord.memory_count = cached.hitMemoryIds.length;
       logRecord.hit_memory_ids_count = cached.hitMemoryIds.length;
     } else {
+      _cacheMisses += 1;
       const tFetch = Date.now();
       const [{ lines: memories, ids: memoryIds }, buckets] = await Promise.all([
         fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
@@ -597,6 +634,7 @@ Deno.serve(async (request) => {
       // Only cache on data — don't cache a fetch failure as empty context
       if (memories.length > 0 || buckets.length > 0) {
         evictExpiredCacheEntries();
+        _cacheWrites += 1;
         _memCache.set(cacheKey, {
           compiledText: compiled,
           hitMemoryIds: memoryIds,
@@ -604,6 +642,14 @@ Deno.serve(async (request) => {
         });
       }
     }
+
+    // Update log with post-request stats (counter already incremented above)
+    logRecord.memory_cache_hits = _cacheHits;
+    logRecord.memory_cache_misses = _cacheMisses;
+    logRecord.memory_cache_hit_rate = (_cacheHits + _cacheMisses) > 0
+      ? _cacheHits / (_cacheHits + _cacheMisses)
+      : -1;
+    logRecord.memory_cache_size = _memCache.size;
 
     systemContent += compiledMemoryText;
   }
@@ -653,6 +699,10 @@ Deno.serve(async (request) => {
       headers: {
         ...corsHeaders,
         "Content-Type": result.response.headers.get("Content-Type") || "text/event-stream",
+        "x-memory-cache-hit": logRecord.memory_cache_hit ? "true" : "false",
+        "x-model-tier": tier,
+        "x-provider": result.usedProvider,
+        "x-model": result.usedModel,
       },
     });
   } catch (error) {
