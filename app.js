@@ -1,4 +1,4 @@
-console.log("build cloudflare-0042");
+console.log("build cloudflare-0043");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -2171,6 +2171,10 @@ async function openStorySeedsPanel() {
       `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,content,importance,themes&order=importance.desc,created_at.asc&limit=4`,
       { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } },
     );
+    if (res.status === 404) {
+      storySeedsList.textContent = "数据库表尚未创建，请先在 Supabase 执行 sql/story_seeds.sql。";
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const seeds = await res.json();
 
