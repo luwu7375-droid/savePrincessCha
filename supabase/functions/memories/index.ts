@@ -165,12 +165,16 @@ Deno.serve(async (req) => {
 
     if (Object.keys(patch).length === 1) return json({ error: "no fields to update" }, 400);
 
-    const res = await fetch(`${supabaseUrl}/rest/v1/memories?id=eq.${id}`, {
+    const res = await fetch(`${supabaseUrl}/rest/v1/memories?id=eq.${id}&select=id,content,category,enabled`, {
       method: "PATCH",
-      headers: { ...dbHeaders, Prefer: "return=minimal" },
+      headers: { ...dbHeaders, Prefer: "return=representation" },
       body: JSON.stringify(patch),
     });
-    return new Response(null, { status: res.ok ? 204 : 500, headers: corsHeaders });
+    if (!res.ok) return json(await res.json(), 500);
+    const rows = await res.json() as { id: string; content: string; category: string; enabled: boolean }[];
+    if (!rows.length) return json({ error: "memory not found" }, 404);
+    const updated = rows[0];
+    return json({ ...updated, domain: updated.category || "general" }, 200);
   }
 
   if (req.method === "DELETE") {
