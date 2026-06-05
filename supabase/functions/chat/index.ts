@@ -385,19 +385,29 @@ type StorySeedRow = {
 };
 
 /**
- * Fetches up to 3 enabled story seeds, ordered by importance desc then created_at asc.
- * Only called when storySeedsEnabled = true in the request.
+ * Fetches enabled story seeds and filters by themes matching the last user message.
+ * A seed is included if any of its themes appears in the user message (case-insensitive).
+ * If the message is empty, all enabled seeds are returned (fallback for context-free calls).
  */
 async function fetchStorySeeds(
   supabaseUrl: string,
   serviceRoleKey: string,
+  lastUserMessage: string,
 ): Promise<StorySeedRow[]> {
   const res = await fetch(
-    `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,content,importance,themes&order=importance.desc,created_at.asc&limit=4`,
+    `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,content,importance,themes&order=importance.desc,created_at.asc`,
     { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
   );
   if (!res.ok) return [];
-  return (await res.json()) as StorySeedRow[];
+  const all = (await res.json()) as StorySeedRow[];
+
+  if (!lastUserMessage.trim()) return all.slice(0, 4);
+
+  const msg = lastUserMessage.toLocaleLowerCase();
+  const matched = all.filter((s) =>
+    (s.themes || []).some((t) => msg.includes(t.toLocaleLowerCase()))
+  );
+  return matched.slice(0, 4);
 }
 
 /**
@@ -663,10 +673,10 @@ Deno.serve(async (request) => {
 
     systemContent += compiledMemoryText;
 
-    // ── Story Seeds 注入（需开关打开） ──────────────────────────────────────
+    // ── Story Seeds 注入（需开关打开，按 themes 匹配过滤） ────────────────────
     if (payload.storySeedsEnabled === true) {
       logRecord.story_seeds_enabled = true;
-      const seeds = await fetchStorySeeds(supabaseUrl, serviceRoleKey);
+      const seeds = await fetchStorySeeds(supabaseUrl, serviceRoleKey, lastUserMessage);
       if (seeds.length > 0) {
         systemContent += compileStorySeeds(seeds);
         logRecord.story_seeds_count = seeds.length;
