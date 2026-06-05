@@ -61,8 +61,12 @@ type ProviderConfig = {
  *
  * Handles three input patterns:
  *   "https://api.fuka.win/v1/chat/completions" → unchanged (already full)
- *   "https://api.deepseek.com"                 → appends /v1/chat/completions
  *   "https://openrouter.ai/api/v1"             → appends /chat/completions
+ *   "https://api.example.com"                  → appends /v1/chat/completions
+ *
+ * NOTE: Do NOT pass the bare DeepSeek official base ("https://api.deepseek.com")
+ * here — use DEEPSEEK_COMPLETIONS_URL constant instead, which resolves to
+ * https://api.deepseek.com/chat/completions (no /v1 prefix).
  */
 function toCompletionsUrl(base: string): string {
   if (base.endsWith("/chat/completions")) return base;
@@ -70,6 +74,9 @@ function toCompletionsUrl(base: string): string {
   if (/\/v\d+$/.test(stripped)) return stripped + "/chat/completions";
   return stripped + "/v1/chat/completions";
 }
+
+// DeepSeek official endpoint (no /v1 prefix — differs from OpenAI-compatible convention).
+const DEEPSEEK_DEFAULT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions";
 
 function resolveProviderForTier(tier: ModelTier): ProviderConfig {
   const orBaseUrl = toCompletionsUrl(
@@ -81,9 +88,12 @@ function resolveProviderForTier(tier: ModelTier): ProviderConfig {
 
   switch (tier) {
     case "instant": {
-      const baseUrl = toCompletionsUrl(
-        Deno.env.get("DEEPSEEK_BASE_URL") || "https://api.deepseek.com",
-      );
+      // If DEEPSEEK_BASE_URL is set, treat it as a custom base and normalise it.
+      // Otherwise fall back to the official DeepSeek endpoint (no /v1 prefix).
+      const deepseekBaseEnv = Deno.env.get("DEEPSEEK_BASE_URL") || "";
+      const baseUrl = deepseekBaseEnv
+        ? toCompletionsUrl(deepseekBaseEnv)
+        : DEEPSEEK_DEFAULT_COMPLETIONS_URL;
       const apiKey = Deno.env.get("DEEPSEEK_API_KEY") || "";
       const model =
         Deno.env.get("DEEPSEEK_MODEL") ||

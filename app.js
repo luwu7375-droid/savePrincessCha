@@ -19,7 +19,11 @@ function createSupabaseClient() {
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎回家，kk。";
 let currentUserId = "";
-let currentModelTier = localStorage.getItem("modelTier") || "general";
+const _VALID_TIERS_INIT = ["instant", "general", "advanced"];
+const _storedTier = localStorage.getItem("modelTier");
+let currentModelTier = _VALID_TIERS_INIT.includes(_storedTier) ? _storedTier : "general";
+// Sanitise: if stored value was invalid, overwrite it so localStorage stays clean.
+if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", "general");
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
