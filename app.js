@@ -1,4 +1,4 @@
-console.log("build cloudflare-0046");
+console.log("build cloudflare-0047");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -28,6 +28,9 @@ if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", 
 // ── Story Seeds 开关（关系史实验，默认关闭） ───────────────────────────────────
 let storySeedsEnabled = localStorage.getItem("storySeedsEnabled") === "true";
 
+// ── Pending image state ────────────────────────────────────────────────────────
+let pendingImage = null; // { dataUrl: string } | null
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const chatForm          = document.getElementById("chatForm");
@@ -50,6 +53,9 @@ const loginMsg          = document.getElementById("loginMsg");
 const loginPassword      = document.getElementById("loginPassword");
 const loginBtn          = document.getElementById("loginBtn");
 const logoutBtn         = document.getElementById("logoutBtn");
+const imageInput        = document.getElementById("imageInput");
+const imagePreviewBar   = document.getElementById("imagePreviewBar");
+const imageAttachBtn    = document.getElementById("imageAttachBtn");
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -477,7 +483,23 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   if (!options.skipTimeSeparator) maybeAddTimeSeparator(createdAt);
   const el = document.createElement("div");
   el.className = `message ${role}`;
-  el.textContent = text;
+  if (Array.isArray(text)) {
+    for (const part of text) {
+      if (part.type === "image_url" && part.image_url?.url) {
+        const img = document.createElement("img");
+        img.className = "msg-image";
+        img.src = part.image_url.url;
+        img.alt = "";
+        el.appendChild(img);
+      } else if (part.type === "text" && part.text) {
+        const span = document.createElement("span");
+        span.textContent = part.text;
+        el.appendChild(span);
+      }
+    }
+  } else {
+    el.textContent = text;
+  }
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
@@ -547,6 +569,9 @@ async function reloadHistory() {
   if (!supabaseClient) { renderWelcomeMessage(); return; }
   const conversationId = getActiveConversationId();
   if (!conversationId) { renderWelcomeMessage(); return; }
+  pendingImage = null;
+  if (imagePreviewBar) imagePreviewBar.classList.add("hidden");
+  if (imageInput) imageInput.value = "";
   const { data, error } = await supabaseClient
     .from("messages")
     .select("id, role, content, created_at")
@@ -1905,6 +1930,7 @@ function setReplyingState(replying) {
   sendButton.disabled = replying;
   const composerMenuBtn = document.getElementById("composerMenuBtn");
   if (composerMenuBtn) composerMenuBtn.disabled = replying;
+  if (imageAttachBtn) imageAttachBtn.disabled = replying;
 }
 
 function updateAutoReplyToggle() {
@@ -2019,25 +2045,86 @@ messageInput.addEventListener("keydown", (e) => {
   }
 });
 
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const MAX_PX = 1024;
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("读取图片失败"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("图片解码失败"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > MAX_PX || height > MAX_PX) {
+          if (width >= height) { height = Math.round(height * MAX_PX / width); width = MAX_PX; }
+          else { width = Math.round(width * MAX_PX / height); height = MAX_PX; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+imageAttachBtn?.addEventListener("click", () => { imageInput.value = ""; imageInput.click(); });
+
+imageInput?.addEventListener("change", async () => {
+  const file = imageInput.files?.[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { addMessage("图片超过 10MB 限制，请选择更小的图片。", "assistant"); return; }
+  try {
+    const dataUrl = await compressImage(file);
+    pendingImage = { dataUrl };
+    const thumb = imagePreviewBar.querySelector(".img-preview-thumb");
+    if (thumb) thumb.src = dataUrl;
+    imagePreviewBar.classList.remove("hidden");
+  } catch (err) { addMessage(`图片处理失败：${err.message}`, "assistant"); }
+});
+
+document.getElementById("imgPreviewRemove")?.addEventListener("click", () => {
+  pendingImage = null;
+  imagePreviewBar.classList.add("hidden");
+  imageInput.value = "";
+});
+
 async function handleSubmit() {
   const text = messageInput.value.trim();
-  if (!text || isReplying) return;
+  if ((!text && !pendingImage) || isReplying) return;
 
   messageInput.value = "";
+  const snapshot = pendingImage;
+  pendingImage = null;
+  imagePreviewBar.classList.add("hidden");
+  imageInput.value = "";
+
   const isFirst = chatMessages.length === 0;
   const now = new Date().toISOString();
 
+  let content;
+  if (snapshot) {
+    content = [];
+    if (text) content.push({ type: "text", text });
+    content.push({ type: "image_url", image_url: { url: snapshot.dataUrl, detail: "low" } });
+  } else {
+    content = text;
+  }
+
   // Optimistic update：先渲染，不等接口
-  const msgEl = addMessage(text, "user", now, {});
+  const msgEl = addMessage(content, "user", now, {});
   const msgRow = msgEl.closest(".msg-row");
-  chatMessages.push({ role: "user", content: text, created_at: now, id: null });
+  const dbContent = snapshot ? (text ? `[图片] ${text}` : "[图片]") : text;
+  chatMessages.push({ role: "user", content, created_at: now, id: null });
   refreshMessageActions();
-  if (isFirst) updateConvTitle(getActiveConversationId(), text);
+  if (isFirst) updateConvTitle(getActiveConversationId(), text || "[图片]");
 
   // 后台保存，完成后补 msgId
-  saveMessage("user", text).then((msgId) => {
+  saveMessage("user", dbContent).then((msgId) => {
     if (msgId != null && msgRow) msgRow.dataset.msgId = String(msgId);
-    const entry = chatMessages.findLast?.((m) => m.role === "user" && m.content === text && m.id === null);
+    const entry = chatMessages.findLast?.((m) => m.role === "user" && m.id === null);
     if (entry) entry.id = msgId != null ? String(msgId) : null;
   }).catch(() => {
     // 保存失败时静默，不影响聊天流程
