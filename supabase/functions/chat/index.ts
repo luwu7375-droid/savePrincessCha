@@ -72,6 +72,37 @@ function evictExpiredCacheEntries(): void {
   }
 }
 
+// --- Safe logging ---
+// Never logs user message content or memory content.
+// user_id is truncated to first 6 chars to allow correlation without exposing full UUID.
+type RequestLog = {
+  request_id: string;
+  user_id_prefix: string;   // first 6 chars of userId, or "absent"
+  has_user_id: boolean;
+  memory_cache_hit: boolean;
+  memory_count: number;
+  hit_memory_ids_count: number;
+  memory_fetch_ms: number;   // 0 on cache hit
+  memory_compile_ms: number; // 0 on cache hit
+  model_call_ms: number;
+  total_ms: number;
+  error_stage?: string;
+};
+
+function makeRequestId(): string {
+  // crypto.randomUUID() is available in Deno
+  return crypto.randomUUID().slice(0, 8);
+}
+
+function safeUserIdPrefix(userId: string): string {
+  if (!userId || userId === "anon") return "absent";
+  return userId.slice(0, 6);
+}
+
+function emitLog(log: RequestLog): void {
+  console.log(JSON.stringify({ ...log, fn: "chat", v: FUNCTION_VERSION }));
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -140,13 +171,13 @@ async function fetchEnabledMemories(
 async function fetchMemoryBuckets(supabaseUrl: string, serviceRoleKey: string): Promise<string[]> {
   const res = await fetch(
     `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary&order=importance.desc,last_accessed_at.desc.nullslast&limit=2`,
-    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } }
+    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
   );
   if (!res.ok) return [];
   const rows = await res.json() as { id: string; title: string; summary: string }[];
   // fire-and-forget update last_accessed_at
   if (rows.length > 0) {
-    const ids = rows.map(r => r.id).join(",");
+    const ids = rows.map((r) => r.id).join(",");
     fetch(`${supabaseUrl}/rest/v1/memory_buckets?id=in.(${ids})`, {
       method: "PATCH",
       headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
@@ -168,6 +199,9 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
+  const t0 = Date.now();
+  const requestId = makeRequestId();
+
   const openrouterApiKey = Deno.env.get("OPENROUTER_API_KEY");
   const openrouterBaseUrl =
     Deno.env.get("OPENROUTER_BASE_URL") ||
@@ -181,7 +215,7 @@ Deno.serve(async (request) => {
         hasOpenrouterBaseUrl: true,
         hasModelName: !!Deno.env.get("MODEL_NAME"),
       },
-      500
+      500,
     );
   }
 
@@ -203,6 +237,20 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "MODEL_NAME 未配置" }, 500);
   }
 
+  // Initialise log record — populated incrementally below
+  const logRecord: RequestLog = {
+    request_id: requestId,
+    user_id_prefix: "absent",
+    has_user_id: false,
+    memory_cache_hit: false,
+    memory_count: 0,
+    hit_memory_ids_count: 0,
+    memory_fetch_ms: 0,
+    memory_compile_ms: 0,
+    model_call_ms: 0,
+    total_ms: 0,
+  };
+
   // Build system prompt with memories
   const supabaseUrl = Deno.env.get("DB_URL");
   const serviceRoleKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
@@ -223,6 +271,10 @@ Deno.serve(async (request) => {
     // user_id is required in the cache key to prevent cross-user cache contamination.
     // Fall back to "anon" only as a safety net; in practice the frontend always sends userId.
     const userId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+
+    logRecord.has_user_id = userId !== "anon";
+    logRecord.user_id_prefix = safeUserIdPrefix(userId);
+
     const cacheKey = await hashCacheKey(userId + "|" + hitDomainsFingerprint(lastUserMessage));
     const cached = _memCache.get(cacheKey);
 
@@ -231,13 +283,19 @@ Deno.serve(async (request) => {
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
       // cache hit: skip DB fetches
       compiledMemoryText = cached.compiledText;
+      logRecord.memory_cache_hit = true;
+      logRecord.memory_count = cached.hitMemoryIds.length;
+      logRecord.hit_memory_ids_count = cached.hitMemoryIds.length;
     } else {
       // cache miss: fetch and compile
+      const tFetch = Date.now();
       const [{ lines: memories, ids: memoryIds }, buckets] = await Promise.all([
         fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
         fetchMemoryBuckets(supabaseUrl, serviceRoleKey),
       ]);
+      logRecord.memory_fetch_ms = Date.now() - tFetch;
 
+      const tCompile = Date.now();
       let compiled = "";
       if (memories.length > 0) {
         compiled += "\n\n以下是长期记忆，请优先遵守：\n" + memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
@@ -245,6 +303,10 @@ Deno.serve(async (request) => {
       if (buckets.length > 0) {
         compiled += "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" + buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
       }
+      logRecord.memory_compile_ms = Date.now() - tCompile;
+
+      logRecord.memory_count = memories.length;
+      logRecord.hit_memory_ids_count = memoryIds.length;
 
       compiledMemoryText = compiled;
       // Only cache when at least one fetch returned data, to avoid caching a fetch failure
@@ -270,6 +332,7 @@ Deno.serve(async (request) => {
   ];
 
   try {
+    const tModel = Date.now();
     const upstreamResponse = await fetch(openrouterBaseUrl, {
       method: "POST",
       headers: {
@@ -278,6 +341,7 @@ Deno.serve(async (request) => {
       },
       body: JSON.stringify({ model, messages, stream: true }),
     });
+    logRecord.model_call_ms = Date.now() - tModel;
 
     if (!upstreamResponse.ok) {
       let errorBody: unknown = { error: "模型请求失败" };
@@ -286,8 +350,14 @@ Deno.serve(async (request) => {
       } catch {
         errorBody = { error: await upstreamResponse.text() };
       }
+      logRecord.error_stage = "model_upstream";
+      logRecord.total_ms = Date.now() - t0;
+      emitLog(logRecord);
       return jsonResponse(errorBody, upstreamResponse.status);
     }
+
+    logRecord.total_ms = Date.now() - t0;
+    emitLog(logRecord);
 
     return new Response(upstreamResponse.body, {
       status: upstreamResponse.status,
@@ -298,6 +368,9 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
+    logRecord.error_stage = "model_fetch";
+    logRecord.total_ms = Date.now() - t0;
+    emitLog(logRecord);
     return jsonResponse({ error: message }, 500);
   }
 });
