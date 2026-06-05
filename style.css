@@ -518,35 +518,38 @@ body {
   background: oklch(52% 0.16 248 / 0.08);
 }
 
-/* ── Mobile segmented tier bar ── */
+/* ── Tier dropdown (mobile only) ── */
+.tier-dropdown-btn { display: none; }
+
+/* ── Mobile tier bar: collapse to single dropdown ── */
 @media (max-width: 820px) {
   .tier-bar {
-    padding: 8px 12px;
+    padding: 6px 12px;
     gap: 0;
+    justify-content: flex-start;
   }
-  /* Wrap buttons in a pill container via sibling styling */
-  .tier-bar .tier-btn {
-    flex: 1;
-    text-align: center;
-    border-radius: 0;
-    border-right-width: 0;
-    font-size: 12px;
-    padding: 5px 0;
+  .tier-bar .tier-btn { display: none; }
+  .tier-dropdown-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
     background: var(--surface);
-    border-color: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    padding: 3px 10px 3px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
   }
-  .tier-bar .tier-btn:first-child { border-radius: 8px 0 0 8px; }
-  .tier-bar .tier-btn:last-child  { border-radius: 0 8px 8px 0; border-right-width: 1px; }
-  .tier-bar .tier-btn.active {
+  .tier-dropdown-btn:hover { color: var(--text); border-color: var(--text-muted); }
+  .tier-dropdown-btn.active {
     color: oklch(62% 0.18 248);
-    background: oklch(52% 0.16 248 / 0.12);
-    border-color: oklch(52% 0.16 248 / 0.5);
-    z-index: 1;
-    position: relative;
-  }
-  .tier-bar .tier-btn:hover:not(.active) {
-    background: var(--bg-raise);
-    color: var(--text);
+    border-color: oklch(52% 0.16 248 / 0.6);
+    background: oklch(52% 0.16 248 / 0.08);
   }
 }
 
@@ -596,6 +599,41 @@ body {
 .ghost-icon-btn:hover { color: var(--text); border-color: var(--text-muted); background: var(--surface); }
 .ghost-icon-btn:disabled { opacity: 0.35; cursor: default; }
 .ghost-icon-btn.active { color: oklch(62% 0.18 248); border-color: oklch(52% 0.16 248 / 0.6); background: oklch(52% 0.16 248 / 0.1); }
+
+/* Desktop-only / mobile-only composer buttons */
+.mobile-composer-btn { display: none; }
+
+/* ── Composer popup menu (mobile) ── */
+.composer-menu {
+  position: fixed;
+  z-index: 600;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  min-width: 150px;
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.3);
+  animation: fade-in 0.12s ease both;
+}
+.composer-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.composer-menu button:hover { background: var(--surface); }
+.composer-menu button .menu-icon { font-size: 16px; width: 20px; text-align: center; }
+.composer-menu button.active-item { color: oklch(62% 0.18 248); }
 
 .input-bar button[type="submit"] {
   flex-shrink: 0;
@@ -916,17 +954,23 @@ body {
 
   /* Reduce weight of secondary composer buttons on mobile */
   .ghost-icon-btn {
-    width: 32px;
-    height: 32px;
-    font-size: 13px;
+    width: 40px;
+    height: 40px;
+    font-size: 15px;
     margin-left: 0;
-    opacity: 0.6;
+    opacity: 0.55;
     border-color: transparent;
   }
   .ghost-icon-btn:active,
   .ghost-icon-btn.active { opacity: 1; border-color: oklch(52% 0.16 248 / 0.6); }
+
+  /* Desktop-only secondary buttons hidden on mobile */
+  .desktop-only-btn { display: none !important; }
+  /* Mobile composer menu button shown only on mobile */
+  .mobile-composer-btn { display: inline-flex; }
+
   /* Keep send button full weight */
-  .input-bar button[type="submit"] { width: 42px; height: 42px; }
+  .input-bar button[type="submit"] { width: 44px; height: 44px; }
 
   .modal { max-width: 94vw !important; max-height: 80dvh; overflow-y: auto; }
   .dialog { max-width: 94vw !important; }

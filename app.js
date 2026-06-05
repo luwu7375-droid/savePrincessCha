@@ -1,4 +1,4 @@
-console.log("build cloudflare-0037");
+console.log("build cloudflare-0038");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -993,6 +993,8 @@ document.addEventListener("pointerdown", (e) => {
   if (target.closest(".overlay")) return;
   if (target.closest(".conv-menu")) return;
   if (target.closest(".more-menu")) return;
+  if (target.closest(".composer-menu")) return;
+  if (target.closest(".tier-dropdown-menu")) return;
   if (target.closest(".msg-actions")) return;
   if (document.activeElement === messageInput) messageInput.blur();
 });
@@ -1849,6 +1851,8 @@ function setReplyingState(replying) {
   messageInput.disabled = replying;
   forceReplyBtn.disabled = replying;
   sendButton.disabled = replying;
+  const composerMenuBtn = document.getElementById("composerMenuBtn");
+  if (composerMenuBtn) composerMenuBtn.disabled = replying;
 }
 
 function updateAutoReplyToggle() {
@@ -1861,6 +1865,12 @@ function updateAutoReplyToggle() {
 // ── Model tier selector ────────────────────────────────────────────────────────
 
 const VALID_TIERS = ["instant", "general", "advanced"];
+const TIER_LABELS = { instant: "Instant", general: "General", advanced: "Advanced" };
+
+function updateTierDropdownLabel() {
+  const el = document.getElementById("tierDropdownLabel");
+  if (el) el.textContent = TIER_LABELS[currentModelTier] || currentModelTier;
+}
 
 function initTierBar() {
   const buttons = document.querySelectorAll("#tierBar .tier-btn");
@@ -1872,8 +1882,48 @@ function initTierBar() {
       currentModelTier = tier;
       localStorage.setItem("modelTier", tier);
       buttons.forEach((b) => b.classList.toggle("active", b.dataset.tier === tier));
+      updateTierDropdownLabel();
     });
   });
+
+  // Mobile tier dropdown
+  const dropdownBtn = document.getElementById("tierDropdownBtn");
+  if (dropdownBtn) {
+    updateTierDropdownLabel();
+    dropdownBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Build menu
+      const existing = document.querySelector(".tier-dropdown-menu");
+      if (existing) { existing.remove(); return; }
+      const menu = document.createElement("div");
+      menu.className = "composer-menu tier-dropdown-menu";
+      for (const tier of VALID_TIERS) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        if (tier === currentModelTier) btn.classList.add("active-item");
+        const icon = document.createElement("span");
+        icon.className = "menu-icon";
+        icon.textContent = tier === "instant" ? "⚡" : tier === "general" ? "✦" : "🔮";
+        const label = document.createElement("span");
+        label.textContent = TIER_LABELS[tier];
+        btn.appendChild(icon);
+        btn.appendChild(label);
+        btn.addEventListener("click", () => {
+          menu.remove();
+          currentModelTier = tier;
+          localStorage.setItem("modelTier", tier);
+          buttons.forEach((b) => b.classList.toggle("active", b.dataset.tier === tier));
+          updateTierDropdownLabel();
+        });
+        menu.appendChild(btn);
+      }
+      document.body.appendChild(menu);
+      const rect = dropdownBtn.getBoundingClientRect();
+      menu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+      menu.style.left = `${rect.left}px`;
+      setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }), 0);
+    });
+  }
 }
 
 autoReplyToggle.addEventListener("click", () => {
@@ -1946,6 +1996,65 @@ sendButton.addEventListener("click", (e) => {
 forceReplyBtn.addEventListener("click", () => {
   if (isReplying || !chatMessages.length) return;
   triggerReply("forced");
+});
+
+// ── Composer menu (mobile: replaces forceReplyBtn + autoReplyToggle) ──────────
+
+let activeComposerMenu = null;
+
+function closeComposerMenu() {
+  if (activeComposerMenu) { activeComposerMenu.remove(); activeComposerMenu = null; }
+}
+
+function buildComposerMenu(anchorBtn) {
+  closeComposerMenu();
+  const menu = document.createElement("div");
+  menu.className = "composer-menu";
+
+  // Force reply item
+  const forceItem = document.createElement("button");
+  forceItem.type = "button";
+  forceItem.innerHTML = `<span class="menu-icon">✦</span><span>让公主回复</span>`;
+  if (isReplying || !chatMessages.length) forceItem.disabled = true;
+  forceItem.addEventListener("click", () => {
+    closeComposerMenu();
+    if (!isReplying && chatMessages.length) triggerReply("forced");
+  });
+  menu.appendChild(forceItem);
+
+  // Auto reply toggle item
+  const autoItem = document.createElement("button");
+  autoItem.type = "button";
+  if (autoReplyEnabled) autoItem.classList.add("active-item");
+  const autoIcon = autoReplyEnabled ? "●" : "◌";
+  const autoLabel = autoReplyEnabled ? "自动接话：开" : "自动接话：关";
+  autoItem.innerHTML = `<span class="menu-icon">${autoIcon}</span><span>${autoLabel}</span>`;
+  autoItem.addEventListener("click", () => {
+    closeComposerMenu();
+    autoReplyEnabled = !autoReplyEnabled;
+    updateAutoReplyToggle();
+    if (!autoReplyEnabled) { clearTimeout(idleTimer); idleTimer = null; setChatStatus(""); }
+  });
+  menu.appendChild(autoItem);
+
+  document.body.appendChild(menu);
+  activeComposerMenu = menu;
+
+  const rect = anchorBtn.getBoundingClientRect();
+  menu.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+  const menuW = menu.offsetWidth || 160;
+  let left = rect.right - menuW;
+  left = Math.max(8, Math.min(left, window.innerWidth - menuW - 8));
+  menu.style.left = `${left}px`;
+
+  setTimeout(() => document.addEventListener("click", closeComposerMenu, { once: true }), 0);
+}
+
+document.getElementById("composerMenuBtn")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (activeComposerMenu) { closeComposerMenu(); return; }
+  buildComposerMenu(e.currentTarget);
 });
 
 // ── Auth (password only, no magic link) ───────────────────────────────────────

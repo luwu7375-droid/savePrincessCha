@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>救公主</title>
-  <link rel="stylesheet" href="style.css?v=cloudflare-0037">
+  <link rel="stylesheet" href="style.css?v=cloudflare-0038">
 </head>
 <body>
   <!-- 登录 overlay -->
@@ -51,12 +51,19 @@
         <button type="button" class="tier-btn" data-tier="instant">Instant</button>
         <button type="button" class="tier-btn" data-tier="general">General</button>
         <button type="button" class="tier-btn" data-tier="advanced">Advanced</button>
+        <!-- mobile: single dropdown replaces the three buttons -->
+        <button type="button" id="tierDropdownBtn" class="tier-dropdown-btn" aria-label="选择模型档位">
+          <span id="tierDropdownLabel">General</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="margin-left:4px;opacity:0.6"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
 
       <form class="input-bar" id="chatForm">
         <input id="messageInput" type="text" placeholder="继续说…" autocomplete="off">
-        <button id="forceReplyBtn" type="button" class="ghost-icon-btn" title="让公主回复" aria-label="让公主回复">✦</button>
-        <button id="autoReplyToggle" type="button" class="ghost-icon-btn" title="自动接话：关" aria-label="自动接话：关">◌</button>
+        <!-- desktop secondary btns -->
+        <button id="forceReplyBtn" type="button" class="ghost-icon-btn desktop-only-btn" title="让公主回复" aria-label="让公主回复">✦</button>
+        <button id="autoReplyToggle" type="button" class="ghost-icon-btn desktop-only-btn" title="自动接话：关" aria-label="自动接话：关">◌</button>
+        <!-- mobile composer menu btn -->
+        <button id="composerMenuBtn" type="button" class="ghost-icon-btn mobile-composer-btn" title="更多操作" aria-label="更多操作">✦</button>
         <button id="sendButton" type="submit" aria-label="发送"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V3M9 3L4 8M9 3L14 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </form>
     </main>
@@ -85,8 +92,8 @@
     </div>
   </div>
 
-  <script src="public-config.js?v=cloudflare-0037" charset="utf-8"></script>
+  <script src="public-config.js?v=cloudflare-0038" charset="utf-8"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=cloudflare-0037" charset="utf-8"></script>
+  <script src="app.js?v=cloudflare-0038" charset="utf-8"></script>
 </body>
 </html>
