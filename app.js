@@ -1970,6 +1970,8 @@ storySeedsToggleBtn?.addEventListener("click", () => {
 });
 
 updateStorySeedsToggle();
+
+async function triggerReply(replyMode) {
   if (isReplying) return;
   clearTimeout(idleTimer);
   idleTimer = null;
