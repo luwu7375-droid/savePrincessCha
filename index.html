@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>救公主</title>
-  <link rel="stylesheet" href="style.css?v=cloudflare-0038">
+  <link rel="stylesheet" href="style.css?v=cloudflare-0039">
 </head>
 <body>
   <!-- 登录 overlay -->
@@ -28,6 +28,12 @@
         <button id="newConvButton" type="button">＋ 新建</button>
       </div>
       <ul id="convList"></ul>
+      <div class="sidebar-footer">
+        <button id="themeButton" type="button" class="sidebar-footer-btn">系统</button>
+        <button id="distillButton" type="button" class="sidebar-footer-btn">沉淀</button>
+        <button id="toggleMemoryButton" type="button" class="sidebar-footer-btn">记忆匣</button>
+        <button id="logoutBtn" type="button" class="sidebar-footer-btn hidden">退出</button>
+      </div>
     </aside>
 
     <!-- 主聊天区 -->
@@ -36,13 +42,7 @@
         <button id="sidebarToggle" type="button" class="icon-btn" title="会话列表">☰</button>
         <h1>救公主</h1>
         <span id="chatStatus" class="chat-status"></span>
-        <div class="top-actions">
-          <button id="themeButton" type="button" class="icon-btn">☀️</button>
-          <button id="distillButton" type="button" class="icon-btn">沉淀</button>
-          <button id="toggleMemoryButton" type="button" class="icon-btn">记忆匣</button>
-          <button id="logoutBtn" type="button" class="icon-btn hidden">退出</button>
-          <button id="moreButton" type="button" class="icon-btn mobile-only" title="更多">⋯</button>
-        </div>
+        <button id="moreButton" type="button" class="icon-btn" title="更多">⋯</button>
       </header>
 
       <section class="message-list" id="messageList" aria-label="消息列表"></section>
@@ -92,8 +92,8 @@
     </div>
   </div>
 
-  <script src="public-config.js?v=cloudflare-0038" charset="utf-8"></script>
+  <script src="public-config.js?v=cloudflare-0039" charset="utf-8"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=cloudflare-0038" charset="utf-8"></script>
+  <script src="app.js?v=cloudflare-0039" charset="utf-8"></script>
 </body>
 </html>

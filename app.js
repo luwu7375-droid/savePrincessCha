@@ -1,4 +1,4 @@
-console.log("build cloudflare-0038");
+console.log("build cloudflare-0039");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1803,6 +1803,7 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
   e.stopPropagation();
   if (activeMoreMenu) { closeMoreMenu(); return; }
   const items = [
+    { label: "主题", id: "themeButton" },
     { label: "沉淀", id: "distillButton" },
     { label: "记忆匣", id: "toggleMemoryButton" },
     { label: "退出", id: "logoutBtn" },
@@ -1860,6 +1861,8 @@ function updateAutoReplyToggle() {
   autoReplyToggle.textContent = autoReplyEnabled ? "●" : "◌";
   autoReplyToggle.title = autoReplyEnabled ? "自动接话：开" : "自动接话：关";
   autoReplyToggle.setAttribute("aria-label", autoReplyToggle.title);
+  const composerMenuBtn = document.getElementById("composerMenuBtn");
+  if (composerMenuBtn) composerMenuBtn.classList.toggle("auto-badge", autoReplyEnabled);
 }
 
 // ── Model tier selector ────────────────────────────────────────────────────────
@@ -1901,12 +1904,8 @@ function initTierBar() {
         const btn = document.createElement("button");
         btn.type = "button";
         if (tier === currentModelTier) btn.classList.add("active-item");
-        const icon = document.createElement("span");
-        icon.className = "menu-icon";
-        icon.textContent = tier === "instant" ? "⚡" : tier === "general" ? "✦" : "🔮";
         const label = document.createElement("span");
         label.textContent = TIER_LABELS[tier];
-        btn.appendChild(icon);
         btn.appendChild(label);
         btn.addEventListener("click", () => {
           menu.remove();
@@ -2014,7 +2013,7 @@ function buildComposerMenu(anchorBtn) {
   // Force reply item
   const forceItem = document.createElement("button");
   forceItem.type = "button";
-  forceItem.innerHTML = `<span class="menu-icon">✦</span><span>让公主回复</span>`;
+  forceItem.innerHTML = `<span class="menu-icon">✦</span><span>戳一下</span>`;
   if (isReplying || !chatMessages.length) forceItem.disabled = true;
   forceItem.addEventListener("click", () => {
     closeComposerMenu();

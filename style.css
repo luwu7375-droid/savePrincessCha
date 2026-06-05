@@ -93,6 +93,30 @@ body {
 }
 .sidebar-header button:hover { color: var(--text); border-color: var(--text-muted); }
 
+.sidebar-footer {
+  flex-shrink: 0;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-footer-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-family: inherit;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.14s, color 0.14s;
+  white-space: nowrap;
+}
+.sidebar-footer-btn:hover { background: var(--surface); color: var(--text); }
+.sidebar-footer-btn.hidden { display: none; }
+
 #convList {
   list-style: none;
   overflow-y: auto;
@@ -580,6 +604,7 @@ body {
 .input-bar input:focus { border-color: oklch(52% 0.16 248 / 0.6); }
 
 .ghost-icon-btn {
+  position: relative;
   flex-shrink: 0;
   background: none;
   border: 1px solid var(--border);
@@ -599,6 +624,18 @@ body {
 .ghost-icon-btn:hover { color: var(--text); border-color: var(--text-muted); background: var(--surface); }
 .ghost-icon-btn:disabled { opacity: 0.35; cursor: default; }
 .ghost-icon-btn.active { color: oklch(62% 0.18 248); border-color: oklch(52% 0.16 248 / 0.6); background: oklch(52% 0.16 248 / 0.1); }
+
+.ghost-icon-btn.auto-badge::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: oklch(62% 0.18 248);
+  border: 1.5px solid var(--bg-deep);
+}
 
 /* Desktop-only / mobile-only composer buttons */
 .mobile-composer-btn { display: none; }
@@ -818,6 +855,7 @@ body {
 }
 
 .user-email-label { display: none; }
+.hidden { display: none; }
 
 /* ── More menu ── */
 .mobile-only { display: none; }
@@ -930,8 +968,6 @@ body {
   .top-actions { flex-shrink: 0; }
   .icon-btn { padding: 5px 8px; font-size: 12px; }
 
-  /* hide desktop-only buttons on mobile */
-  #distillButton, #toggleMemoryButton, #logoutBtn { display: none !important; }
   .mobile-only { display: inline-flex; }
 
   .message-list { padding: 12px 10px 8px; }
