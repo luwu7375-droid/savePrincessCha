@@ -1,4 +1,4 @@
-console.log("build cloudflare-0035");
+console.log("build cloudflare-0036");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1225,6 +1225,8 @@ function renderMemoryList(memories) {
 }
 
 function showMemoryEditDialog(mem, itemEl) {
+  console.log("[memory edit] 打开编辑弹窗", { id: mem.id, content: mem.content, domain: mem.domain, enabled: mem.enabled });
+
   const overlay = document.createElement("div");
   overlay.className = "dialog-overlay";
   overlay.style.zIndex = "800";
@@ -1250,6 +1252,11 @@ function showMemoryEditDialog(mem, itemEl) {
   select.value = MEMORY_DOMAINS.includes(mem.domain) ? mem.domain : "general";
   dialog.appendChild(select);
 
+  // errorEl must be appended before actions so insertBefore has a valid reference node
+  const errorEl = document.createElement("p");
+  errorEl.style.cssText = "color:oklch(62% 0.2 25);font-size:13px;margin:0 0 8px;display:none";
+  dialog.appendChild(errorEl);
+
   const actions = document.createElement("div");
   actions.className = "dialog-actions";
 
@@ -1257,11 +1264,12 @@ function showMemoryEditDialog(mem, itemEl) {
   cancelBtn.type = "button";
   cancelBtn.className = "btn-cancel";
   cancelBtn.textContent = "取消";
-  cancelBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); overlay.remove(); });
-
-  const errorEl = document.createElement("p");
-  errorEl.style.cssText = "color:oklch(62% 0.2 25);font-size:13px;margin:0 0 8px;display:none";
-  dialog.insertBefore(errorEl, actions);
+  cancelBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log("[memory edit] 取消编辑", { id: mem.id });
+    overlay.remove();
+  });
 
   const saveBtn = document.createElement("button");
   saveBtn.type = "button";
@@ -1271,17 +1279,21 @@ function showMemoryEditDialog(mem, itemEl) {
     e.preventDefault();
     e.stopPropagation();
     const content = input.value.trim();
+    const domain = select.value;
     if (!content) { input.focus(); return; }
+    const payload = { content, domain };
+    console.log("[memory edit] 保存请求", { id: mem.id, payload });
     saveBtn.disabled = true;
     errorEl.style.display = "none";
     let res;
     try {
       res = await memoryFetch(`?id=${encodeURIComponent(mem.id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ content, domain: select.value }),
+        body: JSON.stringify(payload),
       });
     } catch (err) {
       saveBtn.disabled = false;
+      console.error("[memory edit] 网络错误", err);
       errorEl.textContent = `网络错误：${err.message}`;
       errorEl.style.display = "block";
       return;
@@ -1296,6 +1308,7 @@ function showMemoryEditDialog(mem, itemEl) {
         try { const j = await res.json(); msg = j.error || j.message || msg; } catch { try { msg = await res.text() || msg; } catch {} }
         errorEl.textContent = msg;
       }
+      console.error("[memory edit] 保存失败", { status: res.status, text: errorEl.textContent });
       errorEl.style.display = "block";
       return;
     }
@@ -1305,6 +1318,7 @@ function showMemoryEditDialog(mem, itemEl) {
       errorEl.style.display = "block";
       return;
     }
+    console.log("[memory edit] 保存成功，更新列表", updated);
     overlay.remove();
     updateMemoryItem(updated);
   });
@@ -1314,6 +1328,7 @@ function showMemoryEditDialog(mem, itemEl) {
   dialog.appendChild(actions);
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
+  console.log("[memory edit] 弹窗已挂载，editForm:", { content: input.value, domain: select.value });
   input.focus();
   input.select();
 }
