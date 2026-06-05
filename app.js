@@ -1,4 +1,4 @@
-console.log("build cloudflare-0032");
+console.log("build cloudflare-0033");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1137,62 +1137,183 @@ function showGlobalMemoryError(msg) {
 }
 
 async function loadMemories() {
+  memoryList.innerHTML = "";
+  memoryList.style.padding = "";
+
+  // ── Load regular memories ──────────────────────────────────────────────────
   let res;
-  try { res = await memoryFetch(""); } catch { return; }
-  if (res.status === 401) {
-    memoryList.textContent = "口令错误或未输入";
-    memoryList.style.padding = "12px 18px";
+  try {
+    res = await memoryFetch("");
+  } catch (err) {
+    memoryList.innerHTML = `<div style="padding:12px 18px;color:oklch(62% 0.2 25)">记忆列表加载失败（网络错误：${err.message}）</div>`;
     return;
   }
-  const data = await res.json();
-  memoryList.innerHTML = "";
-  for (const mem of data || []) {
+  if (res.status === 401) {
+    memoryList.innerHTML = `<div style="padding:12px 18px;color:oklch(62% 0.2 25)">口令错误或未输入</div>`;
+    return;
+  }
+  if (!res.ok) {
+    let errMsg = `HTTP ${res.status}`;
+    try { const j = await res.json(); errMsg = j.error || j.message || errMsg; } catch { try { errMsg = await res.text() || errMsg; } catch {} }
+    memoryList.innerHTML = `<div style="padding:12px 18px;color:oklch(62% 0.2 25)">记忆列表加载失败（${errMsg}）</div>`;
+    return;
+  }
+
+  let memories = [];
+  try { memories = await res.json(); } catch (err) {
+    memoryList.innerHTML = `<div style="padding:12px 18px;color:oklch(62% 0.2 25)">记忆列表解析失败（${err.message}）</div>`;
+    return;
+  }
+
+  if (memories.length > 0) {
+    const section = document.createElement("div");
+    const sectionTitle = document.createElement("div");
+    sectionTitle.style.cssText = "font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 18px 4px;";
+    sectionTitle.textContent = "记忆";
+    section.appendChild(sectionTitle);
+
+    for (const mem of memories) {
+      const item = document.createElement("div");
+      item.className = "memory-item" + (mem.enabled ? "" : " disabled");
+      const domain = document.createElement("small");
+      domain.className = "memory-domain";
+      domain.textContent = mem.domain || "general";
+      const span = document.createElement("span");
+      span.textContent = mem.content;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = mem.enabled ? "禁用" : "启用";
+      btn.dataset.id = mem.id;
+      btn.dataset.enabled = mem.enabled;
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const b = e.currentTarget;
+        b.disabled = true;
+        let r;
+        try {
+          r = await memoryFetch(`?id=${encodeURIComponent(b.dataset.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ enabled: b.dataset.enabled !== "true" }),
+          });
+        } catch (err) {
+          b.disabled = false;
+          showInlineError(item, `网络错误：${err.message}`);
+          return;
+        }
+        b.disabled = false;
+        if (!r.ok) {
+          if (r.status === 401) {
+            sessionStorage.removeItem("memory_admin_token");
+            showInlineError(item, "口令过期或错误，请重新打开记忆匣。");
+          } else {
+            let msg = `操作失败（${r.status}）`;
+            try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
+            showInlineError(item, msg);
+          }
+          return;
+        }
+        await loadMemories();
+      });
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.textContent = "编辑";
+      editBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); showMemoryEditDialog(mem); });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "danger";
+      deleteBtn.textContent = "删除";
+      deleteBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showDialog({
+          title: "删除记忆",
+          body: "确定删除这条记忆？",
+          confirmLabel: "删除",
+          confirmClass: "btn-danger",
+          onConfirm: async () => {
+            let r;
+            try {
+              r = await memoryFetch(`?id=${encodeURIComponent(mem.id)}`, { method: "DELETE" });
+            } catch (err) {
+              showGlobalMemoryError(`网络错误：${err.message}`);
+              return;
+            }
+            if (!r.ok) {
+              if (r.status === 401) {
+                sessionStorage.removeItem("memory_admin_token");
+                showGlobalMemoryError("口令过期或错误，请重新打开记忆匣。");
+              } else {
+                let msg = `删除失败（${r.status}）`;
+                try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
+                showGlobalMemoryError(msg);
+              }
+              return;
+            }
+            await loadMemories();
+          },
+        });
+      });
+
+      const actions = document.createElement("div");
+      actions.className = "memory-actions";
+      actions.appendChild(btn);
+      actions.appendChild(editBtn);
+      actions.appendChild(deleteBtn);
+      item.appendChild(domain);
+      item.appendChild(span);
+      item.appendChild(actions);
+      section.appendChild(item);
+    }
+    memoryList.appendChild(section);
+  } else {
+    const empty = document.createElement("div");
+    empty.style.cssText = "padding:10px 18px;font-size:13px;color:var(--text-muted)";
+    empty.textContent = "暂无记忆";
+    memoryList.appendChild(empty);
+  }
+
+  // ── Load memory buckets ────────────────────────────────────────────────────
+  let bRes;
+  try {
+    bRes = await memoryFetch("?type=buckets");
+  } catch {
+    return; // buckets section is non-critical, don't show error
+  }
+  if (!bRes.ok) return;
+
+  let buckets = [];
+  try { buckets = await bRes.json(); } catch { return; }
+  if (!Array.isArray(buckets) || buckets.length === 0) return;
+
+  const divider = document.createElement("div");
+  divider.style.cssText = "border-top:1px solid var(--border);margin:4px 0";
+  memoryList.appendChild(divider);
+
+  const bucketTitle = document.createElement("div");
+  bucketTitle.style.cssText = "font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 18px 4px;";
+  bucketTitle.textContent = "沉淀记忆";
+  memoryList.appendChild(bucketTitle);
+
+  for (const b of buckets) {
     const item = document.createElement("div");
-    item.className = "memory-item" + (mem.enabled ? "" : " disabled");
+    item.className = "memory-item";
     const domain = document.createElement("small");
     domain.className = "memory-domain";
-    domain.textContent = mem.domain || "general";
+    domain.textContent = b.domain || "general";
     const span = document.createElement("span");
-    span.textContent = mem.content;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = mem.enabled ? "禁用" : "启用";
-    btn.dataset.id = mem.id;
-    btn.dataset.enabled = mem.enabled;
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const b = e.currentTarget;
-      b.disabled = true;
-      let res;
-      try {
-        res = await memoryFetch(`?id=${encodeURIComponent(b.dataset.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ enabled: b.dataset.enabled !== "true" }),
-        });
-      } catch (err) {
-        b.disabled = false;
-        showInlineError(item, `网络错误：${err.message}`);
-        return;
-      }
-      b.disabled = false;
-      if (!res.ok) {
-        if (res.status === 401) {
-          sessionStorage.removeItem("memory_admin_token");
-          showInlineError(item, "口令过期或错误，请重新打开记忆匣。");
-        } else {
-          let msg = `操作失败（${res.status}）`;
-          try { const j = await res.json(); msg = j.error || j.message || msg; } catch { try { msg = await res.text() || msg; } catch {} }
-          showInlineError(item, msg);
-        }
-        return;
-      }
-      await loadMemories();
-    });
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.textContent = "编辑";
-    editBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); showMemoryEditDialog(mem); });
+    span.style.cssText = "flex:1;overflow:hidden";
+    const titleEl = document.createElement("div");
+    titleEl.style.cssText = "font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    titleEl.textContent = b.title || "";
+    const summaryEl = document.createElement("div");
+    summaryEl.style.cssText = "font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    summaryEl.textContent = b.summary || "";
+    span.appendChild(titleEl);
+    span.appendChild(summaryEl);
 
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
@@ -1202,37 +1323,31 @@ async function loadMemories() {
       e.preventDefault();
       e.stopPropagation();
       showDialog({
-        title: "删除记忆",
-        body: "确定删除这条记忆？",
+        title: "删除沉淀记忆",
+        body: "确定删除这条沉淀记忆？",
         confirmLabel: "删除",
         confirmClass: "btn-danger",
         onConfirm: async () => {
-          let res;
+          let r;
           try {
-            res = await memoryFetch(`?id=${encodeURIComponent(mem.id)}`, { method: "DELETE" });
+            r = await memoryFetch(`?type=buckets&id=${encodeURIComponent(b.id)}`, { method: "DELETE" });
           } catch (err) {
             showGlobalMemoryError(`网络错误：${err.message}`);
             return;
           }
-          if (!res.ok) {
-            if (res.status === 401) {
-              sessionStorage.removeItem("memory_admin_token");
-              showGlobalMemoryError("口令过期或错误，请重新打开记忆匣。");
-            } else {
-              let msg = `删除失败（${res.status}）`;
-              try { const j = await res.json(); msg = j.error || j.message || msg; } catch { try { msg = await res.text() || msg; } catch {} }
-              showGlobalMemoryError(msg);
-            }
+          if (!r.ok) {
+            let msg = `删除失败（${r.status}）`;
+            try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
+            showGlobalMemoryError(msg);
             return;
           }
           await loadMemories();
         },
       });
     });
+
     const actions = document.createElement("div");
     actions.className = "memory-actions";
-    actions.appendChild(btn);
-    actions.appendChild(editBtn);
     actions.appendChild(deleteBtn);
     item.appendChild(domain);
     item.appendChild(span);
@@ -1267,9 +1382,21 @@ addMemoryButton.addEventListener("click", async () => {
   const content = memoryInput.value.trim();
   if (!content) return;
   const domain = memoryDomainSelect?.value || "general";
-  await memoryFetch("", { method: "POST", body: JSON.stringify({ content, domain }) });
+  let res;
+  try {
+    res = await memoryFetch("", { method: "POST", body: JSON.stringify({ content, domain }) });
+  } catch (err) {
+    showGlobalMemoryError(`新增失败（网络错误：${err.message}）`);
+    return;
+  }
+  if (!res.ok) {
+    let msg = `新增失败（${res.status}）`;
+    try { const j = await res.json(); msg = j.error || j.message || msg; } catch { try { msg = await res.text() || msg; } catch {} }
+    showGlobalMemoryError(msg);
+    return;
+  }
   memoryInput.value = "";
-  loadMemories();
+  await loadMemories();
 });
 
 memoryInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addMemoryButton.click(); });
