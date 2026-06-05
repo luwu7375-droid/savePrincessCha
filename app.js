@@ -314,10 +314,10 @@ async function deleteConv(id) {
 }
 
 async function switchConversation(id) {
+  if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
   setActiveConversationId(id);
   renderConvList();
   await reloadHistory();
-  if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
 }
 
 // ── Dialog helper ─────────────────────────────────────────────────────────────
@@ -1801,6 +1801,7 @@ function closeMoreMenu() {
 
 document.getElementById("moreButton")?.addEventListener("click", (e) => {
   e.stopPropagation();
+  closeMobileSidebar();
   if (activeMoreMenu) { closeMoreMenu(); return; }
   const items = [
     { label: "主题", id: "themeButton" },
@@ -1814,6 +1815,7 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
     const btn = document.createElement("button");
     btn.textContent = item.label;
     btn.addEventListener("click", () => {
+      closeMobileSidebar();
       closeMoreMenu();
       document.getElementById(item.id)?.click();
     });
@@ -1828,6 +1830,7 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
 });
 
 newConvButton.addEventListener("click", async () => {
+  if (isMobileLayout()) closeMobileSidebar();
   const id = await createConversation("新会话");
   if (!id) return;
   setActiveConversationId(id);
