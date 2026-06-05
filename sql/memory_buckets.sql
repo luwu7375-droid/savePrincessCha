@@ -4,6 +4,7 @@ create table memory_buckets (
   summary text not null,
   content text,
   domain text default 'general',
+  keywords text[] default '{}',
   valence numeric default 0,
   arousal numeric default 0,
   importance numeric default 0.5,
@@ -15,3 +16,6 @@ create table memory_buckets (
 
 alter table memory_buckets enable row level security;
 -- All reads/writes go through Edge Function with service role key (no anon access)
+
+-- Migration (for existing tables):
+-- ALTER TABLE memory_buckets ADD COLUMN IF NOT EXISTS keywords text[] DEFAULT '{}';
