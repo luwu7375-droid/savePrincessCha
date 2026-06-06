@@ -25,8 +25,9 @@ let currentModelTier = _VALID_TIERS_INIT.includes(_storedTier) ? _storedTier : "
 // Sanitise: if stored value was invalid, overwrite it so localStorage stays clean.
 if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", "general");
 
-// ── Story Seeds 开关（关系史实验，默认关闭） ───────────────────────────────────
-let storySeedsEnabled = localStorage.getItem("storySeedsEnabled") === "true";
+// ── Story Seeds 开关（旧关系史已停用，保留变量避免引用报错） ──────────────────
+// LEGACY_MEMORY_ENABLED=false，storySeedsEnabled 不再影响 chat 注入。
+const storySeedsEnabled = false;
 
 // ── Pending image state ────────────────────────────────────────────────────────
 let pendingImage = null; // { dataUrl: string|null, loading: boolean, error: string|null, file: File|null } | null
@@ -601,7 +602,6 @@ async function callChatAPI(messages, replyMode = "auto") {
   if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
   if (!modelName) throw new Error("MODEL_NAME 未配置");
   console.log("[debug] callChatAPI", {
-    storySeedsEnabled,
     replyMode,
     modelTier: currentModelTier,
     userId: currentUserId ? currentUserId.slice(0, 6) : "absent",
@@ -623,7 +623,7 @@ async function callChatAPI(messages, replyMode = "auto") {
       replyMode,
       userId: currentUserId,
       modelTier: currentModelTier,
-      storySeedsEnabled,
+      // storySeedsEnabled intentionally omitted — legacy memory system retired
     }),
   });
 }
@@ -2455,41 +2455,6 @@ document.getElementById("closeStorySeedsButton")?.addEventListener("click", () =
 
 async function openStorySeedsPanel() {
   if (!storySeedsOverlay || !storySeedsList) return;
-  storySeedsList.textContent = "加载中…";
+  storySeedsList.textContent = "旧关系史已停用。记忆系统已升级，请查看新的用户画像配置。";
   storySeedsOverlay.classList.remove("hidden");
-
-  const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
-  const anonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
-
-  if (!supabaseUrl || !anonKey) {
-    storySeedsList.textContent = "无法加载：Supabase 未配置。";
-    return;
-  }
-
-  try {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,content,importance,themes&order=importance.desc,created_at.asc&limit=4`,
-      { headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` } },
-    );
-    if (res.status === 404) {
-      storySeedsList.textContent = "数据库表尚未创建，请先在 Supabase 执行 sql/story_seeds.sql。";
-      return;
-    }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const seeds = await res.json();
-
-    if (!seeds.length) {
-      storySeedsList.textContent = "暂无内容。";
-      return;
-    }
-
-    storySeedsList.innerHTML = seeds.map((s) => `
-      <div style="border-bottom:1px solid var(--border,#e5e5e5);padding:16px 0;">
-        <div style="font-weight:600;margin-bottom:8px;">${s.title}</div>
-        <div style="white-space:pre-wrap;line-height:1.7;color:var(--text-secondary,#444);">${s.content}</div>
-      </div>
-    `).join("");
-  } catch (err) {
-    storySeedsList.textContent = `加载失败：${err.message}`;
-  }
 }

@@ -142,7 +142,14 @@ function isFallbackableStatus(status: number, bodyText: string): boolean {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "fuka-unified-v4";
+const FUNCTION_VERSION = "fuka-unified-v5";
+
+// ── Legacy memory guard ────────────────────────────────────────────────────────
+//
+// Set LEGACY_MEMORY_ENABLED=true in Supabase secrets to re-enable the old
+// story_seeds / memories / memory_buckets injection.
+// Default: false — legacy system is retired.
+const LEGACY_MEMORY_ENABLED = Deno.env.get("LEGACY_MEMORY_ENABLED") === "true";
 const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
 type MemoryDomain = typeof MEMORY_DOMAINS[number];
 type MemoryRow = {
@@ -260,11 +267,25 @@ type RequestLog = {
   input_tokens: number | null;
   output_tokens: number | null;
   estimated_cost: null;
+  // Legacy memory system
+  legacy_memory_enabled: boolean;
   story_seeds_enabled: boolean;
   story_seeds_count: number;
   story_seeds_titles: string[];
   bucket_count: number;
   bucket_titles: string[];
+  // New memory provider system
+  active_memory_providers: string[];
+  memory_provider_count: number;
+  mastodon_profile_enabled: boolean;
+  mastodon_profile_loaded: boolean;
+  mastodon_profile_chars: number;
+  mastodon_profile_error: string | null;
+  mastodon_timeline_enabled: boolean;
+  timeline_loaded: boolean;
+  openai_export_enabled: boolean;
+  ombre_vault_enabled: boolean;
+  memory_context_tokens_estimated: number;
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
@@ -454,6 +475,91 @@ function compileStorySeeds(seeds: StorySeedRow[]): string {
   return `\n\n<relationship_history>\n\n${stories}\n\n</relationship_history>`;
 }
 
+// ── New Memory Provider System ────────────────────────────────────────────────
+//
+// compileMemoryContext() is the unified entry point for the new memory provider
+// architecture. All models (Claude, GPT, Gemini) consume the same plain-text
+// context blocks compiled here — no model-specific wiring.
+//
+// Phase 1 providers:
+//   mastodon_profile  → always injected (core_profile)
+//   mastodon_timeline → stored, not injected (retrieval_only, future RAG)
+//   openai_export     → reserved, not implemented
+//   ombre_vault       → reserved, not implemented
+//
+// Returns: { context: string; log: MemoryContextLog }
+
+type MemoryContextLog = {
+  active_memory_providers: string[];
+  memory_provider_count: number;
+  mastodon_profile_enabled: boolean;
+  mastodon_profile_loaded: boolean;
+  mastodon_profile_chars: number;
+  mastodon_profile_error: string | null;
+  mastodon_timeline_enabled: boolean;
+  timeline_loaded: boolean;
+  openai_export_enabled: boolean;
+  ombre_vault_enabled: boolean;
+  memory_context_tokens_estimated: number;
+};
+
+async function compileMemoryContext(): Promise<{ context: string; log: MemoryContextLog }> {
+  const activeProviders: string[] = [];
+  let context = "";
+
+  // ── mastodon_profile: always injected ──────────────────────────────────────
+  // Path is relative to this file inside the Supabase Functions VFS.
+  // Deployed layout: supabase/functions/chat/index.ts
+  //                  supabase/functions/data/memory/mastodon/profile.md
+  let mastodonProfileChars = 0;
+  let mastodonProfileEnabled = false;
+  let mastodonProfileLoaded = false;
+  let mastodonProfileError: string | null = null;
+  try {
+    const profilePath = new URL("../data/memory/mastodon/profile.md", import.meta.url);
+    const profileText = await Deno.readTextFile(profilePath);
+    if (profileText.trim()) {
+      mastodonProfileEnabled = true;
+      mastodonProfileLoaded = true;
+      mastodonProfileChars = profileText.length;
+      activeProviders.push("mastodon_profile");
+      context += `\n\n<user_core_profile source="mastodon_profile">\n${profileText.trim()}\n</user_core_profile>`;
+    } else {
+      mastodonProfileError = "profile.md is empty";
+    }
+  } catch (err) {
+    mastodonProfileError = err instanceof Error ? err.message : String(err);
+    console.error("[memory] mastodon_profile load failed:", mastodonProfileError);
+  }
+
+  // ── mastodon_timeline: stored only, not injected in phase 1 ───────────────
+  // (inject: "retrieval_only" — future RAG integration)
+
+  // ── openai_export: reserved, not implemented ───────────────────────────────
+
+  // ── ombre_vault: reserved, not implemented ─────────────────────────────────
+
+  // Rough token estimate: ~1 token per 3.5 Chinese chars / 4 English chars
+  const tokenEstimate = Math.ceil(context.length / 3.5);
+
+  return {
+    context,
+    log: {
+      active_memory_providers: activeProviders,
+      memory_provider_count: activeProviders.length,
+      mastodon_profile_enabled: mastodonProfileEnabled,
+      mastodon_profile_loaded: mastodonProfileLoaded,
+      mastodon_profile_chars: mastodonProfileChars,
+      mastodon_profile_error: mastodonProfileError,
+      mastodon_timeline_enabled: true,  // provider configured, not injected this phase
+      timeline_loaded: false,
+      openai_export_enabled: false,
+      ombre_vault_enabled: false,
+      memory_context_tokens_estimated: tokenEstimate,
+    },
+  };
+}
+
 // ── Model call (with one-shot fallback) ───────────────────────────────────────
 
 type CallResult = {
@@ -616,11 +722,23 @@ Deno.serve(async (request) => {
     input_tokens: null,
     output_tokens: null,
     estimated_cost: null,
+    legacy_memory_enabled: LEGACY_MEMORY_ENABLED,
     story_seeds_enabled: false,
     story_seeds_count: 0,
     story_seeds_titles: [],
     bucket_count: 0,
     bucket_titles: [],
+    active_memory_providers: [],
+    memory_provider_count: 0,
+    mastodon_profile_enabled: false,
+    mastodon_profile_loaded: false,
+    mastodon_profile_chars: 0,
+    mastodon_profile_error: null,
+    mastodon_timeline_enabled: false,
+    timeline_loaded: false,
+    openai_export_enabled: false,
+    ombre_vault_enabled: false,
+    memory_context_tokens_estimated: 0,
     model_call_ms: 0,
     total_ms: 0,
   };
@@ -649,77 +767,102 @@ Deno.serve(async (request) => {
     logRecord.has_user_id = userId !== "anon";
     logRecord.user_id_prefix = safeUserIdPrefix(userId);
 
-    const cacheKey = await hashCacheKey(userId + "|" + hitDomainsFingerprint(lastUserMessage));
-    const cached = _memCache.get(cacheKey);
+    // ── Legacy memory system (LEGACY_MEMORY_ENABLED=false by default) ─────────
+    if (LEGACY_MEMORY_ENABLED) {
+      const cacheKey = await hashCacheKey(userId + "|" + hitDomainsFingerprint(lastUserMessage));
+      const cached = _memCache.get(cacheKey);
 
-    let compiledMemoryText: string;
+      let compiledMemoryText: string;
 
-    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-      _cacheHits += 1;
-      compiledMemoryText = cached.compiledText;
-      logRecord.memory_cache_hit = true;
-      logRecord.memory_count = cached.hitMemoryIds.length;
-      logRecord.hit_memory_ids_count = cached.hitMemoryIds.length;
+      if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+        _cacheHits += 1;
+        compiledMemoryText = cached.compiledText;
+        logRecord.memory_cache_hit = true;
+        logRecord.memory_count = cached.hitMemoryIds.length;
+        logRecord.hit_memory_ids_count = cached.hitMemoryIds.length;
+      } else {
+        _cacheMisses += 1;
+        const tFetch = Date.now();
+        const [{ lines: memories, ids: memoryIds }, { summaries: buckets, titles: bucketTitles }] = await Promise.all([
+          fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
+          fetchMemoryBuckets(supabaseUrl, serviceRoleKey, lastUserMessage),
+        ]);
+        logRecord.memory_fetch_ms = Date.now() - tFetch;
+
+        const tCompile = Date.now();
+        let compiled = "";
+        if (memories.length > 0) {
+          compiled +=
+            "\n\n以下是长期记忆，请优先遵守：\n" +
+            memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
+        }
+        if (buckets.length > 0) {
+          compiled +=
+            "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" +
+            buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
+        }
+        logRecord.memory_compile_ms = Date.now() - tCompile;
+        logRecord.memory_count = memories.length;
+        logRecord.hit_memory_ids_count = memoryIds.length;
+        logRecord.bucket_count = buckets.length;
+        logRecord.bucket_titles = bucketTitles;
+
+        compiledMemoryText = compiled;
+        if (memories.length > 0 || buckets.length > 0) {
+          evictExpiredCacheEntries();
+          _cacheWrites += 1;
+          _memCache.set(cacheKey, {
+            compiledText: compiled,
+            hitMemoryIds: memoryIds,
+            ts: Date.now(),
+          });
+        }
+      }
+
+      // Update log with post-request stats
+      logRecord.memory_cache_hits = _cacheHits;
+      logRecord.memory_cache_misses = _cacheMisses;
+      logRecord.memory_cache_hit_rate = (_cacheHits + _cacheMisses) > 0
+        ? _cacheHits / (_cacheHits + _cacheMisses)
+        : -1;
+      logRecord.memory_cache_size = _memCache.size;
+
+      systemContent += compiledMemoryText;
+
+      // ── Story Seeds (legacy, requires LEGACY_MEMORY_ENABLED=true) ───────────
+      if (payload.storySeedsEnabled === true) {
+        logRecord.story_seeds_enabled = true;
+        const seeds = await fetchStorySeeds(supabaseUrl, serviceRoleKey, lastUserMessage);
+        if (seeds.length > 0) {
+          systemContent += compileStorySeeds(seeds);
+          logRecord.story_seeds_count = seeds.length;
+          logRecord.story_seeds_titles = seeds.map((s) => s.title);
+        }
+      }
     } else {
-      _cacheMisses += 1;
-      const tFetch = Date.now();
-      const [{ lines: memories, ids: memoryIds }, { summaries: buckets, titles: bucketTitles }] = await Promise.all([
-        fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
-        fetchMemoryBuckets(supabaseUrl, serviceRoleKey, lastUserMessage),
-      ]);
-      logRecord.memory_fetch_ms = Date.now() - tFetch;
-
-      const tCompile = Date.now();
-      let compiled = "";
-      if (memories.length > 0) {
-        compiled +=
-          "\n\n以下是长期记忆，请优先遵守：\n" +
-          memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
-      }
-      if (buckets.length > 0) {
-        compiled +=
-          "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" +
-          buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
-      }
-      logRecord.memory_compile_ms = Date.now() - tCompile;
-      logRecord.memory_count = memories.length;
-      logRecord.hit_memory_ids_count = memoryIds.length;
-      logRecord.bucket_count = buckets.length;
-      logRecord.bucket_titles = bucketTitles;
-
-      compiledMemoryText = compiled;
-      // Only cache on data — don't cache a fetch failure as empty context
-      if (memories.length > 0 || buckets.length > 0) {
-        evictExpiredCacheEntries();
-        _cacheWrites += 1;
-        _memCache.set(cacheKey, {
-          compiledText: compiled,
-          hitMemoryIds: memoryIds,
-          ts: Date.now(),
-        });
-      }
+      // legacy_memory_enabled:false — skip all legacy DB reads
+      logRecord.story_seeds_enabled = false;
     }
+  }
 
-    // Update log with post-request stats (counter already incremented above)
-    logRecord.memory_cache_hits = _cacheHits;
-    logRecord.memory_cache_misses = _cacheMisses;
-    logRecord.memory_cache_hit_rate = (_cacheHits + _cacheMisses) > 0
-      ? _cacheHits / (_cacheHits + _cacheMisses)
-      : -1;
-    logRecord.memory_cache_size = _memCache.size;
-
-    systemContent += compiledMemoryText;
-
-    // ── Story Seeds 注入（需开关打开，按 themes 匹配过滤） ────────────────────
-    if (payload.storySeedsEnabled === true) {
-      logRecord.story_seeds_enabled = true;
-      const seeds = await fetchStorySeeds(supabaseUrl, serviceRoleKey, lastUserMessage);
-      if (seeds.length > 0) {
-        systemContent += compileStorySeeds(seeds);
-        logRecord.story_seeds_count = seeds.length;
-        logRecord.story_seeds_titles = seeds.map((s) => s.title);
-      }
+  // ── New memory provider system ────────────────────────────────────────────
+  // Runs regardless of LEGACY_MEMORY_ENABLED. All models consume the same context.
+  {
+    const { context: memContext, log: memLog } = await compileMemoryContext();
+    if (memContext) {
+      systemContent += memContext;
     }
+    logRecord.active_memory_providers = memLog.active_memory_providers;
+    logRecord.memory_provider_count = memLog.memory_provider_count;
+    logRecord.mastodon_profile_enabled = memLog.mastodon_profile_enabled;
+    logRecord.mastodon_profile_loaded = memLog.mastodon_profile_loaded;
+    logRecord.mastodon_profile_chars = memLog.mastodon_profile_chars;
+    logRecord.mastodon_profile_error = memLog.mastodon_profile_error;
+    logRecord.mastodon_timeline_enabled = memLog.mastodon_timeline_enabled;
+    logRecord.timeline_loaded = memLog.timeline_loaded;
+    logRecord.openai_export_enabled = memLog.openai_export_enabled;
+    logRecord.ombre_vault_enabled = memLog.ombre_vault_enabled;
+    logRecord.memory_context_tokens_estimated = memLog.memory_context_tokens_estimated;
   }
 
   if (payload.replyMode === "auto") {

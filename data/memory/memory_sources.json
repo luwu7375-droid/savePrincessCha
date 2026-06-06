@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "mastodon_profile",
+      "type": "core_profile",
+      "enabled": true,
+      "path": "data/memory/mastodon/profile.md",
+      "inject": "always",
+      "priority": 100,
+      "description": "Mastodon archive distilled long-term user profile"
+    },
+    {
+      "id": "mastodon_timeline",
+      "type": "timeline_archive",
+      "enabled": true,
+      "path": "data/memory/mastodon/timeline.md",
+      "inject": "retrieval_only",
+      "priority": 80,
+      "description": "Mastodon event timeline, not always injected"
+    },
+    {
+      "id": "openai_export",
+      "type": "openai_memory_export",
+      "enabled": false,
+      "path": "data/memory/openai/",
+      "inject": "retrieval_only",
+      "priority": 90,
+      "description": "Reserved for future OpenAI exported memory"
+    },
+    {
+      "id": "ombre_vault",
+      "type": "structured_memory_vault",
+      "enabled": false,
+      "path": "data/memory/vault/",
+      "inject": "retrieval_only",
+      "priority": 70,
+      "description": "Reserved for Ombre Brain inspired structured memory"
+    }
+  ]
+}
