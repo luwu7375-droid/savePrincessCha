@@ -147,7 +147,7 @@ function isFallbackableStatus(status: number, bodyText: string): boolean {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "fuka-unified-v6";
+const FUNCTION_VERSION = "fuka-unified-v7";
 
 // ── Legacy memory guard ────────────────────────────────────────────────────────
 //
@@ -842,6 +842,19 @@ async function compileMemoryContext(
   };
 }
 
+// ── UTF-8 safe base64 encode ──────────────────────────────────────────────────
+// btoa() only handles Latin-1 (0x00–0xFF). conversation_history_reason and
+// timeline_reason can contain CJK characters → must UTF-8 encode first.
+function base64EncodeUtf8(value: unknown): string {
+  const json = JSON.stringify(value);
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 // ── Model call (with one-shot fallback) ───────────────────────────────────────
 
 type CallResult = {
@@ -1280,7 +1293,7 @@ assistant 不要在普通亲密对话中主动转向"现实关系更重要""不�
       conversation_history_hit_conversation_ids: logRecord.conversation_history_hit_conversation_ids,
       conversation_history_reason: logRecord.conversation_history_reason,
     };
-    const memoryDebugHeader = btoa(JSON.stringify(memoryDebugPayload));
+    const memoryDebugHeader = base64EncodeUtf8(memoryDebugPayload);
 
     return new Response(result.response.body, {
       status: result.response.status,

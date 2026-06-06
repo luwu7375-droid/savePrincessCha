@@ -1,4 +1,4 @@
-console.log("build cloudflare-0051");
+console.log("build cloudflare-0052");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -532,6 +532,12 @@ function stripThinking(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*$/, "").trim();
 }
 
+function base64DecodeUtf8(base64) {
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
 function readDelta(chunk) {
   return chunk.choices?.[0]?.delta?.content || "";
 }
@@ -681,7 +687,7 @@ async function requestStreamingReply(replyMode = "auto") {
   try {
     const debugHeader = response.headers.get("x-save-princess-memory-debug");
     if (debugHeader) {
-      const debug = JSON.parse(atob(debugHeader));
+      const debug = JSON.parse(base64DecodeUtf8(debugHeader));
       window.lastMemoryDebug = debug;
       try { localStorage.setItem("lastMemoryDebug", JSON.stringify(debug)); } catch (_) {}
     }
