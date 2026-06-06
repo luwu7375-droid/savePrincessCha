@@ -1,3 +1,5 @@
+import { MASTODON_PROFILE_MD } from "./mastodon_profile.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -508,24 +510,22 @@ async function compileMemoryContext(): Promise<{ context: string; log: MemoryCon
   let context = "";
 
   // ── mastodon_profile: always injected ──────────────────────────────────────
-  // Path is relative to this file inside the Supabase Functions VFS.
-  // Deployed layout: supabase/functions/chat/index.ts
-  //                  supabase/functions/chat/data/memory/mastodon/profile.md
+  // Profile is inlined as a TS module (mastodon_profile.ts) to avoid Deno
+  // file-system read issues in the Supabase Edge Functions runtime.
   let mastodonProfileChars = 0;
   // enabled reflects provider config, not load success
   const mastodonProfileEnabled = true;
   let mastodonProfileLoaded = false;
   let mastodonProfileError: string | null = null;
   try {
-    const profilePath = new URL("./data/memory/mastodon/profile.md", import.meta.url).pathname;
-    const profileText = await Deno.readTextFile(profilePath);
+    const profileText = MASTODON_PROFILE_MD;
     if (profileText.trim()) {
       mastodonProfileLoaded = true;
       mastodonProfileChars = profileText.length;
       activeProviders.push("mastodon_profile");
       context += `\n\n<user_core_profile source="mastodon_profile">\n${profileText.trim()}\n</user_core_profile>`;
     } else {
-      mastodonProfileError = "profile.md is empty";
+      mastodonProfileError = "MASTODON_PROFILE_MD is empty";
     }
   } catch (err) {
     mastodonProfileError = err instanceof Error ? err.message : String(err);
