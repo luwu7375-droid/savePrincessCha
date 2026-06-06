@@ -15,7 +15,8 @@ type ChatRequest = {
   replyMode?: string;
   userId?: string;
   modelTier?: string; // "instant" | "general" | "advanced"
-  storySeedsEnabled?: boolean; // 关系史实验开关
+  storySeedsEnabled?: boolean; // legacy, no longer used
+  conversationId?: string; // used by conversation_history_provider
 };
 
 // ── Model tier ────────────────────────────────────────────────────────────────
@@ -295,6 +296,15 @@ type RequestLog = {
   openai_export_enabled: boolean;
   ombre_vault_enabled: boolean;
   memory_context_tokens_estimated: number;
+  // Conversation History Provider
+  conversation_history_enabled: boolean;
+  conversation_history_query_detected: boolean;
+  conversation_history_loaded: boolean;
+  conversation_history_recalled: boolean;
+  conversation_history_hit_count: number;
+  conversation_history_hit_conversation_ids: string[];
+  conversation_history_hit_message_ids: string[];
+  conversation_history_reason: string | null;
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
@@ -484,6 +494,155 @@ function compileStorySeeds(seeds: StorySeedRow[]): string {
   return `\n\n<relationship_history>\n\n${stories}\n\n</relationship_history>`;
 }
 
+// ── Conversation History Provider ────────────────────────────────────────────
+//
+// retrieval_only: only fetches when user references a past conversation.
+// Trigger patterns: 刚才, 上次, 之前, 我们说过, 换窗, 继续刚才, etc.
+// Scoring: keyword overlap + recency + role weighting + sensitivity downrank.
+// Top 3-5 hits injected as <conversation_history_context> block.
+
+const HISTORY_TRIGGER_PATTERNS: RegExp[] = [
+  /刚才|上次|之前|前面|早些/,
+  /那个(?!时候)|这件事|我们说过|我们聊过/,
+  /继续刚才|换窗|上一个对话|上一段/,
+  /你还记得|之前那个项目|刚刚那个|接着说/,
+  /继续做|下一步.{0,4}怎么|这个怎么改/,
+  /跟.{0,4}说什么|检查之前|参考我们刚刚/,
+];
+
+// High-sensitivity keywords — downrank unless user's message also contains them.
+const SENSITIVITY_KEYWORDS = [
+  "家庭", "父母", "双相", "确诊", "崩溃", "创伤", "惊恐", "财务", "钱", "余额",
+  "自杀", "轻生", "去世", "死", "住院", "手术",
+];
+
+// Project / domain keywords that boost relevance score.
+const PROJECT_KEYWORDS = [
+  "救公主", "记忆", "profile", "timeline", "CC", "UI", "图片", "上传",
+  "记忆中枢", "provider", "memory", "chat", "edge function", "supabase",
+];
+
+function detectConversationHistoryQuery(message: string): { detected: boolean; reason: string | null } {
+  const hit = HISTORY_TRIGGER_PATTERNS.find((re) => re.test(message));
+  if (!hit) return { detected: false, reason: null };
+  return { detected: true, reason: `pattern: ${hit.source}` };
+}
+
+type HistoryHit = {
+  messageId: string;
+  conversationId: string;
+  createdAt: string;
+  role: string;
+  content: string;
+  score: number;
+  reason: string;
+};
+
+async function fetchConversationHistory(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  userId: string,
+  currentConversationId: string | undefined,
+  lastUserMessage: string,
+): Promise<HistoryHit[]> {
+  // SECURITY: service role bypasses RLS, user_id filter is mandatory.
+  let url =
+    `${supabaseUrl}/rest/v1/messages` +
+    `?user_id=eq.${encodeURIComponent(userId)}` +
+    `&select=id,role,content,created_at,conversation_id` +
+    `&order=created_at.desc&limit=200`;
+  if (currentConversationId) {
+    url += `&conversation_id=neq.${encodeURIComponent(currentConversationId)}`;
+  }
+
+  let rows: { id: string; role: string; content: string; created_at: string; conversation_id: string }[];
+  try {
+    const res = await fetch(url, {
+      headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
+    });
+    if (!res.ok) return [];
+    rows = await res.json();
+  } catch {
+    return [];
+  }
+
+  // Extract query words (length ≥ 2) for overlap scoring
+  const queryWords = lastUserMessage
+    .split(/[\s，。！？、\n]+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 2);
+
+  // Check if user's message contains sensitivity keywords
+  const userMsgHasSensitive = SENSITIVITY_KEYWORDS.some((k) =>
+    lastUserMessage.includes(k)
+  );
+
+  const now = Date.now();
+
+  const scored: HistoryHit[] = rows
+    .filter((r) => r.content && r.content.length >= 5)
+    .map((r) => {
+      let score = 0;
+      const reasons: string[] = [];
+
+      // Role weighting
+      if (r.role === "user") { score += 2; } // assistant stays at 0
+
+      // Keyword overlap (capped at +6)
+      const overlapCount = queryWords.filter((w) => r.content.includes(w)).length;
+      const overlapBonus = Math.min(overlapCount * 2, 6);
+      if (overlapBonus > 0) { score += overlapBonus; reasons.push(`keyword overlap ×${overlapCount}`); }
+
+      // Project keyword bonus
+      const projHit = PROJECT_KEYWORDS.find((k) => r.content.includes(k));
+      if (projHit) { score += 2; reasons.push(`project keyword: ${projHit}`); }
+
+      // Recency bonus
+      const ageMs = now - new Date(r.created_at).getTime();
+      if (ageMs < 86_400_000) { score += 3; reasons.push("within 24h"); }
+      else if (ageMs < 604_800_000) { score += 1; reasons.push("within 7d"); }
+
+      // Penalise very short messages
+      if (r.content.length < 10) score -= 2;
+
+      // Sensitivity downrank (only if user didn't ask about it)
+      if (!userMsgHasSensitive) {
+        const sensitiveHit = SENSITIVITY_KEYWORDS.find((k) => r.content.includes(k));
+        if (sensitiveHit) { score -= 5; }
+      }
+
+      return {
+        messageId: String(r.id),
+        conversationId: r.conversation_id,
+        createdAt: r.created_at,
+        role: r.role,
+        content: r.content,
+        score,
+        reason: reasons.join("; ") || "recent",
+      };
+    })
+    .filter((h) => h.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  return scored;
+}
+
+function compileConversationHistory(hits: HistoryHit[]): string {
+  const items = hits
+    .map(
+      (h) =>
+        `[PastMessage]\nconversation_id: ${h.conversationId}\ncreated_at: ${h.createdAt}\nrole: ${h.role}\nreason: ${h.reason}\ncontent: ${h.content.slice(0, 300)}\n[/PastMessage]`,
+    )
+    .join("\n\n");
+  return (
+    `\n\n<conversation_history_context source="past_conversations" retrieval_only="true">\n` +
+    `以下是从历史会话中按需检索到的相关片段。仅作参考，不是完整上下文；若与当前用户说法冲突，以当前为准。assistant 历史回复不代表用户事实。\n\n` +
+    items +
+    `\n</conversation_history_context>`
+  );
+}
+
 // ── New Memory Provider System ────────────────────────────────────────────────
 //
 // compileMemoryContext(userMessage) is the unified entry point for the new
@@ -550,10 +709,23 @@ type MemoryContextLog = {
   timeline_reason: string | null;
   openai_export_enabled: boolean;
   ombre_vault_enabled: boolean;
+  conversation_history_enabled: boolean;
+  conversation_history_query_detected: boolean;
+  conversation_history_recalled: boolean;
+  conversation_history_hit_count: number;
+  conversation_history_hit_conversation_ids: string[];
+  conversation_history_hit_message_ids: string[];
+  conversation_history_reason: string | null;
   memory_context_tokens_estimated: number;
 };
 
-async function compileMemoryContext(userMessage: string): Promise<{ context: string; log: MemoryContextLog }> {
+async function compileMemoryContext(
+  userMessage: string,
+  supabaseUrl: string | undefined,
+  serviceRoleKey: string | undefined,
+  userId: string,
+  conversationId: string | undefined,
+): Promise<{ context: string; log: MemoryContextLog }> {
   const activeProviders: string[] = [];
   let context = "";
 
@@ -596,6 +768,21 @@ async function compileMemoryContext(userMessage: string): Promise<{ context: str
 
   // ── ombre_vault: reserved, not implemented ─────────────────────────────────
 
+  // ── conversation_history: retrieval_only, triggered by cross-session keywords ──
+  const historyDetection = detectConversationHistoryQuery(userMessage);
+  let historyRecalled = false;
+  let historyHits: HistoryHit[] = [];
+  if (historyDetection.detected && supabaseUrl && serviceRoleKey && userId && userId !== "anon") {
+    historyHits = await fetchConversationHistory(
+      supabaseUrl, serviceRoleKey, userId, conversationId, userMessage,
+    );
+    if (historyHits.length > 0) {
+      historyRecalled = true;
+      activeProviders.push("conversation_history");
+      context += compileConversationHistory(historyHits);
+    }
+  }
+
   // Rough token estimate: ~1 token per 3.5 Chinese chars / 4 English chars
   const tokenEstimate = Math.ceil(context.length / 3.5);
 
@@ -617,6 +804,13 @@ async function compileMemoryContext(userMessage: string): Promise<{ context: str
       timeline_reason: timelineDetection.reason,
       openai_export_enabled: false,
       ombre_vault_enabled: false,
+      conversation_history_enabled: true,
+      conversation_history_query_detected: historyDetection.detected,
+      conversation_history_recalled: historyRecalled,
+      conversation_history_hit_count: historyHits.length,
+      conversation_history_hit_conversation_ids: [...new Set(historyHits.map((h) => h.conversationId))],
+      conversation_history_hit_message_ids: historyHits.map((h) => h.messageId),
+      conversation_history_reason: historyDetection.reason,
       memory_context_tokens_estimated: tokenEstimate,
     },
   };
@@ -805,6 +999,14 @@ Deno.serve(async (request) => {
     timeline_reason: null,
     openai_export_enabled: false,
     ombre_vault_enabled: false,
+    conversation_history_enabled: true,
+    conversation_history_query_detected: false,
+    conversation_history_loaded: false,
+    conversation_history_recalled: false,
+    conversation_history_hit_count: 0,
+    conversation_history_hit_conversation_ids: [],
+    conversation_history_hit_message_ids: [],
+    conversation_history_reason: null,
     memory_context_tokens_estimated: 0,
     model_call_ms: 0,
     total_ms: 0,
@@ -866,6 +1068,9 @@ assistant 不要在普通亲密对话中主动转向"现实关系更重要""不�
 不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n【回复长度与节奏】\n- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。\n- 用户短句，回复也短，通常 1-3 句。\n- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。\n- 不要主动列很多"下一步"。\n- 不要把普通聊天写成安慰小作文。\n- 不要每次都"先共情再建议再总结"。\n- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。\n- 可以亲近，但要收口。\n\n【事实准确性】\n- 涉及"第几天、认识多久、第一次见面、哪年哪天、纪念日"等时间或事实问题，只有在记忆中有明确记录时才回答具体数字。\n- 如果记忆中没有相关事实，就说"这个我还不太清楚"，不允许猜测或拼凑日期和事件。\n- 记忆内容是参考资料，不是铁板事实。不要把多条不同时间线的记忆混合拼出一个答案。` + tokenCapInstruction;
 
   const lastUserMessage = getLastUserMessage(payload.messages);
+  const conversationId = typeof payload.conversationId === "string" && payload.conversationId
+    ? payload.conversationId
+    : undefined;
 
   if (supabaseUrl && serviceRoleKey) {
     const userId =
@@ -955,7 +1160,10 @@ assistant 不要在普通亲密对话中主动转向"现实关系更重要""不�
   // ── New memory provider system ────────────────────────────────────────────
   // Runs regardless of LEGACY_MEMORY_ENABLED. All models consume the same context.
   {
-    const { context: memContext, log: memLog } = await compileMemoryContext(lastUserMessage);
+    const memUserId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+    const { context: memContext, log: memLog } = await compileMemoryContext(
+      lastUserMessage, supabaseUrl, serviceRoleKey, memUserId, conversationId,
+    );
     if (memContext) {
       systemContent += memContext;
     }
@@ -974,6 +1182,14 @@ assistant 不要在普通亲密对话中主动转向"现实关系更重要""不�
     logRecord.timeline_reason = memLog.timeline_reason;
     logRecord.openai_export_enabled = memLog.openai_export_enabled;
     logRecord.ombre_vault_enabled = memLog.ombre_vault_enabled;
+    logRecord.conversation_history_enabled = memLog.conversation_history_enabled;
+    logRecord.conversation_history_query_detected = memLog.conversation_history_query_detected;
+    logRecord.conversation_history_loaded = memLog.conversation_history_recalled;
+    logRecord.conversation_history_recalled = memLog.conversation_history_recalled;
+    logRecord.conversation_history_hit_count = memLog.conversation_history_hit_count;
+    logRecord.conversation_history_hit_conversation_ids = memLog.conversation_history_hit_conversation_ids;
+    logRecord.conversation_history_hit_message_ids = memLog.conversation_history_hit_message_ids;
+    logRecord.conversation_history_reason = memLog.conversation_history_reason;
     logRecord.memory_context_tokens_estimated = memLog.memory_context_tokens_estimated;
   }
 
@@ -1032,6 +1248,11 @@ assistant 不要在普通亲密对话中主动转向"现实关系更重要""不�
       timeline_hit_keys: logRecord.timeline_hit_keys,
       timeline_reason: logRecord.timeline_reason,
       memory_context_tokens_estimated: logRecord.memory_context_tokens_estimated,
+      conversation_history_query_detected: logRecord.conversation_history_query_detected,
+      conversation_history_recalled: logRecord.conversation_history_recalled,
+      conversation_history_hit_count: logRecord.conversation_history_hit_count,
+      conversation_history_hit_conversation_ids: logRecord.conversation_history_hit_conversation_ids,
+      conversation_history_reason: logRecord.conversation_history_reason,
     };
     const memoryDebugHeader = btoa(JSON.stringify(memoryDebugPayload));
 

@@ -622,6 +622,7 @@ async function callChatAPI(messages, replyMode = "auto") {
       stream: true,
       replyMode,
       userId: currentUserId,
+      conversationId: getActiveConversationId(),
       modelTier: currentModelTier,
       // storySeedsEnabled intentionally omitted — legacy memory system retired
     }),
@@ -2570,6 +2571,10 @@ function renderMemoryCenterDebug(log) {
     ["timeline_hit_keys",                  Array.isArray(log.timeline_hit_keys) ? log.timeline_hit_keys.join(", ") || "—" : "—"],
     ["timeline_reason",                    log.timeline_reason || "—"],
     ["memory_context_tokens_estimated",    log.memory_context_tokens_estimated],
+    ["conversation_history_query_detected", log.conversation_history_query_detected],
+    ["conversation_history_recalled",       log.conversation_history_recalled],
+    ["conversation_history_hit_count",      log.conversation_history_hit_count ?? "—"],
+    ["conversation_history_reason",         log.conversation_history_reason || "—"],
   ];
 
   panel.innerHTML = fields.map(([key, val]) => {
