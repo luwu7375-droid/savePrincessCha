@@ -86,11 +86,11 @@
     </main>
   </div>
 
-  <!-- 记忆弹窗 -->
+  <!-- 旧记忆匣弹窗 -->
   <div id="memoryOverlay" class="overlay hidden">
     <div class="modal">
       <div class="modal-header">
-        <span>记忆库</span>
+        <span>旧记忆匣</span>
         <button id="closeMemoryButton" type="button">✕</button>
       </div>
       <div id="memoryList"></div>
@@ -202,6 +202,31 @@
             <div class="mc-card-desc">未来自动沉淀，可删除、可禁用、可降权。</div>
           </div>
 
+        </div>
+
+        <!-- Legacy Manual Memory 区块 -->
+        <div class="mc-section-label mc-section-label--legacy">旧记忆工具</div>
+        <div class="mc-legacy-block">
+          <div class="mc-legacy-header">
+            <span class="mc-legacy-title">Legacy Manual Memory</span>
+            <span class="mc-badge mc-badge--legacy">不参与回复</span>
+          </div>
+          <div class="mc-legacy-rows">
+            <div class="mc-legacy-row">
+              <span class="mc-legacy-key">memories 表</span>
+              <span class="mc-legacy-val">手动记忆条目，可管理</span>
+            </div>
+            <div class="mc-legacy-row">
+              <span class="mc-legacy-key">memory_buckets 表</span>
+              <span class="mc-legacy-val">沉淀记忆，可管理</span>
+            </div>
+            <div class="mc-legacy-row">
+              <span class="mc-legacy-key">distill candidates</span>
+              <span class="mc-legacy-val">从对话提取，待确认</span>
+            </div>
+          </div>
+          <div class="mc-legacy-desc">旧手动记忆工具，保留供管理和迁移。未来可迁移到 Auto Memory Vault。当前不会进入聊天注入。</div>
+          <button class="mc-legacy-open-btn" id="mcLegacyOpenBtn">打开旧记忆匣</button>
         </div>
 
         <!-- Debug 区域 -->

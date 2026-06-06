@@ -1189,7 +1189,7 @@ function renderMemoryItem(mem) {
     if (!r.ok) {
       if (r.status === 401) {
         sessionStorage.removeItem("memory_admin_token");
-        showInlineError(item, "口令过期或错误，请重新打开记忆匣。");
+        showInlineError(item, "口令过期或错误，请重新打开旧记忆匣。");
       } else {
         let msg = `操作失败（${r.status}）`;
         try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
@@ -1242,7 +1242,7 @@ function renderMemoryItem(mem) {
         if (!r.ok) {
           if (r.status === 401) {
             sessionStorage.removeItem("memory_admin_token");
-            showGlobalMemoryError("口令过期或错误，请重新打开记忆匣。");
+            showGlobalMemoryError("口令过期或错误，请重新打开旧记忆匣。");
           } else {
             let msg = `删除失败（${r.status}）`;
             try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
@@ -1645,7 +1645,7 @@ async function loadMemories() {
 
   const bucketTitle = document.createElement("div");
   bucketTitle.style.cssText = "font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 18px 4px;";
-  bucketTitle.textContent = "沉淀记忆";
+  bucketTitle.textContent = "沉淀记忆（旧系统 · 不参与回复）";
   memoryList.appendChild(bucketTitle);
 
   for (const b of buckets) {
@@ -1790,11 +1790,11 @@ function showCandidatesDialog(candidates) {
   dialog.style.cssText = "width:400px;max-width:90vw";
 
   const h3 = document.createElement("h3");
-  h3.textContent = "可沉淀的记忆";
+  h3.textContent = "可沉淀的记忆（旧系统）";
   dialog.appendChild(h3);
 
   const p = document.createElement("p");
-  p.textContent = "挑出值得留下的部分：";
+  p.textContent = "挑出值得留下的部分。保存后进入旧记忆库，仅供管理和迁移，不会自动影响回复。";
   dialog.appendChild(p);
 
   const list = document.createElement("div");
@@ -1903,8 +1903,8 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
   closeMobileSidebar();
   if (activeMoreMenu) { closeMoreMenu(); return; }
   const items = [
-    { label: "沉淀", id: "distillButton" },
-    { label: "记忆匣", id: "toggleMemoryButton" },
+    { label: "记忆", action: () => openMemoryCenter() },
+    { label: "旧记忆匣（高级）", id: "toggleMemoryButton" },
   ];
   const menu = document.createElement("div");
   menu.className = "more-menu";
@@ -1914,7 +1914,11 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
     btn.addEventListener("click", () => {
       closeMobileSidebar();
       closeMoreMenu();
-      document.getElementById(item.id)?.click();
+      if (item.action) {
+        item.action();
+      } else {
+        document.getElementById(item.id)?.click();
+      }
     });
     menu.appendChild(btn);
   }
@@ -2466,6 +2470,11 @@ document.getElementById("memoryCenterBtn")?.addEventListener("click", () => {
 
 document.getElementById("closeMemoryCenterButton")?.addEventListener("click", () => {
   memoryCenterOverlay?.classList.add("hidden");
+});
+
+document.getElementById("mcLegacyOpenBtn")?.addEventListener("click", () => {
+  memoryCenterOverlay?.classList.add("hidden");
+  toggleMemoryButton?.click();
 });
 
 function openMemoryCenter() {
