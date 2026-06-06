@@ -510,16 +510,16 @@ async function compileMemoryContext(): Promise<{ context: string; log: MemoryCon
   // ── mastodon_profile: always injected ──────────────────────────────────────
   // Path is relative to this file inside the Supabase Functions VFS.
   // Deployed layout: supabase/functions/chat/index.ts
-  //                  supabase/functions/data/memory/mastodon/profile.md
+  //                  supabase/functions/chat/data/memory/mastodon/profile.md
   let mastodonProfileChars = 0;
-  let mastodonProfileEnabled = false;
+  // enabled reflects provider config, not load success
+  const mastodonProfileEnabled = true;
   let mastodonProfileLoaded = false;
   let mastodonProfileError: string | null = null;
   try {
-    const profilePath = new URL("../data/memory/mastodon/profile.md", import.meta.url);
+    const profilePath = new URL("./data/memory/mastodon/profile.md", import.meta.url).pathname;
     const profileText = await Deno.readTextFile(profilePath);
     if (profileText.trim()) {
-      mastodonProfileEnabled = true;
       mastodonProfileLoaded = true;
       mastodonProfileChars = profileText.length;
       activeProviders.push("mastodon_profile");
