@@ -1372,6 +1372,29 @@ img.msg-image { cursor: pointer; }
   line-height: 1.5;
 }
 
+/* ── Card dynamic status row ── */
+.mc-card-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+}
+
+.mc-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mc-status-dot--ok   { background: oklch(65% 0.18 150); }
+.mc-status-dot--warn { background: oklch(68% 0.16 45); }
+.mc-status-dot--idle { background: var(--border); }
+
+.mc-status-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ── Debug panel ── */
 .mc-debug {
   margin: 0 14px;

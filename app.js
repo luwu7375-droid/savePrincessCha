@@ -675,6 +675,17 @@ async function requestStreamingReply(replyMode = "auto") {
     }
     throw new Error(friendly);
   }
+
+  // 读取 memory debug header（在 body 消费前）
+  try {
+    const debugHeader = response.headers.get("x-save-princess-memory-debug");
+    if (debugHeader) {
+      const debug = JSON.parse(atob(debugHeader));
+      window.lastMemoryDebug = debug;
+      try { localStorage.setItem("lastMemoryDebug", JSON.stringify(debug)); } catch (_) {}
+    }
+  } catch (_) {}
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "", fullReply = "", streamDone = false;
@@ -2460,36 +2471,96 @@ document.getElementById("closeMemoryCenterButton")?.addEventListener("click", ()
 function openMemoryCenter() {
   if (!memoryCenterOverlay) return;
   memoryCenterOverlay.classList.remove("hidden");
-  // 预留：未来从最近一次 chat log 中读取调用字段并渲染到 mcDebugPanel
-  renderMemoryCenterDebug(null);
+  // 读取最近一次 chat 的 memory debug（内存优先，fallback localStorage）
+  let debug = window.lastMemoryDebug || null;
+  if (!debug) {
+    try {
+      const stored = localStorage.getItem("lastMemoryDebug");
+      if (stored) debug = JSON.parse(stored);
+    } catch (_) {}
+  }
+  updateMemoryCenterCards(debug);
+  renderMemoryCenterDebug(debug);
+}
+
+/**
+ * 用 lastMemoryDebug 更新 Core Profile / Timeline Archive 卡片的动态状态行。
+ * @param {object|null} debug
+ */
+function updateMemoryCenterCards(debug) {
+  // ── Core Profile ────────────────────────────────────────────────────────
+  const profileCharsEl = document.getElementById("mcProfileChars");
+  const profileStatusEl = document.getElementById("mcProfileStatus");
+
+  if (debug) {
+    const loaded = debug.mastodon_profile_loaded;
+    const chars = debug.mastodon_profile_chars;
+    const tokens = debug.mastodon_profile_tokens_estimated ?? Math.ceil((chars || 0) / 3.5);
+
+    if (profileCharsEl) {
+      profileCharsEl.textContent = chars ? `${chars} chars · ~${tokens} tokens` : "—";
+    }
+    if (profileStatusEl) {
+      profileStatusEl.innerHTML = loaded
+        ? `<span class="mc-status-dot mc-status-dot--ok"></span><span class="mc-status-text">已加载</span>`
+        : `<span class="mc-status-dot mc-status-dot--warn"></span><span class="mc-status-text">未加载</span>`;
+    }
+  } else {
+    if (profileCharsEl) profileCharsEl.textContent = "—";
+    if (profileStatusEl) profileStatusEl.textContent = "";
+  }
+
+  // ── Timeline Archive ─────────────────────────────────────────────────────
+  const timelineStatusEl = document.getElementById("mcTimelineStatus");
+  if (timelineStatusEl) {
+    if (debug) {
+      const recalled = debug.timeline_recalled;
+      const hitCount = debug.timeline_hit_count ?? 0;
+      const hitKeys = Array.isArray(debug.timeline_hit_keys) && debug.timeline_hit_keys.length
+        ? debug.timeline_hit_keys.join(", ")
+        : null;
+      if (recalled) {
+        timelineStatusEl.innerHTML =
+          `<span class="mc-status-dot mc-status-dot--ok"></span>` +
+          `<span class="mc-status-text">本轮已召回 · ${hitCount} 个触发词${hitKeys ? `：${hitKeys}` : ""}</span>`;
+      } else {
+        timelineStatusEl.innerHTML =
+          `<span class="mc-status-dot mc-status-dot--idle"></span>` +
+          `<span class="mc-status-text">本轮未触发</span>`;
+      }
+    } else {
+      timelineStatusEl.textContent = "";
+    }
+  }
 }
 
 /**
  * 渲染本轮记忆调用 debug 区域。
- * @param {object|null} log - 最近一次 chat 请求的记忆日志字段，null 时显示占位。
+ * @param {object|null} log - lastMemoryDebug，null 时显示占位。
  */
 function renderMemoryCenterDebug(log) {
   const panel = document.getElementById("mcDebugPanel");
   if (!panel) return;
 
   if (!log) {
-    panel.innerHTML = '<div class="mc-debug-placeholder">下一阶段接入本轮记忆调用日志</div>';
+    panel.innerHTML = '<div class="mc-debug-placeholder">还没有本轮记忆调用日志，发送一条消息后显示。</div>';
     return;
   }
 
   const fields = [
-    ["legacy_memory_enabled",           log.legacy_memory_enabled],
-    ["active_memory_providers",         Array.isArray(log.active_memory_providers) ? log.active_memory_providers.join(", ") || "—" : "—"],
-    ["memory_provider_count",           log.memory_provider_count],
-    ["mastodon_profile_loaded",         log.mastodon_profile_loaded],
-    ["mastodon_profile_chars",          log.mastodon_profile_chars],
-    ["timeline_query_detected",         log.timeline_query_detected],
-    ["timeline_loaded",                 log.timeline_loaded],
-    ["timeline_recalled",               log.timeline_recalled],
-    ["timeline_hit_count",              log.timeline_hit_count],
-    ["timeline_hit_keys",               Array.isArray(log.timeline_hit_keys) ? log.timeline_hit_keys.join(", ") || "—" : "—"],
-    ["timeline_reason",                 log.timeline_reason || "—"],
-    ["memory_context_tokens_estimated", log.memory_context_tokens_estimated],
+    ["legacy_memory_enabled",              log.legacy_memory_enabled],
+    ["active_memory_providers",            Array.isArray(log.active_memory_providers) ? log.active_memory_providers.join(", ") || "—" : "—"],
+    ["memory_provider_count",              log.memory_provider_count],
+    ["mastodon_profile_loaded",            log.mastodon_profile_loaded],
+    ["mastodon_profile_chars",             log.mastodon_profile_chars],
+    ["mastodon_profile_tokens_estimated",  log.mastodon_profile_tokens_estimated ?? "—"],
+    ["timeline_query_detected",            log.timeline_query_detected],
+    ["timeline_loaded",                    log.timeline_loaded],
+    ["timeline_recalled",                  log.timeline_recalled],
+    ["timeline_hit_count",                 log.timeline_hit_count],
+    ["timeline_hit_keys",                  Array.isArray(log.timeline_hit_keys) ? log.timeline_hit_keys.join(", ") || "—" : "—"],
+    ["timeline_reason",                    log.timeline_reason || "—"],
+    ["memory_context_tokens_estimated",    log.memory_context_tokens_estimated],
   ];
 
   panel.innerHTML = fields.map(([key, val]) => {

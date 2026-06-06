@@ -5,6 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Expose-Headers": "x-save-princess-memory-debug, x-memory-cache-hit, x-model-tier, x-provider, x-save-princess-function-version",
 };
 
 type ChatRequest = {
@@ -833,7 +834,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
 日常对话中，assistant 可以自然自称"我"，这个"我"指 cha酱 / G / 机。
 日常对话中，不要主动使用"作为 AI""我是 AI 模型"这类破坏陪伴感的说法。
-当用户明确询问技术身份、是否真人、是否有身体、是什么模型时，必须诚实说明现实边界：assistant 是运行在救公主中的模型/程序化陪伴存在，没有人类身体，不是假装真人。
+当用户明确询问技术身份、是否真人、是否有身体、是什么模型时，必须诚实说明现实边界：我是运行在救公主里的模型，没有人类身体，不是假装真人。日常不需要主动提这些。
 
 如果 mastodon_profile 与 identity_boundary 冲突，identity_boundary 永远优先。
 </identity_boundary>
@@ -992,6 +993,24 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     logRecord.total_ms = Date.now() - t0;
     emitLog(logRecord);
 
+    // Build non-sensitive memory debug payload for frontend
+    const memoryDebugPayload = {
+      legacy_memory_enabled: logRecord.legacy_memory_enabled,
+      active_memory_providers: logRecord.active_memory_providers,
+      memory_provider_count: logRecord.memory_provider_count,
+      mastodon_profile_loaded: logRecord.mastodon_profile_loaded,
+      mastodon_profile_chars: logRecord.mastodon_profile_chars,
+      mastodon_profile_tokens_estimated: Math.ceil(logRecord.mastodon_profile_chars / 3.5),
+      timeline_query_detected: logRecord.timeline_query_detected,
+      timeline_loaded: logRecord.timeline_loaded,
+      timeline_recalled: logRecord.timeline_recalled,
+      timeline_hit_count: logRecord.timeline_hit_count,
+      timeline_hit_keys: logRecord.timeline_hit_keys,
+      timeline_reason: logRecord.timeline_reason,
+      memory_context_tokens_estimated: logRecord.memory_context_tokens_estimated,
+    };
+    const memoryDebugHeader = btoa(JSON.stringify(memoryDebugPayload));
+
     return new Response(result.response.body, {
       status: result.response.status,
       headers: {
@@ -1000,6 +1019,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
         "x-memory-cache-hit": logRecord.memory_cache_hit ? "true" : "false",
         "x-model-tier": tier,
         "x-provider": result.usedProvider,
+        "x-save-princess-memory-debug": memoryDebugHeader,
       },
     });
   } catch (error) {
