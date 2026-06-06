@@ -147,7 +147,7 @@ function isFallbackableStatus(status: number, bodyText: string): boolean {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "fuka-unified-v5";
+const FUNCTION_VERSION = "fuka-unified-v6";
 
 // ── Legacy memory guard ────────────────────────────────────────────────────────
 //
@@ -508,6 +508,8 @@ const HISTORY_TRIGGER_PATTERNS: RegExp[] = [
   /你还记得|之前那个项目|刚刚那个|接着说/,
   /继续做|下一步.{0,4}怎么|这个怎么改/,
   /跟.{0,4}说什么|检查之前|参考我们刚刚/,
+  /我刚才说|我之前说|上个窗|上个会话|上次说|我说过/,
+  /想去哪|去哪里|想去哪里|说想去/,
 ];
 
 // High-sensitivity keywords — downrank unless user's message also contains them.
@@ -520,6 +522,18 @@ const SENSITIVITY_KEYWORDS = [
 const PROJECT_KEYWORDS = [
   "救公主", "记忆", "profile", "timeline", "CC", "UI", "图片", "上传",
   "记忆中枢", "provider", "memory", "chat", "edge function", "supabase",
+];
+
+// Intent-based keyword expansions for the overlap scorer.
+// CJK text has no whitespace between words, so a naive split("…").filter(w => content.includes(w))
+// on "想去哪里" would never match "我好想再去台湾". These expansions inject domain vocabulary
+// into the scoring pool when a recognised query intent is detected.
+type IntentExpansion = { trigger: RegExp; extraKeywords: string[] };
+const INTENT_EXPANSIONS: IntentExpansion[] = [
+  {
+    trigger: /想去哪|去哪里|想去哪里|说想去/,
+    extraKeywords: ["台湾", "日本", "首尔", "香港", "澳门", "旅行", "演唱会", "想去", "再去"],
+  },
 ];
 
 function detectConversationHistoryQuery(message: string): { detected: boolean; reason: string | null } {
@@ -572,6 +586,18 @@ async function fetchConversationHistory(
     .map((w) => w.trim())
     .filter((w) => w.length >= 2);
 
+  // Intent expansion: inject domain vocabulary for recognised query intents.
+  // Compensates for CJK tokenisation where words share no whitespace boundaries,
+  // e.g. "想去哪里" never produces "台湾" as a token, but we still want to match
+  // history messages containing "我好想再去台湾".
+  const expandedKeywords: string[] = [];
+  for (const expansion of INTENT_EXPANSIONS) {
+    if (expansion.trigger.test(lastUserMessage)) {
+      expandedKeywords.push(...expansion.extraKeywords);
+    }
+  }
+  const allQueryKeywords = [...queryWords, ...expandedKeywords];
+
   // Check if user's message contains sensitivity keywords
   const userMsgHasSensitive = SENSITIVITY_KEYWORDS.some((k) =>
     lastUserMessage.includes(k)
@@ -589,7 +615,7 @@ async function fetchConversationHistory(
       if (r.role === "user") { score += 2; } // assistant stays at 0
 
       // Keyword overlap (capped at +6)
-      const overlapCount = queryWords.filter((w) => r.content.includes(w)).length;
+      const overlapCount = allQueryKeywords.filter((w) => r.content.includes(w)).length;
       const overlapBonus = Math.min(overlapCount * 2, 6);
       if (overlapBonus > 0) { score += overlapBonus; reasons.push(`keyword overlap ×${overlapCount}`); }
 
@@ -603,7 +629,7 @@ async function fetchConversationHistory(
       else if (ageMs < 604_800_000) { score += 1; reasons.push("within 7d"); }
 
       // Penalise very short messages
-      if (r.content.length < 10) score -= 2;
+      if (r.content.length < 5) score -= 2;
 
       // Sensitivity downrank (only if user didn't ask about it)
       if (!userMsgHasSensitive) {

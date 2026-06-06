@@ -1,4 +1,4 @@
-console.log("build cloudflare-0050");
+console.log("build cloudflare-0051");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1394,6 +1394,7 @@ function showMemoryEditDialog(mem, itemEl) {
   console.log("[memory edit] 弹窗已挂载，editForm:", { content: input.value, domain: select.value });
   input.focus();
   input.select();
+  autoResizeTextarea(input);
 }
 
 function renderBucketItem(b) {
@@ -1588,6 +1589,7 @@ function editBucket(b) {
   document.body.appendChild(overlay);
   titleInput.focus();
   titleInput.select();
+  autoResizeTextarea(summaryInput);
 }
 
 async function loadMemories() {
@@ -1720,7 +1722,7 @@ addMemoryButton.addEventListener("click", async () => {
   }
 });
 
-memoryInput.addEventListener("keydown", (e) => { if (e.key === "Enter") addMemoryButton.click(); });
+memoryInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) addMemoryButton.click(); });
 
 // ── Distill ───────────────────────────────────────────────────────────────────
 
@@ -1946,7 +1948,6 @@ newConvButton.addEventListener("click", async () => {
 let idleTimer = null;
 let isReplying = false;
 let autoReplyEnabled = false;
-const IDLE_DELAY = 5000;
 
 const forceReplyBtn = document.getElementById("forceReplyBtn");
 const autoReplyToggle = document.getElementById("autoReplyToggle");
@@ -1954,7 +1955,7 @@ const sendButton = document.getElementById("sendButton");
 
 function setReplyingState(replying) {
   isReplying = replying;
-  messageInput.disabled = replying;
+  // messageInput intentionally NOT disabled — user can draft while assistant replies
   forceReplyBtn.disabled = replying;
   sendButton.disabled = replying;
   const composerMenuBtn = document.getElementById("composerMenuBtn");
@@ -1969,6 +1970,37 @@ function updateAutoReplyToggle() {
   autoReplyToggle.setAttribute("aria-label", autoReplyToggle.title);
   const composerMenuBtn = document.getElementById("composerMenuBtn");
   if (composerMenuBtn) composerMenuBtn.classList.toggle("auto-badge", autoReplyEnabled);
+}
+
+function getAutoReplyDelay(lastUserMessage = "") {
+  const text = typeof lastUserMessage === "string" ? lastUserMessage.trim() : "";
+  const isQuestion = /[？?吗呢么]$/.test(text) || /怎么|为什么|要不要|可以吗|怎么办|你觉得/.test(text);
+  const looksUnfinished = /[，,、….]$/.test(text) || text.length < 12;
+  const base = isQuestion ? 9000 : looksUnfinished ? 20000 : 14000;
+  const jitter = Math.floor(Math.random() * 5000);
+  return base + jitter;
+}
+
+function cancelAutoReplyTimer(reason = "") {
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  if (reason) setChatStatus("");
+}
+
+function scheduleAutoReply(lastUserMessage = "") {
+  cancelAutoReplyTimer();
+  const delay = getAutoReplyDelay(lastUserMessage);
+  setChatStatus("公主在听…");
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    if (messageInput.value.trim() || isComposing) { setChatStatus(""); return; }
+    triggerReply("auto");
+  }, delay);
+}
+
+function autoResizeTextarea(el) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
 }
 
 // ── Model tier selector ────────────────────────────────────────────────────────
@@ -2034,7 +2066,7 @@ function initTierBar() {
 autoReplyToggle.addEventListener("click", () => {
   autoReplyEnabled = !autoReplyEnabled;
   updateAutoReplyToggle();
-  if (!autoReplyEnabled) { clearTimeout(idleTimer); idleTimer = null; setChatStatus(""); }
+  if (!autoReplyEnabled) cancelAutoReplyTimer("off");
 });
 
 updateAutoReplyToggle();
@@ -2048,6 +2080,7 @@ document.getElementById("storySeedsBtn")?.addEventListener("click", () => {
 
 async function triggerReply(replyMode) {
   if (isReplying) return;
+  if (replyMode === "auto" && (messageInput.value.trim() || isComposing)) return;
   clearTimeout(idleTimer);
   idleTimer = null;
   setChatStatus("正在输入…");
@@ -2066,8 +2099,12 @@ async function triggerReply(replyMode) {
 }
 
 let isComposing = false;
-messageInput.addEventListener("compositionstart", () => { isComposing = true; });
-messageInput.addEventListener("compositionend", () => { isComposing = false; });
+messageInput.addEventListener("compositionstart", () => { isComposing = true; cancelAutoReplyTimer(); });
+messageInput.addEventListener("compositionend", () => { isComposing = false; autoResizeTextarea(messageInput); });
+messageInput.addEventListener("input", () => {
+  autoResizeTextarea(messageInput);
+  if (autoReplyEnabled && idleTimer) cancelAutoReplyTimer();
+});
 messageInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !isComposing) {
     e.preventDefault();
@@ -2279,9 +2316,19 @@ messageList.addEventListener("click", (e) => {
 
 async function handleSubmit() {
   const text = messageInput.value.trim();
-  if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading || isReplying) return;
+  if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading) return;
+  if (isReplying) {
+    const hint = document.getElementById("chatStatus");
+    if (hint) {
+      const prev = hint.textContent;
+      hint.textContent = "等我说完再发…";
+      setTimeout(() => { if (hint.textContent === "等我说完再发…") hint.textContent = prev; }, 1200);
+    }
+    return;
+  }
 
   messageInput.value = "";
+  autoResizeTextarea(messageInput);
   const snapshot = pendingImage?.dataUrl ? { dataUrl: pendingImage.dataUrl } : null;
   pendingImage = null;
   updateAttachmentCard();
@@ -2316,11 +2363,7 @@ async function handleSubmit() {
     // 保存失败时静默，不影响聊天流程
   });
 
-  if (autoReplyEnabled) {
-    setChatStatus("公主在听…");
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => triggerReply("auto"), IDLE_DELAY);
-  }
+  if (autoReplyEnabled) scheduleAutoReply(text);
 }
 
 chatForm.addEventListener("submit", (event) => {
@@ -2373,7 +2416,7 @@ function buildComposerMenu(anchorBtn) {
     closeComposerMenu();
     autoReplyEnabled = !autoReplyEnabled;
     updateAutoReplyToggle();
-    if (!autoReplyEnabled) { clearTimeout(idleTimer); idleTimer = null; setChatStatus(""); }
+    if (!autoReplyEnabled) cancelAutoReplyTimer("off");
   });
   menu.appendChild(autoItem);
 

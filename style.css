@@ -583,7 +583,7 @@ body {
 /* ── Input bar ── */
 .input-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   padding: 12px 16px;
   background: var(--bg-deep);
   border-top: 1px solid var(--border);
@@ -605,6 +605,27 @@ body {
 }
 .input-bar input::placeholder { color: var(--text-muted); }
 .input-bar input:focus { border-color: oklch(52% 0.16 248 / 0.6); }
+
+.input-bar textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 18px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  outline: none;
+  transition: border-color 0.15s;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
+  max-height: 140px;
+  display: block;
+}
+.input-bar textarea::placeholder { color: var(--text-muted); }
+.input-bar textarea:focus { border-color: oklch(52% 0.16 248 / 0.6); }
 
 .ghost-icon-btn {
   position: relative;
@@ -822,6 +843,7 @@ body {
 }
 
 .memory-add select,
+.memory-add textarea,
 .memory-add input {
   flex: 1;
   padding: 9px 12px;
@@ -994,6 +1016,7 @@ body {
     gap: 6px;
   }
   .input-bar input { font-size: 16px; /* prevent iOS zoom */ }
+  .input-bar textarea { font-size: 16px; /* prevent iOS zoom */ max-height: 120px; }
 
   /* Reduce weight of secondary composer buttons on mobile */
   .ghost-icon-btn {
@@ -1315,6 +1338,8 @@ img.msg-image { cursor: pointer; }
 @media (max-width: 820px) {
   .mc-legacy-block { margin: 0 10px; }
 }
+
+.mc-section-label--debug {
   margin-top: 12px;
   border-top: 1px solid var(--border);
   padding-top: 14px;
