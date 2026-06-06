@@ -1028,6 +1028,7 @@ body {
   background: var(--bg-deep);
   border-top: 1px solid var(--border);
 }
+.image-preview-bar.hidden { display: none !important; }
 .img-preview-wrap {
   position: relative;
   display: inline-flex;

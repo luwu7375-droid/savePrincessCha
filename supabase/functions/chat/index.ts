@@ -142,7 +142,7 @@ function isFallbackableStatus(status: number, bodyText: string): boolean {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "fuka-unified-v3";
+const FUNCTION_VERSION = "fuka-unified-v4";
 const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
 type MemoryDomain = typeof MEMORY_DOMAINS[number];
 type MemoryRow = {
@@ -263,6 +263,8 @@ type RequestLog = {
   story_seeds_enabled: boolean;
   story_seeds_count: number;
   story_seeds_titles: string[];
+  bucket_count: number;
+  bucket_titles: string[];
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
@@ -377,8 +379,12 @@ async function fetchMemoryBuckets(
   // 按关键词过滤：bucket 里有 keywords 字段时，必须命中才注入；没有 keywords 字段的跳过（不盲注）
   const matched = rows.filter((r) => {
     const kws = r.keywords;
-    if (!kws || kws.length === 0) return false;
-    return messageHitsKeywords(lastUserMessage, kws);
+    if (kws && kws.length > 0) {
+      return messageHitsKeywords(lastUserMessage, kws);
+    }
+    // Legacy buckets with no keywords: weak-match on title + summary tokens
+    const textTokens = `${r.title} ${r.summary}`.split(/\s+/).filter(t => t.length > 1);
+    return textTokens.length > 0 && messageHitsKeywords(lastUserMessage, textTokens);
   }).slice(0, 2);
 
   if (matched.length > 0) {
@@ -613,6 +619,8 @@ Deno.serve(async (request) => {
     story_seeds_enabled: false,
     story_seeds_count: 0,
     story_seeds_titles: [],
+    bucket_count: 0,
+    bucket_titles: [],
     model_call_ms: 0,
     total_ms: 0,
   };
@@ -655,7 +663,7 @@ Deno.serve(async (request) => {
     } else {
       _cacheMisses += 1;
       const tFetch = Date.now();
-      const [{ lines: memories, ids: memoryIds }, { summaries: buckets }] = await Promise.all([
+      const [{ lines: memories, ids: memoryIds }, { summaries: buckets, titles: bucketTitles }] = await Promise.all([
         fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
         fetchMemoryBuckets(supabaseUrl, serviceRoleKey, lastUserMessage),
       ]);
@@ -676,6 +684,8 @@ Deno.serve(async (request) => {
       logRecord.memory_compile_ms = Date.now() - tCompile;
       logRecord.memory_count = memories.length;
       logRecord.hit_memory_ids_count = memoryIds.length;
+      logRecord.bucket_count = buckets.length;
+      logRecord.bucket_titles = bucketTitles;
 
       compiledMemoryText = compiled;
       // Only cache on data — don't cache a fetch failure as empty context

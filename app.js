@@ -1,4 +1,4 @@
-console.log("build cloudflare-0049");
+console.log("build cloudflare-0050");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1498,6 +1498,12 @@ function editBucket(b) {
   summaryInput.placeholder = "摘要";
   dialog.appendChild(summaryInput);
 
+  const keywordsInput = document.createElement("input");
+  keywordsInput.type = "text";
+  keywordsInput.value = Array.isArray(b.keywords) ? b.keywords.join(", ") : "";
+  keywordsInput.placeholder = "关键词（逗号分隔）";
+  dialog.appendChild(keywordsInput);
+
   const domainSelect = document.createElement("select");
   for (const d of MEMORY_DOMAINS) {
     const option = document.createElement("option");
@@ -1537,7 +1543,7 @@ function editBucket(b) {
     try {
       res = await memoryFetch(`?type=buckets&id=${encodeURIComponent(b.id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ title, summary, domain: domainSelect.value }),
+        body: JSON.stringify({ title, summary, domain: domainSelect.value, keywords: keywordsInput.value.split(/[,，\s]+/).map(k => k.trim()).filter(Boolean) }),
       });
     } catch (err) {
       saveBtn.disabled = false;
@@ -1828,7 +1834,7 @@ function showCandidatesDialog(candidates) {
     for (const c of selected) {
       await memoryFetch("?type=buckets", {
         method: "POST",
-        body: JSON.stringify({ title: c.title, summary: c.summary, domain: c.domain || "general" }),
+        body: JSON.stringify({ title: c.title, summary: c.summary, domain: c.domain || "general", keywords: c.keywords || [] }),
       });
     }
   });
@@ -2082,6 +2088,8 @@ function updateAttachmentCard() {
   if (!pendingImage) {
     imagePreviewBar.classList.add("hidden");
     imagePreviewBar.classList.remove("loading", "error");
+    const thumb = imagePreviewBar.querySelector(".img-preview-thumb");
+    if (thumb) thumb.src = "";
     return;
   }
   imagePreviewBar.classList.remove("hidden");
