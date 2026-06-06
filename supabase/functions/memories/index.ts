@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
   if (type === "buckets") {
     if (req.method === "GET") {
       const res = await fetch(
-        `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary,content,domain,importance,status,created_at,updated_at,last_accessed_at&order=importance.desc,last_accessed_at.desc.nullslast&limit=20`,
+        `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary,content,domain,importance,status,created_at,updated_at,last_accessed_at,keywords&order=importance.desc,last_accessed_at.desc.nullslast&limit=20`,
         { headers: dbHeaders }
       );
       return json(await res.json(), res.ok ? 200 : 500);
