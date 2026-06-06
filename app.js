@@ -2023,10 +2023,11 @@ autoReplyToggle.addEventListener("click", () => {
 
 updateAutoReplyToggle();
 
-// ── 关系史入口 ────────────────────────────────────────────────────────────────
+// ── 关系史入口（已停用，保留避免报错） ──────────────────────────────────────
 
 document.getElementById("storySeedsBtn")?.addEventListener("click", () => {
-  openStorySeedsPanel();
+  // 旧关系史已停用，入口重定向到记忆中枢
+  openMemoryCenter();
 });
 
 async function triggerReply(replyMode) {
@@ -2444,17 +2445,60 @@ if (supabaseClient) {
 
 initTierBar();
 
-// ── 关系史面板 ────────────────────────────────────────────────────────────────
+// ── 记忆中枢 Memory Center ─────────────────────────────────────────────────────
 
-const storySeedsOverlay = document.getElementById("storySeedsOverlay");
-const storySeedsList = document.getElementById("storySeedsList");
+const memoryCenterOverlay = document.getElementById("memoryCenterOverlay");
 
-document.getElementById("closeStorySeedsButton")?.addEventListener("click", () => {
-  storySeedsOverlay?.classList.add("hidden");
+document.getElementById("memoryCenterBtn")?.addEventListener("click", () => {
+  openMemoryCenter();
 });
 
-async function openStorySeedsPanel() {
-  if (!storySeedsOverlay || !storySeedsList) return;
-  storySeedsList.textContent = "旧关系史已停用。记忆系统已升级，请查看新的用户画像配置。";
-  storySeedsOverlay.classList.remove("hidden");
+document.getElementById("closeMemoryCenterButton")?.addEventListener("click", () => {
+  memoryCenterOverlay?.classList.add("hidden");
+});
+
+function openMemoryCenter() {
+  if (!memoryCenterOverlay) return;
+  memoryCenterOverlay.classList.remove("hidden");
+  // 预留：未来从最近一次 chat log 中读取调用字段并渲染到 mcDebugPanel
+  renderMemoryCenterDebug(null);
+}
+
+/**
+ * 渲染本轮记忆调用 debug 区域。
+ * @param {object|null} log - 最近一次 chat 请求的记忆日志字段，null 时显示占位。
+ */
+function renderMemoryCenterDebug(log) {
+  const panel = document.getElementById("mcDebugPanel");
+  if (!panel) return;
+
+  if (!log) {
+    panel.innerHTML = '<div class="mc-debug-placeholder">下一阶段接入本轮记忆调用日志</div>';
+    return;
+  }
+
+  const fields = [
+    ["legacy_memory_enabled",           log.legacy_memory_enabled],
+    ["active_memory_providers",         Array.isArray(log.active_memory_providers) ? log.active_memory_providers.join(", ") || "—" : "—"],
+    ["memory_provider_count",           log.memory_provider_count],
+    ["mastodon_profile_loaded",         log.mastodon_profile_loaded],
+    ["mastodon_profile_chars",          log.mastodon_profile_chars],
+    ["timeline_query_detected",         log.timeline_query_detected],
+    ["timeline_loaded",                 log.timeline_loaded],
+    ["timeline_recalled",               log.timeline_recalled],
+    ["timeline_hit_count",              log.timeline_hit_count],
+    ["timeline_hit_keys",               Array.isArray(log.timeline_hit_keys) ? log.timeline_hit_keys.join(", ") || "—" : "—"],
+    ["timeline_reason",                 log.timeline_reason || "—"],
+    ["memory_context_tokens_estimated", log.memory_context_tokens_estimated],
+  ];
+
+  panel.innerHTML = fields.map(([key, val]) => {
+    const valStr = val === null || val === undefined ? "—" : String(val);
+    const isTrue = valStr === "true";
+    const isFalse = valStr === "false";
+    return `<div class="mc-debug-row">
+      <span class="mc-debug-key">${key}</span>
+      <span class="mc-debug-val${isTrue ? " mc-debug-val--true" : isFalse ? " mc-debug-val--false" : ""}">${valStr}</span>
+    </div>`;
+  }).join("");
 }

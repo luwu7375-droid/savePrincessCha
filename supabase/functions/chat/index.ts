@@ -1,4 +1,5 @@
 import { MASTODON_PROFILE_MD } from "./mastodon_profile.ts";
+import { MASTODON_TIMELINE_MD } from "./mastodon_timeline.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -167,7 +168,7 @@ const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona">, string[]>
   // relation 域：只在问到关系相关问题时召回，不无脑注入
   relation: [
     "几天", "第几天", "多少天", "第一次", "认识", "在一起", "纪念日", "哪一年", "哪一天",
-    "几号", "什么时候", "怎么认识", "怎么在一起", "关系史", "历史", "回忆", "过去",
+    "几号", "什么时候", "怎么认识", "怎么在一起", "历史", "回忆", "过去",
     "爱你", "喜欢你", "表白", "见面", "相遇",
   ],
   general: [],
@@ -284,7 +285,12 @@ type RequestLog = {
   mastodon_profile_chars: number;
   mastodon_profile_error: string | null;
   mastodon_timeline_enabled: boolean;
+  timeline_query_detected: boolean;
   timeline_loaded: boolean;
+  timeline_recalled: boolean;
+  timeline_hit_count: number;
+  timeline_hit_keys: string[];
+  timeline_reason: string | null;
   openai_export_enabled: boolean;
   ombre_vault_enabled: boolean;
   memory_context_tokens_estimated: number;
@@ -479,17 +485,53 @@ function compileStorySeeds(seeds: StorySeedRow[]): string {
 
 // ── New Memory Provider System ────────────────────────────────────────────────
 //
-// compileMemoryContext() is the unified entry point for the new memory provider
-// architecture. All models (Claude, GPT, Gemini) consume the same plain-text
-// context blocks compiled here — no model-specific wiring.
+// compileMemoryContext(userMessage) is the unified entry point for the new
+// memory provider architecture. All models consume the same plain-text context
+// blocks compiled here — no model-specific wiring.
 //
-// Phase 1 providers:
+// Providers:
 //   mastodon_profile  → always injected (core_profile)
-//   mastodon_timeline → stored, not injected (retrieval_only, future RAG)
+//   mastodon_timeline → injected on-demand when query is event/place/year-related
 //   openai_export     → reserved, not implemented
 //   ombre_vault       → reserved, not implemented
 //
 // Returns: { context: string; log: MemoryContextLog }
+
+// Returns timeline query detection result including matched pattern info.
+type TimelineDetection = {
+  detected: boolean;
+  hitKeys: string[];
+  reason: string | null;
+};
+
+function detectTimelineQuery(message: string): TimelineDetection {
+  const patterns: Array<{ re: RegExp; label: string }> = [
+    { re: /20(23|24|25|26)/, label: "specific year (2023-2026)" },
+    { re: /去过.{0,6}(哪|什么|哪些)/, label: "visited which place" },
+    { re: /哪些.{0,6}(城市|地方|地点)/, label: "which cities/places" },
+    { re: /城市|地点/, label: "city/location keyword" },
+    { re: /首尔|澳门|香港|日本/, label: "known place in timeline" },
+    { re: /什么时候|哪年|哪天|几月|那年|那时候/, label: "time-query words" },
+    { re: /经历.{0,10}(了|过|什么)/, label: "experience query" },
+    { re: /发生了什么|发生过什么/, label: "what happened query" },
+    { re: /时间线|事件|历史/, label: "timeline/event/history keyword" },
+    { re: /毕业|搬家|独居|确诊|双相|Pride/, label: "timeline milestone keyword" },
+    { re: /纪念日|第几天/, label: "anniversary/day count query" },
+  ];
+  const hits = patterns.filter(({ re }) => re.test(message));
+  if (hits.length === 0) return { detected: false, hitKeys: [], reason: null };
+  const hitKeys = hits.map(({ label }) => label);
+  return {
+    detected: true,
+    hitKeys,
+    reason: `detected ${hitKeys.join(", ")}`,
+  };
+}
+
+// Kept for backward-compat within this file; wraps detectTimelineQuery.
+function shouldInjectTimeline(message: string): boolean {
+  return detectTimelineQuery(message).detected;
+}
 
 type MemoryContextLog = {
   active_memory_providers: string[];
@@ -499,13 +541,18 @@ type MemoryContextLog = {
   mastodon_profile_chars: number;
   mastodon_profile_error: string | null;
   mastodon_timeline_enabled: boolean;
+  timeline_query_detected: boolean;
   timeline_loaded: boolean;
+  timeline_recalled: boolean;
+  timeline_hit_count: number;
+  timeline_hit_keys: string[];
+  timeline_reason: string | null;
   openai_export_enabled: boolean;
   ombre_vault_enabled: boolean;
   memory_context_tokens_estimated: number;
 };
 
-async function compileMemoryContext(): Promise<{ context: string; log: MemoryContextLog }> {
+async function compileMemoryContext(userMessage: string): Promise<{ context: string; log: MemoryContextLog }> {
   const activeProviders: string[] = [];
   let context = "";
 
@@ -532,8 +579,17 @@ async function compileMemoryContext(): Promise<{ context: string; log: MemoryCon
     console.error("[memory] mastodon_profile load failed:", mastodonProfileError);
   }
 
-  // ── mastodon_timeline: stored only, not injected in phase 1 ───────────────
-  // (inject: "retrieval_only" — future RAG integration)
+  // ── mastodon_timeline: injected on-demand for event/place/year queries ────────
+  const timelineDetection = detectTimelineQuery(userMessage);
+  let timelineLoaded = false;
+  if (userMessage && timelineDetection.detected) {
+    const timelineText = MASTODON_TIMELINE_MD;
+    if (timelineText.trim()) {
+      timelineLoaded = true;
+      activeProviders.push("mastodon_timeline");
+      context += `\n\n<timeline_events source="mastodon_timeline">\n${timelineText.trim()}\n</timeline_events>`;
+    }
+  }
 
   // ── openai_export: reserved, not implemented ───────────────────────────────
 
@@ -551,8 +607,13 @@ async function compileMemoryContext(): Promise<{ context: string; log: MemoryCon
       mastodon_profile_loaded: mastodonProfileLoaded,
       mastodon_profile_chars: mastodonProfileChars,
       mastodon_profile_error: mastodonProfileError,
-      mastodon_timeline_enabled: true,  // provider configured, not injected this phase
-      timeline_loaded: false,
+      mastodon_timeline_enabled: true,
+      timeline_query_detected: timelineDetection.detected,
+      timeline_loaded: timelineLoaded,
+      timeline_recalled: timelineLoaded,
+      timeline_hit_count: timelineDetection.hitKeys.length,
+      timeline_hit_keys: timelineDetection.hitKeys,
+      timeline_reason: timelineDetection.reason,
       openai_export_enabled: false,
       ombre_vault_enabled: false,
       memory_context_tokens_estimated: tokenEstimate,
@@ -735,7 +796,12 @@ Deno.serve(async (request) => {
     mastodon_profile_chars: 0,
     mastodon_profile_error: null,
     mastodon_timeline_enabled: false,
+    timeline_query_detected: false,
     timeline_loaded: false,
+    timeline_recalled: false,
+    timeline_hit_count: 0,
+    timeline_hit_keys: [],
+    timeline_reason: null,
     openai_export_enabled: false,
     ombre_vault_enabled: false,
     memory_context_tokens_estimated: 0,
@@ -756,7 +822,7 @@ Deno.serve(async (request) => {
       : "\n\n【回复长度硬限制】本次回复控制在 150 中文字以内，不要超出。";
 
   let systemContent =
-    `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n【回复长度与节奏】\n- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。\n- 用户短句，回复也短，通常 1-3 句。\n- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。\n- 不要主动列很多"下一步"。\n- 不要把普通聊天写成安慰小作文。\n- 不要每次都"先共情再建议再总结"。\n- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。\n- 可以亲近，但要收口。\n\n【关系史与事实准确性】\n- 涉及“第几天、认识多久、第一次见面、哪年哪天、纪念日”等时间或事实问题，只有在记忆中有明确记录时才回答具体数字。\n- 如果记忆中没有相关事实，必须回复“不确定，你可以翻一下关系史看看”，不允许猜测或拼凑日期和事件。\n- 关系史注入的内容是参考资料，不是铁板事实。不要把多条不同时间线的记忆混合拼出一个答案。` + tokenCapInstruction;
+    `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n【回复长度与节奏】\n- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。\n- 用户短句，回复也短，通常 1-3 句。\n- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。\n- 不要主动列很多"下一步"。\n- 不要把普通聊天写成安慰小作文。\n- 不要每次都"先共情再建议再总结"。\n- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。\n- 可以亲近，但要收口。\n\n【事实准确性】\n- 涉及“第几天、认识多久、第一次见面、哪年哪天、纪念日”等时间或事实问题，只有在记忆中有明确记录时才回答具体数字。\n- 如果记忆中没有相关事实，就说“这个我还不太清楚”，不允许猜测或拼凑日期和事件。\n- 记忆内容是参考资料，不是铁板事实。不要把多条不同时间线的记忆混合拼出一个答案。` + tokenCapInstruction;
 
   const lastUserMessage = getLastUserMessage(payload.messages);
 
@@ -848,7 +914,7 @@ Deno.serve(async (request) => {
   // ── New memory provider system ────────────────────────────────────────────
   // Runs regardless of LEGACY_MEMORY_ENABLED. All models consume the same context.
   {
-    const { context: memContext, log: memLog } = await compileMemoryContext();
+    const { context: memContext, log: memLog } = await compileMemoryContext(lastUserMessage);
     if (memContext) {
       systemContent += memContext;
     }
@@ -859,7 +925,12 @@ Deno.serve(async (request) => {
     logRecord.mastodon_profile_chars = memLog.mastodon_profile_chars;
     logRecord.mastodon_profile_error = memLog.mastodon_profile_error;
     logRecord.mastodon_timeline_enabled = memLog.mastodon_timeline_enabled;
+    logRecord.timeline_query_detected = memLog.timeline_query_detected;
     logRecord.timeline_loaded = memLog.timeline_loaded;
+    logRecord.timeline_recalled = memLog.timeline_recalled;
+    logRecord.timeline_hit_count = memLog.timeline_hit_count;
+    logRecord.timeline_hit_keys = memLog.timeline_hit_keys;
+    logRecord.timeline_reason = memLog.timeline_reason;
     logRecord.openai_export_enabled = memLog.openai_export_enabled;
     logRecord.ombre_vault_enabled = memLog.ombre_vault_enabled;
     logRecord.memory_context_tokens_estimated = memLog.memory_context_tokens_estimated;

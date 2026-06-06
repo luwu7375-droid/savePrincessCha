@@ -30,11 +30,12 @@
       <ul id="convList"></ul>
       <div class="sidebar-footer">
         <button id="systemButton" type="button" class="sidebar-footer-btn">系统</button>
-        <button id="storySeedsBtn" type="button" class="sidebar-footer-btn" style="display:none" aria-hidden="true" tabindex="-1">关系史</button>
+        <button id="memoryCenterBtn" type="button" class="sidebar-footer-btn">记忆</button>
         <button id="logoutBtn" type="button" class="sidebar-footer-btn hidden">退出</button>
         <!-- 기능 버튼: 숨김이지만 JS 참조 유지 -->
         <button id="distillButton" type="button" style="display:none"></button>
         <button id="toggleMemoryButton" type="button" style="display:none"></button>
+        <button id="storySeedsBtn" type="button" style="display:none" aria-hidden="true" tabindex="-1"></button>
       </div>
     </aside>
 
@@ -126,14 +127,87 @@
     </div>
   </div>
 
-  <!-- 关系史弹窗 -->
-  <div id="storySeedsOverlay" class="overlay hidden">
-    <div class="modal">
+  <!-- 记忆中枢弹窗 -->
+  <div id="memoryCenterOverlay" class="overlay hidden">
+    <div class="modal memory-center-modal">
       <div class="modal-header">
-        <span>关系史</span>
-        <button id="closeStorySeedsButton" type="button">✕</button>
+        <span>记忆</span>
+        <button id="closeMemoryCenterButton" type="button">✕</button>
       </div>
-      <div id="storySeedsList" style="padding:12px 18px 18px;font-size:13px;overflow-y:auto;flex:1;"></div>
+      <div class="memory-center-body">
+        <!-- Provider 卡片区 -->
+        <div class="mc-section-label">记忆来源</div>
+        <div class="mc-providers">
+
+          <!-- mastodon_profile -->
+          <div class="mc-card mc-card--enabled">
+            <div class="mc-card-top">
+              <div class="mc-card-title">Core Profile<span class="mc-card-subtitle">常驻画像</span></div>
+              <div class="mc-badges">
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+                <span class="mc-badge mc-badge--inject">always inject</span>
+              </div>
+            </div>
+            <div class="mc-card-meta">
+              <span class="mc-provider-id">mastodon_profile</span>
+              <span id="mcProfileChars" class="mc-meta-val">—</span>
+            </div>
+            <div class="mc-card-desc">每轮注入，用于理解用户。参考资料，不复述来源。</div>
+          </div>
+
+          <!-- mastodon_timeline -->
+          <div class="mc-card mc-card--enabled">
+            <div class="mc-card-top">
+              <div class="mc-card-title">Timeline Archive<span class="mc-card-subtitle">时间线档案</span></div>
+              <div class="mc-badges">
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+                <span class="mc-badge mc-badge--retrieval">retrieval only</span>
+              </div>
+            </div>
+            <div class="mc-card-meta">
+              <span class="mc-provider-id">mastodon_timeline</span>
+            </div>
+            <div class="mc-card-desc">只在年份、地点、事件、经历类问题时按需召回。</div>
+          </div>
+
+          <!-- openai_export -->
+          <div class="mc-card mc-card--reserved">
+            <div class="mc-card-top">
+              <div class="mc-card-title">OpenAI Export<span class="mc-card-subtitle">OpenAI 导出记忆</span></div>
+              <div class="mc-badges">
+                <span class="mc-badge mc-badge--reserved">预留</span>
+                <span class="mc-badge mc-badge--retrieval">retrieval only</span>
+              </div>
+            </div>
+            <div class="mc-card-meta">
+              <span class="mc-provider-id">openai_export</span>
+            </div>
+            <div class="mc-card-desc">未来导入 OpenAI 对话记录，不复用 Mastodon parser。</div>
+          </div>
+
+          <!-- ombre_vault -->
+          <div class="mc-card mc-card--planned">
+            <div class="mc-card-top">
+              <div class="mc-card-title">Auto Memory Vault<span class="mc-card-subtitle">自动记忆库</span></div>
+              <div class="mc-badges">
+                <span class="mc-badge mc-badge--planned">规划中</span>
+                <span class="mc-badge mc-badge--retrieval">retrieval only</span>
+              </div>
+            </div>
+            <div class="mc-card-meta">
+              <span class="mc-provider-id">ombre_vault</span>
+            </div>
+            <div class="mc-card-desc">未来自动沉淀，可删除、可禁用、可降权。</div>
+          </div>
+
+        </div>
+
+        <!-- Debug 区域 -->
+        <div class="mc-section-label mc-section-label--debug">本轮记忆调用</div>
+        <div id="mcDebugPanel" class="mc-debug">
+          <div class="mc-debug-placeholder">下一阶段接入本轮记忆调用日志</div>
+        </div>
+      </div>
     </div>
   </div>
 
