@@ -112,6 +112,13 @@ document.getElementById("closeSystemButton")?.addEventListener("click", () => {
   systemOverlay?.classList.add("hidden");
 });
 
+document.getElementById("closeStatusPanelBtn")?.addEventListener("click", closeStatusPanel);
+document.addEventListener("click", (e) => {
+  const panel = document.getElementById("statusPanel");
+  if (!panel || panel.classList.contains("hidden")) return;
+  if (!panel.contains(e.target) && !e.target.closest(".avatar")) closeStatusPanel();
+});
+
 document.getElementById("themeOptions")?.addEventListener("click", (e) => {
   const btn = e.target.closest(".theme-option-btn");
   if (!btn) return;
@@ -514,6 +521,8 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   if (role === "assistant") {
     const avatar = document.createElement("div");
     avatar.className = "avatar";
+    avatar.title = "查看 G 的状态";
+    avatar.addEventListener("click", (e) => openStatusPanel(e.currentTarget));
     row.appendChild(avatar);
   }
   row.appendChild(stack);
@@ -764,6 +773,80 @@ function updatePrincessStatusBar(status) {
   if (!status || typeof status !== "object") return;
   _lastPrincessStatus = status;
   renderPrincessStatusBar();
+}
+
+// ── 血条面板 ──────────────────────────────────────────────────────────────
+
+const STATUS_VAL = {
+  energy:     { fresh: 85, normal: 55, tired: 25 },
+  clarity:    { clear: 90, foggy: 40 },
+  valence:    { happy: 75, neutral: 50, sad: 25 },
+  arousal:    { active: 75, normal: 50, quiet: 25 },
+  connection: { close: 80, online: 55, distant: 25 },
+};
+
+const STAT_META = [
+  { key: "energy",     label: "能量" },
+  { key: "clarity",    label: "清醒度" },
+  { key: "valence",    label: "心情" },
+  { key: "arousal",    label: "兴致" },
+  { key: "connection", label: "连结" },
+];
+
+function statBarColor(key, pct) {
+  if (key === "energy")
+    return pct > 70 ? "#4ade80" : pct > 40 ? "#facc15" : "#f87171";
+  if (key === "clarity")
+    return pct > 80 ? "#60a5fa" : "#94a3b8";
+  if (key === "valence")
+    return pct > 60 ? "#4ade80" : pct > 40 ? "#facc15" : "#f87171";
+  if (key === "arousal")
+    return pct > 60 ? "#c084fc" : pct > 40 ? "#e2e8f0" : "#60a5fa";
+  if (key === "connection")
+    return pct > 60 ? "#f472b6" : pct > 40 ? "#fb923c" : "#94a3b8";
+  return "#94a3b8";
+}
+
+function openStatusPanel(anchor) {
+  const panel = document.getElementById("statusPanel");
+  const rows  = document.getElementById("statusPanelRows");
+  if (!panel || !rows) return;
+
+  if (!_lastPrincessStatus) {
+    rows.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0 2px;text-align:center">还没有状态数据<br>发条消息之后就会出现</div>';
+  } else {
+    const s = _lastPrincessStatus;
+    rows.innerHTML = STAT_META.map(({ key, label }) => {
+      const pct   = STATUS_VAL[key]?.[s[key]] ?? 50;
+      const color = statBarColor(key, pct);
+      return `<div class="status-bar-row">
+        <span class="status-bar-label">${label}</span>
+        <div class="status-bar-track">
+          <div class="status-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // Position near the clicked avatar, stay within viewport
+  if (anchor) {
+    const rect    = anchor.getBoundingClientRect();
+    const panelW  = 228;
+    const panelH  = 220;
+    let left = rect.left;
+    let top  = rect.bottom + 6;
+    if (left + panelW > window.innerWidth  - 8) left = window.innerWidth  - panelW - 8;
+    if (left < 8) left = 8;
+    if (top  + panelH > window.innerHeight - 8) top  = rect.top - panelH - 6;
+    panel.style.left = left + "px";
+    panel.style.top  = top  + "px";
+  }
+
+  panel.classList.remove("hidden");
+}
+
+function closeStatusPanel() {
+  document.getElementById("statusPanel")?.classList.add("hidden");
 }
 
 async function requestStreamingReply(replyMode = "auto") {
@@ -2722,20 +2805,43 @@ function renderMemoryCenterDebug(log) {
     ["legacy_memory_enabled",              log.legacy_memory_enabled],
     ["active_memory_providers",            Array.isArray(log.active_memory_providers) ? log.active_memory_providers.join(", ") || "—" : "—"],
     ["memory_provider_count",              log.memory_provider_count],
+    // ── L1 persona_memories ──────────────────────────────────────────
+    ["persona_memories_loaded",            log.persona_memories_loaded],
+    ["persona_memories_count",             log.persona_memories_count ?? "—"],
+    ["persona_memories_categories",        Array.isArray(log.persona_memories_categories) ? log.persona_memories_categories.join(", ") || "—" : "—"],
+    ["persona_memories_error",             log.persona_memories_error || "—"],
+    // ── mastodon_profile ─────────────────────────────────────────────
     ["mastodon_profile_loaded",            log.mastodon_profile_loaded],
     ["mastodon_profile_chars",             log.mastodon_profile_chars],
     ["mastodon_profile_tokens_estimated",  log.mastodon_profile_tokens_estimated ?? "—"],
+    // ── mastodon_timeline ────────────────────────────────────────────
     ["timeline_query_detected",            log.timeline_query_detected],
     ["timeline_loaded",                    log.timeline_loaded],
     ["timeline_recalled",                  log.timeline_recalled],
     ["timeline_hit_count",                 log.timeline_hit_count],
     ["timeline_hit_keys",                  Array.isArray(log.timeline_hit_keys) ? log.timeline_hit_keys.join(", ") || "—" : "—"],
     ["timeline_reason",                    log.timeline_reason || "—"],
-    ["memory_context_tokens_estimated",    log.memory_context_tokens_estimated],
+    // ── L2 project_memory ────────────────────────────────────────────
+    ["project_memory_loaded",              log.project_memory_loaded],
+    ["project_memory_recalled",            log.project_memory_recalled],
+    ["project_memory_hit_count",           log.project_memory_hit_count ?? "—"],
+    ["project_memory_keys",                Array.isArray(log.project_memory_keys) ? log.project_memory_keys.join(", ") || "—" : "—"],
+    ["project_memory_reason",              log.project_memory_reason || "—"],
+    // ── L3 openai_archive ────────────────────────────────────────────
+    ["openai_archive_loaded",              log.openai_archive_loaded],
+    ["openai_archive_recalled",            log.openai_archive_recalled],
+    ["openai_archive_hit_count",           log.openai_archive_hit_count ?? "—"],
+    ["openai_archive_keys",                Array.isArray(log.openai_archive_keys) ? log.openai_archive_keys.join(", ") || "—" : "—"],
+    ["openai_archive_reason",              log.openai_archive_reason || "—"],
+    ["historical_roleplay_hit_count",      log.historical_roleplay_hit_count ?? "—"],
+    ["historical_roleplay_reason",         log.historical_roleplay_reason || "—"],
+    // ── conversation_history ─────────────────────────────────────────
     ["conversation_history_query_detected", log.conversation_history_query_detected],
     ["conversation_history_recalled",       log.conversation_history_recalled],
     ["conversation_history_hit_count",      log.conversation_history_hit_count ?? "—"],
     ["conversation_history_reason",         log.conversation_history_reason || "—"],
+    // ── token summary ────────────────────────────────────────────────
+    ["memory_context_tokens_estimated",    log.memory_context_tokens_estimated],
   ];
 
   panel.innerHTML = fields.map(([key, val]) => {

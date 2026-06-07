@@ -1588,3 +1588,67 @@ img.msg-image { cursor: pointer; }
   .mc-providers { padding: 0 10px; }
   .mc-debug { margin: 0 10px; }
 }
+
+/* ── Chat Status 血条面板 ───────────────────────────────────────────────── */
+
+.status-panel {
+  position: fixed;
+  z-index: 800;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px 12px;
+  width: 200px;
+  box-shadow: 0 4px 24px oklch(0% 0 0 / 0.4);
+  user-select: none;
+}
+.status-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.status-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.status-panel-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+}
+.status-panel-close:hover { color: var(--text); }
+.status-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.status-bar-row:last-child { margin-bottom: 0; }
+.status-bar-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+}
+.status-bar-track {
+  flex: 1;
+  height: 20px;
+  background: var(--surface);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.status-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.avatar { cursor: pointer; }
