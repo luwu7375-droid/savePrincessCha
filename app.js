@@ -1065,7 +1065,7 @@ function closeStatusPanel() {
 
 async function requestStreamingReply(replyMode = "auto") {
   const messages = replyMode === "forced"
-    ? [...chatMessages, { role: "user", content: "用户轻轻戳了你一下。请自然接一句，不要提到"戳一下"、"继续推进"、"不要重复"、"复读"这些机制词。不要主动切项目，优先延续上一条真实用户消息的情绪和语境。" }]
+    ? [...chatMessages, { role: "user", content: "用户轻轻戳了你一下。请自然接一句，不要提到\u300c戳一下\u300d\u3001\u300c继续推进\u300d\u3001\u300c不要重复\u300d\u3001\u300c复读\u300d这些机制词。不要主动切项目，优先延续上一条真实用户消息的情绪和语境。" }]
     : chatMessages;
   const response = await callChatAPI(messages, replyMode);
   if (!response.ok || !response.body) {
