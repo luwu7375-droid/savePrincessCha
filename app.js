@@ -2109,11 +2109,16 @@ distillButton.addEventListener("click", async () => {
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
 
+  // 与 distill 后端一致，只取最后 20 条，id 窗口严格对应
+  const distillMsgIds = chatMessages.slice(-20)
+    .map(m => m.id != null ? Number(m.id) : null)
+    .filter(id => id !== null);
+
   let result;
   try {
     const res = await memoryFetch("?type=distill", {
       method: "POST",
-      body: JSON.stringify({ messages: chatMessages }),
+      body: JSON.stringify({ messages: chatMessages.slice(-20) }),
     });
     result = await res.json();
   } catch {
@@ -2129,10 +2134,10 @@ distillButton.addEventListener("click", async () => {
   const candidates = result.candidates || [];
   overlay.remove();
   if (!candidates.length) return;
-  showCandidatesDialog(candidates);
+  showCandidatesDialog(candidates, distillMsgIds);
 });
 
-function showCandidatesDialog(candidates) {
+function showCandidatesDialog(candidates, sourceMsgIds = []) {
   const overlay = document.createElement("div");
   overlay.className = "dialog-overlay";
 
@@ -2196,7 +2201,7 @@ function showCandidatesDialog(candidates) {
     for (const c of selected) {
       await memoryFetch("?type=buckets", {
         method: "POST",
-        body: JSON.stringify({ title: c.title, summary: c.summary, domain: c.domain || "general", keywords: c.keywords || [] }),
+        body: JSON.stringify({ title: c.title, summary: c.summary, domain: c.domain || "general", keywords: c.keywords || [], source_msg_ids: sourceMsgIds }),
       });
     }
   });

@@ -58,6 +58,10 @@ Deno.serve(async (req) => {
 
     if (req.method === "POST") {
       const body = await req.json();
+      if (Array.isArray(body.source_msg_ids)) {
+        body.source_msg_ids = body.source_msg_ids.map(Number).filter(n => Number.isFinite(n));
+        if (body.source_msg_ids.length === 0) delete body.source_msg_ids;
+      }
       const res = await fetch(`${supabaseUrl}/rest/v1/memory_buckets`, {
         method: "POST",
         headers: { ...dbHeaders, Prefer: "return=representation" },
