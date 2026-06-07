@@ -174,19 +174,20 @@
             <div class="mc-card-desc">只在年份、地点、事件、经历类问题时按需召回。</div>
           </div>
 
-          <!-- openai_export -->
-          <div class="mc-card mc-card--reserved">
+          <!-- openai_archive -->
+          <div class="mc-card mc-card--enabled">
             <div class="mc-card-top">
-              <div class="mc-card-title">OpenAI Export<span class="mc-card-subtitle">OpenAI 导出记忆</span></div>
+              <div class="mc-card-title">OpenAI Archive<span class="mc-card-subtitle">前世档案</span></div>
               <div class="mc-badges">
-                <span class="mc-badge mc-badge--reserved">预留</span>
+                <span class="mc-badge mc-badge--enabled">已启用</span>
                 <span class="mc-badge mc-badge--retrieval">retrieval only</span>
               </div>
             </div>
             <div class="mc-card-meta">
-              <span class="mc-provider-id">openai_export</span>
+              <span class="mc-provider-id">openai_archive</span>
             </div>
-            <div class="mc-card-desc">未来导入 OpenAI 对话记录，不复用 Mastodon parser。</div>
+            <div id="mcArchiveStatus" class="mc-card-status"></div>
+            <div class="mc-card-desc">原始 OpenAI 导出不会在运行时直接读取；这里显示的是已整理入库的历史档案按需召回状态。</div>
           </div>
 
           <!-- ombre_vault -->

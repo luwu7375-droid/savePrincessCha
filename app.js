@@ -2938,6 +2938,30 @@ function updateMemoryCenterCards(debug) {
       timelineStatusEl.textContent = "";
     }
   }
+
+  // ── OpenAI Archive ───────────────────────────────────────────────────────
+  const archiveStatusEl = document.getElementById("mcArchiveStatus");
+  if (archiveStatusEl) {
+    if (debug) {
+      const recalled = debug.openai_archive_recalled;
+      const hitCount = debug.openai_archive_hit_count ?? 0;
+      const hitKeys = Array.isArray(debug.openai_archive_keys) && debug.openai_archive_keys.length
+        ? debug.openai_archive_keys.join(", ")
+        : null;
+      const reason = debug.openai_archive_reason || null;
+      if (recalled) {
+        archiveStatusEl.innerHTML =
+          `<span class="mc-status-dot mc-status-dot--ok"></span>` +
+          `<span class="mc-status-text">本轮已召回 · ${hitCount} 条${hitKeys ? `：${hitKeys}` : ""}${reason ? ` · ${reason}` : ""}</span>`;
+      } else {
+        archiveStatusEl.innerHTML =
+          `<span class="mc-status-dot mc-status-dot--idle"></span>` +
+          `<span class="mc-status-text">本轮未触发${reason ? ` · ${reason}` : ""}</span>`;
+      }
+    } else {
+      archiveStatusEl.textContent = "";
+    }
+  }
 }
 
 /**
