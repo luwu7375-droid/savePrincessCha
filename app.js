@@ -339,6 +339,10 @@ async function deleteConv(id) {
 async function switchConversation(id) {
   if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
   setActiveConversationId(id);
+  _conversationStartedAt = null; // reset for new conversation context
+  _lastPrincessStatus = null;
+  const bar = document.getElementById("princessStatusBar");
+  if (bar) { bar.innerHTML = ""; bar.classList.add("hidden"); }
   renderConvList();
   await reloadHistory();
 }
@@ -602,16 +606,73 @@ async function reloadHistory() {
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
 
+// Track conversation start time for timeContext
+let _conversationStartedAt = null;
+
 async function callChatAPI(messages, replyMode = "auto") {
   const endpoint = getConfigValue("CHAT_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL");
   const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME");
   if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
   if (!modelName) throw new Error("MODEL_NAME 未配置");
+
+  // Build timeContext from browser
+  const now = new Date();
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localParts = getZonedParts(now);
+  const localHour = parseInt(localParts.hour, 10);
+  const localMinute = parseInt(localParts.minute, 10);
+  if (!_conversationStartedAt) _conversationStartedAt = now.toISOString();
+
+  // Detect topic loop: last 6 user messages, check if recent 2 repeat content from earlier
+  const userMsgs = messages.filter(m => m.role === "user");
+  let loopDetected = false;
+  let loopReason = null;
+  let recentTopicHint = null;
+  if (userMsgs.length >= 4) {
+    const recent = userMsgs.slice(-2).map(m => (m.content || "").slice(0, 80));
+    const older = userMsgs.slice(-6, -2).map(m => (m.content || "").slice(0, 80));
+    for (const r of recent) {
+      for (const o of older) {
+        if (r.length >= 8 && o.length >= 8 && (r.includes(o.slice(0, 12)) || o.includes(r.slice(0, 12)))) {
+          loopDetected = true;
+          loopReason = "recent messages overlap with earlier messages";
+          recentTopicHint = r.slice(0, 30);
+          break;
+        }
+      }
+      if (loopDetected) break;
+    }
+  }
+
+  const msgCount = messages.length;
+  const longChat = msgCount > 20;
+
+  const timeContext = {
+    timezone,
+    local_iso: now.toISOString(),
+    local_hour: localHour,
+    local_minute: localMinute,
+    local_date: `${localParts.year}-${localParts.month}-${localParts.day}`,
+    conversation_started_at: _conversationStartedAt,
+    message_count: msgCount,
+  };
+
+  const conversation_state = {
+    message_count: msgCount,
+    long_chat: longChat,
+    loop_detected: loopDetected,
+    loop_reason: loopReason,
+    recent_topic_hint: recentTopicHint,
+  };
+
   console.log("[debug] callChatAPI", {
     replyMode,
     modelTier: currentModelTier,
     userId: currentUserId ? currentUserId.slice(0, 6) : "absent",
-    messageCount: messages.length,
+    messageCount: msgCount,
+    localHour,
+    longChat,
+    loopDetected,
   });
   return fetch(endpoint, {
     method: "POST",
@@ -620,8 +681,8 @@ async function callChatAPI(messages, replyMode = "auto") {
       model: modelName,
       messages: [
         { role: "system", content: `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。日常聊天、情绪回应、普通问答，控制在 1-3 段内，每段不超过 2 句，不主动写长列表。
-日常闲聊只回应用户刚刚那句话，不复盘、不总结、不安排下一步、不主动推进任务，学习模仿用户的句子长度。 
-如果用户明确要求“详细、展开、分析、写代码、排查 bug、写方案、写 PRD、总结文档”，则优先完整解决问题，不限制长度。
+日常闲聊只回应用户刚刚那句话，不复盘、不总结、不安排下一步、不主动推进任务，学习模仿用户的句子长度。
+如果用户明确要求"详细、展开、分析、写代码、排查 bug、写方案、写 PRD、总结文档"，则优先完整解决问题，不限制长度。
 不要为了凑字解释显而易见的事情。\n\n当前应用时间：${(() => { const p = getZonedParts(new Date()); return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`; })()}\n当前应用时区：UTC+8 / Asia/Shanghai\n涉及今天、昨天、现在几点、刚才、上次对话时，一律以当前应用时间为准。` },
         ...messages.map(({ role, content }) => ({ role, content })),
       ],
@@ -630,6 +691,8 @@ async function callChatAPI(messages, replyMode = "auto") {
       userId: currentUserId,
       conversationId: getActiveConversationId(),
       modelTier: currentModelTier,
+      timeContext,
+      conversation_state,
       // storySeedsEnabled intentionally omitted — legacy memory system retired
     }),
   });
@@ -663,6 +726,38 @@ function setChatStatus(text) {
   if (el) el.textContent = text;
 }
 
+// ── Princess Status Bar ────────────────────────────────────────────────────────
+// Independent from setChatStatus. Shows G's current state from chat_status API response.
+// Uses #princessStatusBar element injected into the DOM below the top-bar.
+
+let _lastPrincessStatus = null;
+
+function renderPrincessStatusBar() {
+  const bar = document.getElementById("princessStatusBar");
+  if (!bar || !_lastPrincessStatus) return;
+  const s = _lastPrincessStatus;
+  const compact = `${s.display || ""}`;
+  bar.innerHTML = `
+    <span class="princess-status-text" title="点击查看详情">${compact}</span>
+    <span class="princess-status-details hidden">
+      <span>${s.details?.energy_reason || ""}</span>
+      <span>${s.details?.clarity_reason || ""}</span>
+    </span>`;
+  bar.classList.remove("hidden");
+  // Toggle detail on click
+  const textEl = bar.querySelector(".princess-status-text");
+  const detailEl = bar.querySelector(".princess-status-details");
+  if (textEl && detailEl) {
+    textEl.onclick = () => detailEl.classList.toggle("hidden");
+  }
+}
+
+function updatePrincessStatusBar(status) {
+  if (!status || typeof status !== "object") return;
+  _lastPrincessStatus = status;
+  renderPrincessStatusBar();
+}
+
 async function requestStreamingReply(replyMode = "auto") {
   const messages = replyMode === "forced"
     ? [...chatMessages, { role: "user", content: "继续推进，别重复刚才说过的" }]
@@ -690,6 +785,15 @@ async function requestStreamingReply(replyMode = "auto") {
       const debug = JSON.parse(base64DecodeUtf8(debugHeader));
       window.lastMemoryDebug = debug;
       try { localStorage.setItem("lastMemoryDebug", JSON.stringify(debug)); } catch (_) {}
+    }
+  } catch (_) {}
+
+  // 读取 chat status header
+  try {
+    const statusHeader = response.headers.get("x-chat-status");
+    if (statusHeader) {
+      const status = JSON.parse(base64DecodeUtf8(statusHeader));
+      updatePrincessStatusBar(status);
     }
   } catch (_) {}
 
