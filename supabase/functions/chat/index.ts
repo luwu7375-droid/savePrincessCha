@@ -1086,7 +1086,7 @@ Deno.serve(async (request) => {
   const localHour = typeof tc.local_hour === "number" ? tc.local_hour : null;
   const msgCount = typeof tc.message_count === "number" ? tc.message_count
     : typeof cs.message_count === "number" ? cs.message_count : 0;
-  const longChat = cs.long_chat === true || msgCount > 20;
+  const longChat = cs.long_chat === true || msgCount > 30;
   const loopDetected = cs.loop_detected === true;
   const loopReason = cs.loop_reason ?? null;
   const recentTopicHint = cs.recent_topic_hint ?? null;

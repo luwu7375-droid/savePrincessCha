@@ -619,25 +619,33 @@ async function callChatAPI(messages, replyMode = "auto") {
   const now = new Date();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localParts = getZonedParts(now);
-  const localHour = parseInt(localParts.hour, 10);
-  const localMinute = parseInt(localParts.minute, 10);
+  const localHour = (() => { const h = parseInt(localParts.hour, 10); return isNaN(h) ? null : h; })();
+  const localMinute = (() => { const m = parseInt(localParts.minute, 10); return isNaN(m) ? 0 : m; })();
   if (!_conversationStartedAt) _conversationStartedAt = now.toISOString();
 
-  // Detect topic loop: last 6 user messages, check if recent 2 repeat content from earlier
+  // Detect topic loop: last 3 user messages vs earlier 4, require 20-char prefix overlap
+  // Using longer prefix (20 chars) and stricter threshold to avoid false positives
   const userMsgs = messages.filter(m => m.role === "user");
   let loopDetected = false;
   let loopReason = null;
   let recentTopicHint = null;
-  if (userMsgs.length >= 4) {
-    const recent = userMsgs.slice(-2).map(m => (m.content || "").slice(0, 80));
-    const older = userMsgs.slice(-6, -2).map(m => (m.content || "").slice(0, 80));
+  if (userMsgs.length >= 5) {
+    const recent = userMsgs.slice(-2).map(m => (m.content || "").trim());
+    const older = userMsgs.slice(-6, -2).map(m => (m.content || "").trim());
     for (const r of recent) {
       for (const o of older) {
-        if (r.length >= 8 && o.length >= 8 && (r.includes(o.slice(0, 12)) || o.includes(r.slice(0, 12)))) {
-          loopDetected = true;
-          loopReason = "recent messages overlap with earlier messages";
-          recentTopicHint = r.slice(0, 30);
-          break;
+        // Require both messages are substantive (>= 15 chars) and share a 20-char prefix
+        const minLen = 15;
+        const prefixLen = 20;
+        if (r.length >= minLen && o.length >= minLen) {
+          const rPrefix = r.slice(0, prefixLen);
+          const oPrefix = o.slice(0, prefixLen);
+          if (rPrefix === oPrefix) {
+            loopDetected = true;
+            loopReason = "repeated message prefix detected";
+            recentTopicHint = r.slice(0, 30);
+            break;
+          }
         }
       }
       if (loopDetected) break;
@@ -645,7 +653,8 @@ async function callChatAPI(messages, replyMode = "auto") {
   }
 
   const msgCount = messages.length;
-  const longChat = msgCount > 20;
+  // longChat: total messages > 30 (~15 user turns), avoids false positive on short chats
+  const longChat = msgCount > 30;
 
   const timeContext = {
     timezone,
