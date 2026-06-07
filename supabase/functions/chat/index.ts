@@ -1,5 +1,6 @@
 import { MASTODON_TIMELINE_MD } from "./mastodon_timeline.ts";
 import { CONVERSATION_BEHAVIOR_PACK } from "./conversation_behavior.ts";
+import { compilePersonalityLayerContext, fetchLayer1Features, fetchLayer2Features, afterChat as afterChatPersonality } from "./personality_system.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -204,7 +205,7 @@ function isFallbackableStatus(status: number, bodyText: string): boolean {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "fuka-unified-v7";
+const FUNCTION_VERSION = "fuka-unified-v8";
 
 // ── Legacy memory guard ────────────────────────────────────────────────────────
 //
@@ -987,6 +988,21 @@ async function compileMemoryContext(
     }
   } else {
     mastodonProfileError = "missing supabaseUrl or serviceRoleKey";
+  }
+
+  // ── persona_layer1 + layer2: Ombre Brain dynamic personality injection ─────────
+  // L1: human-maintained long-term features (always injected when userId present)
+  // L2: LLM auto-extracted dynamic features (injected if calculated_score > 0.3)
+  if (supabaseUrl && serviceRoleKey && userId && userId !== "anon") {
+    const [l1Features, l2Features] = await Promise.all([
+      fetchLayer1Features(supabaseUrl, serviceRoleKey, userId),
+      fetchLayer2Features(supabaseUrl, serviceRoleKey, userId),
+    ]);
+    const personalityContext = compilePersonalityLayerContext(l1Features, l2Features);
+    if (personalityContext) {
+      activeProviders.push("personality_layers");
+      context += personalityContext;
+    }
   }
 
   // ── mastodon_timeline: injected on-demand for event/place/year queries ────────
@@ -2076,7 +2092,32 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
     const memoryDebugHeader = base64EncodeUtf8(memoryDebugPayload);
     const chatStatusHeader = base64EncodeUtf8(chatStatus);
 
-    return new Response(result.response.body, {
+    const afterChatUserId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+    const fastModel = Deno.env.get("FAST_MODEL") || Deno.env.get("DEFAULT_MODEL") || "";
+    let responseBody: ReadableStream<Uint8Array> | null = result.response.body;
+
+    if (result.response.body && supabaseUrl && serviceRoleKey && afterChatUserId !== "anon" && fastModel) {
+      const [clientBody, extractBody] = result.response.body.tee();
+      responseBody = clientBody;
+      afterChatPersonality({
+        streamBody: extractBody,
+        supabaseUrl,
+        serviceRoleKey,
+        userId: afterChatUserId,
+        conversationId,
+        userMessage: lastUserMessage,
+        valence: emotionResult?.valence ?? 0,
+        arousal: emotionResult?.arousal ?? 0,
+        route: topicRoute,
+        orBaseUrl: providerConfig.baseUrl,
+        orApiKey: providerConfig.apiKey,
+        fastModel,
+      }).catch((err) =>
+        console.error("[afterChat] error:", err instanceof Error ? err.message : String(err))
+      );
+    }
+
+    return new Response(responseBody, {
       status: result.response.status,
       headers: {
         ...corsHeaders,
