@@ -745,15 +745,14 @@ function renderPrincessStatusBar() {
   const bar = document.getElementById("princessStatusBar");
   if (!bar || !_lastPrincessStatus) return;
   const s = _lastPrincessStatus;
-  const compact = `${s.display || ""}`;
   bar.innerHTML = `
-    <span class="princess-status-text" title="点击查看详情">${compact}</span>
+    <span class="princess-status-text" title="点击查看详情">${s.display || ""}</span>
     <span class="princess-status-details hidden">
       <span>${s.details?.energy_reason || ""}</span>
       <span>${s.details?.clarity_reason || ""}</span>
+      ${s.details?.immersion_reason ? `<span>${s.details.immersion_reason}</span>` : ""}
     </span>`;
   bar.classList.remove("hidden");
-  // Toggle detail on click
   const textEl = bar.querySelector(".princess-status-text");
   const detailEl = bar.querySelector(".princess-status-details");
   if (textEl && detailEl) {
