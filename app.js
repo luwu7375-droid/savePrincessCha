@@ -632,6 +632,124 @@ async function callChatAPI(messages, replyMode = "auto") {
   const localMinute = (() => { const m = parseInt(localParts.minute, 10); return isNaN(m) ? 0 : m; })();
   if (!_conversationStartedAt) _conversationStartedAt = now.toISOString();
 
+  // ── Topic routing ─────────────────────────────────────────────────────────────
+  // project_work requires explicit opt-in every turn (or active lock + continuation).
+  // "救公主" does NOT trigger project_work — it's G's home/body/relationship container.
+  // project_silenced_ttl: user explicitly banned project talk; lasts N turns.
+
+  // ── Dev-verb gate: the 6 explicit workbench phrases ───────────────────────
+  // Only these 6 phrases trigger project_work. "救公主" does not trigger even when
+  // combined with these verbs — workbench mode requires explicit intent.
+  const DEV_VERBS = /上工|继续修|看\s*debug|帮我想代码问题|进入工作台|现在说项目/i;
+  // Continuation words that inherit project_work only when lock is active
+  const CONTINUATION = /^(继续|下一步|接着|好的|嗯嗯|那就|来吧|那继续|照这个|这个bug|刚才那个|好了|搞定了|ok|好)[\s，。？！]*$/i;
+
+  // ── Non-project route patterns ─────────────────────────────────────────────
+  const ROUTE_AI_NOSTALGIA = /你和4o|4o是什么关系|你们是什么关系|你知道4o吗/i;
+  const ROUTE_CARE_LOW = /头痛|头很痛|头疼|不舒服|不想动|好累|太累|累了|难受|浑身|身体/i;
+  const ROUTE_HISTORICAL = /前世|你当过什么|你做过什么|历史角色|历史身份|旧版本的你/i;
+  const ROUTE_INTIMACY = /我想你|好想你|就想陪|陪着我|不想工作|告解/i;
+  const ROUTE_META_COMPLAINT = /为什么你|你怎么|你好笨|你笨|真笨|读空气|不会读|笨笨|怎么这样|你不懂|你不明白|你搞不清|有没有搞错/i;
+
+  // ── Explicit project silence ───────────────────────────────────────────────
+  const PROJECT_SILENCE_TRIGGER = /不许(再说|说)项目|别说项目|项目闭嘴|不聊代码|读空气|不许提项目|别提项目/i;
+  const PROJECT_RESUME_TRIGGER = /继续修|继续项目|继续代码|接着修|重新修|好.*继续修/i;
+
+  // ── Load persisted state ───────────────────────────────────────────────────
+  let projectLockTurns = parseInt(localStorage.getItem("projectLockTurns") || "0", 10);
+  if (isNaN(projectLockTurns) || projectLockTurns < 0) projectLockTurns = 0;
+  let projectSilencedTtl = parseInt(localStorage.getItem("projectSilencedTtl") || "0", 10);
+  if (isNaN(projectSilencedTtl) || projectSilencedTtl < 0) projectSilencedTtl = 0;
+
+  const latestUserMsg = (messages.filter(m => m.role === "user").slice(-1)[0]?.content || "").trim();
+
+  let primaryRoute = "casual";
+  let secondaryRoute = null;
+  let projectTriggerMatched = false;
+  let projectTriggerReason = null;
+
+  // ── Step 1: check explicit silence ────────────────────────────────────────
+  if (PROJECT_SILENCE_TRIGGER.test(latestUserMsg)) {
+    projectLockTurns = 0;
+    projectSilencedTtl = 5;
+    localStorage.setItem("projectLockTurns", "0");
+    localStorage.setItem("projectSilencedTtl", "5");
+  }
+
+  // ── Step 2: check explicit resume (overrides silence) ─────────────────────
+  const isExplicitResume = PROJECT_RESUME_TRIGGER.test(latestUserMsg);
+  if (isExplicitResume) {
+    projectSilencedTtl = 0;
+    localStorage.setItem("projectSilencedTtl", "0");
+  }
+
+  // ── Step 3: hard-break routes (clear project lock) ─────────────────────────
+  const HARD_BREAK_ROUTE = ROUTE_AI_NOSTALGIA.test(latestUserMsg) ||
+    ROUTE_HISTORICAL.test(latestUserMsg) ||
+    ROUTE_CARE_LOW.test(latestUserMsg) ||
+    ROUTE_INTIMACY.test(latestUserMsg) ||
+    ROUTE_META_COMPLAINT.test(latestUserMsg);
+  if (HARD_BREAK_ROUTE) {
+    projectLockTurns = 0;
+    localStorage.setItem("projectLockTurns", "0");
+  }
+
+  // ── Step 4: classify route ─────────────────────────────────────────────────
+  if (ROUTE_AI_NOSTALGIA.test(latestUserMsg)) {
+    primaryRoute = "ai_nostalgia";
+
+  } else if (ROUTE_HISTORICAL.test(latestUserMsg)) {
+    primaryRoute = "historical_roleplay";
+
+  } else if (ROUTE_META_COMPLAINT.test(latestUserMsg)) {
+    primaryRoute = "meta_complaint";
+    if (ROUTE_INTIMACY.test(latestUserMsg)) secondaryRoute = "intimacy";
+
+  } else {
+    // ── Project work gate: explicit workbench only ──────────────────────────
+    // Only the 6 designated DEV_VERB phrases trigger project_work.
+    // "救公主" does NOT trigger — it's G's home/body/relationship container.
+    const hasDevVerb = DEV_VERBS.test(latestUserMsg);
+    const isContinuation = CONTINUATION.test(latestUserMsg) || latestUserMsg.length <= 6;
+    const lockActive = projectLockTurns > 0 && !HARD_BREAK_ROUTE;
+
+    const projectGatePass = !PROJECT_SILENCE_TRIGGER.test(latestUserMsg) &&
+      (projectSilencedTtl === 0 || isExplicitResume) &&
+      (isExplicitResume || hasDevVerb || (lockActive && isContinuation));
+
+    if (projectGatePass) {
+      primaryRoute = "project_work";
+      if (hasDevVerb) {
+        projectTriggerMatched = true;
+        projectTriggerReason = "explicit_workbench";
+        projectLockTurns = 2;
+      } else if (lockActive && isContinuation) {
+        projectTriggerMatched = true;
+        projectTriggerReason = "continuation+lock";
+        projectLockTurns = Math.max(0, projectLockTurns - 1);
+      }
+      localStorage.setItem("projectLockTurns", String(projectLockTurns));
+      // Simultaneous emotional signal
+      if (ROUTE_CARE_LOW.test(latestUserMsg)) secondaryRoute = "care_low_energy";
+      else if (ROUTE_INTIMACY.test(latestUserMsg)) secondaryRoute = "intimacy";
+    } else {
+      // Not project — decay lock
+      if (projectLockTurns > 0) {
+        projectLockTurns = Math.max(0, projectLockTurns - 1);
+        localStorage.setItem("projectLockTurns", String(projectLockTurns));
+      }
+      if (ROUTE_CARE_LOW.test(latestUserMsg)) primaryRoute = "care_low_energy";
+      else if (ROUTE_INTIMACY.test(latestUserMsg)) primaryRoute = "intimacy";
+      else primaryRoute = "casual";
+    }
+  }
+
+  // Decay silence TTL (after route decision, so this turn's silence still applies)
+  if (projectSilencedTtl > 0 && !PROJECT_SILENCE_TRIGGER.test(latestUserMsg)) {
+    projectSilencedTtl = Math.max(0, projectSilencedTtl - 1);
+    localStorage.setItem("projectSilencedTtl", String(projectSilencedTtl));
+  }
+
   // Detect topic loop: last 3 user messages vs earlier 4, require 20-char prefix overlap
   // Using longer prefix (20 chars) and stricter threshold to avoid false positives
   const userMsgs = messages.filter(m => m.role === "user");
@@ -675,12 +793,41 @@ async function callChatAPI(messages, replyMode = "auto") {
     message_count: msgCount,
   };
 
+  // previous_recent_topic_hint: last turn's primary route, for topic switch detection
+  const previousTopicRoute = localStorage.getItem("previousTopicRoute") || null;
+  const topicSwitchDetected = previousTopicRoute !== null && previousTopicRoute !== primaryRoute &&
+    previousTopicRoute === "project_work";
+  localStorage.setItem("previousTopicRoute", primaryRoute);
+
+  // Approximate route_scores for debug transparency (not used for routing logic)
+  const routeScores = {
+    project_work: (DEV_VERBS.test(latestUserMsg) ? 3 : 0) +
+      (projectLockTurns > 0 ? 1 : 0),
+    ai_nostalgia: ROUTE_AI_NOSTALGIA.test(latestUserMsg) ? 4 : 0,
+    care_low_energy: ROUTE_CARE_LOW.test(latestUserMsg) ? 4 : 0,
+    historical_roleplay: ROUTE_HISTORICAL.test(latestUserMsg) ? 4 : 0,
+    intimacy: ROUTE_INTIMACY.test(latestUserMsg) ? 4 : 0,
+    meta_complaint: ROUTE_META_COMPLAINT.test(latestUserMsg) ? 4 : 0,
+  };
+
   const conversation_state = {
     message_count: msgCount,
     long_chat: longChat,
     loop_detected: loopDetected,
     loop_reason: loopReason,
     recent_topic_hint: recentTopicHint,
+    topic_route: primaryRoute,
+    secondary_route: secondaryRoute,
+    project_lock_turns: projectLockTurns,
+    project_silenced_ttl: projectSilencedTtl,
+    project_trigger_matched: projectTriggerMatched,
+    project_trigger_reason: projectTriggerReason,
+    latest_user_message_for_detection: latestUserMsg.slice(0, 60),
+    previous_topic_route: previousTopicRoute,
+    topic_switch_detected: topicSwitchDetected,
+    topic_switch_from: topicSwitchDetected ? "project_work" : null,
+    topic_switch_to: topicSwitchDetected ? primaryRoute : null,
+    route_scores: routeScores,
   };
 
   console.log("[debug] callChatAPI", {
