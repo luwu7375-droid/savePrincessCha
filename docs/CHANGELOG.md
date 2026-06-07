@@ -1,5 +1,39 @@
 # Changelog
 
+## userMessageId evidence chain / fuka-unified-v8
+
+**Date:** 2026-06-08
+**Commit:** `09b2c50`
+**Functions deployed:** `chat` (v8, redeployed)
+**Migration:** `20260608000000_add_source_msg_ids_to_persona_tables.sql`
+
+### What shipped
+
+**userMessageId evidence chain**
+- `app.js`: `callChatAPI()` extracts the DB id of the last user message and sends it as `userMessageId` in the request payload
+- `index.ts`: `ChatRequest` type accepts `userMessageId?: number | null`; forwarded to `afterChat()`
+- `personality_system.ts`: `AfterChatParams`, `upsertL2Feature()`, `writeExtractionLog()` all carry `userMessageId`
+  - Written to `persona_layer2_dynamic_features.source_msg_ids` (bigint[])
+  - Written to `persona_extraction_log.source_msg_id` (bigint)
+- Each extracted personality feature is now traceable back to the message that produced it
+
+**Migration**
+- `memories.source_msg_ids bigint[]` — for future hand-maintained tooling
+- `persona_layer1_contexts.source_msg_ids bigint[]` — for future hand-maintained tooling
+- `persona_layer2_dynamic_features.source_msg_ids bigint[]` — written by afterChat pipeline
+- `persona_extraction_log.source_msg_id bigint` — written per afterChat invocation
+
+**Chat history pagination** (app.js, committed earlier)
+- `reloadHistory()` now fetches newest 20 messages on conversation open (was `.limit(500)`)
+- New `loadOlderMessages()`: cursor-based fetch via `.lt("created_at", oldestLoadedMessageCreatedAt)`
+- Scroll trigger at `scrollTop <= 40` — prepend older messages with scroll position preserved
+- State vars: `HISTORY_PAGE_SIZE = 20`, `historyHasMore`, `historyLoadingOlder`, `oldestLoadedMessageCreatedAt`
+
+### Smoke tests
+3/3 passed post-deploy.
+
+---
+
 ## ombre-brain-phase-c / fuka-unified-v8
 
 **Date:** 2026-06-07
