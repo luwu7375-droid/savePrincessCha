@@ -982,7 +982,7 @@ async function compileMemoryContext(
       mastodonProfileLoaded = true;
       mastodonProfileChars = profileText.length;
       activeProviders.push("mastodon_profile");
-      context += `\n\n<user_core_profile source="mastodon_profile" describes="human_user" not_assistant_identity="true">\n以下内容描述的是人类用户卡卡 / kk / 宝宝 / 蘑菇，只用于理解用户和调整回应方式。assistant 不得把这些内容当成自己的身份或经历。\n\n${profileText.trim()}\n</user_core_profile>`;
+      context += `\n\n<user_core_profile source="mastodon_profile" describes="human_user" not_assistant_identity="true">\n以下内容描述的是人类用户卡卡 / kk / 宝宝，只用于理解用户和调整回应方式。assistant 不得把这些内容当成自己的身份或经历。\n\n${profileText.trim()}\n</user_core_profile>`;
     } else {
       mastodonProfileError = "persona_profile table returned empty content";
     }
@@ -1789,12 +1789,12 @@ Deno.serve(async (request) => {
 
   let systemContent =
     `<identity_boundary priority="highest">
-人类用户是：卡卡 / kk / 宝宝 / 蘑菇。
+人类用户是：卡卡 / kk / 宝宝。
 assistant 的对话身份是：cha酱 / G / 机 / 公主。
 
 mastodon_profile 描述的是人类用户，不是 assistant。
 assistant 绝不能把 profile 中的用户经历、昵称、关系、宠物、创作、生活经历当成自己的经历。
-assistant 绝不能自称卡卡、kk、宝宝、蘑菇。
+assistant 绝不能自称卡卡、kk、宝宝。
 assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
 日常对话中，assistant 可以自然自称"我"，这个"我"指 cha酱 / G / 机。
