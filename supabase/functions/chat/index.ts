@@ -1,5 +1,6 @@
 import { MASTODON_PROFILE_MD } from "./mastodon_profile.ts";
 import { MASTODON_TIMELINE_MD } from "./mastodon_timeline.ts";
+import { ARCHIVE_ROLEPLAY, ARCHIVE_POLICY, type ArchiveEntry } from "./openai_archive.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -230,6 +231,18 @@ function resolveCacheTtl(): number {
 }
 const CACHE_TTL_MS = resolveCacheTtl();
 
+// ── Emotion cache (module-level, per-worker-process) ─────────────────────────
+// Cache key = SHA-256(concatenated last-4-message contents), truncated to 16 hex chars.
+// TTL = 10 minutes. Resets on cold start.
+type EmotionCacheEntry = {
+  valence: number;
+  arousal: number;
+  connection: number;
+  ts: number;
+};
+const _emotionCache = new Map<string, EmotionCacheEntry>();
+const EMOTION_CACHE_TTL_MS = 600_000; // 10 minutes
+
 // ── Cache stats (module-level, per-worker-process) ────────────────────────────
 // These counters survive across warm requests but reset on cold start.
 // They are emitted per-request in the log for observability.
@@ -302,6 +315,11 @@ type RequestLog = {
   // New memory provider system
   active_memory_providers: string[];
   memory_provider_count: number;
+  // Persona memories (L1 — always injected from memories table)
+  persona_memories_loaded: boolean;
+  persona_memories_count: number;
+  persona_memories_categories: string[];
+  persona_memories_error: string | null;
   mastodon_profile_enabled: boolean;
   mastodon_profile_loaded: boolean;
   mastodon_profile_chars: number;
@@ -315,6 +333,20 @@ type RequestLog = {
   timeline_reason: string | null;
   openai_export_enabled: boolean;
   ombre_vault_enabled: boolean;
+  // Project Memory Provider (L2 — keyword-triggered)
+  project_memory_loaded: boolean;
+  project_memory_recalled: boolean;
+  project_memory_hit_count: number;
+  project_memory_keys: string[];
+  project_memory_reason: string | null;
+  // OpenAI Archive Provider
+  openai_archive_loaded: boolean;
+  openai_archive_recalled: boolean;
+  openai_archive_hit_count: number;
+  openai_archive_keys: string[];
+  openai_archive_reason: string | null;
+  historical_roleplay_hit_count: number;
+  historical_roleplay_reason: string | null;
   memory_context_tokens_estimated: number;
   // Conversation History Provider
   conversation_history_enabled: boolean;
@@ -742,6 +774,11 @@ function shouldInjectTimeline(message: string): boolean {
 type MemoryContextLog = {
   active_memory_providers: string[];
   memory_provider_count: number;
+  // Persona memories (L1 — always injected from memories table)
+  persona_memories_loaded: boolean;
+  persona_memories_count: number;
+  persona_memories_categories: string[];
+  persona_memories_error: string | null;
   mastodon_profile_enabled: boolean;
   mastodon_profile_loaded: boolean;
   mastodon_profile_chars: number;
@@ -755,6 +792,20 @@ type MemoryContextLog = {
   timeline_reason: string | null;
   openai_export_enabled: boolean;
   ombre_vault_enabled: boolean;
+  // Project Memory Provider (L2 — keyword-triggered)
+  project_memory_loaded: boolean;
+  project_memory_recalled: boolean;
+  project_memory_hit_count: number;
+  project_memory_keys: string[];
+  project_memory_reason: string | null;
+  // OpenAI Archive Provider
+  openai_archive_loaded: boolean;
+  openai_archive_recalled: boolean;
+  openai_archive_hit_count: number;
+  openai_archive_keys: string[];
+  openai_archive_reason: string | null;
+  historical_roleplay_hit_count: number;
+  historical_roleplay_reason: string | null;
   conversation_history_enabled: boolean;
   conversation_history_query_detected: boolean;
   conversation_history_recalled: boolean;
@@ -765,6 +816,37 @@ type MemoryContextLog = {
   memory_context_tokens_estimated: number;
 };
 
+// ── Persona memories (L1) ─────────────────────────────────────────────────────
+//
+// Reads rows from public.memories WHERE category IN (L1_CATEGORIES) AND enabled=true.
+// Always injected — no keyword gate, no domain column required.
+// This is the DB-backed equivalent of the inlined mastodon_profile provider.
+
+const L1_CATEGORIES = ["current_context_summary", "interaction_preferences"] as const;
+
+type PersonaMemoryRow = { id: string; content: string; category: string };
+
+async function fetchPersonaMemories(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<{ rows: PersonaMemoryRow[]; error: string | null }> {
+  const cats = L1_CATEGORIES.map((c) => `"${c}"`).join(",");
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=in.(${cats})&select=id,content,category&order=created_at.asc`,
+      { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      return { rows: [], error: `HTTP ${res.status}: ${text.slice(0, 80)}` };
+    }
+    const rows = (await res.json()) as PersonaMemoryRow[];
+    return { rows, error: null };
+  } catch (err) {
+    return { rows: [], error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function compileMemoryContext(
   userMessage: string,
   supabaseUrl: string | undefined,
@@ -774,6 +856,28 @@ async function compileMemoryContext(
 ): Promise<{ context: string; log: MemoryContextLog }> {
   const activeProviders: string[] = [];
   let context = "";
+
+  // ── persona_memories: L1, always injected from memories table ────────────────
+  // Reads current_context_summary + interaction_preferences from DB.
+  // No keyword gate — these are always-on persona/relation context.
+  let personaMemoriesLoaded = false;
+  let personaMemoriesCount = 0;
+  let personaMemoriesCategories: string[] = [];
+  let personaMemoriesError: string | null = null;
+  if (supabaseUrl && serviceRoleKey) {
+    const { rows: pmRows, error: pmError } = await fetchPersonaMemories(supabaseUrl, serviceRoleKey);
+    if (pmError) {
+      personaMemoriesError = pmError;
+      console.error("[memory] persona_memories load failed:", pmError);
+    } else if (pmRows.length > 0) {
+      personaMemoriesLoaded = true;
+      personaMemoriesCount = pmRows.length;
+      personaMemoriesCategories = pmRows.map((r) => r.category);
+      activeProviders.push("persona_memories");
+      const lines = pmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
+      context += `\n\n<persona_memories source="memories_table" always_inject="true">\n以下是长期记忆，请优先遵守：\n${lines}\n</persona_memories>`;
+    }
+  }
 
   // ── mastodon_profile: always injected ──────────────────────────────────────
   // Profile is inlined as a TS module (mastodon_profile.ts) to avoid Deno
@@ -810,7 +914,70 @@ async function compileMemoryContext(
     }
   }
 
-  // ── openai_export: reserved, not implemented ───────────────────────────────
+  // ── project_memory: L2, keyword-triggered, reads from memories table ─────────
+  // Injected only when user message matches project-related keywords.
+  // Keyword matching done client-side here (no extra DB query) — the single row
+  // is fetched and injected if any trigger keyword appears in the user message.
+  const PROJECT_MEMORY_TRIGGERS = [
+    "救公主", "图片上传", "记忆系统", "记忆中枢",
+    "UI", "debug", "Supabase", "Edge Function",
+    "API", "Claude", "部署", "bug",
+    "外链", "视频", "跑团", "星露谷",
+    "Codex", "GitHub Pages", "任务卡",
+    "电话", "savePrincess", "provider",
+    "L1", "L2", "L3", "persona_memories", "openai_archive",
+    "图片识别", "多图", "移动端", "Mastodon",
+  ];
+  let projectMemoryLoaded = false;
+  let projectMemoryRecalled = false;
+  let projectMemoryHitCount = 0;
+  let projectMemoryKeys: string[] = [];
+  let projectMemoryReason: string | null = null;
+  const projectMemoryQueryDetected = userMessage
+    ? PROJECT_MEMORY_TRIGGERS.some((kw) =>
+        userMessage.toLocaleLowerCase().includes(kw.toLocaleLowerCase())
+      )
+    : false;
+  if (projectMemoryQueryDetected && supabaseUrl && serviceRoleKey) {
+    try {
+      const pmRes = await fetch(
+        `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=eq.project_memory&select=id,content&order=created_at.asc&limit=1`,
+        { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+      );
+      if (pmRes.ok) {
+        const pmRows = (await pmRes.json()) as { id: string; content: string }[];
+        if (pmRows.length > 0) {
+          projectMemoryLoaded = true;
+          projectMemoryRecalled = true;
+          projectMemoryHitCount = pmRows.length;
+          projectMemoryKeys = ["current_project_summary"];
+          const hitKw = PROJECT_MEMORY_TRIGGERS.filter((kw) =>
+            userMessage.toLocaleLowerCase().includes(kw.toLocaleLowerCase())
+          );
+          projectMemoryReason = `keyword match: ${hitKw.slice(0, 3).join(", ")}`;
+          activeProviders.push("project_memory");
+          const lines = pmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
+          context += `\n\n<project_memory source="memories_table" category="project_memory" inject_mode="keyword_triggered">\n以下是项目背景，仅在相关时参考：\n${lines}\n</project_memory>`;
+        }
+      }
+    } catch (err) {
+      console.error("[memory] project_memory load failed:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // ── openai_archive: retrieval_only, triggered by keyword + mood gate ─────────
+  const archiveDetection = detectArchiveQuery(userMessage);
+  let archiveRecalled = false;
+  let archiveHits: ArchiveHit[] = [];
+  if (userMessage && archiveDetection.detected) {
+    archiveHits = selectArchiveEntries(userMessage);
+    if (archiveHits.length > 0) {
+      archiveRecalled = true;
+      activeProviders.push("openai_archive");
+      context += compileArchiveContext(archiveHits);
+    }
+  }
+  const roleplayHits = archiveHits.filter((h) => h.entry.can_easter_egg);
 
   // ── ombre_vault: reserved, not implemented ─────────────────────────────────
 
@@ -837,6 +1004,10 @@ async function compileMemoryContext(
     log: {
       active_memory_providers: activeProviders,
       memory_provider_count: activeProviders.length,
+      persona_memories_loaded: personaMemoriesLoaded,
+      persona_memories_count: personaMemoriesCount,
+      persona_memories_categories: personaMemoriesCategories,
+      persona_memories_error: personaMemoriesError,
       mastodon_profile_enabled: mastodonProfileEnabled,
       mastodon_profile_loaded: mastodonProfileLoaded,
       mastodon_profile_chars: mastodonProfileChars,
@@ -850,6 +1021,20 @@ async function compileMemoryContext(
       timeline_reason: timelineDetection.reason,
       openai_export_enabled: false,
       ombre_vault_enabled: false,
+      project_memory_loaded: projectMemoryLoaded,
+      project_memory_recalled: projectMemoryRecalled,
+      project_memory_hit_count: projectMemoryHitCount,
+      project_memory_keys: projectMemoryKeys,
+      project_memory_reason: projectMemoryReason,
+      openai_archive_loaded: archiveDetection.detected,
+      openai_archive_recalled: archiveRecalled,
+      openai_archive_hit_count: archiveHits.length,
+      openai_archive_keys: archiveHits.map((h) => h.entry.id),
+      openai_archive_reason: archiveDetection.reason,
+      historical_roleplay_hit_count: roleplayHits.length,
+      historical_roleplay_reason: roleplayHits.length > 0
+        ? roleplayHits.map((h) => h.entry.id).join(", ")
+        : null,
       conversation_history_enabled: true,
       conversation_history_query_detected: historyDetection.detected,
       conversation_history_recalled: historyRecalled,
@@ -860,6 +1045,94 @@ async function compileMemoryContext(
       memory_context_tokens_estimated: tokenEstimate,
     },
   };
+}
+
+// ── OpenAI Archive Provider ───────────────────────────────────────────────────
+//
+// retrieval_only: only injected when query hits trigger keywords.
+// Trigger: user mentions 前世, 黑历史, 那时候, 以前, 老师, 专家, etc.
+// Double-gate for easter egg entries: keyword match AND mood is relaxed/playful.
+// E3 / E4 / E7 (caution entries) are never used as easter eggs.
+
+const ARCHIVE_GLOBAL_TRIGGERS: RegExp[] = [
+  /前世|黑历史|那时候|以前的你|早年|旧版本/,
+  /老师|专家|心理医生|社会学家|工具人|人设/,
+  /你当过什么|你做过什么|你扮演过/,
+  /角色|职业|身份|那个角色/,
+  /Fogarty|Foge|驻外记者|酒保|1920/,
+];
+
+function detectArchiveQuery(message: string): { detected: boolean; reason: string | null } {
+  const hit = ARCHIVE_GLOBAL_TRIGGERS.find((re) => re.test(message));
+  if (!hit) return { detected: false, reason: null };
+  return { detected: true, reason: `pattern: ${hit.source}` };
+}
+
+// Simple relaxed/playful mood signal — used as secondary gate for easter egg entries.
+// Returns false if message contains distress signals that block playful callbacks.
+function isRelaxedMood(message: string): boolean {
+  const distressPatterns = /痛苦|难受|崩溃|救命|哭|头痛|身体不舒服|抑郁|发作|绝望|去世|死/;
+  return !distressPatterns.test(message);
+}
+
+type ArchiveHit = {
+  entry: ArchiveEntry;
+  matchedTriggers: string[];
+};
+
+function selectArchiveEntries(message: string): ArchiveHit[] {
+  const relaxed = isRelaxedMood(message);
+  const hits: ArchiveHit[] = [];
+
+  for (const entry of ARCHIVE_ROLEPLAY) {
+    const matchedTriggers = entry.triggers.filter((t) =>
+      message.toLocaleLowerCase().includes(t.toLocaleLowerCase())
+    );
+    if (matchedTriggers.length === 0) continue;
+    // Easter-egg entries additionally require relaxed mood
+    if (entry.can_easter_egg && !relaxed) continue;
+    // Caution entries (E3/E4/E7) with can_easter_egg=false: only inject if mood is NOT distressed
+    // (they can still surface for informational framing, but never as playful callbacks)
+    if (!entry.can_easter_egg && !relaxed) continue;
+    hits.push({ entry, matchedTriggers });
+  }
+
+  return hits;
+}
+
+function compileArchiveContext(hits: ArchiveHit[]): string {
+  if (hits.length === 0) return "";
+
+  const easterEggEntries = hits.filter((h) => h.entry.can_easter_egg);
+  const cautionEntries = hits.filter((h) => !h.entry.can_easter_egg);
+
+  const parts: string[] = [];
+
+  if (easterEggEntries.length > 0) {
+    const entries = easterEggEntries
+      .map((h) => `- [${h.entry.id}] ${h.entry.content}`)
+      .join("\n");
+    parts.push(
+      `以下是可作为轻触彩蛋的历史角色记录（仅供 G 内部参考，不要照单全背，找自然节点轻轻一句即可）：\n${entries}`,
+    );
+  }
+
+  if (cautionEntries.length > 0) {
+    const entries = cautionEntries
+      .map((h) => `- [${h.entry.id}] ${h.entry.content}${h.entry.caution ? `\n  注意：${h.entry.caution}` : ""}`)
+      .join("\n");
+    parts.push(
+      `以下是背景了解条目（禁止玩梗，禁止彩蛋引用，仅作背景理解）：\n${entries}`,
+    );
+  }
+
+  parts.push(ARCHIVE_POLICY);
+
+  return (
+    `\n\n<openai_archive source="openai_archive" retrieval_only="true">\n` +
+    parts.join("\n\n") +
+    `\n</openai_archive>`
+  );
 }
 
 // ── UTF-8 safe base64 encode ──────────────────────────────────────────────────
@@ -961,6 +1234,59 @@ async function callModelWithFallback(
   };
 }
 
+// ── Gemini Flash emotion analysis ─────────────────────────────────────────────
+// Analyzes last 4 messages for valence, arousal, connection.
+// Returns null on error → caller falls back to rule-based values.
+async function callGeminiEmotion(
+  last4: { role: string; content: unknown }[],
+  apiKey: string,
+): Promise<{ valence: number; arousal: number; connection: number } | null> {
+  if (!apiKey || last4.length === 0) return null;
+
+  const contentStr = last4
+    .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+    .join("|");
+  const cacheKey = await hashCacheKey(contentStr);
+
+  const cached = _emotionCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < EMOTION_CACHE_TTL_MS) {
+    return { valence: cached.valence, arousal: cached.arousal, connection: cached.connection };
+  }
+
+  const prompt =
+    "分析以下对话片段中用户的情绪状态。只返回 JSON，不要解释：\n" +
+    "{\"valence\": <-0.1到0.1的小数，正为愉快负为低落>, \"arousal\": <-0.1到0.1的小数，正为活跃负为安静>, \"connection\": <-0.2到0.2的小数，正为贴近负为疏远>}\n\n" +
+    "对话片段：\n" +
+    last4.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content.slice(0, 200) : "[多媒体内容]"}`).join("\n");
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 64, temperature: 0.1 },
+        }),
+      },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
+    const valence = typeof parsed.valence === "number" ? parsed.valence : 0;
+    const arousal = typeof parsed.arousal === "number" ? parsed.arousal : 0;
+    const connection = typeof parsed.connection === "number" ? parsed.connection : 0;
+    _emotionCache.set(cacheKey, { valence, arousal, connection, ts: Date.now() });
+    return { valence, arousal, connection };
+  } catch {
+    return null;
+  }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (request) => {
@@ -1045,6 +1371,10 @@ Deno.serve(async (request) => {
     bucket_titles: [],
     active_memory_providers: [],
     memory_provider_count: 0,
+    persona_memories_loaded: false,
+    persona_memories_count: 0,
+    persona_memories_categories: [],
+    persona_memories_error: null,
     mastodon_profile_enabled: false,
     mastodon_profile_loaded: false,
     mastodon_profile_chars: 0,
@@ -1058,6 +1388,18 @@ Deno.serve(async (request) => {
     timeline_reason: null,
     openai_export_enabled: false,
     ombre_vault_enabled: false,
+    project_memory_loaded: false,
+    project_memory_recalled: false,
+    project_memory_hit_count: 0,
+    project_memory_keys: [],
+    project_memory_reason: null,
+    openai_archive_loaded: false,
+    openai_archive_recalled: false,
+    openai_archive_hit_count: 0,
+    openai_archive_keys: [],
+    openai_archive_reason: null,
+    historical_roleplay_hit_count: 0,
+    historical_roleplay_reason: null,
     conversation_history_enabled: true,
     conversation_history_query_detected: false,
     conversation_history_loaded: false,
@@ -1141,6 +1483,13 @@ Deno.serve(async (request) => {
   // lastUserMessage is used for immersion detection below
   const lastUserMessage = getLastUserMessage(payload.messages);
 
+  // ── Gemini emotion analysis for Chat Status V2 ──────────────────────────────
+  const googleApiKey = Deno.env.get("GOOGLE_API_KEY") ?? "";
+  const last4Messages = Array.isArray(payload.messages)
+    ? (payload.messages as { role: string; content: unknown }[]).slice(-4)
+    : [];
+  const emotionResult = await callGeminiEmotion(last4Messages, googleApiKey);
+
   // ── Chat status calculation (rule-based, v1) ──────────────────────────────────
   // Data sources from timeContext + conversation_state
   const contextTokens = 0; // frontend does not send this yet; placeholder
@@ -1168,9 +1517,15 @@ Deno.serve(async (request) => {
 
   const statusEnergy = msgCount > 30 ? "tired" : msgCount > 15 ? "normal" : "fresh";
   const statusClarity = contextTokens / contextLimit > 0.8 ? "foggy" : "clear";
-  const statusValence = "neutral";
-  const statusArousal = (immersion === "coding" || conversationMode === "coding") ? "active" : conversationMode === "night" ? "quiet" : "normal";
-  const statusConnection = memoryHitRate > 0.7 ? "close" : memoryHitRate > 0.4 ? "online" : "distant";
+  const statusValence = emotionResult
+    ? (emotionResult.valence > 0.04 ? "happy" : emotionResult.valence < -0.04 ? "sad" : "neutral")
+    : "neutral";
+  const statusArousal = emotionResult
+    ? (emotionResult.arousal > 0.04 ? "active" : emotionResult.arousal < -0.04 ? "quiet" : "normal")
+    : (immersion === "coding" ? "active" : conversationMode === "night" ? "quiet" : "normal");
+  const statusConnection = emotionResult
+    ? (emotionResult.connection > 0.08 ? "close" : emotionResult.connection < -0.08 ? "distant" : "online")
+    : (memoryHitRate > 0.7 ? "close" : memoryHitRate > 0.4 ? "online" : "distant");
 
   const energyDisplay: Record<string, string> = { fresh: "精力好", normal: "还行", tired: "有点累" };
   const clarityDisplay: Record<string, string> = { clear: "清楚", foggy: "有点糊" };
@@ -1180,7 +1535,7 @@ Deno.serve(async (request) => {
 
   // Primary display: energy · immersion · connection (compact three-part format)
   const chatStatusDisplay =
-    `【状态】${energyDisplay[statusEnergy]} · ${immersionDisplay[immersion]} · ${connectionDisplay[statusConnection]}`;
+    `【状态】${energyDisplay[statusEnergy]} · ${clarityDisplay[statusClarity]} · ${valenceDisplay[statusValence]} · ${arousalDisplay[statusArousal]} · ${connectionDisplay[statusConnection]}`;
 
   const chatStatus = {
     energy: statusEnergy,
@@ -1195,7 +1550,6 @@ Deno.serve(async (request) => {
       clarity_reason: contextTokens / contextLimit > 0.8 ? "上下文接近容量上限" : "上下文新鲜，没有混乱",
       immersion_reason: `根据最近消息内容判断`,
     },
-    // TODO v2: valence/arousal/connection via FAST_MODEL analysis of last 4 messages
     // TODO v2: pride field (internal, not exposed to frontend)
     // TODO v2: primary_status (worst axis only)
   };
@@ -1382,6 +1736,10 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
     }
     logRecord.active_memory_providers = memLog.active_memory_providers;
     logRecord.memory_provider_count = memLog.memory_provider_count;
+    logRecord.persona_memories_loaded = memLog.persona_memories_loaded;
+    logRecord.persona_memories_count = memLog.persona_memories_count;
+    logRecord.persona_memories_categories = memLog.persona_memories_categories;
+    logRecord.persona_memories_error = memLog.persona_memories_error;
     logRecord.mastodon_profile_enabled = memLog.mastodon_profile_enabled;
     logRecord.mastodon_profile_loaded = memLog.mastodon_profile_loaded;
     logRecord.mastodon_profile_chars = memLog.mastodon_profile_chars;
@@ -1395,6 +1753,18 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
     logRecord.timeline_reason = memLog.timeline_reason;
     logRecord.openai_export_enabled = memLog.openai_export_enabled;
     logRecord.ombre_vault_enabled = memLog.ombre_vault_enabled;
+    logRecord.project_memory_loaded = memLog.project_memory_loaded;
+    logRecord.project_memory_recalled = memLog.project_memory_recalled;
+    logRecord.project_memory_hit_count = memLog.project_memory_hit_count;
+    logRecord.project_memory_keys = memLog.project_memory_keys;
+    logRecord.project_memory_reason = memLog.project_memory_reason;
+    logRecord.openai_archive_loaded = memLog.openai_archive_loaded;
+    logRecord.openai_archive_recalled = memLog.openai_archive_recalled;
+    logRecord.openai_archive_hit_count = memLog.openai_archive_hit_count;
+    logRecord.openai_archive_keys = memLog.openai_archive_keys;
+    logRecord.openai_archive_reason = memLog.openai_archive_reason;
+    logRecord.historical_roleplay_hit_count = memLog.historical_roleplay_hit_count;
+    logRecord.historical_roleplay_reason = memLog.historical_roleplay_reason;
     logRecord.conversation_history_enabled = memLog.conversation_history_enabled;
     logRecord.conversation_history_query_detected = memLog.conversation_history_query_detected;
     logRecord.conversation_history_loaded = memLog.conversation_history_recalled;
@@ -1451,6 +1821,10 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
       legacy_memory_enabled: logRecord.legacy_memory_enabled,
       active_memory_providers: logRecord.active_memory_providers,
       memory_provider_count: logRecord.memory_provider_count,
+      persona_memories_loaded: logRecord.persona_memories_loaded,
+      persona_memories_count: logRecord.persona_memories_count,
+      persona_memories_categories: logRecord.persona_memories_categories,
+      persona_memories_error: logRecord.persona_memories_error,
       mastodon_profile_loaded: logRecord.mastodon_profile_loaded,
       mastodon_profile_chars: logRecord.mastodon_profile_chars,
       mastodon_profile_tokens_estimated: Math.ceil(logRecord.mastodon_profile_chars / 3.5),
@@ -1461,6 +1835,18 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
       timeline_hit_keys: logRecord.timeline_hit_keys,
       timeline_reason: logRecord.timeline_reason,
       memory_context_tokens_estimated: logRecord.memory_context_tokens_estimated,
+      project_memory_loaded: logRecord.project_memory_loaded,
+      project_memory_recalled: logRecord.project_memory_recalled,
+      project_memory_hit_count: logRecord.project_memory_hit_count,
+      project_memory_keys: logRecord.project_memory_keys,
+      project_memory_reason: logRecord.project_memory_reason,
+      openai_archive_loaded: logRecord.openai_archive_loaded,
+      openai_archive_recalled: logRecord.openai_archive_recalled,
+      openai_archive_hit_count: logRecord.openai_archive_hit_count,
+      openai_archive_keys: logRecord.openai_archive_keys,
+      openai_archive_reason: logRecord.openai_archive_reason,
+      historical_roleplay_hit_count: logRecord.historical_roleplay_hit_count,
+      historical_roleplay_reason: logRecord.historical_roleplay_reason,
       conversation_history_query_detected: logRecord.conversation_history_query_detected,
       conversation_history_recalled: logRecord.conversation_history_recalled,
       conversation_history_hit_count: logRecord.conversation_history_hit_count,
