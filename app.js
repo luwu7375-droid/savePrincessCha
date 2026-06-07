@@ -436,6 +436,12 @@ function zonedDayKey(date) {
 const chatMessages = [];
 let lastMessageTime = null;
 
+// ── Chat history pagination ────────────────────────────────────────────────────
+const HISTORY_PAGE_SIZE = 20;
+let historyHasMore = false;
+let historyLoadingOlder = false;
+let oldestLoadedMessageCreatedAt = null;
+
 function formatMsgTime(iso) {
   const d = parseDbTime(iso);
   if (!d) return "";
@@ -592,12 +598,18 @@ async function reloadHistory() {
   pendingImage = null;
   updateAttachmentCard();
   if (imageInput) imageInput.value = "";
+
+  // Reset pagination state
+  historyHasMore = false;
+  historyLoadingOlder = false;
+  oldestLoadedMessageCreatedAt = null;
+
   const { data, error } = await supabaseClient
     .from("messages")
     .select("id, role, content, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(HISTORY_PAGE_SIZE);
 
   if (error) { renderWelcomeMessage(); console.error(error); return; }
 
@@ -610,10 +622,60 @@ async function reloadHistory() {
     addMessage(m.content, m.role, m.created_at, {}, m.id);
     chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null });
   }
+  if (history.length > 0) oldestLoadedMessageCreatedAt = history[0].created_at;
+  historyHasMore = data.length === HISTORY_PAGE_SIZE;
+  refreshMessageActions();
+}
+
+async function loadOlderMessages() {
+  if (historyLoadingOlder || !historyHasMore || !oldestLoadedMessageCreatedAt) return;
+  const conversationId = getActiveConversationId();
+  if (!conversationId || !supabaseClient) return;
+  historyLoadingOlder = true;
+  const { data, error } = await supabaseClient
+    .from("messages")
+    .select("id, role, content, created_at")
+    .eq("conversation_id", conversationId)
+    .lt("created_at", oldestLoadedMessageCreatedAt)
+    .order("created_at", { ascending: false })
+    .limit(HISTORY_PAGE_SIZE);
+  if (error) { console.error("加载更多历史失败：", error); historyLoadingOlder = false; return; }
+  if (!data || data.length === 0) { historyHasMore = false; historyLoadingOlder = false; return; }
+  const older = [...data].reverse();
+  const prevScrollHeight = messageList.scrollHeight;
+  const prevScrollTop = messageList.scrollTop;
+  const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null }));
+  chatMessages.unshift(...newEntries);
+  messageList.innerHTML = "";
+  lastMessageTime = null;
+  for (const m of chatMessages) {
+    addMessage(m.content, m.role, m.created_at, {}, m.id);
+  }
+  messageList.scrollTop = prevScrollTop + (messageList.scrollHeight - prevScrollHeight);
+  oldestLoadedMessageCreatedAt = older[0].created_at;
+  historyHasMore = data.length === HISTORY_PAGE_SIZE;
+  historyLoadingOlder = false;
   refreshMessageActions();
 }
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
+
+/** Extract plain text from a message content value that may be a string or
+ *  a vision content array [{type:"text",...},{type:"image_url",...}].
+ *  Never throws; returns "" for unknown shapes.
+ *  Does NOT mutate the original content — image_url parts are preserved in the
+ *  messages array that gets sent to the backend. */
+function extractTextFromMessageContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(part => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object" && part.type === "text") return part.text || "";
+      return "";
+    }).join("\n");
+  }
+  return "";
+}
 
 // Track conversation start time for timeContext
 let _conversationStartedAt = null;
@@ -661,7 +723,7 @@ async function callChatAPI(messages, replyMode = "auto") {
   let projectSilencedTtl = parseInt(localStorage.getItem("projectSilencedTtl") || "0", 10);
   if (isNaN(projectSilencedTtl) || projectSilencedTtl < 0) projectSilencedTtl = 0;
 
-  const latestUserMsg = (messages.filter(m => m.role === "user").slice(-1)[0]?.content || "").trim();
+  const latestUserMsg = extractTextFromMessageContent(messages.filter(m => m.role === "user").slice(-1)[0]?.content).trim();
 
   let primaryRoute = "casual";
   let secondaryRoute = null;
@@ -757,8 +819,8 @@ async function callChatAPI(messages, replyMode = "auto") {
   let loopReason = null;
   let recentTopicHint = null;
   if (userMsgs.length >= 5) {
-    const recent = userMsgs.slice(-2).map(m => (m.content || "").trim());
-    const older = userMsgs.slice(-6, -2).map(m => (m.content || "").trim());
+    const recent = userMsgs.slice(-2).map(m => extractTextFromMessageContent(m.content).trim());
+    const older = userMsgs.slice(-6, -2).map(m => extractTextFromMessageContent(m.content).trim());
     for (const r of recent) {
       for (const o of older) {
         // Require both messages are substantive (>= 15 chars) and share a 20-char prefix
