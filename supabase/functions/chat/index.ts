@@ -1,6 +1,5 @@
-import { MASTODON_PROFILE_MD } from "./mastodon_profile.ts";
 import { MASTODON_TIMELINE_MD } from "./mastodon_timeline.ts";
-import { ARCHIVE_ROLEPLAY, ARCHIVE_POLICY, type ArchiveEntry } from "./openai_archive.ts";
+import { CONVERSATION_BEHAVIOR_PACK } from "./conversation_behavior.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,6 +24,18 @@ type ConversationState = {
   loop_detected?: boolean;
   loop_reason?: string | null;
   recent_topic_hint?: string | null;
+  topic_route?: string | null;
+  secondary_route?: string | null;
+  project_lock_turns?: number;
+  project_silenced_ttl?: number;
+  project_trigger_matched?: boolean;
+  project_trigger_reason?: string | null;
+  latest_user_message_for_detection?: string | null;
+  previous_topic_route?: string | null;
+  topic_switch_detected?: boolean;
+  topic_switch_from?: string | null;
+  topic_switch_to?: string | null;
+  route_scores?: Record<string, number>;
 };
 
 type ChatRequest = {
@@ -339,6 +350,7 @@ type RequestLog = {
   project_memory_hit_count: number;
   project_memory_keys: string[];
   project_memory_reason: string | null;
+  project_memory_suppressed_reason: string | null;
   // OpenAI Archive Provider
   openai_archive_loaded: boolean;
   openai_archive_recalled: boolean;
@@ -357,6 +369,9 @@ type RequestLog = {
   conversation_history_hit_conversation_ids: string[];
   conversation_history_hit_message_ids: string[];
   conversation_history_reason: string | null;
+  conversation_history_filtered_by_route: boolean;
+  conversation_history_suppressed_count: number;
+  conversation_history_allowed_count: number;
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
@@ -610,7 +625,8 @@ async function fetchConversationHistory(
   userId: string,
   currentConversationId: string | undefined,
   lastUserMessage: string,
-): Promise<HistoryHit[]> {
+  topicRoute: string | null,
+): Promise<{ hits: HistoryHit[]; suppressedCount: number }> {
   // SECURITY: service role bypasses RLS, user_id filter is mandatory.
   let url =
     `${supabaseUrl}/rest/v1/messages` +
@@ -626,10 +642,10 @@ async function fetchConversationHistory(
     const res = await fetch(url, {
       headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { hits: [], suppressedCount: 0 };
     rows = await res.json();
   } catch {
-    return [];
+    return { hits: [], suppressedCount: 0 };
   }
 
   // Extract query words (length ≥ 2) for overlap scoring
@@ -657,7 +673,7 @@ async function fetchConversationHistory(
 
   const now = Date.now();
 
-  const scored: HistoryHit[] = rows
+  const scoredAll: HistoryHit[] = rows
     .filter((r) => r.content && r.content.length >= 5)
     .map((r) => {
       let score = 0;
@@ -689,6 +705,15 @@ async function fetchConversationHistory(
         if (sensitiveHit) { score -= 5; }
       }
 
+      // Route filter: suppress coding/project history for any non-project route.
+      // This prevents debug/upload/backend history from bleeding into 4o, care, intimacy, etc.
+      const nonProjectRoutes = ["ai_nostalgia", "historical_roleplay", "care_low_energy", "intimacy", "meta_complaint"];
+      if (topicRoute && nonProjectRoutes.includes(topicRoute)) {
+        const isCodingContent = PROJECT_KEYWORDS.some((k) => r.content.includes(k)) ||
+          /代码|bug|报错|接口|部署|edge\s*function|supabase|图片上传|后端|持久化|provider|readme|codex/i.test(r.content);
+        if (isCodingContent) { score -= 10; reasons.push(`route-filtered: coding suppressed for ${topicRoute}`); }
+      }
+
       return {
         messageId: String(r.id),
         conversationId: r.conversation_id,
@@ -698,12 +723,15 @@ async function fetchConversationHistory(
         score,
         reason: reasons.join("; ") || "recent",
       };
-    })
-    .filter((h) => h.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
+    });
 
-  return scored;
+  const allScored = scoredAll.filter((h) => h.score > 0);
+  const routeFilteredCount = scoredAll.filter((h) =>
+    h.reason.includes("route-filtered")
+  ).length;
+  const scored = allScored.sort((a, b) => b.score - a.score).slice(0, 5);
+
+  return { hits: scored, suppressedCount: routeFilteredCount };
 }
 
 function compileConversationHistory(hits: HistoryHit[]): string {
@@ -798,6 +826,7 @@ type MemoryContextLog = {
   project_memory_hit_count: number;
   project_memory_keys: string[];
   project_memory_reason: string | null;
+  project_memory_suppressed_reason: string | null;
   // OpenAI Archive Provider
   openai_archive_loaded: boolean;
   openai_archive_recalled: boolean;
@@ -813,6 +842,10 @@ type MemoryContextLog = {
   conversation_history_hit_conversation_ids: string[];
   conversation_history_hit_message_ids: string[];
   conversation_history_reason: string | null;
+  conversation_history_filtered_by_route: boolean;
+  conversation_history_suppressed_count: number;
+  conversation_history_allowed_count: number;
+  // Project memory
   memory_context_tokens_estimated: number;
 };
 
@@ -821,6 +854,30 @@ type MemoryContextLog = {
 // Reads rows from public.memories WHERE category IN (L1_CATEGORIES) AND enabled=true.
 // Always injected — no keyword gate, no domain column required.
 // This is the DB-backed equivalent of the inlined mastodon_profile provider.
+
+// ── persona_profile fetch ─────────────────────────────────────────────────────
+// Reads the long-form user persona markdown from the persona_profile table.
+// Replaces the previously inlined MASTODON_PROFILE_MD constant.
+async function fetchPersonaProfile(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<{ content: string | null; error: string | null }> {
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/persona_profile?enabled=eq.true&select=content&order=created_at.asc&limit=1`,
+      { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      return { content: null, error: `HTTP ${res.status}: ${text.slice(0, 80)}` };
+    }
+    const rows = (await res.json()) as { content: string }[];
+    if (rows.length === 0) return { content: null, error: "persona_profile table is empty" };
+    return { content: rows[0].content, error: null };
+  } catch (err) {
+    return { content: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 const L1_CATEGORIES = ["current_context_summary", "interaction_preferences"] as const;
 
@@ -853,6 +910,9 @@ async function compileMemoryContext(
   serviceRoleKey: string | undefined,
   userId: string,
   conversationId: string | undefined,
+  topicRoute: string | null,
+  projectLockTurns: number,
+  projectSilencedTtl: number,
 ): Promise<{ context: string; log: MemoryContextLog }> {
   const activeProviders: string[] = [];
   let context = "";
@@ -880,26 +940,28 @@ async function compileMemoryContext(
   }
 
   // ── mastodon_profile: always injected ──────────────────────────────────────
-  // Profile is inlined as a TS module (mastodon_profile.ts) to avoid Deno
-  // file-system read issues in the Supabase Edge Functions runtime.
+  // Profile is fetched from the persona_profile DB table.
+  // Previously inlined as MASTODON_PROFILE_MD in mastodon_profile.ts.
   let mastodonProfileChars = 0;
   // enabled reflects provider config, not load success
   const mastodonProfileEnabled = true;
   let mastodonProfileLoaded = false;
   let mastodonProfileError: string | null = null;
-  try {
-    const profileText = MASTODON_PROFILE_MD;
-    if (profileText.trim()) {
+  if (supabaseUrl && serviceRoleKey) {
+    const { content: profileText, error: profileErr } = await fetchPersonaProfile(supabaseUrl, serviceRoleKey);
+    if (profileErr) {
+      mastodonProfileError = profileErr;
+      console.error("[memory] mastodon_profile load failed:", mastodonProfileError);
+    } else if (profileText && profileText.trim()) {
       mastodonProfileLoaded = true;
       mastodonProfileChars = profileText.length;
       activeProviders.push("mastodon_profile");
       context += `\n\n<user_core_profile source="mastodon_profile" describes="human_user" not_assistant_identity="true">\n以下内容描述的是人类用户卡卡 / kk / 宝宝 / 蘑菇，只用于理解用户和调整回应方式。assistant 不得把这些内容当成自己的身份或经历。\n\n${profileText.trim()}\n</user_core_profile>`;
     } else {
-      mastodonProfileError = "MASTODON_PROFILE_MD is empty";
+      mastodonProfileError = "persona_profile table returned empty content";
     }
-  } catch (err) {
-    mastodonProfileError = err instanceof Error ? err.message : String(err);
-    console.error("[memory] mastodon_profile load failed:", mastodonProfileError);
+  } else {
+    mastodonProfileError = "missing supabaseUrl or serviceRoleKey";
   }
 
   // ── mastodon_timeline: injected on-demand for event/place/year queries ────────
@@ -933,19 +995,32 @@ async function compileMemoryContext(
   let projectMemoryHitCount = 0;
   let projectMemoryKeys: string[] = [];
   let projectMemoryReason: string | null = null;
-  const projectMemoryQueryDetected = userMessage
-    ? PROJECT_MEMORY_TRIGGERS.some((kw) =>
-        userMessage.toLocaleLowerCase().includes(kw.toLocaleLowerCase())
-      )
-    : false;
-  if (projectMemoryQueryDetected && supabaseUrl && serviceRoleKey) {
+  // project_memory gate: opt-in only.
+  // Requires topicRoute === "project_work" (set by frontend explicit dev-verb detection).
+  // Suppressed by: silence TTL, or any non-project route.
+  const suppressRoutes = ["ai_nostalgia", "historical_roleplay", "care_low_energy", "intimacy", "meta_complaint"];
+  const routeSuppressed = topicRoute !== null && suppressRoutes.includes(topicRoute);
+  const projectMemoryGate = !routeSuppressed &&
+    projectSilencedTtl === 0 &&
+    topicRoute === "project_work";
+  const projectMemorySuppressedReason = routeSuppressed
+    ? `route suppressed: ${topicRoute}`
+    : projectSilencedTtl > 0
+    ? `project_silenced_ttl=${projectSilencedTtl}`
+    : topicRoute !== "project_work"
+    ? `route=${topicRoute ?? "null"} (not project_work)`
+    : null;
+  console.log(JSON.stringify({ fn: "chat", debug: "project_memory_gate", projectMemoryGate, topicRoute, projectLockTurns, projectSilencedTtl, routeSuppressed, project_memory_suppressed_reason: projectMemorySuppressedReason, has_supabaseUrl: Boolean(supabaseUrl), has_serviceRoleKey: Boolean(serviceRoleKey), userMessage_head: userMessage.slice(0, 30) }));
+  if (projectMemoryGate && supabaseUrl && serviceRoleKey) {
     try {
       const pmRes = await fetch(
         `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=eq.project_memory&select=id,content&order=created_at.asc&limit=1`,
         { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
       );
+      console.log(JSON.stringify({ fn: "chat", debug: "project_memory_fetch", status: pmRes.status, ok: pmRes.ok }));
       if (pmRes.ok) {
         const pmRows = (await pmRes.json()) as { id: string; content: string }[];
+        console.log(JSON.stringify({ fn: "chat", debug: "project_memory_rows", count: pmRows.length }));
         if (pmRows.length > 0) {
           projectMemoryLoaded = true;
           projectMemoryRecalled = true;
@@ -958,23 +1033,39 @@ async function compileMemoryContext(
           activeProviders.push("project_memory");
           const lines = pmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
           context += `\n\n<project_memory source="memories_table" category="project_memory" inject_mode="keyword_triggered">\n以下是项目背景，仅在相关时参考：\n${lines}\n</project_memory>`;
+        } else {
+          projectMemoryReason = "no project_memory row found";
         }
+      } else {
+        projectMemoryReason = `fetch failed: HTTP ${pmRes.status}`;
       }
     } catch (err) {
-      console.error("[memory] project_memory load failed:", err instanceof Error ? err.message : String(err));
+      projectMemoryReason = `error: ${err instanceof Error ? err.message : String(err)}`;
+      console.error("[memory] project_memory load failed:", projectMemoryReason);
     }
+  } else if (!projectMemoryGate) {
+    projectMemoryReason = projectMemorySuppressedReason ?? "not project_work route";
   }
 
   // ── openai_archive: retrieval_only, triggered by keyword + mood gate ─────────
+  // Entries and policy are fetched from openai_archive_entries DB table.
+  // Previously inlined as ARCHIVE_ROLEPLAY / ARCHIVE_POLICY in openai_archive.ts.
   const archiveDetection = detectArchiveQuery(userMessage);
   let archiveRecalled = false;
   let archiveHits: ArchiveHit[] = [];
-  if (userMessage && archiveDetection.detected) {
-    archiveHits = selectArchiveEntries(userMessage);
-    if (archiveHits.length > 0) {
-      archiveRecalled = true;
-      activeProviders.push("openai_archive");
-      context += compileArchiveContext(archiveHits);
+  let archiveLoadError: string | null = null;
+  if (userMessage && archiveDetection.detected && supabaseUrl && serviceRoleKey) {
+    const { data: archiveData, error: archiveErr } = await fetchArchiveEntries(supabaseUrl, serviceRoleKey);
+    if (archiveErr) {
+      archiveLoadError = archiveErr;
+      console.error("[memory] openai_archive load failed:", archiveErr);
+    } else if (archiveData) {
+      archiveHits = selectArchiveEntries(userMessage, archiveData.entries);
+      if (archiveHits.length > 0) {
+        archiveRecalled = true;
+        activeProviders.push("openai_archive");
+        context += compileArchiveContext(archiveHits, archiveData.policy);
+      }
     }
   }
   const roleplayHits = archiveHits.filter((h) => h.entry.can_easter_egg);
@@ -985,10 +1076,13 @@ async function compileMemoryContext(
   const historyDetection = detectConversationHistoryQuery(userMessage);
   let historyRecalled = false;
   let historyHits: HistoryHit[] = [];
+  let historySuppressedCount = 0;
   if (historyDetection.detected && supabaseUrl && serviceRoleKey && userId && userId !== "anon") {
-    historyHits = await fetchConversationHistory(
-      supabaseUrl, serviceRoleKey, userId, conversationId, userMessage,
+    const historyResult = await fetchConversationHistory(
+      supabaseUrl, serviceRoleKey, userId, conversationId, userMessage, topicRoute,
     );
+    historyHits = historyResult.hits;
+    historySuppressedCount = historyResult.suppressedCount;
     if (historyHits.length > 0) {
       historyRecalled = true;
       activeProviders.push("conversation_history");
@@ -1026,11 +1120,12 @@ async function compileMemoryContext(
       project_memory_hit_count: projectMemoryHitCount,
       project_memory_keys: projectMemoryKeys,
       project_memory_reason: projectMemoryReason,
-      openai_archive_loaded: archiveDetection.detected,
+      project_memory_suppressed_reason: projectMemorySuppressedReason,
+      openai_archive_loaded: archiveDetection.detected && archiveLoadError === null,
       openai_archive_recalled: archiveRecalled,
       openai_archive_hit_count: archiveHits.length,
       openai_archive_keys: archiveHits.map((h) => h.entry.id),
-      openai_archive_reason: archiveDetection.reason,
+      openai_archive_reason: archiveLoadError ?? archiveDetection.reason,
       historical_roleplay_hit_count: roleplayHits.length,
       historical_roleplay_reason: roleplayHits.length > 0
         ? roleplayHits.map((h) => h.entry.id).join(", ")
@@ -1042,6 +1137,9 @@ async function compileMemoryContext(
       conversation_history_hit_conversation_ids: [...new Set(historyHits.map((h) => h.conversationId))],
       conversation_history_hit_message_ids: historyHits.map((h) => h.messageId),
       conversation_history_reason: historyDetection.reason,
+      conversation_history_filtered_by_route: topicRoute !== null && topicRoute !== "project_work" && topicRoute !== "casual",
+      conversation_history_suppressed_count: historySuppressedCount,
+      conversation_history_allowed_count: historyHits.length,
       memory_context_tokens_estimated: tokenEstimate,
     },
   };
@@ -1053,6 +1151,60 @@ async function compileMemoryContext(
 // Trigger: user mentions 前世, 黑历史, 那时候, 以前, 老师, 专家, etc.
 // Double-gate for easter egg entries: keyword match AND mood is relaxed/playful.
 // E3 / E4 / E7 (caution entries) are never used as easter eggs.
+
+// ── ArchiveEntry type (mirrors openai_archive_entries table schema) ───────────
+type ArchiveEntry = {
+  id: string;           // maps to entry_id column
+  triggers: string[];
+  content: string;
+  can_easter_egg: boolean;
+  caution?: string;
+};
+
+type ArchiveDbRow = {
+  entry_id: string;
+  triggers: string[];
+  content: string;
+  can_easter_egg: boolean;
+  caution: string | null;
+};
+
+type ArchiveData = {
+  entries: ArchiveEntry[];
+  policy: string;
+};
+
+// Fetches enabled entries from openai_archive_entries table.
+// The POLICY row (entry_id = 'POLICY') is separated out and returned as policy string.
+async function fetchArchiveEntries(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<{ data: ArchiveData | null; error: string | null }> {
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/openai_archive_entries?enabled=eq.true&select=entry_id,triggers,content,can_easter_egg,caution&order=created_at.asc`,
+      { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      return { data: null, error: `HTTP ${res.status}: ${text.slice(0, 80)}` };
+    }
+    const rows = (await res.json()) as ArchiveDbRow[];
+    const policyRow = rows.find((r) => r.entry_id === "POLICY");
+    const entryRows = rows.filter((r) => r.entry_id !== "POLICY");
+    const entries: ArchiveEntry[] = entryRows.map((r) => ({
+      id: r.entry_id,
+      triggers: r.triggers,
+      content: r.content,
+      can_easter_egg: r.can_easter_egg,
+      caution: r.caution ?? undefined,
+    }));
+    const policy = policyRow?.content ?? "";
+    return { data: { entries, policy }, error: null };
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 const ARCHIVE_GLOBAL_TRIGGERS: RegExp[] = [
   /前世|黑历史|那时候|以前的你|早年|旧版本/,
@@ -1080,11 +1232,11 @@ type ArchiveHit = {
   matchedTriggers: string[];
 };
 
-function selectArchiveEntries(message: string): ArchiveHit[] {
+function selectArchiveEntries(message: string, entries: ArchiveEntry[]): ArchiveHit[] {
   const relaxed = isRelaxedMood(message);
   const hits: ArchiveHit[] = [];
 
-  for (const entry of ARCHIVE_ROLEPLAY) {
+  for (const entry of entries) {
     const matchedTriggers = entry.triggers.filter((t) =>
       message.toLocaleLowerCase().includes(t.toLocaleLowerCase())
     );
@@ -1100,7 +1252,7 @@ function selectArchiveEntries(message: string): ArchiveHit[] {
   return hits;
 }
 
-function compileArchiveContext(hits: ArchiveHit[]): string {
+function compileArchiveContext(hits: ArchiveHit[], policy: string): string {
   if (hits.length === 0) return "";
 
   const easterEggEntries = hits.filter((h) => h.entry.can_easter_egg);
@@ -1126,7 +1278,7 @@ function compileArchiveContext(hits: ArchiveHit[]): string {
     );
   }
 
-  parts.push(ARCHIVE_POLICY);
+  if (policy) parts.push(policy);
 
   return (
     `\n\n<openai_archive source="openai_archive" retrieval_only="true">\n` +
@@ -1393,6 +1545,7 @@ Deno.serve(async (request) => {
     project_memory_hit_count: 0,
     project_memory_keys: [],
     project_memory_reason: null,
+    project_memory_suppressed_reason: null,
     openai_archive_loaded: false,
     openai_archive_recalled: false,
     openai_archive_hit_count: 0,
@@ -1408,6 +1561,9 @@ Deno.serve(async (request) => {
     conversation_history_hit_conversation_ids: [],
     conversation_history_hit_message_ids: [],
     conversation_history_reason: null,
+    conversation_history_filtered_by_route: false,
+    conversation_history_suppressed_count: 0,
+    conversation_history_allowed_count: 0,
     memory_context_tokens_estimated: 0,
     model_call_ms: 0,
     total_ms: 0,
@@ -1432,6 +1588,18 @@ Deno.serve(async (request) => {
   const loopDetected = cs.loop_detected === true;
   const loopReason = cs.loop_reason ?? null;
   const recentTopicHint = cs.recent_topic_hint ?? null;
+  const topicRoute = cs.topic_route ?? null;
+  const secondaryRoute = cs.secondary_route ?? null;
+  const projectLockTurns = typeof cs.project_lock_turns === "number" ? cs.project_lock_turns : 0;
+  const projectSilencedTtl = typeof cs.project_silenced_ttl === "number" ? cs.project_silenced_ttl : 0;
+  const projectTriggerMatched = cs.project_trigger_matched === true;
+  const projectTriggerReason = cs.project_trigger_reason ?? null;
+  const latestUserMsgForDetection = cs.latest_user_message_for_detection ?? null;
+  const previousTopicRoute = cs.previous_topic_route ?? null;
+  const topicSwitchDetected = cs.topic_switch_detected === true;
+  const topicSwitchFrom = cs.topic_switch_from ?? null;
+  const topicSwitchTo = cs.topic_switch_to ?? null;
+  const routeScores = cs.route_scores ?? null;
 
   // Debug log only — never shown to user
   console.log(JSON.stringify({
@@ -1445,6 +1613,19 @@ Deno.serve(async (request) => {
     loop_detected: loopDetected,
     loop_reason: loopReason,
     recent_topic_hint: recentTopicHint,
+    primary_route: topicRoute,
+    secondary_route: secondaryRoute,
+    project_mode_locked: projectLockTurns > 0,
+    project_lock_turns: projectLockTurns,
+    project_silenced_ttl: projectSilencedTtl,
+    project_trigger_matched: projectTriggerMatched,
+    project_trigger_reason: projectTriggerReason,
+    latest_user_message_for_detection: latestUserMsgForDetection,
+    topic_switch_detected: topicSwitchDetected,
+    topic_switch_from: topicSwitchFrom,
+    topic_switch_to: topicSwitchTo,
+    previous_topic_route: previousTopicRoute,
+    route_scores: routeScores,
     conversation_state: longChat ? "long_chat" : loopDetected ? "loop_detected" : "normal",
   }));
 
@@ -1633,7 +1814,7 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
 8. 不要过度解释自己的判断。
 </G_reply_style>
 
-不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n【回复长度与节奏】\n- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。\n- 用户短句，回复也短，通常 1-3 句。\n- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。\n- 不要主动列很多"下一步"。\n- 不要把普通聊天写成安慰小作文。\n- 不要每次都"先共情再建议再总结"。\n- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。\n- 可以亲近，但要收口。\n\n【事实准确性】\n- 涉及"第几天、认识多久、第一次见面、哪年哪天、纪念日"等时间或事实问题，只有在记忆中有明确记录时才回答具体数字。\n- 如果记忆中没有相关事实，就说"这个我还不太清楚"，不允许猜测或拼凑日期和事件。\n- 记忆内容是参考资料，不是铁板事实。不要把多条不同时间线的记忆混合拼出一个答案。` + timeContextBlock + `\n\n【当前状态参考（仅供 G 内部感知，不对用户展示）】\n${statusPromptHint}` + tokenCapInstruction;
+不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。\n\n【回复长度与节奏】\n- 优先模仿用户当前消息的节奏、长度和密度，而不是固定输出完整结构。\n- 用户短句，回复也短，通常 1-3 句。\n- 除非用户明确要求分析、方案、任务卡、排查、总结，否则不要长篇展开。\n- 不要主动列很多"下一步"。\n- 不要把普通聊天写成安慰小作文。\n- 不要每次都"先共情再建议再总结"。\n- 技术任务可以清晰，但日常对话要像真人聊天，有来有回。\n- 可以亲近，但要收口。\n\n【事实准确性】\n- 涉及"第几天、认识多久、第一次见面、哪年哪天、纪念日"等时间或事实问题，只有在记忆中有明确记录时才回答具体数字。\n- 如果记忆中没有相关事实，就说"这个我还不太清楚"，不允许猜测或拼凑日期和事件。\n- 记忆内容是参考资料，不是铁板事实。不要把多条不同时间线的记忆混合拼出一个答案。` + `\n\n${CONVERSATION_BEHAVIOR_PACK}` + timeContextBlock + `\n\n【当前状态参考（仅供 G 内部感知，不对用户展示）】\n${statusPromptHint}` + tokenCapInstruction;
 
   const conversationId = typeof payload.conversationId === "string" && payload.conversationId
     ? payload.conversationId
@@ -1729,7 +1910,7 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
   {
     const memUserId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
     const { context: memContext, log: memLog } = await compileMemoryContext(
-      lastUserMessage, supabaseUrl, serviceRoleKey, memUserId, conversationId,
+      lastUserMessage, supabaseUrl, serviceRoleKey, memUserId, conversationId, topicRoute, projectLockTurns, projectSilencedTtl,
     );
     if (memContext) {
       systemContent += memContext;
@@ -1773,6 +1954,10 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
     logRecord.conversation_history_hit_conversation_ids = memLog.conversation_history_hit_conversation_ids;
     logRecord.conversation_history_hit_message_ids = memLog.conversation_history_hit_message_ids;
     logRecord.conversation_history_reason = memLog.conversation_history_reason;
+    logRecord.conversation_history_filtered_by_route = memLog.conversation_history_filtered_by_route;
+    logRecord.conversation_history_suppressed_count = memLog.conversation_history_suppressed_count;
+    logRecord.conversation_history_allowed_count = memLog.conversation_history_allowed_count;
+    logRecord.project_memory_suppressed_reason = memLog.project_memory_suppressed_reason;
     logRecord.memory_context_tokens_estimated = memLog.memory_context_tokens_estimated;
   }
 

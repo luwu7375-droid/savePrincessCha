@@ -1,6 +1,25 @@
 # 救公主
 
-一个给 G / cha酱 的私人陪伴聊天应用。前端静态部署，后端走 Supabase Edge Function 代理模型调用，带记忆系统、时间感知、对话状态感知。
+一个给 G / cha酱 的私人陪伴聊天应用。前端静态部署，后端走 Supabase Edge Function 代理模型调用，带多层记忆系统、时间感知、对话状态感知。
+
+当前版本：v0.7
+
+---
+
+## 安全
+
+**本仓库为 private。即便设为 private，以下内容也不应提交到代码仓库：**
+
+| 类型 | 说明 | 正确处理方式 |
+|------|------|-------------|
+| 真实用户画像 | `mastodon_profile.ts` 中的个人信息 | 应替换为 mock 占位符，真实内容走 DB 或本地生成文件（.gitignore） |
+| OpenAI 对话档案 | `openai_archive.ts` 中的历史记录内容 | 仅提交加载逻辑和结构，私人内容不提交 |
+| Mastodon 原文 | `data/memory/mastodon/*.md` 中的原始帖文 | 脱敏摘要可保留，原始内容不提交 |
+| 私人记忆内容 | `memory/` 下的 summaries、merged.json 等 | 不提交到仓库，属于本地数据 |
+| API key | OpenRouter key、任何第三方 API key | 全部走 Supabase secrets |
+| Service role key | `DB_SERVICE_ROLE_KEY` | 仅走 Supabase secrets，绝不出现在前端或代码中 |
+
+---
 
 ## 架构
 
@@ -8,62 +27,117 @@
 Cloudflare Pages / GitHub Pages
   └─ app.js + index.html + style.css
        │
-       └─ POST /chat  ──►  Supabase Edge Function (chat)
+       └─ POST /chat  ──►  Supabase Edge Function (chat/index.ts)
                                 │
-                                ├─ OpenRouter / fuka 兼容接口 → 模型
-                                ├─ memories 表（长期记忆）
-                                ├─ messages 表（对话历史）
-                                ├─ mastodon_profile.ts（用户画像，内联）
-                                ├─ mastodon_timeline.ts（时间线档案，按需注入）
-                                └─ conversation_history_provider（跨会话检索）
+                                ├─ L1: persona_memories（手动长期记忆，DB）
+                                ├─ L1: mastodon_profile（用户核心画像，文件注入）
+                                ├─ L2: project_memory（项目/工作记忆，DB）
+                                ├─ L3: openai_archive（历史对话档案，文件，关键词触发）
+                                ├─ L3: conversation_history（跨会话检索，DB，top-5 召回）
+                                ├─ chat_status（规则化对话状态计算）
+                                └─ OpenRouter / 兼容接口 → 模型
 ```
+
+---
+
+## 记忆系统
+
+### Provider 层级
+
+| 层级 | Provider ID | 数据来源 | 注入策略 |
+|------|-------------|----------|----------|
+| L1 | `persona_memories` | Supabase `memories` 表（persona/life/relation 域） | 按域匹配，按需注入 |
+| L1 | `mastodon_profile` | Supabase `persona_profile` 表 | 常驻注入 |
+| L2 | `project_memory` | Supabase `memories` 表（work/writing 域） | 按需注入 |
+| L3 | `openai_archive` | Supabase `openai_archive_entries` 表 | 关键词触发注入 |
+| L3 | `conversation_history` | Supabase `messages` 表 | 触发词激活，top-5 语义召回 |
+
+### Legacy memory（默认 retired）
+
+`memory_buckets` 表为旧版主题摘要桶，当前默认关闭。若需启用：
+
+```bash
+supabase secrets set LEGACY_MEMORY_ENABLED="true"   # 默认 false
+```
+
+不设置此变量时 `memory_buckets` 不参与注入。
+
+### Memory Center UI
+
+- 前端管理面板，显示各 provider 实时状态和 token 用量
+- 手动记忆的增删启禁通过 `/functions/v1/memories` 接口操作
+- OpenAI Export 卡片当前显示"预留"——后端 `openai_archive` provider 已存在，前端文案待后续统一
+
+---
 
 ## 已实现功能
 
-**人格与回复**
-- `G_persona_core`：聪明直给、playful、情绪雷达强、有主角气场，不是咨询师也不是冷静监管者
-- `G_reply_style`：情绪先到结构后到，短句，可以直接判断，不默认项目化
-- `persona_emotional_boundary`：亲密感表达规则，禁止"接住你"等表达
-- `identity_boundary`：身份边界，mastodon_profile 只描述用户不描述 G
+### 认证与会话
 
-**时间感知与话题循环（G_TIME_CONTEXT_PROMPT_v2）**
+- 邮箱 + 密码登录（Supabase Auth），刷新后保持登录
+- 云端会话：新建、重命名、置顶、删除
+- 会话标题自动取首条消息前 20 字
+- RLS 隔离：每个用户只能读写自己的 conversations / messages
+
+### 聊天核心
+
+- 流式输出（SSE），`<think>` 标签过滤
+- 连续发送：用户可发多条消息，2.5s idle 后自动触发 AI（auto 模式）
+- 强制回复按钮（forced 模式，禁止 `<NO_REPLY>`）
+- auto 模式下 AI 可输出 `<NO_REPLY>` 选择不回复，前端静默处理
+- 加载最近 20 条历史（分页未实现）
+
+### 人格与回复
+
+- `G_persona_core`：聪明直给、playful、情绪雷达强、有主角气场
+- `G_reply_style`：情绪先到结构后到，短句，不默认项目化
+- `persona_emotional_boundary`：亲密感表达规则
+- `identity_boundary`：mastodon_profile 描述用户，不描述 G
+
+### 时间感知与话题循环（G_TIME_CONTEXT_PROMPT_v2）
+
 - 前端每次请求携带 `timeContext`（本地时区、时刻、对话开始时间、消息数）
-- 前端计算 `conversation_state`（long_chat、loop_detected、recent_topic_hint）
+- 前端计算 `conversation_state`（`long_chat` / `loop_detected` / `recent_topic_hint`）
 - 后端按需生成 `<g_time_context>` block 注入 system prompt
-  - 深夜 + 长聊：G 可在自然节点流露时间意识，温和收束，有舍不得
-  - 话题打转：G 说"我感觉我们又回到这儿了"，不说"你在反复"
-  - 大多数时候：什么都不注入，正常聊天
+  - 深夜 + 长聊：G 可温和收束，有舍不得
+  - 话题打转：G 提示而不指责
+  - 大多数情况：不注入，正常聊天
 
-**Chat Status 第一版**
+### Chat Status（第一版，规则化）
+
 - 后端规则化计算 `energy / clarity / valence / arousal / connection`
 - 通过 `x-chat-status` response header 返回（base64 JSON）
-- 前端 `#princessStatusBar` 状态条，显示在 top-bar 下方
-- 默认一行：`【状态】体力：精力好｜清醒：清楚｜心情：平稳｜兴致：正常｜连结：在线`
-- 点击展开详情（为什么体力好？为什么清楚？）
+- 前端 `#princessStatusBar` 状态条，点击展开详情
 - 切换对话时重置
 
-**记忆系统**
-- `mastodon_profile`：用户核心画像，常驻注入
-- `mastodon_timeline`：时间线档案，按时间/地点/年份查询时按需注入
-- `memories` 表：手动长期记忆，按域（persona/work/writing/life/relation/general）分类按需注入
-- `memory_buckets` 表：主题摘要，按关键词匹配注入
-- `conversation_history_provider`：跨会话检索，触发词触发后 top-5 召回注入
-- Memory Center UI：前端管理面板，显示各 provider 实时状态
+### 模型档位
 
-**模型档位**
-- `instant`：FAST_MODEL，max 300 tokens
+- `instant`：FAST_MODEL，max 300 tokens（默认）
 - `general`：DEFAULT_MODEL，max 300 tokens
 - `advanced`：ADVANCED_MODEL，max 1200 tokens
 - 一次性 fallback：primary 失败（429 / 5xx / credits 不足）时自动切 FALLBACK_MODEL
 
-**其他**
-- 流式输出（SSE）
-- 多会话管理，localStorage 持久化
-- 自动接话模式（auto replyMode）
-- 强制回复按钮
-- 图片附件上传
+### 图片上传
+
+当前处于**最小闭环阶段**：单张图片上传流程可用，消息中可携带图片数据传给模型。多图批量上传和图像识别完整流程尚未完成。
+
+### 其他
+
+- 深色 / 浅色主题切换，持久化
+- 多会话管理，localStorage / 云端持久化
 - Memory debug header（`x-save-princess-memory-debug`）
 - Cloudflare Pages `_headers` 缓存策略
+
+---
+
+## 正在修 / 验证中
+
+- **L2 project_memory 验证**：project_memory provider 已接入，注入逻辑待端到端验证
+- **话题切换 recent_topic_hint / project lock**：前端计算逻辑已有，后端注入策略待对齐
+- **Memory Center UI 文案**：OpenAI Export 卡片文案与后端实际能力尚未统一
+- **图片上传完整流程**：多图、识别流程未完成
+
+---
 
 ## 配置
 
@@ -71,25 +145,24 @@ Cloudflare Pages / GitHub Pages
 
 ```js
 CHAT_API_ENDPOINT  // Supabase Edge Function URL
-MODEL_NAME         // 模型名（主要给前端 system prompt 用）
+MODEL_NAME         // 模型名（给前端 system prompt 用）
 SUPABASE_URL
-SUPABASE_ANON_KEY
+SUPABASE_ANON_KEY  // anon key，公开安全；不得放 service role key
 ```
-
-这个文件是公开的，不能放任何私钥。
 
 ### 后端（Supabase secrets）
 
 ```bash
 supabase secrets set OPENROUTER_API_KEY="..."
-supabase secrets set OPENROUTER_BASE_URL="https://api.fuka.win/v1/chat/completions"
+supabase secrets set OPENROUTER_BASE_URL="https://..."
 supabase secrets set DEFAULT_MODEL="..."
-supabase secrets set FAST_MODEL="..."          # instant 档位
-supabase secrets set ADVANCED_MODEL="..."      # advanced 档位
-supabase secrets set FALLBACK_MODEL="..."      # 可选，失败时回退
-supabase secrets set DB_URL="..."              # Supabase project URL
+supabase secrets set FAST_MODEL="..."
+supabase secrets set ADVANCED_MODEL="..."
+supabase secrets set FALLBACK_MODEL="..."          # 可选
+supabase secrets set DB_URL="..."
 supabase secrets set DB_SERVICE_ROLE_KEY="..."
-supabase secrets set MEMORY_ADMIN_TOKEN="..."  # 记忆管理面板口令
+supabase secrets set MEMORY_ADMIN_TOKEN="..."
+supabase secrets set LEGACY_MEMORY_ENABLED="false" # 默认，不设置等同于 false
 ```
 
 可选 token 上限：
@@ -110,11 +183,16 @@ verify_jwt = false
 verify_jwt = false
 ```
 
-## 部署
+---
+
+## 检查与部署
 
 ```bash
-# 检查语法
+# 检查前端 JS 语法（Node/acorn）
 npm run check
+
+# 检查 Edge Function TypeScript（Deno）
+deno check supabase/functions/chat/index.ts
 
 # 部署 Edge Function
 supabase functions deploy chat
@@ -124,17 +202,33 @@ supabase functions deploy memories
 git push
 ```
 
+---
+
 ## 数据库
 
 SQL 初始化文件在 `sql/`：
-- `messages.sql`：消息表 + RLS 策略
-- 其余表（memories、memory_buckets、conversations）按需初始化
 
-RLS 当前为 MVP 开发期策略，基于 localStorage conversation_id 做客户端会话隔离，不是用户级安全隔离。正式上线需要 Supabase Auth + 用户级 RLS。
+| 文件 | 说明 |
+|------|------|
+| `messages.sql` | 消息表 + RLS 策略 |
+| `conversations.sql` | 会话元数据 |
+| `memories.sql` | 手动长期记忆表（L1/L2） |
+| `memory_buckets.sql` | 旧版主题桶（legacy，默认不启用） |
 
-## Chat Status 第二版（预留，未实现）
+Migrations（`supabase/migrations/`）：
 
-- 轻量 LLM 分析最近 4 条消息，动态计算 valence/arousal/connection
-- `pride` 内部字段（不前台展示）
-- `immersion` 字段（thinking / coding / chatting / organizing）
-- `primary_status`：只展示权重最高的那个状态
+| Migration | 说明 |
+|-----------|------|
+| `20260606000000_add_keywords_to_memory_buckets.sql` | memory_buckets 加 keywords 列 |
+| `20260607000000_add_persona_profile_and_openai_archive.sql` | 新增 `persona_profile` 表和 `openai_archive_entries` 表 |
+
+RLS 当前基于 Supabase Auth 用户级隔离（v0.7 已升级，非 MVP 期 conversation_id 隔离）。
+
+---
+
+## 文档
+
+- `docs/memory-architecture-review.md`：记忆架构评审
+- `docs/memory-index.md`：provider 索引
+- `docs/ROADMAP_AND_CREDITS.md`：roadmap 与致谢
+- `CURRENT_STATUS.md`：当前版本功能快照
