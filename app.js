@@ -921,6 +921,11 @@ async function callChatAPI(messages, replyMode = "auto") {
       timeContext,
       conversation_state,
       // storySeedsEnabled intentionally omitted — legacy memory system retired
+      userMessageId: (() => {
+        const lastUser = [...messages].reverse().find(m => m.role === "user");
+        const id = lastUser?.id;
+        return id != null && id !== "null" ? Number(id) : null;
+      })(),
     }),
   });
 }

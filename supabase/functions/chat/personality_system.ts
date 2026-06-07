@@ -289,6 +289,7 @@ async function upsertL2Feature(
   feature: ExtractedFeature,
   valence: number,
   arousal: number,
+  userMessageId: number | null,
 ): Promise<void> {
   const headers = {
     apikey: serviceRoleKey,
@@ -361,6 +362,7 @@ async function upsertL2Feature(
         contexts: Array.isArray(feature.contexts) ? feature.contexts : [],
         examples: feature.evidence ? [feature.evidence.slice(0, 200)] : [],
         status: "active",
+        source_msg_ids: userMessageId != null ? [userMessageId] : null,
       }),
     });
   }
@@ -381,6 +383,7 @@ async function writeExtractionLog(
   route: string | null,
   valence: number,
   arousal: number,
+  userMessageId: number | null,
 ): Promise<void> {
   await fetch(`${supabaseUrl}/rest/v1/persona_extraction_log`, {
     method: "POST",
@@ -401,6 +404,7 @@ async function writeExtractionLog(
       route,
       valence,
       arousal,
+      source_msg_id: userMessageId ?? null,
     }),
   }).catch(() => {});
 }
@@ -424,6 +428,7 @@ export type AfterChatParams = {
   orBaseUrl: string;
   orApiKey: string;
   fastModel: string;
+  userMessageId: number | null;
 };
 
 export async function afterChat(params: AfterChatParams): Promise<void> {
@@ -440,6 +445,7 @@ export async function afterChat(params: AfterChatParams): Promise<void> {
     orBaseUrl,
     orApiKey,
     fastModel,
+    userMessageId,
   } = params;
 
   const t0 = Date.now();
@@ -480,6 +486,7 @@ export async function afterChat(params: AfterChatParams): Promise<void> {
       f,
       valence,
       arousal,
+      userMessageId,
     ).catch((err) =>
       console.error(
         "[afterChat] upsert error:",
@@ -503,6 +510,7 @@ export async function afterChat(params: AfterChatParams): Promise<void> {
     route,
     valence,
     arousal,
+    userMessageId,
   );
 
   console.log(

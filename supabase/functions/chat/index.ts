@@ -75,6 +75,7 @@ type ChatRequest = {
   conversationId?: string; // used by conversation_history_provider
   timeContext?: TimeContext;
   conversation_state?: ConversationState;
+  userMessageId?: number | null; // messages.id of the triggering user message
 };
 
 // ── Model tier ────────────────────────────────────────────────────────────────
@@ -2112,6 +2113,7 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
         orBaseUrl: providerConfig.baseUrl,
         orApiKey: providerConfig.apiKey,
         fastModel,
+        userMessageId: typeof payload.userMessageId === "number" ? payload.userMessageId : null,
       }).catch((err) =>
         console.error("[afterChat] error:", err instanceof Error ? err.message : String(err))
       );
