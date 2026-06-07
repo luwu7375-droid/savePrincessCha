@@ -301,7 +301,7 @@ async function upsertL2Feature(
   const checkRes = await fetch(
     `${supabaseUrl}/rest/v1/persona_layer2_dynamic_features` +
       `?user_id=eq.${encodeURIComponent(userId)}&name=eq.${encodeURIComponent(feature.name)}` +
-      `&status=eq.active&select=id,activation_count,strength&limit=1`,
+      `&status=eq.active&select=id,activation_count,strength,source_msg_ids&limit=1`,
     { headers },
   );
 
@@ -310,6 +310,7 @@ async function upsertL2Feature(
     id: string;
     activation_count: number;
     strength: number;
+    source_msg_ids: (number | null)[] | null;
   }>;
 
   const now = new Date().toISOString();
@@ -320,6 +321,12 @@ async function upsertL2Feature(
     // Cap strength boost per activation at 0.1
     const boost = Math.min(Math.abs(feature.strength_delta) * 0.1, 0.1);
     const newStrength = Math.min(row.strength + boost, 1.0);
+
+    // Dedup-append new userMessageId into existing source_msg_ids
+    const existingIds: number[] = (row.source_msg_ids ?? []).filter((x): x is number => x != null);
+    const mergedIds = userMessageId != null && !existingIds.includes(userMessageId)
+      ? [...existingIds, userMessageId]
+      : existingIds.length > 0 ? existingIds : null;
 
     await fetch(
       `${supabaseUrl}/rest/v1/persona_layer2_dynamic_features` +
@@ -333,6 +340,7 @@ async function upsertL2Feature(
           last_reinforced_at: now,
           valence,
           arousal,
+          ...(mergedIds != null ? { source_msg_ids: mergedIds } : {}),
         }),
       },
     );

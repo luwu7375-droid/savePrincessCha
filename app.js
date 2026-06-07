@@ -922,7 +922,10 @@ async function callChatAPI(messages, replyMode = "auto") {
       conversation_state,
       // storySeedsEnabled intentionally omitted — legacy memory system retired
       userMessageId: (() => {
-        const lastUser = [...messages].reverse().find(m => m.role === "user");
+        // Skip synthetic forced-reply messages (no id field) — find the last real user message.
+        const lastUser = [...messages].reverse().find(
+          m => m.role === "user" && m.id != null && m.id !== "null"
+        );
         const id = lastUser?.id;
         return id != null && id !== "null" ? Number(id) : null;
       })(),
