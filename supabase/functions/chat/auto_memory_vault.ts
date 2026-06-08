@@ -24,6 +24,15 @@ export type AutoMemoryVaultResult = {
   reject_count: number;
 };
 
+export type PromotionResult = {
+  scanned_count: number;
+  eligible_count: number;
+  promoted_count: number;
+  skipped_count: number;
+  duplicate_count: number;
+  failed_count: number;
+};
+
 type UpsertCandidateResult =
   | { status: "inserted"; id: string }
   | { status: "duplicate"; id?: string }
@@ -176,6 +185,27 @@ async function extractVaultCandidates(params: {
 // ── Valid candidate types ─────────────────────────────────────────────────────
 
 const VALID_CANDIDATE_TYPES = new Set(["fact", "preference", "relationship", "event", "emotion", "project"]);
+
+const PROMOTION_ALLOWED_TYPES = new Set(["project", "preference", "fact"]);
+
+const SENSITIVE_KEYWORDS = [
+  "家人", "家庭", "父母", "妈妈", "爸爸", "兄弟", "姐妹", "孩子",
+  "医院", "诊断", "药物", "手术", "病", "症状", "健康",
+  "创伤", "抑郁", "焦虑", "自残", "痛苦",
+  "性取向", "性别", "信仰", "宗教",
+  "公司机密", "薪资", "老板", "同事",
+  "前任", "分手", "失恋",
+];
+
+const TASK_PATTERNS = [
+  "帮我", "请帮", "能不能", "可以吗", "告诉我", "怎么",
+  "需要你", "你来", "查一下", "找一下",
+];
+
+const PREFERENCE_INTERACTION_PATTERNS = [
+  "偏好", "习惯", "喜欢", "不喜欢", "风格", "方式", "命名", "格式",
+  "回复", "语气", "语调", "模型", "产品", "界面", "功能",
+];
 
 // ── Upsert candidate (dedup by content_hash) ─────────────────────────────────
 
@@ -464,6 +494,294 @@ export async function runAutoMemoryVault(params: {
     pending_count: result.pending_count,
     quarantine_count: result.quarantine_count,
     reject_count: result.reject_count,
+  }));
+
+  return result;
+}
+
+// ── mapCandidateTypeToCategory ────────────────────────────────────────────────
+
+function mapCandidateTypeToCategory(
+  candidateType: string,
+  content: string,
+): string | null {
+  if (candidateType === "project") return "project_memory";
+  if (candidateType === "fact") return "work";
+  if (candidateType === "preference") {
+    const lower = content.toLowerCase();
+    const isInteractionPref = PREFERENCE_INTERACTION_PATTERNS.some((p) =>
+      lower.includes(p)
+    );
+    return isInteractionPref ? "interaction_preferences" : null;
+  }
+  return null;
+}
+
+// ── promoteAutoMemoryCandidates ───────────────────────────────────────────────
+// P2 promotion flow: moves eligible auto_memory_candidates into memories table.
+// Only runs when AUTO_MEMORY_PROMOTION_ENABLED=true.
+// Never throws — all errors are caught and logged.
+
+export async function promoteAutoMemoryCandidates(params: {
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  userId: string;
+  conversationId?: string;
+  limit?: number;
+  dryRun?: boolean;
+}): Promise<PromotionResult> {
+  const {
+    supabaseUrl,
+    serviceRoleKey,
+    userId,
+    limit = 10,
+    dryRun = true,
+  } = params;
+
+  const result: PromotionResult = {
+    scanned_count: 0,
+    eligible_count: 0,
+    promoted_count: 0,
+    skipped_count: 0,
+    duplicate_count: 0,
+    failed_count: 0,
+  };
+
+  const headers = {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    // 1. Fetch candidates
+    const fetchRes = await fetch(
+      `${supabaseUrl}/rest/v1/auto_memory_candidates` +
+        `?user_id=eq.${encodeURIComponent(userId)}` +
+        `&status=eq.new` +
+        `&recommended_action=eq.auto_accept` +
+        `&confidence=gte.0.85` +
+        `&sensitivity=lte.0.30` +
+        `&order=created_at.asc` +
+        `&limit=${limit}`,
+      { headers },
+    );
+
+    if (!fetchRes.ok) {
+      const errText = await fetchRes.text();
+      console.error(JSON.stringify({
+        fn: "promoteAutoMemoryCandidates",
+        event: "fetch_failed",
+        http_status: fetchRes.status,
+        error_head: errText.slice(0, 200),
+      }));
+      return result;
+    }
+
+    type CandidateRow = {
+      id: string;
+      candidate_type: string;
+      content: string;
+      confidence: number;
+      sensitivity: number;
+      source_msg_ids: number[] | null;
+      content_hash: string | null;
+    };
+
+    const candidates = (await fetchRes.json()) as CandidateRow[];
+    result.scanned_count = candidates.length;
+
+    for (const candidate of candidates) {
+      // 2. Type whitelist
+      if (!PROMOTION_ALLOWED_TYPES.has(candidate.candidate_type)) {
+        console.log(JSON.stringify({
+          fn: "promoteAutoMemoryCandidates",
+          event: "promotion_skipped_type",
+          candidate_id: candidate.id,
+          candidate_type: candidate.candidate_type,
+        }));
+        result.skipped_count += 1;
+        continue;
+      }
+
+      // 3. Sensitive content check
+      const contentLower = candidate.content.toLowerCase();
+      const hasSensitive = SENSITIVE_KEYWORDS.some((kw) =>
+        contentLower.includes(kw)
+      );
+      if (hasSensitive) {
+        console.log(JSON.stringify({
+          fn: "promoteAutoMemoryCandidates",
+          event: "promotion_skipped_sensitive",
+          candidate_id: candidate.id,
+          content_head: candidate.content.slice(0, 60),
+        }));
+        result.skipped_count += 1;
+        continue;
+      }
+
+      // 4. One-shot task check
+      const isTask = TASK_PATTERNS.some((p) => contentLower.includes(p));
+      if (isTask) {
+        console.log(JSON.stringify({
+          fn: "promoteAutoMemoryCandidates",
+          event: "promotion_skipped_task_pattern",
+          candidate_id: candidate.id,
+          content_head: candidate.content.slice(0, 60),
+        }));
+        result.skipped_count += 1;
+        continue;
+      }
+
+      // 5. Map to memories category
+      const targetCategory = mapCandidateTypeToCategory(
+        candidate.candidate_type,
+        candidate.content,
+      );
+      if (!targetCategory) {
+        console.log(JSON.stringify({
+          fn: "promoteAutoMemoryCandidates",
+          event: "promotion_skipped_no_category",
+          candidate_id: candidate.id,
+          candidate_type: candidate.candidate_type,
+          content_head: candidate.content.slice(0, 60),
+        }));
+        result.skipped_count += 1;
+        continue;
+      }
+
+      result.eligible_count += 1;
+
+      console.log(JSON.stringify({
+        fn: "promoteAutoMemoryCandidates",
+        event: "promotion_eligible",
+        candidate_id: candidate.id,
+        candidate_type: candidate.candidate_type,
+        target_category: targetCategory,
+        dry_run: dryRun,
+      }));
+
+      if (dryRun) {
+        result.promoted_count += 1;
+        continue;
+      }
+
+      // 6. Dedup: check if identical content already in memories
+      const dedupRes = await fetch(
+        `${supabaseUrl}/rest/v1/memories` +
+          `?content=eq.${encodeURIComponent(candidate.content)}` +
+          `&select=id&limit=1`,
+        { headers },
+      );
+
+      if (dedupRes.ok) {
+        const existing = (await dedupRes.json()) as { id: string }[];
+        if (existing.length > 0) {
+          console.log(JSON.stringify({
+            fn: "promoteAutoMemoryCandidates",
+            event: "promotion_duplicate",
+            candidate_id: candidate.id,
+            existing_memory_id: existing[0].id,
+          }));
+          result.duplicate_count += 1;
+          await fetch(
+            `${supabaseUrl}/rest/v1/auto_memory_candidates?id=eq.${encodeURIComponent(candidate.id)}`,
+            {
+              method: "PATCH",
+              headers: { ...headers, Prefer: "return=minimal" },
+              body: JSON.stringify({
+                status: "ignored",
+                promotion_error: "duplicate: content already in memories",
+                promotion_target: existing[0].id,
+              }),
+            },
+          );
+          continue;
+        }
+      }
+
+      // 7. Insert into memories
+      const insertRes = await fetch(`${supabaseUrl}/rest/v1/memories`, {
+        method: "POST",
+        headers: { ...headers, Prefer: "return=representation" },
+        body: JSON.stringify({
+          content: candidate.content,
+          category: targetCategory,
+          enabled: true,
+          source_msg_ids: candidate.source_msg_ids ?? null,
+        }),
+      });
+
+      if (!insertRes.ok) {
+        const errText = await insertRes.text();
+        console.error(JSON.stringify({
+          fn: "promoteAutoMemoryCandidates",
+          event: "promotion_failed",
+          candidate_id: candidate.id,
+          http_status: insertRes.status,
+          error_head: errText.slice(0, 200),
+        }));
+        result.failed_count += 1;
+        await fetch(
+          `${supabaseUrl}/rest/v1/auto_memory_candidates?id=eq.${encodeURIComponent(candidate.id)}`,
+          {
+            method: "PATCH",
+            headers: { ...headers, Prefer: "return=minimal" },
+            body: JSON.stringify({
+              promotion_error: `insert_failed: ${insertRes.status} ${errText.slice(0, 100)}`,
+            }),
+          },
+        );
+        continue;
+      }
+
+      const inserted = (await insertRes.json()) as { id: string }[];
+      const newMemoryId = inserted[0]?.id ?? null;
+
+      console.log(JSON.stringify({
+        fn: "promoteAutoMemoryCandidates",
+        event: "promotion_inserted",
+        candidate_id: candidate.id,
+        memory_id: newMemoryId,
+        target_category: targetCategory,
+        content_head: candidate.content.slice(0, 60),
+      }));
+
+      // 8. Update candidate status
+      await fetch(
+        `${supabaseUrl}/rest/v1/auto_memory_candidates?id=eq.${encodeURIComponent(candidate.id)}`,
+        {
+          method: "PATCH",
+          headers: { ...headers, Prefer: "return=minimal" },
+          body: JSON.stringify({
+            status: "promoted",
+            promoted_memory_id: newMemoryId,
+            promoted_at: new Date().toISOString(),
+            promotion_target: newMemoryId,
+          }),
+        },
+      );
+
+      result.promoted_count += 1;
+    }
+  } catch (err) {
+    console.error(JSON.stringify({
+      fn: "promoteAutoMemoryCandidates",
+      event: "top_level_error",
+      error: err instanceof Error ? err.message : String(err),
+    }));
+  }
+
+  console.log(JSON.stringify({
+    fn: "promoteAutoMemoryCandidates",
+    event: "summary",
+    dry_run: dryRun,
+    scanned_count: result.scanned_count,
+    eligible_count: result.eligible_count,
+    promoted_count: result.promoted_count,
+    skipped_count: result.skipped_count,
+    duplicate_count: result.duplicate_count,
+    failed_count: result.failed_count,
   }));
 
   return result;
