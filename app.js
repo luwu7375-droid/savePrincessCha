@@ -3072,7 +3072,7 @@ async function renderRecentMemoryUpdates() {
     const { data, error } = await supabaseClient
       .from("memories")
       .select("id, content, category, created_at, source_msg_ids")
-      .eq("enabled", true)
+      .neq("enabled", false)
       .order("created_at", { ascending: false })
       .limit(3);
 
