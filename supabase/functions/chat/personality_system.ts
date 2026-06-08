@@ -1,4 +1,5 @@
 // ── Ombre Brain: 3-layer personality evolution system (Phase C) ──────────────
+// Auto Memory Vault P1 is wired in via runAutoMemoryVault() below.
 //
 // Exports:
 //   fetchLayer1Features   → L1 from persona_layer1_contexts (human-maintained)
@@ -8,6 +9,8 @@
 //
 // L0 (hardcoded identity core) lives in index.ts system prompt, unchanged.
 // This module handles L1 and L2 only.
+
+import { runAutoMemoryVault } from "./auto_memory_vault.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -461,6 +464,30 @@ export async function afterChat(params: AfterChatParams): Promise<void> {
   // 1. Drain the background SSE branch to get the full assistant response text
   const gResponse = await drainSSEStream(streamBody);
   if (!gResponse.trim()) return;
+
+  // Auto Memory Vault P1 — fire-and-forget, never throws
+  if (Deno.env.get("AUTO_MEMORY_VAULT_ENABLED") === "true") {
+    runAutoMemoryVault({
+      supabaseUrl,
+      serviceRoleKey,
+      userId,
+      conversationId,
+      userMessage,
+      gResponse,
+      route,
+      orBaseUrl,
+      orApiKey,
+      fastModel,
+      userMessageId,
+    }).then((vaultResult) => {
+      console.log(JSON.stringify({ fn: "runAutoMemoryVault", ...vaultResult }));
+    }).catch((err) =>
+      console.error(
+        "[afterChat] vault error:",
+        err instanceof Error ? err.message : String(err),
+      )
+    );
+  }
 
   // 2. Call LLM to extract personality features
   const extraction = await extractBehaviorFeatures({
