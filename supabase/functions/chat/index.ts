@@ -184,6 +184,26 @@ function resolveProviderForTier(tier: ModelTier): TierProviders {
   const legacyDefault =
     Deno.env.get("DEFAULT_MODEL") || Deno.env.get("MODEL_NAME") || "";
 
+  // ── fiftyfive model name guard ───────────────────────────────────────────────
+  // Blocks fuka-specific channel names from being sent to fiftyfive.
+  // fuka display names contain channel identifiers like [浣溪沙], [鸢尾花], [百香果],
+  // or trailing variant numbers ①②. These are NOT valid fiftyfive model ids.
+  // Note: 55api model ids CAN contain Chinese prefixes like [A-按量], [G-按量],
+  // [K-按量], [aws-量] — these are valid and must NOT be blocked.
+  function assertFiftyfiveModel(model: string, tierName: string): void {
+    const FUKA_CHANNEL_PATTERN = /浣溪沙|鸢尾花|百香果|\u2460|\u2461|\u2462|\u2463|\u2464/;
+    if (FUKA_CHANNEL_PATTERN.test(model)) {
+      console.error(JSON.stringify({
+        fn: "resolveProviderForTier",
+        event: "config_error_fuka_model_on_fiftyfive",
+        tier: tierName,
+        model,
+        hint: "fuka channel name detected in fiftyfive primary model. Set MODEL_" + tierName.toUpperCase() + "_PRIMARY to a valid 55api model id.",
+      }));
+      throw new Error(`config_error: fuka channel name detected in fiftyfive primary for tier ${tierName}: "${model}". Check MODEL_${tierName.toUpperCase()}_PRIMARY secret.`);
+    }
+  }
+
   switch (tier) {
     case "instant": {
       const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_INSTANT") || "300", 10);
@@ -191,6 +211,7 @@ function resolveProviderForTier(tier: ModelTier): TierProviders {
         Deno.env.get("MODEL_INSTANT_PRIMARY") ||
         Deno.env.get("FAST_MODEL") ||
         legacyDefault;
+      assertFiftyfiveModel(primaryModel, "instant");
       const fallbackModel =
         Deno.env.get("MODEL_INSTANT_FALLBACK") ||
         Deno.env.get("FALLBACK_MODEL") ||
@@ -210,6 +231,7 @@ function resolveProviderForTier(tier: ModelTier): TierProviders {
         Deno.env.get("MODEL_ADVANCED_PRIMARY") ||
         Deno.env.get("ADVANCED_MODEL") ||
         legacyDefault;
+      assertFiftyfiveModel(primaryModel, "advanced");
       const fallbackModel =
         Deno.env.get("MODEL_ADVANCED_FALLBACK") ||
         Deno.env.get("FALLBACK_MODEL") ||
@@ -229,6 +251,7 @@ function resolveProviderForTier(tier: ModelTier): TierProviders {
       const primaryModel =
         Deno.env.get("MODEL_GENERAL_PRIMARY") ||
         legacyDefault;
+      assertFiftyfiveModel(primaryModel, "general");
       const fallbackModel =
         Deno.env.get("MODEL_GENERAL_FALLBACK") ||
         Deno.env.get("FALLBACK_MODEL") ||
