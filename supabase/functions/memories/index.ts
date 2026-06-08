@@ -43,11 +43,11 @@ Deno.serve(async (req) => {
     };
     const userId = url.searchParams.get("userId");
 
-    // Step 1: memories table (no user_id column yet, return latest 3)
-    const memRes = await fetch(
-      `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at&order=created_at.desc&limit=3`,
-      { headers: dbHeaders }
-    );
+    // Step 1: memories table, filtered by user_id
+    const memUrl = userId
+      ? `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`
+      : `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at&order=created_at.desc&limit=3`;
+    const memRes = await fetch(memUrl, { headers: dbHeaders });
     if (memRes.ok) {
       const memRows = await memRes.json() as { id: string; content: string; category: string; created_at: string }[];
       if (Array.isArray(memRows) && memRows.length > 0) {
