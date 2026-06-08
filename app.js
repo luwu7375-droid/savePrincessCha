@@ -116,7 +116,7 @@ document.getElementById("closeStatusPanelBtn")?.addEventListener("click", closeS
 document.addEventListener("click", (e) => {
   const panel = document.getElementById("statusPanel");
   if (!panel || panel.classList.contains("hidden")) return;
-  if (!panel.contains(e.target) && !e.target.closest(".avatar")) closeStatusPanel();
+  if (!panel.contains(e.target) && !e.target.closest(".avatar") && !e.target.closest("#princessStatusBar")) closeStatusPanel();
 });
 
 document.getElementById("themeOptions")?.addEventListener("click", (e) => {
@@ -347,9 +347,6 @@ async function switchConversation(id) {
   if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
   setActiveConversationId(id);
   _conversationStartedAt = null; // reset for new conversation context
-  _lastPrincessStatus = null;
-  const bar = document.getElementById("princessStatusBar");
-  if (bar) { bar.innerHTML = ""; bar.classList.add("hidden"); }
   renderConvList();
   await reloadHistory();
 }
@@ -966,28 +963,80 @@ function setChatStatus(text) {
 
 let _lastPrincessStatus = null;
 
+function getDefaultPrincessStatus() {
+  return {
+    display: "G · 在线 · 安静陪伴中",
+    energy: "normal",
+    clarity: "clear",
+    valence: "neutral",
+    arousal: "quiet",
+    connection: "online",
+    details: {
+      energy_reason: "体力稳定",
+      clarity_reason: "清醒度稳定",
+      immersion_reason: "安静陪伴中",
+    },
+  };
+}
+
+function normalizePrincessStatus(raw) {
+  if (!raw || typeof raw !== "object") return getDefaultPrincessStatus();
+  const def = getDefaultPrincessStatus();
+  return {
+    display: raw.display || def.display,
+    energy: raw.energy || def.energy,
+    clarity: raw.clarity || def.clarity,
+    valence: raw.valence || def.valence,
+    arousal: raw.arousal || def.arousal,
+    connection: raw.connection || def.connection,
+    details: {
+      energy_reason: raw.details?.energy_reason || def.details.energy_reason,
+      clarity_reason: raw.details?.clarity_reason || def.details.clarity_reason,
+      immersion_reason: raw.details?.immersion_reason || def.details.immersion_reason,
+    },
+  };
+}
+
+function loadLastPrincessStatus() {
+  try {
+    const stored = localStorage.getItem("lastPrincessStatus");
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return normalizePrincessStatus(parsed);
+    }
+  } catch (_) {}
+  return null;
+}
+
+function saveLastPrincessStatus(status) {
+  try {
+    localStorage.setItem("lastPrincessStatus", JSON.stringify(status));
+  } catch (_) {}
+}
+
 function renderPrincessStatusBar() {
   const bar = document.getElementById("princessStatusBar");
-  if (!bar || !_lastPrincessStatus) return;
-  const s = _lastPrincessStatus;
-  bar.innerHTML = `
-    <span class="princess-status-text" title="点击查看详情">${s.display || ""}</span>
-    <span class="princess-status-details hidden">
-      <span>${s.details?.energy_reason || ""}</span>
-      <span>${s.details?.clarity_reason || ""}</span>
-      ${s.details?.immersion_reason ? `<span>${s.details.immersion_reason}</span>` : ""}
-    </span>`;
+  if (!bar) return;
+  const s = _lastPrincessStatus || getDefaultPrincessStatus();
+  bar.innerHTML = `<span class="princess-status-text">${s.display || ""}</span>`;
   bar.classList.remove("hidden");
-  const textEl = bar.querySelector(".princess-status-text");
-  const detailEl = bar.querySelector(".princess-status-details");
-  if (textEl && detailEl) {
-    textEl.onclick = () => detailEl.classList.toggle("hidden");
-  }
+  bar.onclick = () => openStatusPanel(bar);
 }
 
 function updatePrincessStatusBar(status) {
   if (!status || typeof status !== "object") return;
-  _lastPrincessStatus = status;
+  _lastPrincessStatus = normalizePrincessStatus(status);
+  saveLastPrincessStatus(_lastPrincessStatus);
+  renderPrincessStatusBar();
+}
+
+function initPrincessStatusBar() {
+  const stored = loadLastPrincessStatus();
+  if (stored) {
+    _lastPrincessStatus = stored;
+  } else {
+    _lastPrincessStatus = getDefaultPrincessStatus();
+  }
   renderPrincessStatusBar();
 }
 
@@ -1028,32 +1077,29 @@ function openStatusPanel(anchor) {
   const rows  = document.getElementById("statusPanelRows");
   if (!panel || !rows) return;
 
-  if (!_lastPrincessStatus) {
-    rows.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0 2px;text-align:center">还没有状态数据<br>发条消息之后就会出现</div>';
-  } else {
-    const s = _lastPrincessStatus;
-    rows.innerHTML = STAT_META.map(({ key, label }) => {
-      const pct   = STATUS_VAL[key]?.[s[key]] ?? 50;
-      const color = statBarColor(key, pct);
-      return `<div class="status-bar-row">
-        <span class="status-bar-label">${label}</span>
-        <div class="status-bar-track">
-          <div class="status-bar-fill" style="width:${pct}%;background:${color}"></div>
-        </div>
-      </div>`;
-    }).join("");
-  }
+  const s = _lastPrincessStatus || getDefaultPrincessStatus();
+  rows.innerHTML = STAT_META.map(({ key, label }) => {
+    const pct   = STATUS_VAL[key]?.[s[key]] ?? 50;
+    const color = statBarColor(key, pct);
+    return `<div class="status-bar-row">
+      <span class="status-bar-label">${label}</span>
+      <div class="status-bar-track">
+        <div class="status-bar-fill" style="width:${pct}%;background:${color}"></div>
+      </div>
+    </div>`;
+  }).join("");
 
-  // Position near the clicked avatar, stay within viewport
+  // Position near anchor, stay within viewport
   if (anchor) {
-    const rect    = anchor.getBoundingClientRect();
-    const panelW  = 228;
-    const panelH  = 220;
+    const rect   = anchor.getBoundingClientRect();
+    const panelW = 228;
+    const panelH = 220;
     let left = rect.left;
     let top  = rect.bottom + 6;
     if (left + panelW > window.innerWidth  - 8) left = window.innerWidth  - panelW - 8;
     if (left < 8) left = 8;
     if (top  + panelH > window.innerHeight - 8) top  = rect.top - panelH - 6;
+    if (top < 8) top = 8;
     panel.style.left = left + "px";
     panel.style.top  = top  + "px";
   }
@@ -2907,6 +2953,7 @@ async function hideLoginAndInit(session) {
   currentUserId = session?.user?.id || "";
   loginOverlay.classList.add("hidden");
   if (logoutBtn) logoutBtn.classList.remove("hidden");
+  initPrincessStatusBar();
   setLoading(true);
   await initConversations();
   await reloadHistory();

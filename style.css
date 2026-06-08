@@ -321,15 +321,21 @@ body {
   font-size: 11px;
   color: var(--text-muted);
   line-height: 1.4;
-  cursor: default;
+  cursor: pointer;
   user-select: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.princess-status-bar:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.princess-status-bar:active {
+  opacity: 0.75;
 }
 .princess-status-bar.hidden { display: none; }
 .princess-status-text {
-  cursor: pointer;
   letter-spacing: 0.01em;
 }
-.princess-status-text:hover { color: var(--text); }
 .princess-status-details {
   display: flex;
   gap: 10px;
@@ -340,7 +346,6 @@ body {
 .princess-status-details.hidden { display: none; }
 @media (max-width: 600px) {
   .princess-status-bar { padding: 4px 14px; font-size: 10.5px; }
-}
 }
 
 .top-actions { display: flex; gap: 6px; }
