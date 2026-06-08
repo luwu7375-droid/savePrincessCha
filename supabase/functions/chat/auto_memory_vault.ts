@@ -186,7 +186,7 @@ async function extractVaultCandidates(params: {
 
 const VALID_CANDIDATE_TYPES = new Set(["fact", "preference", "relationship", "event", "emotion", "project"]);
 
-const PROMOTION_ALLOWED_TYPES = new Set(["project", "preference", "fact"]);
+const PROMOTION_ALLOWED_TYPES = new Set(["project", "fact"]);
 
 const SENSITIVE_KEYWORDS = [
   "家人", "家庭", "父母", "妈妈", "爸爸", "兄弟", "姐妹", "孩子",
@@ -662,7 +662,6 @@ export async function promoteAutoMemoryCandidates(params: {
       }));
 
       if (dryRun) {
-        result.promoted_count += 1;
         continue;
       }
 
@@ -737,6 +736,14 @@ export async function promoteAutoMemoryCandidates(params: {
 
       const inserted = (await insertRes.json()) as { id: string }[];
       const newMemoryId = inserted[0]?.id ?? null;
+      if (newMemoryId === null) {
+        console.error(JSON.stringify({
+          fn: "promoteAutoMemoryCandidates",
+          event: "promotion_insert_id_missing",
+          candidate_id: candidate.id,
+          note: "insert succeeded but returned no id",
+        }));
+      }
 
       console.log(JSON.stringify({
         fn: "promoteAutoMemoryCandidates",
@@ -748,7 +755,7 @@ export async function promoteAutoMemoryCandidates(params: {
       }));
 
       // 8. Update candidate status
-      await fetch(
+      const patchRes = await fetch(
         `${supabaseUrl}/rest/v1/auto_memory_candidates?id=eq.${encodeURIComponent(candidate.id)}`,
         {
           method: "PATCH",
@@ -761,6 +768,17 @@ export async function promoteAutoMemoryCandidates(params: {
           }),
         },
       );
+      if (!patchRes.ok) {
+        const patchErr = await patchRes.text();
+        console.error(JSON.stringify({
+          fn: "promoteAutoMemoryCandidates",
+          event: "promotion_status_patch_failed",
+          candidate_id: candidate.id,
+          memory_id: newMemoryId,
+          http_status: patchRes.status,
+          error_head: patchErr.slice(0, 200),
+        }));
+      }
 
       result.promoted_count += 1;
     }
