@@ -3027,6 +3027,32 @@ function openMemoryCenter() {
 }
 
 /**
+ * Optimistically renders promoted candidates into the 最近更新 section.
+ * Called immediately when poller hits, before memories table write completes.
+ * @param {Array<{id: string, content: string, promoted_at: string}>} items
+ */
+function renderRecentMemoryUpdatesOptimistic(items) {
+  const container = document.getElementById("mcRecentUpdates");
+  if (!container || !items || items.length === 0) return;
+  const html = items.slice(0, 3).map((item) => {
+    const date = new Date(item.promoted_at || Date.now());
+    const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
+      " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    const snippet = (item.content || "").length > 60
+      ? item.content.slice(0, 60) + "…"
+      : (item.content || "");
+    return `<div class="mc-recent-item">
+      <div class="mc-recent-content">${snippet}</div>
+      <div class="mc-recent-meta">
+        <span class="mc-recent-source">自动记忆</span>
+        <span class="mc-recent-time">${timeStr}</span>
+      </div>
+    </div>`;
+  }).join("");
+  container.innerHTML = html;
+}
+
+/**
  * 查询并渲染最近 3 条自动沉淀的记忆（source_msg_ids IS NOT NULL）。
  */
 async function renderRecentMemoryUpdates() {
@@ -3249,7 +3275,10 @@ async function startMemoryPromotionPoller(sinceIso, userMessageId) {
       if (newItems.length > 0) {
         newItems.forEach(r => _seenPromotedIds.add(r.id));
         showMemoryToast(newItems.length);
-        renderRecentMemoryUpdates();
+        // Optimistically render promoted candidates immediately,
+        // then re-fetch from memories after a short delay for final consistency.
+        renderRecentMemoryUpdatesOptimistic(newItems);
+        setTimeout(() => renderRecentMemoryUpdates(), 2000);
         return; // stop polling
       }
     } catch (_) {}
