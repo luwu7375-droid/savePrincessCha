@@ -26,13 +26,56 @@ Deno.serve(async (req) => {
 
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
+  const url = new URL(req.url);
+  const type = url.searchParams.get("type");
+  const id = url.searchParams.get("id");
+
+  const supabaseUrl = Deno.env.get("DB_URL");
+  const serviceKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
+
+  // ── recent updates: read-only, no admin token required ───────────────────
+  if (type === "recent" && req.method === "GET") {
+    if (!supabaseUrl || !serviceKey) return json({ error: "DB not configured" }, 500);
+    const dbHeaders = {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    };
+    const userId = url.searchParams.get("userId");
+
+    // Step 1: memories table (no user_id column yet, return latest 3)
+    const memRes = await fetch(
+      `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at&order=created_at.desc&limit=3`,
+      { headers: dbHeaders }
+    );
+    if (memRes.ok) {
+      const memRows = await memRes.json() as { id: string; content: string; category: string; created_at: string }[];
+      if (Array.isArray(memRows) && memRows.length > 0) {
+        return json({ source: "memories", rows: memRows }, 200);
+      }
+    }
+
+    // Step 2: fallback to auto_memory_candidates filtered by userId
+    if (userId) {
+      const candRes = await fetch(
+        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,content,status,candidate_type,created_at,user_id&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`,
+        { headers: dbHeaders }
+      );
+      if (candRes.ok) {
+        const candRows = await candRes.json() as unknown[];
+        return json({ source: "candidates", rows: Array.isArray(candRows) ? candRows : [] }, 200);
+      }
+    }
+
+    return json({ source: "memories", rows: [] }, 200);
+  }
+
+  // ── all other routes require admin token ─────────────────────────────────
   const adminToken = Deno.env.get("MEMORY_ADMIN_TOKEN");
   if (!adminToken || req.headers.get("x-memory-admin-token") !== adminToken) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const supabaseUrl = Deno.env.get("DB_URL");
-  const serviceKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) return json({ error: "DB not configured" }, 500);
 
   const dbHeaders = {
@@ -40,10 +83,6 @@ Deno.serve(async (req) => {
     Authorization: `Bearer ${serviceKey}`,
     "Content-Type": "application/json",
   };
-
-  const url = new URL(req.url);
-  const type = url.searchParams.get("type");
-  const id = url.searchParams.get("id");
 
   // ── memory_buckets routes ─────────────────────────────────────────────────
 
@@ -126,39 +165,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── recent updates route ──────────────────────────────────────────────────
-
-  if (type === "recent" && req.method === "GET") {
-    const userId = url.searchParams.get("userId");
-
-    // Step 1: memories table (no user_id column yet, return latest 3)
-    const memRes = await fetch(
-      `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at&order=created_at.desc&limit=3`,
-      { headers: dbHeaders }
-    );
-    if (memRes.ok) {
-      const memRows = await memRes.json() as { id: string; content: string; category: string; created_at: string }[];
-      if (Array.isArray(memRows) && memRows.length > 0) {
-        return json({ source: "memories", rows: memRows }, 200);
-      }
-    }
-
-    // Step 2: fallback to auto_memory_candidates filtered by userId
-    if (userId) {
-      const candRes = await fetch(
-        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,content,status,candidate_type,created_at,user_id&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`,
-        { headers: dbHeaders }
-      );
-      if (candRes.ok) {
-        const candRows = await candRes.json() as unknown[];
-        return json({ source: "candidates", rows: Array.isArray(candRows) ? candRows : [] }, 200);
-      }
-    }
-
-    return json({ source: "memories", rows: [] }, 200);
-  }
-
-  // ── memories routes (existing) ────────────────────────────────────────────
+  // ── memories routes ───────────────────────────────────────────────────────
 
   if (req.method === "GET") {
     const res = await fetch(
@@ -167,7 +174,6 @@ Deno.serve(async (req) => {
     );
     if (!res.ok) return json(await res.json(), 500);
     const rows = await res.json() as { id: string; content: string; category: string; enabled: boolean }[];
-    // Expose category as domain so the frontend API stays stable
     return json(rows.map(r => ({ ...r, domain: r.category || "general" })), 200);
   }
 
