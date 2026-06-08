@@ -3078,8 +3078,9 @@ async function renderRecentMemoryUpdates() {
     if (currentUserId) {
       const { data, error } = await supabaseClient
         .from("memories")
-        .select("id, content, category, created_at, user_id")
+        .select("id, content, category, created_at, user_id, enabled")
         .eq("user_id", currentUserId)
+        .neq("enabled", false)
         .order("created_at", { ascending: false })
         .limit(3);
       if (!error && data && data.length > 0) memData = data;
