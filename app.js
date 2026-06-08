@@ -682,6 +682,14 @@ async function callChatAPI(messages, replyMode = "auto") {
   const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME"); // optional — backend routes by modelTier
   if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
 
+  // Capture request start time and userMessageId for the post-stream promotion poller
+  _currentRequestStartTime = new Date().toISOString();
+  _currentRequestUserMessageId = (() => {
+    const lastUser = [...messages].reverse().find(m => m.role === "user" && m.id != null && m.id !== "null");
+    const id = lastUser?.id;
+    return id != null && id !== "null" ? Number(id) : null;
+  })();
+
   // Build timeContext from browser
   const now = new Date();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1200,6 +1208,8 @@ async function requestStreamingReply(replyMode = "auto") {
   lastMessageTime = new Date(replyTime).getTime();
   if (assistantEl && replyId) { const savedRow = assistantEl.closest(".msg-row"); if (savedRow) savedRow.dataset.msgId = replyId; }
   refreshMessageActions();
+  // After stream ends, start short-polling for memory promotion results
+  startMemoryPromotionPoller(_currentRequestStartTime, _currentRequestUserMessageId);
 }
 
 // ── Message Actions ───────────────────────────────────────────────────────────
@@ -3200,6 +3210,54 @@ function renderMemoryCenterDebug(log) {
       <span class="mc-debug-val${isTrue ? " mc-debug-val--true" : isFalse ? " mc-debug-val--false" : ""}">${valStr}</span>
     </div>`;
   }).join("");
+}
+
+// ── Memory Promotion Poller ────────────────────────────────────────────────────
+// After stream ends, polls auto_memory_candidates for new promotions for up to 8s.
+// Stops on first hit. Prevents duplicate toasts via _seenPromotedIds.
+
+const _seenPromotedIds = new Set();
+let _currentRequestStartTime = null;
+let _currentRequestUserMessageId = null;
+
+async function startMemoryPromotionPoller(sinceIso, userMessageId) {
+  if (!supabaseClient || !sinceIso) return;
+  const MAX_MS = 8000;
+  const INTERVAL_MS = 1000;
+  const start = Date.now();
+
+  async function poll() {
+    if (Date.now() - start >= MAX_MS) return;
+
+    try {
+      let query = supabaseClient
+        .from("auto_memory_candidates")
+        .select("id, content, promoted_at")
+        .eq("status", "promoted")
+        .gte("promoted_at", sinceIso)
+        .order("promoted_at", { ascending: false })
+        .limit(5);
+
+      if (userMessageId != null) {
+        query = query.contains("source_msg_ids", [userMessageId]);
+      }
+
+      const { data, error } = await query;
+      if (error || !data) { setTimeout(poll, INTERVAL_MS); return; }
+
+      const newItems = data.filter(r => !_seenPromotedIds.has(r.id));
+      if (newItems.length > 0) {
+        newItems.forEach(r => _seenPromotedIds.add(r.id));
+        showMemoryToast(newItems.length);
+        renderRecentMemoryUpdates();
+        return; // stop polling
+      }
+    } catch (_) {}
+
+    setTimeout(poll, INTERVAL_MS);
+  }
+
+  setTimeout(poll, INTERVAL_MS); // first check after 1s
 }
 
 // ── Memory Toast ──────────────────────────────────────────────────────────────
