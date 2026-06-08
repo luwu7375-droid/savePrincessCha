@@ -465,8 +465,20 @@ export async function afterChat(params: AfterChatParams): Promise<void> {
   const gResponse = await drainSSEStream(streamBody);
   if (!gResponse.trim()) return;
 
+  // Diagnostic: log vault gate state so we can confirm the env var value from Dashboard logs
+  const vaultEnvRaw = Deno.env.get("AUTO_MEMORY_VAULT_ENABLED");
+  console.log(JSON.stringify({
+    fn: "afterChat",
+    event: "vault_gate_check",
+    AUTO_MEMORY_VAULT_ENABLED_raw: vaultEnvRaw,
+    vault_will_run: vaultEnvRaw === "true",
+    user_id_prefix: userId.slice(0, 6),
+    route,
+    has_fastModel: Boolean(fastModel),
+  }));
+
   // Auto Memory Vault P1 — fire-and-forget, never throws
-  if (Deno.env.get("AUTO_MEMORY_VAULT_ENABLED") === "true") {
+  if (vaultEnvRaw === "true") {
     runAutoMemoryVault({
       supabaseUrl,
       serviceRoleKey,
