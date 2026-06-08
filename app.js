@@ -1,4 +1,4 @@
-console.log("build cloudflare-0059");
+console.log("build cloudflare-0060");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3035,25 +3035,55 @@ function openMemoryCenter() {
  * Called immediately when poller hits, before memories table write completes.
  * @param {Array<{id: string, content: string, promoted_at: string}>} items
  */
-function renderRecentMemoryUpdatesOptimistic(items) {
+function buildRecentMemoryItem(content, label, category, timestamp) {
+  const date = new Date(timestamp || Date.now());
+  const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
+    " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  const text = content || "";
+  const snippet = text.length > 80 ? text.slice(0, 80) + "…" : text;
+  const hasMore = text.length > 80;
+  const catTag = category ? `<span class="mc-recent-category">${category}</span>` : "";
+  const expandBtn = hasMore
+    ? `<button class="mc-recent-expand" data-full="${text.replace(/"/g, "&quot;")}" data-expanded="0">展开</button>`
+    : "";
+  return `<div class="mc-recent-item">
+    <div class="mc-recent-content">${snippet}</div>
+    <div class="mc-recent-meta">
+      <span class="mc-recent-source">${label}</span>
+      ${catTag}
+      <span class="mc-recent-time">${timeStr}</span>
+      ${expandBtn}
+    </div>
+  </div>`;
+}
+
+function bindRecentExpandButtons(container) {
+  container.querySelectorAll(".mc-recent-expand").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const expanded = btn.dataset.expanded === "1";
+      const contentEl = btn.closest(".mc-recent-item").querySelector(".mc-recent-content");
+      if (expanded) {
+        const full = btn.dataset.full.replace(/&quot;/g, '"');
+        contentEl.textContent = full.slice(0, 80) + "…";
+        btn.textContent = "展开";
+        btn.dataset.expanded = "0";
+      } else {
+        const full = btn.dataset.full.replace(/&quot;/g, '"');
+        contentEl.textContent = full;
+        btn.textContent = "收起";
+        btn.dataset.expanded = "1";
+      }
+    });
+  });
+}
+
+
   const container = document.getElementById("mcRecentUpdates");
   if (!container || !items || items.length === 0) return;
-  const html = items.slice(0, 3).map((item) => {
-    const date = new Date(item.promoted_at || Date.now());
-    const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
-      " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-    const snippet = (item.content || "").length > 60
-      ? item.content.slice(0, 60) + "…"
-      : (item.content || "");
-    return `<div class="mc-recent-item">
-      <div class="mc-recent-content">${snippet}</div>
-      <div class="mc-recent-meta">
-        <span class="mc-recent-source">自动记忆</span>
-        <span class="mc-recent-time">${timeStr}</span>
-      </div>
-    </div>`;
-  }).join("");
-  container.innerHTML = html;
+  container.innerHTML = items.slice(0, 3).map((item) =>
+    buildRecentMemoryItem(item.content, "自动记忆", item.category || item.candidate_type || "", item.promoted_at || Date.now())
+  ).join("");
+  bindRecentExpandButtons(container);
 }
 
 /**
@@ -3082,39 +3112,19 @@ async function renderRecentMemoryUpdates() {
 
     if (rows && rows.length > 0) {
       if (source === "memories") {
-        container.innerHTML = rows.map((mem) => {
-          const date = new Date(mem.created_at);
-          const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
-            " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-          const snippet = (mem.content || "").length > 60 ? mem.content.slice(0, 60) + "…" : (mem.content || "");
-          return `<div class="mc-recent-item">
-            <div class="mc-recent-content">${snippet}</div>
-            <div class="mc-recent-meta">
-              <span class="mc-recent-source">已写入记忆</span>
-              <span class="mc-recent-time">${timeStr}</span>
-            </div>
-          </div>`;
-        }).join("");
+        container.innerHTML = rows.map((mem) =>
+          buildRecentMemoryItem(mem.content, "已写入记忆", mem.category || "", mem.created_at)
+        ).join("");
       } else {
         const LABEL_MAP = {
           promoted: "候选已记忆", approved: "已确认", new: "候选记忆",
           candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
         };
-        container.innerHTML = rows.map((c) => {
-          const date = new Date(c.created_at);
-          const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
-            " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-          const snippet = (c.content || "").length > 60 ? (c.content || "").slice(0, 60) + "…" : (c.content || "");
-          const label = LABEL_MAP[c.status] || "候选记忆";
-          return `<div class="mc-recent-item">
-            <div class="mc-recent-content">${snippet}</div>
-            <div class="mc-recent-meta">
-              <span class="mc-recent-source">${label}</span>
-              <span class="mc-recent-time">${timeStr}</span>
-            </div>
-          </div>`;
-        }).join("");
+        container.innerHTML = rows.map((c) =>
+          buildRecentMemoryItem(c.content, LABEL_MAP[c.status] || "候选记忆", c.candidate_type || "", c.created_at)
+        ).join("");
       }
+      bindRecentExpandButtons(container);
       return;
     }
 
