@@ -1,4 +1,4 @@
-console.log("build cloudflare-0055");
+console.log("build cloudflare-0056");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3078,9 +3078,8 @@ async function renderRecentMemoryUpdates() {
     if (currentUserId) {
       const { data, error } = await supabaseClient
         .from("memories")
-        .select("id, content, category, created_at, user_id, enabled")
+        .select("id, content, category, created_at, user_id")
         .eq("user_id", currentUserId)
-        .neq("enabled", false)
         .order("created_at", { ascending: false })
         .limit(3);
       if (!error && data && data.length > 0) memData = data;
