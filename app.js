@@ -682,9 +682,8 @@ let _conversationStartedAt = null;
 
 async function callChatAPI(messages, replyMode = "auto") {
   const endpoint = getConfigValue("CHAT_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL");
-  const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME");
+  const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME"); // optional — backend routes by modelTier
   if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
-  if (!modelName) throw new Error("MODEL_NAME 未配置");
 
   // Build timeContext from browser
   const now = new Date();

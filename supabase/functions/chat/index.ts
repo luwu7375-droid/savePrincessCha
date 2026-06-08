@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Expose-Headers": "x-save-princess-memory-debug, x-memory-cache-hit, x-model-tier, x-provider, x-save-princess-function-version, x-chat-status",
+  "Access-Control-Expose-Headers": "x-save-princess-memory-debug, x-memory-cache-hit, x-model-tier, x-provider, x-model, x-fallback-used, x-fallback-reason, x-save-princess-function-version, x-chat-status",
 };
 
 type TimeContext = {
@@ -80,25 +80,33 @@ type ChatRequest = {
 
 // ── Model tier ────────────────────────────────────────────────────────────────
 //
-// All three tiers route through openrouter/fuka:
+// Per-tier primary/fallback provider routing:
 //
-//   instant  → OPENROUTER_API_KEY + OPENROUTER_BASE_URL + FAST_MODEL
-//   general  → OPENROUTER_API_KEY + OPENROUTER_BASE_URL + DEFAULT_MODEL (fallback: MODEL_NAME)
-//   advanced → OPENROUTER_API_KEY + OPENROUTER_BASE_URL + ADVANCED_MODEL
+//   instant  → primary: 55api  fallback: 芙卡
+//   general  → primary: 55api  fallback: 芙卡
+//   advanced → primary: 55api  fallback: 芙卡
 //
-// DeepSeek official API is NOT used for /chat frontend routing.
+// New env vars (take priority):
+//   FIFTYFIVE_BASE_URL / FIFTYFIVE_API_KEY   — 55api provider
+//   FUKA_BASE_URL / FUKA_API_KEY             — 芙卡 provider
 //
-// Fallback (one-shot, triggered on 429 / 5xx / credits errors):
-//   OPENROUTER_API_KEY + OPENROUTER_BASE_URL + FALLBACK_MODEL
+//   MODEL_INSTANT_PRIMARY / MODEL_INSTANT_FALLBACK
+//   MODEL_GENERAL_PRIMARY / MODEL_GENERAL_FALLBACK
+//   MODEL_ADVANCED_PRIMARY / MODEL_ADVANCED_FALLBACK
 //
-// Token caps (all optional):
 //   MAX_OUTPUT_TOKENS_INSTANT  (default 300)
 //   MAX_OUTPUT_TOKENS_GENERAL  (default 300)
 //   MAX_OUTPUT_TOKENS_ADVANCED (default 1200)
 //
-// Legacy / compatibility env vars (still honoured):
-//   MODEL_NAME   — used if DEFAULT_MODEL unset
+//   MODEL_TIMEOUT_MS_INSTANT  (default 20000)
+//   MODEL_TIMEOUT_MS_GENERAL  (default 35000)
+//   MODEL_TIMEOUT_MS_ADVANCED (default 60000)
+//
+// Legacy / compatibility env vars (still honoured as fallback):
+//   OPENROUTER_BASE_URL / OPENROUTER_API_KEY
+//   MODEL_NAME   — used if primary model env unset
 //   FAST_MODEL   — model for instant tier
+//   ADVANCED_MODEL / FALLBACK_MODEL
 
 type ModelTier = "instant" | "general" | "advanced";
 
@@ -111,7 +119,7 @@ function normalizeTier(raw: string | undefined): ModelTier {
 
 // ── Provider config ───────────────────────────────────────────────────────────
 
-type ProviderName = "openrouter";
+type ProviderName = "fiftyfive" | "fuka" | "openrouter";
 
 type ProviderConfig = {
   providerName: ProviderName;
@@ -120,6 +128,12 @@ type ProviderConfig = {
   model: string;
   maxTokens: number;
   tier: ModelTier;
+  role: "primary" | "fallback";
+};
+
+type TierProviders = {
+  primary: ProviderConfig;
+  fallback: ProviderConfig | null;
 };
 
 /**
@@ -137,63 +151,99 @@ function toCompletionsUrl(base: string): string {
   return stripped + "/v1/chat/completions";
 }
 
-function resolveProviderForTier(tier: ModelTier): ProviderConfig {
-  const orBaseUrl = toCompletionsUrl(
-    Deno.env.get("OPENROUTER_BASE_URL") || "https://api.fuka.win/v1/chat/completions",
+function resolveProviderForTier(tier: ModelTier): TierProviders {
+  // ── 55api (primary) ─────────────────────────────────────────────────────────
+  const fiftyfiveBaseUrl = toCompletionsUrl(
+    Deno.env.get("FIFTYFIVE_BASE_URL") ||
+    Deno.env.get("OPENROUTER_BASE_URL") ||
+    "https://api.openai.com/v1/chat/completions",
   );
-  const orApiKey = Deno.env.get("OPENROUTER_API_KEY") || "";
-  const defaultModel =
+  const fiftyfiveApiKey =
+    Deno.env.get("FIFTYFIVE_API_KEY") ||
+    Deno.env.get("OPENROUTER_API_KEY") ||
+    "";
+
+  // ── 芙卡 (fallback) ─────────────────────────────────────────────────────────
+  const fukaBaseUrl = toCompletionsUrl(
+    Deno.env.get("FUKA_BASE_URL") ||
+    Deno.env.get("OPENROUTER_BASE_URL") ||
+    "https://api.fuka.win/v1/chat/completions",
+  );
+  const fukaApiKey =
+    Deno.env.get("FUKA_API_KEY") ||
+    Deno.env.get("OPENROUTER_API_KEY") ||
+    "";
+
+  // ── Legacy model name defaults ──────────────────────────────────────────────
+  const legacyDefault =
     Deno.env.get("DEFAULT_MODEL") || Deno.env.get("MODEL_NAME") || "";
 
   switch (tier) {
     case "instant": {
-      // Routes through OpenRouter/fuka (same as general/advanced).
-      const model = Deno.env.get("FAST_MODEL") || defaultModel;
       const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_INSTANT") || "300", 10);
-      return { providerName: "openrouter", baseUrl: orBaseUrl, apiKey: orApiKey, model, maxTokens, tier };
+      const primaryModel =
+        Deno.env.get("MODEL_INSTANT_PRIMARY") ||
+        Deno.env.get("FAST_MODEL") ||
+        legacyDefault;
+      const fallbackModel =
+        Deno.env.get("MODEL_INSTANT_FALLBACK") ||
+        Deno.env.get("FALLBACK_MODEL") ||
+        "";
+      const primary: ProviderConfig = {
+        providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
+        apiKey: fiftyfiveApiKey, model: primaryModel, maxTokens, tier, role: "primary",
+      };
+      const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
+        ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier, role: "fallback" }
+        : null;
+      return { primary, fallback };
     }
     case "advanced": {
-      const model = Deno.env.get("ADVANCED_MODEL") || defaultModel;
       const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_ADVANCED") || "1200", 10);
-      return { providerName: "openrouter", baseUrl: orBaseUrl, apiKey: orApiKey, model, maxTokens, tier };
+      const primaryModel =
+        Deno.env.get("MODEL_ADVANCED_PRIMARY") ||
+        Deno.env.get("ADVANCED_MODEL") ||
+        legacyDefault;
+      const fallbackModel =
+        Deno.env.get("MODEL_ADVANCED_FALLBACK") ||
+        Deno.env.get("FALLBACK_MODEL") ||
+        "";
+      const primary: ProviderConfig = {
+        providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
+        apiKey: fiftyfiveApiKey, model: primaryModel, maxTokens, tier, role: "primary",
+      };
+      const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
+        ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier, role: "fallback" }
+        : null;
+      return { primary, fallback };
     }
     default: {
       // general
-      const model = defaultModel;
       const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "300", 10);
-      return { providerName: "openrouter", baseUrl: orBaseUrl, apiKey: orApiKey, model, maxTokens, tier: "general" };
+      const primaryModel =
+        Deno.env.get("MODEL_GENERAL_PRIMARY") ||
+        legacyDefault;
+      const fallbackModel =
+        Deno.env.get("MODEL_GENERAL_FALLBACK") ||
+        Deno.env.get("FALLBACK_MODEL") ||
+        "";
+      const primary: ProviderConfig = {
+        providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
+        apiKey: fiftyfiveApiKey, model: primaryModel, maxTokens, tier: "general", role: "primary",
+      };
+      const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
+        ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier: "general", role: "fallback" }
+        : null;
+      return { primary, fallback };
     }
   }
 }
 
-/**
- * Returns the one-shot fallback provider to try when the primary call fails.
- * Uses OPENROUTER_API_KEY + OPENROUTER_BASE_URL + FALLBACK_MODEL.
- * Returns null if FALLBACK_MODEL is not configured.
- */
-function getFallbackProvider(): ProviderConfig | null {
-  const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "300", 10);
-  const fbModel  = Deno.env.get("FALLBACK_MODEL") || "";
-  const orApiKey = Deno.env.get("OPENROUTER_API_KEY") || "";
-  const orBase   = toCompletionsUrl(
-    Deno.env.get("OPENROUTER_BASE_URL") || "https://api.fuka.win/v1/chat/completions",
-  );
-  if (fbModel && orApiKey) {
-    return {
-      providerName: "openrouter",
-      baseUrl: orBase,
-      apiKey: orApiKey,
-      model: fbModel,
-      maxTokens,
-      tier: "general",
-    };
-  }
-  return null;
-}
+
 
 /** Returns true for upstream errors that warrant a one-shot fallback attempt. */
 function isFallbackableStatus(status: number, bodyText: string): boolean {
-  if (status === 429 || status >= 500) return true;
+  if (status === 408 || status === 429 || status >= 500) return true;
   const lower = bodyText.toLocaleLowerCase();
   return (
     lower.includes("insufficient credits") ||
@@ -1355,31 +1405,70 @@ type CallResult = {
   modelCallMs: number;
 };
 
+const TIER_TIMEOUT_MS: Record<ModelTier, number> = {
+  instant: 20_000,
+  general: 35_000,
+  advanced: 60_000,
+};
+
+function getTimeoutMs(tier: ModelTier): number {
+  const envKey = `MODEL_TIMEOUT_MS_${tier.toUpperCase()}` as
+    | "MODEL_TIMEOUT_MS_INSTANT"
+    | "MODEL_TIMEOUT_MS_GENERAL"
+    | "MODEL_TIMEOUT_MS_ADVANCED";
+  const fromEnv = parseInt(Deno.env.get(envKey) || "", 10);
+  return isNaN(fromEnv) ? TIER_TIMEOUT_MS[tier] : fromEnv;
+}
+
 async function callModel(
   provider: ProviderConfig,
   messages: unknown[],
 ): Promise<{ res: Response; ms: number }> {
   const t = Date.now();
-  const res = await fetch(provider.baseUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${provider.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: provider.model,
-      messages,
-      stream: true,
-      max_tokens: provider.maxTokens,
-    }),
-  });
-  return { res, ms: Date.now() - t };
+  const timeoutMs = getTimeoutMs(provider.tier);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(provider.baseUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provider.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: provider.model,
+        messages,
+        stream: true,
+        max_tokens: provider.maxTokens,
+      }),
+      signal: controller.signal,
+    });
+    return { res, ms: Date.now() - t };
+  } catch (err) {
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "AbortError" || err.message.includes("aborted"));
+    if (isTimeout) {
+      // Wrap as a synthetic 408 so upstream fallback logic can handle it uniformly
+      return {
+        res: new Response(
+          JSON.stringify({ error: "upstream_timeout", provider: provider.providerName }),
+          { status: 408, headers: { "Content-Type": "application/json" } },
+        ),
+        ms: Date.now() - t,
+      };
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function callModelWithFallback(
-  primary: ProviderConfig,
+  tierProviders: TierProviders,
   messages: unknown[],
 ): Promise<CallResult> {
+  const { primary, fallback } = tierProviders;
   const { res: primaryRes, ms: primaryMs } = await callModel(primary, messages);
 
   if (primaryRes.ok) {
@@ -1396,7 +1485,6 @@ async function callModelWithFallback(
   }
 
   const bodyText = await primaryRes.text();
-  const fallback = getFallbackProvider();
 
   if (!fallback || !isFallbackableStatus(primaryRes.status, bodyText)) {
     return {
@@ -1510,7 +1598,8 @@ Deno.serve(async (request) => {
   }
 
   const tier = normalizeTier(payload.modelTier);
-  const providerConfig = resolveProviderForTier(tier);
+  const tierProviders = resolveProviderForTier(tier);
+  const providerConfig = tierProviders.primary;
 
   if (!providerConfig.apiKey) {
     return jsonResponse(
@@ -2016,7 +2105,7 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
   ];
 
   try {
-    const result = await callModelWithFallback(providerConfig, messages);
+    const result = await callModelWithFallback(tierProviders, messages);
 
     logRecord.model_call_ms = result.modelCallMs;
     logRecord.model = result.usedModel;
@@ -2089,6 +2178,11 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
       topic_switch_from: topicSwitchFrom,
       topic_switch_to: topicSwitchTo,
       route_scores: routeScores,
+      // model routing debug
+      provider: logRecord.provider,
+      model: logRecord.model,
+      fallback_used: logRecord.fallback_used,
+      fallback_reason: logRecord.fallback_reason,
     };
     const memoryDebugHeader = base64EncodeUtf8(memoryDebugPayload);
     const chatStatusHeader = base64EncodeUtf8(chatStatus);
@@ -2127,6 +2221,9 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
         "x-memory-cache-hit": logRecord.memory_cache_hit ? "true" : "false",
         "x-model-tier": tier,
         "x-provider": result.usedProvider,
+        "x-model": result.usedModel,
+        "x-fallback-used": result.fallbackUsed ? "true" : "false",
+        "x-fallback-reason": result.fallbackReason ?? "",
         "x-save-princess-function-version": FUNCTION_VERSION,
         "x-save-princess-memory-debug": memoryDebugHeader,
         "x-chat-status": chatStatusHeader,
