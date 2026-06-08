@@ -3058,10 +3058,13 @@ function renderRecentMemoryUpdatesOptimistic(items) {
 async function renderRecentMemoryUpdates() {
   const container = document.getElementById("mcRecentUpdates");
   if (!container) return;
-  container.innerHTML = `<div class="mc-recent-loading">加载中…</div>`;
+  const hasOptimistic = container.querySelector(".mc-recent-item") !== null;
+  if (!hasOptimistic) {
+    container.innerHTML = `<div class="mc-recent-loading">加载中…</div>`;
+  }
 
   if (!supabaseClient) {
-    container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+    if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
     return;
   }
 
@@ -3069,12 +3072,23 @@ async function renderRecentMemoryUpdates() {
     const { data, error } = await supabaseClient
       .from("memories")
       .select("id, content, category, created_at, source_msg_ids")
-      .not("source_msg_ids", "is", null)
+      .eq("enabled", true)
       .order("created_at", { ascending: false })
       .limit(3);
 
     if (error || !data || data.length === 0) {
-      container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+      // Don't wipe optimistic results — show sync hint instead
+      if (hasOptimistic) {
+        const syncHint = container.querySelector(".mc-recent-sync-hint");
+        if (!syncHint) {
+          const hint = document.createElement("div");
+          hint.className = "mc-recent-sync-hint mc-recent-empty";
+          hint.textContent = "同步中…";
+          container.appendChild(hint);
+        }
+      } else {
+        container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+      }
       return;
     }
 
@@ -3083,16 +3097,17 @@ async function renderRecentMemoryUpdates() {
       const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
         " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
       const snippet = mem.content.length > 60 ? mem.content.slice(0, 60) + "…" : mem.content;
+      const sourceLabel = mem.source_msg_ids && mem.source_msg_ids.length > 0 ? "自动记忆" : "暂无来源";
       return `<div class="mc-recent-item">
         <div class="mc-recent-content">${snippet}</div>
         <div class="mc-recent-meta">
-          <span class="mc-recent-source">自动记忆</span>
+          <span class="mc-recent-source">${sourceLabel}</span>
           <span class="mc-recent-time">${timeStr}</span>
         </div>
       </div>`;
     }).join("");
   } catch (_) {
-    container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+    if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
   }
 }
 
