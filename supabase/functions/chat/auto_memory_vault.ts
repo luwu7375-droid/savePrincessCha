@@ -12,12 +12,23 @@
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type AutoMemoryVaultResult = {
-  candidates_count: number;
+  raw_candidates_count: number;
+  valid_candidates_count: number;
+  inserted_count: number;
+  duplicate_skipped_count: number;
+  check_failed_count: number;
+  insert_failed_count: number;
   auto_accept_count: number;
   pending_count: number;
   quarantine_count: number;
   reject_count: number;
 };
+
+type UpsertCandidateResult =
+  | { status: "inserted"; id: string }
+  | { status: "duplicate"; id?: string }
+  | { status: "check_failed"; http_status: number; error: string }
+  | { status: "insert_failed"; http_status: number; error: string };
 
 type RawCandidate = {
   candidate_type: string;
@@ -177,7 +188,7 @@ async function upsertCandidate(params: {
   recommendedAction: "auto_accept" | "pending" | "quarantine" | "reject";
   contentHash: string;
   userMessageId: number | null;
-}): Promise<void> {
+}): Promise<UpsertCandidateResult> {
   const {
     supabaseUrl,
     serviceRoleKey,
@@ -195,8 +206,7 @@ async function upsertCandidate(params: {
     "Content-Type": "application/json",
   };
 
-  // Dedup check: if a candidate with the same content_hash already exists for
-  // this user (any status), skip insertion.
+  // Dedup check
   const checkRes = await fetch(
     `${supabaseUrl}/rest/v1/auto_memory_candidates` +
       `?user_id=eq.${encodeURIComponent(userId)}` +
@@ -205,39 +215,86 @@ async function upsertCandidate(params: {
     { headers },
   );
 
-  if (!checkRes.ok) return;
+  if (!checkRes.ok) {
+    const errText = await checkRes.text();
+    const result: UpsertCandidateResult = {
+      status: "check_failed",
+      http_status: checkRes.status,
+      error: errText.slice(0, 200),
+    };
+    console.log(JSON.stringify({
+      fn: "upsertCandidate",
+      event: "check_failed",
+      http_status: checkRes.status,
+      error_head: errText.slice(0, 200),
+      content_hash: contentHash,
+    }));
+    return result;
+  }
+
   const existing = await checkRes.json() as Array<{ id: string }>;
-  if (existing.length > 0) return; // duplicate, skip
+  if (existing.length > 0) {
+    const result: UpsertCandidateResult = { status: "duplicate", id: existing[0].id };
+    console.log(JSON.stringify({
+      fn: "upsertCandidate",
+      event: "duplicate_skipped",
+      existing_id: existing[0].id,
+      content_hash: contentHash,
+    }));
+    return result;
+  }
 
   const newId = `amc_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  const payload = {
+    id: newId,
+    user_id: userId,
+    conversation_id: conversationId ?? null,
+    source_msg_ids: userMessageId != null ? [userMessageId] : null,
+    candidate_type: candidate.candidate_type,
+    content: candidate.content,
+    content_hash: contentHash,
+    confidence: candidate.confidence,
+    sensitivity: candidate.sensitivity,
+    recommended_action: recommendedAction,
+    status: "new",
+    reason: candidate.reason ?? null,
+    promoted_memory_id: null,
+  };
 
   const insertRes = await fetch(`${supabaseUrl}/rest/v1/auto_memory_candidates`, {
     method: "POST",
     headers: { ...headers, Prefer: "return=minimal" },
-    body: JSON.stringify({
-      id: newId,
-      user_id: userId,
-      conversation_id: conversationId ?? null,
-      source_msg_ids: userMessageId != null ? [userMessageId] : null,
-      candidate_type: candidate.candidate_type,
-      content: candidate.content,
-      content_hash: contentHash,
-      confidence: candidate.confidence,
-      sensitivity: candidate.sensitivity,
-      recommended_action: recommendedAction,
-      status: "new",
-      reason: candidate.reason ?? null,
-      promoted_memory_id: null,
-    }),
+    body: JSON.stringify(payload),
   });
+
   if (!insertRes.ok) {
     const errText = await insertRes.text();
-    console.error(
-      "[upsertCandidate] insert failed:",
-      insertRes.status,
-      errText.slice(0, 300),
-    );
+    const result: UpsertCandidateResult = {
+      status: "insert_failed",
+      http_status: insertRes.status,
+      error: errText.slice(0, 200),
+    };
+    console.log(JSON.stringify({
+      fn: "upsertCandidate",
+      event: "insert_failed",
+      http_status: insertRes.status,
+      error_head: errText.slice(0, 200),
+      payload_keys: Object.keys(payload),
+      content_hash: contentHash,
+    }));
+    return result;
   }
+
+  console.log(JSON.stringify({
+    fn: "upsertCandidate",
+    event: "inserted",
+    id: newId,
+    candidate_type: candidate.candidate_type,
+    recommended_action: recommendedAction,
+    content_hash: contentHash,
+  }));
+  return { status: "inserted", id: newId };
 }
 
 // ── runAutoMemoryVault ────────────────────────────────────────────────────────
@@ -272,7 +329,12 @@ export async function runAutoMemoryVault(params: {
   } = params;
 
   const result: AutoMemoryVaultResult = {
-    candidates_count: 0,
+    raw_candidates_count: 0,
+    valid_candidates_count: 0,
+    inserted_count: 0,
+    duplicate_skipped_count: 0,
+    check_failed_count: 0,
+    insert_failed_count: 0,
     auto_accept_count: 0,
     pending_count: 0,
     quarantine_count: 0,
@@ -308,6 +370,8 @@ export async function runAutoMemoryVault(params: {
       raw_candidates_count: rawCandidates.length,
     }));
 
+    result.raw_candidates_count = rawCandidates.length;
+
     if (rawCandidates.length === 0) return result;
 
     for (const c of rawCandidates) {
@@ -340,28 +404,45 @@ export async function runAutoMemoryVault(params: {
         continue;
       }
 
+      result.valid_candidates_count += 1;
+
       const contentHash = await hashContent(c.content);
 
-      await upsertCandidate({
-        supabaseUrl,
-        serviceRoleKey,
-        userId,
-        conversationId,
-        candidate: { ...c, confidence, sensitivity },
-        recommendedAction,
-        contentHash,
-        userMessageId,
-      }).catch((err) =>
-        console.error(
-          "[runAutoMemoryVault] upsert error:",
-          err instanceof Error ? err.message : String(err),
-        )
-      );
+      let upsertResult: UpsertCandidateResult;
+      try {
+        upsertResult = await upsertCandidate({
+          supabaseUrl,
+          serviceRoleKey,
+          userId,
+          conversationId,
+          candidate: { ...c, confidence, sensitivity },
+          recommendedAction,
+          contentHash,
+          userMessageId,
+        });
+      } catch (err) {
+        console.error(JSON.stringify({
+          fn: "runAutoMemoryVault",
+          event: "upsert_exception",
+          error: err instanceof Error ? err.message : String(err),
+          content_hash: contentHash,
+        }));
+        result.insert_failed_count += 1;
+        continue;
+      }
 
-      result.candidates_count += 1;
-      if (recommendedAction === "auto_accept") result.auto_accept_count += 1;
-      else if (recommendedAction === "pending") result.pending_count += 1;
-      else if (recommendedAction === "quarantine") result.quarantine_count += 1;
+      if (upsertResult.status === "inserted") {
+        result.inserted_count += 1;
+        if (recommendedAction === "auto_accept") result.auto_accept_count += 1;
+        else if (recommendedAction === "pending") result.pending_count += 1;
+        else if (recommendedAction === "quarantine") result.quarantine_count += 1;
+      } else if (upsertResult.status === "duplicate") {
+        result.duplicate_skipped_count += 1;
+      } else if (upsertResult.status === "check_failed") {
+        result.check_failed_count += 1;
+      } else if (upsertResult.status === "insert_failed") {
+        result.insert_failed_count += 1;
+      }
     }
   } catch (err) {
     console.error(
@@ -369,6 +450,21 @@ export async function runAutoMemoryVault(params: {
       err instanceof Error ? err.message : String(err),
     );
   }
+
+  console.log(JSON.stringify({
+    fn: "runAutoMemoryVault",
+    event: "summary",
+    raw_candidates_count: result.raw_candidates_count,
+    valid_candidates_count: result.valid_candidates_count,
+    inserted_count: result.inserted_count,
+    duplicate_skipped_count: result.duplicate_skipped_count,
+    check_failed_count: result.check_failed_count,
+    insert_failed_count: result.insert_failed_count,
+    auto_accept_count: result.auto_accept_count,
+    pending_count: result.pending_count,
+    quarantine_count: result.quarantine_count,
+    reject_count: result.reject_count,
+  }));
 
   return result;
 }
