@@ -193,7 +193,7 @@ async function upsertCandidate(params: {
 
   const newId = `amc_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-  await fetch(`${supabaseUrl}/rest/v1/auto_memory_candidates`, {
+  const insertRes = await fetch(`${supabaseUrl}/rest/v1/auto_memory_candidates`, {
     method: "POST",
     headers: { ...headers, Prefer: "return=minimal" },
     body: JSON.stringify({
@@ -212,6 +212,14 @@ async function upsertCandidate(params: {
       promoted_memory_id: null,
     }),
   });
+  if (!insertRes.ok) {
+    const errText = await insertRes.text();
+    console.error(
+      "[upsertCandidate] insert failed:",
+      insertRes.status,
+      errText.slice(0, 300),
+    );
+  }
 }
 
 // ── runAutoMemoryVault ────────────────────────────────────────────────────────
