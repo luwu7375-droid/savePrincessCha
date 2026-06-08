@@ -1,4 +1,4 @@
-console.log("build cloudflare-0061");
+console.log("build cloudflare-0062");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3042,8 +3042,8 @@ function renderRecentMemoryUpdatesOptimistic(items) {
     const date = new Date(item.promoted_at || Date.now());
     const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
       " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-    const snippet = (item.content || "").length > 60
-      ? item.content.slice(0, 60) + "…"
+    const snippet = (item.content || "").length > 80
+      ? item.content.slice(0, 80) + "…"
       : (item.content || "");
     return `<div class="mc-recent-item">
       <div class="mc-recent-content">${snippet}</div>
@@ -3086,7 +3086,7 @@ async function renderRecentMemoryUpdates() {
           const date = new Date(mem.created_at);
           const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
             " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-          const snippet = (mem.content || "").length > 60 ? mem.content.slice(0, 60) + "…" : (mem.content || "");
+          const snippet = (mem.content || "").length > 80 ? mem.content.slice(0, 80) + "…" : (mem.content || "");
           return `<div class="mc-recent-item">
             <div class="mc-recent-content">${snippet}</div>
             <div class="mc-recent-meta">
@@ -3104,7 +3104,7 @@ async function renderRecentMemoryUpdates() {
           const date = new Date(c.created_at);
           const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
             " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-          const snippet = (c.content || "").length > 60 ? (c.content || "").slice(0, 60) + "…" : (c.content || "");
+          const snippet = (c.content || "").length > 80 ? (c.content || "").slice(0, 80) + "…" : (c.content || "");
           const label = LABEL_MAP[c.status] || "候选记忆";
           return `<div class="mc-recent-item">
             <div class="mc-recent-content">${snippet}</div>
