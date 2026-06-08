@@ -1104,6 +1104,15 @@ async function requestStreamingReply(replyMode = "auto") {
     }
   } catch (_) {}
 
+  // 读取 memory promoted header（promotion 成功时后端写入）
+  try {
+    const promotedHeader = response.headers.get("x-memory-promoted");
+    if (promotedHeader) {
+      const n = parseInt(promotedHeader, 10);
+      if (Number.isFinite(n) && n > 0) showMemoryToast(n);
+    }
+  } catch (_) {}
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "", fullReply = "", streamDone = false;
@@ -3100,3 +3109,41 @@ function renderMemoryCenterDebug(log) {
     </div>`;
   }).join("");
 }
+
+// ── Memory Toast ──────────────────────────────────────────────────────────────
+// Call showMemoryToast(n) after a successful P2 promotion.
+// n = number of promoted memories (1 → "记忆已更新", n>1 → "记住了 n 条新内容")
+// Exposed on window for manual testing: window.showMemoryToast(1)
+
+let _memoryToastTimer = null;
+
+function showMemoryToast(count) {
+  const n = typeof count === "number" ? count : 1;
+  const msg = n === 1 ? "记忆已更新" : `记住了 ${n} 条新内容`;
+
+  // Remove any existing toast first
+  const existing = document.querySelector(".memory-toast");
+  if (existing) existing.remove();
+  if (_memoryToastTimer) { clearTimeout(_memoryToastTimer); _memoryToastTimer = null; }
+
+  const toast = document.createElement("div");
+  toast.className = "memory-toast toast-enter";
+  toast.setAttribute("role", "status");
+  toast.setAttribute("aria-live", "polite");
+  toast.innerHTML = `<span class="memory-toast-icon">✦</span><span>${msg}</span>`;
+  document.body.appendChild(toast);
+
+  // Trigger enter animation
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toast.classList.remove("toast-enter"));
+  });
+
+  // Auto-dismiss after 2.8s
+  _memoryToastTimer = setTimeout(() => {
+    toast.classList.add("toast-exit");
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    _memoryToastTimer = null;
+  }, 2800);
+}
+
+window.showMemoryToast = showMemoryToast;
