@@ -303,7 +303,7 @@ type MemoryRow = {
 
 const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona">, string[]> = {
   work: ["救公主", "Codex", "GitHub", "部署", "Guidebook", "app.js", "bug", "报错", "代码", "PRD", "方案"],
-  writing: ["OC", "剧情", "角色", "真田", "安彦", "晃", "续写", "文风", "大纲"],
+  writing: ["OC", "家产", "深爱者优先", "《深爱者优先》", "剧情", "角色", "设定", "写作", "大纲", "世界观", "森川", "修司", "里佳", "成濑", "真田", "安彦", "渡边", "晃", "淳", "莉珂", "琉华", "续写", "文风"],
   life: ["吃饭", "睡觉", "猫", "家务", "出门", "身体", "药"],
   // relation 域：只在问到关系相关问题时召回，不无脑注入
   relation: [
@@ -1168,6 +1168,41 @@ async function compileMemoryContext(
     projectMemoryReason = projectMemorySuppressedReason ?? "not project_work route";
   }
 
+  // ── writing_memory: keyword-triggered, reads category=writing_memory from memories ──
+  // Injected when user message hits writing domain keywords (OC / 家产 / 角色 / etc.)
+  // Independent of project_work gate — writing is a separate creative context.
+  const writingDomainHit = messageHitsKeywords(userMessage, MEMORY_DOMAIN_KEYWORDS.writing);
+  let writingMemoryLoaded = false;
+  let writingMemoryRecalled = false;
+  let writingMemoryReason: string | null = null;
+  if (writingDomainHit && supabaseUrl && serviceRoleKey) {
+    try {
+      const wmRes = await fetch(
+        `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=eq.writing_memory&select=id,content&order=created_at.asc`,
+        { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+      );
+      if (wmRes.ok) {
+        const wmRows = (await wmRes.json()) as { id: string; content: string }[];
+        if (wmRows.length > 0) {
+          writingMemoryLoaded = true;
+          writingMemoryRecalled = true;
+          activeProviders.push("writing_memory");
+          const lines = wmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
+          context += `\n\n<writing_memory source="memories_table" category="writing_memory" inject_mode="keyword_triggered">\n以下是用户 OC / 世界观设定，仅在用户提到写作、角色、家产等时参考。不要擅自修改大纲或替用户决定剧情走向；若没有召回到具体设定，应明确说"不确定，需要你补一下"，禁止编造不存在的角色名。\n${lines}\n</writing_memory>`;
+        } else {
+          writingMemoryReason = "no writing_memory row found";
+        }
+      } else {
+        writingMemoryReason = `fetch failed: HTTP ${wmRes.status}`;
+      }
+    } catch (err) {
+      writingMemoryReason = `error: ${err instanceof Error ? err.message : String(err)}`;
+      console.error("[memory] writing_memory load failed:", writingMemoryReason);
+    }
+  } else if (!writingDomainHit) {
+    writingMemoryReason = "writing domain not triggered";
+  }
+
   // ── openai_archive: retrieval_only, triggered by keyword + mood gate ─────────
   // Entries and policy are fetched from openai_archive_entries DB table.
   // Previously inlined as ARCHIVE_ROLEPLAY / ARCHIVE_POLICY in openai_archive.ts.
@@ -1242,6 +1277,9 @@ async function compileMemoryContext(
       project_memory_keys: projectMemoryKeys,
       project_memory_reason: projectMemoryReason,
       project_memory_suppressed_reason: projectMemorySuppressedReason,
+      writing_memory_loaded: writingMemoryLoaded,
+      writing_memory_recalled: writingMemoryRecalled,
+      writing_memory_reason: writingMemoryReason,
       openai_archive_loaded: archiveDetection.detected && archiveLoadError === null,
       openai_archive_recalled: archiveRecalled,
       openai_archive_hit_count: archiveHits.length,
