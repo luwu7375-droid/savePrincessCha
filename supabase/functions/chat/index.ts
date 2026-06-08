@@ -152,16 +152,22 @@ function toCompletionsUrl(base: string): string {
 }
 
 function resolveProviderForTier(tier: ModelTier): TierProviders {
-  // ── 55api (primary) ─────────────────────────────────────────────────────────
   const fiftyfiveBaseUrl = toCompletionsUrl(
     Deno.env.get("FIFTYFIVE_BASE_URL") ||
     Deno.env.get("OPENROUTER_BASE_URL") ||
     "https://api.openai.com/v1/chat/completions",
   );
-  const fiftyfiveApiKey =
-    Deno.env.get("FIFTYFIVE_API_KEY") ||
-    Deno.env.get("OPENROUTER_API_KEY") ||
-    "";
+
+  // ── 55api per-group keys (primary) ──────────────────────────────────────────
+  // Each token group is bound to specific models; fall back to generic key last.
+  const legacyFiftyfiveKey = Deno.env.get("FIFTYFIVE_API_KEY") || "";
+
+  const fiftyfiveKeyGemini =
+    Deno.env.get("FIFTYFIVE_API_KEY_GEMINI") || legacyFiftyfiveKey;
+  const fiftyfiveKeyGpt =
+    Deno.env.get("FIFTYFIVE_API_KEY_GPT") || legacyFiftyfiveKey;
+  const fiftyfiveKeyClaude =
+    Deno.env.get("FIFTYFIVE_API_KEY_CLAUDE") || legacyFiftyfiveKey;
 
   // ── 芙卡 (fallback) ─────────────────────────────────────────────────────────
   const fukaBaseUrl = toCompletionsUrl(
@@ -191,7 +197,7 @@ function resolveProviderForTier(tier: ModelTier): TierProviders {
         "";
       const primary: ProviderConfig = {
         providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
-        apiKey: fiftyfiveApiKey, model: primaryModel, maxTokens, tier, role: "primary",
+        apiKey: fiftyfiveKeyGemini, model: primaryModel, maxTokens, tier, role: "primary",
       };
       const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
         ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier, role: "fallback" }
@@ -210,7 +216,7 @@ function resolveProviderForTier(tier: ModelTier): TierProviders {
         "";
       const primary: ProviderConfig = {
         providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
-        apiKey: fiftyfiveApiKey, model: primaryModel, maxTokens, tier, role: "primary",
+        apiKey: fiftyfiveKeyClaude, model: primaryModel, maxTokens, tier, role: "primary",
       };
       const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
         ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier, role: "fallback" }
@@ -229,7 +235,7 @@ function resolveProviderForTier(tier: ModelTier): TierProviders {
         "";
       const primary: ProviderConfig = {
         providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
-        apiKey: fiftyfiveApiKey, model: primaryModel, maxTokens, tier: "general", role: "primary",
+        apiKey: fiftyfiveKeyGpt, model: primaryModel, maxTokens, tier: "general", role: "primary",
       };
       const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
         ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier: "general", role: "fallback" }
@@ -1379,6 +1385,15 @@ function compileArchiveContext(hits: ArchiveHit[], policy: string): string {
   );
 }
 
+// ── ASCII-safe header value ───────────────────────────────────────────────────
+// HTTP header values must be printable ASCII (0x20–0x7E).
+// Model names from some providers (e.g. "[K-按量]claude-sonnet-4-6") contain
+// CJK characters which cause Deno's Response constructor to throw TypeError.
+// encodeURIComponent is fully reversible on the client via decodeURIComponent.
+function asciiHeaderValue(value: unknown): string {
+  return encodeURIComponent(String(value ?? ""));
+}
+
 // ── UTF-8 safe base64 encode ──────────────────────────────────────────────────
 // btoa() only handles Latin-1 (0x00–0xFF). conversation_history_reason and
 // timeline_reason can contain CJK characters → must UTF-8 encode first.
@@ -1469,7 +1484,31 @@ async function callModelWithFallback(
   messages: unknown[],
 ): Promise<CallResult> {
   const { primary, fallback } = tierProviders;
-  const { res: primaryRes, ms: primaryMs } = await callModel(primary, messages);
+
+  let primaryRes: Response;
+  let primaryMs: number;
+
+  try {
+    const result = await callModel(primary, messages);
+    primaryRes = result.res;
+    primaryMs = result.ms;
+  } catch (err) {
+    // Network/connection error thrown by primary — route to fallback if available.
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (!fallback) throw err;
+    const fallbackReason = `primary_error: ${errMsg.slice(0, 120)}`;
+    const { res: fallbackRes, ms: fallbackMs } = await callModel(fallback, messages);
+    return {
+      response: fallbackRes,
+      usedModel: fallback.model,
+      usedProvider: fallback.providerName,
+      fallbackUsed: true,
+      fallbackModel: fallback.model,
+      fallbackProvider: fallback.providerName,
+      fallbackReason,
+      modelCallMs: fallbackMs,
+    };
+  }
 
   if (primaryRes.ok) {
     return {
@@ -1602,9 +1641,14 @@ Deno.serve(async (request) => {
   const providerConfig = tierProviders.primary;
 
   if (!providerConfig.apiKey) {
+    const keyName = tier === "instant"
+      ? "FIFTYFIVE_API_KEY_GEMINI"
+      : tier === "advanced"
+      ? "FIFTYFIVE_API_KEY_CLAUDE"
+      : "FIFTYFIVE_API_KEY_GPT";
     return jsonResponse(
       {
-        error: `${providerConfig.providerName} API key 未配置`,
+        error: `${keyName} 未配置`,
         provider: providerConfig.providerName,
         tier,
       },
@@ -2221,9 +2265,9 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
         "x-memory-cache-hit": logRecord.memory_cache_hit ? "true" : "false",
         "x-model-tier": tier,
         "x-provider": result.usedProvider,
-        "x-model": result.usedModel,
+        "x-model": asciiHeaderValue(result.usedModel),
         "x-fallback-used": result.fallbackUsed ? "true" : "false",
-        "x-fallback-reason": result.fallbackReason ?? "",
+        "x-fallback-reason": asciiHeaderValue(result.fallbackReason ?? ""),
         "x-save-princess-function-version": FUNCTION_VERSION,
         "x-save-princess-memory-debug": memoryDebugHeader,
         "x-chat-status": chatStatusHeader,
