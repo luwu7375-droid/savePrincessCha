@@ -1362,6 +1362,19 @@ img.msg-image { cursor: pointer; }
   flex-shrink: 0;
 }
 .mc-recent-expand:hover { opacity: 1; }
+.mc-recent-source-row {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.65;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.mc-recent-source-label {
+  font-weight: 600;
+}
+.mc-recent-source-text {
+  word-break: break-all;
+}
 
 .mc-legacy-block {
   margin: 0 14px;

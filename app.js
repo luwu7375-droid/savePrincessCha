@@ -1,4 +1,4 @@
-console.log("build cloudflare-0064");
+console.log("build cloudflare-0065");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3037,7 +3037,7 @@ function openMemoryCenter() {
  * Build a single mc-recent-item node using DOM API (no innerHTML injection).
  * Expand/collapse state is stored on the button element itself.
  */
-function buildRecentMemoryItem(content, label, category, timestamp) {
+function buildRecentMemoryItem(content, label, category, timestamp, sourcePreview) {
   const text = content || "";
   const snippet = text.length > 80 ? text.slice(0, 80) + "…" : text;
 
@@ -3088,6 +3088,20 @@ function buildRecentMemoryItem(content, label, category, timestamp) {
   }
 
   item.appendChild(meta);
+
+  // source preview row
+  const srcRow = document.createElement("div");
+  srcRow.className = "mc-recent-source-row";
+  const srcLabel = document.createElement("span");
+  srcLabel.className = "mc-recent-source-label";
+  srcLabel.textContent = "来源：";
+  srcRow.appendChild(srcLabel);
+  const srcText = document.createElement("span");
+  srcText.className = "mc-recent-source-text";
+  srcText.textContent = sourcePreview ? `「${sourcePreview}」` : "暂无来源";
+  srcRow.appendChild(srcText);
+  item.appendChild(srcRow);
+
   return item;
 }
 
@@ -3099,7 +3113,7 @@ function renderRecentMemoryUpdatesOptimistic(items) {
   if (!container || !items || items.length === 0) return;
   container.innerHTML = "";
   items.slice(0, 3).forEach((item) =>
-    container.appendChild(buildRecentMemoryItem(item.content, "自动记忆", item.category || item.candidate_type || "", item.promoted_at || Date.now()))
+    container.appendChild(buildRecentMemoryItem(item.content, "自动记忆", item.category || item.candidate_type || "", item.promoted_at || Date.now(), null))
   );
 }
 
@@ -3131,7 +3145,7 @@ async function renderRecentMemoryUpdates() {
       container.innerHTML = "";
       if (source === "memories") {
         rows.forEach((mem) =>
-          container.appendChild(buildRecentMemoryItem(mem.content, "已写入记忆", mem.category || "", mem.created_at))
+          container.appendChild(buildRecentMemoryItem(mem.content, "已写入记忆", mem.category || "", mem.created_at, mem.source_preview || null))
         );
       } else {
         const LABEL_MAP = {
@@ -3139,7 +3153,7 @@ async function renderRecentMemoryUpdates() {
           candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
         };
         rows.forEach((c) =>
-          container.appendChild(buildRecentMemoryItem(c.content, LABEL_MAP[c.status] || "候选记忆", c.candidate_type || "", c.created_at))
+          container.appendChild(buildRecentMemoryItem(c.content, LABEL_MAP[c.status] || "候选记忆", c.candidate_type || "", c.created_at, c.source_preview || null))
         );
       }
       return;

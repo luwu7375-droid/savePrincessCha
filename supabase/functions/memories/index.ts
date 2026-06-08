@@ -43,27 +43,53 @@ Deno.serve(async (req) => {
     };
     const userId = url.searchParams.get("userId");
 
+    // Helper: fetch source_preview from messages table for first id in array
+    async function fetchSourcePreview(sourceIds: number[] | null): Promise<string | null> {
+      if (!sourceIds || sourceIds.length === 0) return null;
+      const firstId = sourceIds[0];
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/messages?select=content&id=eq.${firstId}&limit=1`,
+        { headers: dbHeaders }
+      );
+      if (!res.ok) return null;
+      const rows = await res.json() as { content: string }[];
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+      const text = rows[0].content || "";
+      return text.length > 80 ? text.slice(0, 80) + "…" : text;
+    }
+
     // Step 1: memories table, filtered by user_id
     const memUrl = userId
-      ? `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`
-      : `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at&order=created_at.desc&limit=3`;
+      ? `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at,source_msg_ids&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`
+      : `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at,source_msg_ids&order=created_at.desc&limit=3`;
     const memRes = await fetch(memUrl, { headers: dbHeaders });
     if (memRes.ok) {
-      const memRows = await memRes.json() as { id: string; content: string; category: string; created_at: string }[];
+      const memRows = await memRes.json() as { id: string; content: string; category: string; created_at: string; source_msg_ids: number[] | null }[];
       if (Array.isArray(memRows) && memRows.length > 0) {
-        return json({ source: "memories", rows: memRows }, 200);
+        const rowsWithPreview = await Promise.all(memRows.map(async (mem) => ({
+          ...mem,
+          source_preview: await fetchSourcePreview(mem.source_msg_ids),
+        })));
+        return json({ source: "memories", rows: rowsWithPreview }, 200);
       }
     }
 
     // Step 2: fallback to auto_memory_candidates filtered by userId
     if (userId) {
       const candRes = await fetch(
-        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,content,status,candidate_type,created_at,user_id&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`,
+        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,content,status,candidate_type,created_at,user_id,source_msg_ids&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`,
         { headers: dbHeaders }
       );
       if (candRes.ok) {
-        const candRows = await candRes.json() as unknown[];
-        return json({ source: "candidates", rows: Array.isArray(candRows) ? candRows : [] }, 200);
+        const candRows = await candRes.json() as { source_msg_ids: number[] | null; [key: string]: unknown }[];
+        if (Array.isArray(candRows) && candRows.length > 0) {
+          const rowsWithPreview = await Promise.all(candRows.map(async (c) => ({
+            ...c,
+            source_preview: await fetchSourcePreview(c.source_msg_ids),
+          })));
+          return json({ source: "candidates", rows: rowsWithPreview }, 200);
+        }
+        return json({ source: "candidates", rows: [] }, 200);
       }
     }
 
