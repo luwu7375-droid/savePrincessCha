@@ -3178,6 +3178,13 @@ function showMemoryToast(count) {
   toast.setAttribute("role", "status");
   toast.setAttribute("aria-live", "polite");
   toast.innerHTML = `<span class="memory-toast-icon">✦</span><span>${msg}</span>`;
+  toast.title = "小 cha 记住了一点新的东西";
+  toast.addEventListener("click", () => {
+    toast.classList.add("toast-exit");
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+    if (_memoryToastTimer) { clearTimeout(_memoryToastTimer); _memoryToastTimer = null; }
+    openMemoryCenter();
+  }, { once: true });
   document.body.appendChild(toast);
 
   // Trigger enter animation

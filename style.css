@@ -1678,9 +1678,14 @@ img.msg-image { cursor: pointer; }
   font-size: 13px;
   font-family: inherit;
   white-space: nowrap;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
   opacity: 1;
   transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.memory-toast:hover {
+  opacity: 0.85;
 }
 .memory-toast.toast-enter {
   opacity: 0;
