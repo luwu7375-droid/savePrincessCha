@@ -136,9 +136,27 @@ async function extractVaultCandidates(params: {
     const data = await res.json();
     const text: string = data?.choices?.[0]?.message?.content ?? "";
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return [];
+    if (!match) {
+      console.log(JSON.stringify({
+        fn: "extractVaultCandidates",
+        event: "llm_response",
+        status: res.status,
+        text_head: text.slice(0, 200),
+        candidates_parsed: 0,
+        note: "no JSON block found",
+      }));
+      return [];
+    }
     const parsed = JSON.parse(match[0]) as Partial<ExtractionResponse>;
-    return Array.isArray(parsed.candidates) ? parsed.candidates : [];
+    const candidates = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+    console.log(JSON.stringify({
+      fn: "extractVaultCandidates",
+      event: "llm_response",
+      status: res.status,
+      text_head: text.slice(0, 200),
+      candidates_parsed: candidates.length,
+    }));
+    return candidates;
   } catch {
     return [];
   }
@@ -262,6 +280,16 @@ export async function runAutoMemoryVault(params: {
   };
 
   try {
+    console.log(JSON.stringify({
+      fn: "runAutoMemoryVault",
+      event: "start",
+      user_id_prefix: userId.slice(0, 6),
+      userMessage_len: userMessage.trim().length,
+      has_orBaseUrl: Boolean(orBaseUrl),
+      has_orApiKey: Boolean(orApiKey),
+      fastModel_name: fastModel,
+    }));
+
     // Skip if user message is trivially short (< 8 chars)
     if (userMessage.trim().length < 8) return result;
 
@@ -273,6 +301,12 @@ export async function runAutoMemoryVault(params: {
       orApiKey,
       fastModel,
     });
+
+    console.log(JSON.stringify({
+      fn: "runAutoMemoryVault",
+      event: "extraction_done",
+      raw_candidates_count: rawCandidates.length,
+    }));
 
     if (rawCandidates.length === 0) return result;
 
