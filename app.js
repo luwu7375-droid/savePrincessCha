@@ -545,7 +545,11 @@ function setLoading(isLoading) {
 }
 
 function stripThinking(text) {
-  return text.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*$/, "").trim();
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/<think>[\s\S]*$/, "")
+    .replace(/\b[A-Z][A-Z_]{2,}_END\b/g, "")
+    .trim();
 }
 
 function base64DecodeUtf8(base64) {
@@ -3069,43 +3073,77 @@ async function renderRecentMemoryUpdates() {
   }
 
   try {
-    const { data, error } = await supabaseClient
-      .from("memories")
-      .select("id, content, category, created_at, source_msg_ids")
-      .neq("enabled", false)
-      .order("created_at", { ascending: false })
-      .limit(3);
+    // ── Step 1: memories table (user-scoped, no source_msg_ids constraint) ──
+    let memData = null;
+    if (currentUserId) {
+      const { data, error } = await supabaseClient
+        .from("memories")
+        .select("id, content, category, created_at, source_msg_ids")
+        .eq("user_id", currentUserId)
+        .neq("enabled", false)
+        .order("created_at", { ascending: false })
+        .limit(3);
+      if (!error && data && data.length > 0) memData = data;
+    }
 
-    if (error || !data || data.length === 0) {
-      // Don't wipe optimistic results — show sync hint instead
-      if (hasOptimistic) {
-        const syncHint = container.querySelector(".mc-recent-sync-hint");
-        if (!syncHint) {
-          const hint = document.createElement("div");
-          hint.className = "mc-recent-sync-hint mc-recent-empty";
-          hint.textContent = "同步中…";
-          container.appendChild(hint);
-        }
-      } else {
-        container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
-      }
+    if (memData && memData.length > 0) {
+      container.innerHTML = memData.map((mem) => {
+        const date = new Date(mem.created_at);
+        const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
+          " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+        const snippet = (mem.content || "").length > 60 ? mem.content.slice(0, 60) + "…" : (mem.content || "");
+        const sourceLabel = mem.source_msg_ids && mem.source_msg_ids.length > 0 ? "自动记忆" : "暂无来源";
+        return `<div class="mc-recent-item">
+          <div class="mc-recent-content">${snippet}</div>
+          <div class="mc-recent-meta">
+            <span class="mc-recent-source">${sourceLabel}</span>
+            <span class="mc-recent-time">${timeStr}</span>
+          </div>
+        </div>`;
+      }).join("");
       return;
     }
 
-    container.innerHTML = data.map((mem) => {
-      const date = new Date(mem.created_at);
-      const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
-        " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-      const snippet = mem.content.length > 60 ? mem.content.slice(0, 60) + "…" : mem.content;
-      const sourceLabel = mem.source_msg_ids && mem.source_msg_ids.length > 0 ? "自动记忆" : "暂无来源";
-      return `<div class="mc-recent-item">
-        <div class="mc-recent-content">${snippet}</div>
-        <div class="mc-recent-meta">
-          <span class="mc-recent-source">${sourceLabel}</span>
-          <span class="mc-recent-time">${timeStr}</span>
-        </div>
-      </div>`;
-    }).join("");
+    // ── Step 2: fallback to auto_memory_candidates (promoted or new) ────
+    const { data: candData, error: candError } = await supabaseClient
+      .from("auto_memory_candidates")
+      .select("id, content, summary, status, promoted_at, source_msg_ids, created_at")
+      .in("status", ["promoted", "new"])
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    if (!candError && candData && candData.length > 0) {
+      container.innerHTML = candData.map((c) => {
+        const ts = c.promoted_at || c.created_at;
+        const date = new Date(ts);
+        const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
+          " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+        const text = c.content || c.summary || "";
+        const snippet = text.length > 60 ? text.slice(0, 60) + "…" : text;
+        const label = c.status === "promoted" ? "候选已记忆" : "候选记忆";
+        return `<div class="mc-recent-item">
+          <div class="mc-recent-content">${snippet}</div>
+          <div class="mc-recent-meta">
+            <span class="mc-recent-source">${label}</span>
+            <span class="mc-recent-time">${timeStr}</span>
+          </div>
+        </div>`;
+      }).join("");
+      return;
+    }
+
+    // ── Both empty: preserve optimistic items, show sync hint if present ──
+    if (hasOptimistic) {
+      const syncHint = container.querySelector(".mc-recent-sync-hint");
+      if (!syncHint) {
+        const hint = document.createElement("div");
+        hint.className = "mc-recent-sync-hint mc-recent-empty";
+        hint.textContent = "同步中…";
+        container.appendChild(hint);
+      }
+    } else {
+      container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+    }
   } catch (_) {
     if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
   }
