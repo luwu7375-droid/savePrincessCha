@@ -3078,7 +3078,7 @@ async function renderRecentMemoryUpdates() {
     if (currentUserId) {
       const { data, error } = await supabaseClient
         .from("memories")
-        .select("id, content, category, created_at, source_msg_ids")
+        .select("id, content, category, created_at, user_id, enabled")
         .eq("user_id", currentUserId)
         .neq("enabled", false)
         .order("created_at", { ascending: false })
@@ -3092,7 +3092,7 @@ async function renderRecentMemoryUpdates() {
         const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
           " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
         const snippet = (mem.content || "").length > 60 ? mem.content.slice(0, 60) + "…" : (mem.content || "");
-        const sourceLabel = mem.source_msg_ids && mem.source_msg_ids.length > 0 ? "自动记忆" : "暂无来源";
+        const sourceLabel = "已写入记忆";
         return `<div class="mc-recent-item">
           <div class="mc-recent-content">${snippet}</div>
           <div class="mc-recent-meta">
