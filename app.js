@@ -1,4 +1,4 @@
-console.log("build cloudflare-0063");
+console.log("build cloudflare-0064");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3091,6 +3091,7 @@ function buildRecentMemoryItem(content, label, category, timestamp) {
   return item;
 }
 
+/**
  * @param {Array<{id: string, content: string, promoted_at: string}>} items
  */
 function renderRecentMemoryUpdatesOptimistic(items) {
