@@ -1,4 +1,4 @@
-console.log("build cloudflare-0057");
+console.log("build cloudflare-0058");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3073,79 +3073,52 @@ async function renderRecentMemoryUpdates() {
   }
 
   try {
-    // ── Step 1: memories table (user-scoped, no source_msg_ids constraint) ──
-    let memData = null;
-    if (currentUserId) {
-      const { data, error } = await supabaseClient
-        .from("memories")
-        .select("id, content, category, created_at")
-        .order("created_at", { ascending: false })
-        .limit(3);
-      console.log("[recentMem] currentUserId:", currentUserId);
-      console.log("[recentMem] memories error:", error);
-      console.log("[recentMem] memories rows:", data?.length, data);
-      if (!error && data && data.length > 0) memData = data;
-    }
+    // ── via Edge Function (service role, bypasses RLS) ─────────────────────
+    const userId = currentUserId || "";
+    const resp = await memoryFetch(`?type=recent&userId=${encodeURIComponent(userId)}`);
+    if (!resp.ok) throw new Error(`recent fetch failed: ${resp.status}`);
+    const { source, rows } = await resp.json();
+    console.log("[recentMem] source:", source, "rows:", rows?.length, rows);
 
-    if (memData && memData.length > 0) {
-      console.log("[recentMem] render target:", container);
-      console.log("[recentMem] rendering memories");
-      container.innerHTML = memData.map((mem) => {
-        const date = new Date(mem.created_at);
-        const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
-          " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-        const snippet = (mem.content || "").length > 60 ? mem.content.slice(0, 60) + "…" : (mem.content || "");
-        const sourceLabel = "已写入记忆";
-        return `<div class="mc-recent-item">
-          <div class="mc-recent-content">${snippet}</div>
-          <div class="mc-recent-meta">
-            <span class="mc-recent-source">${sourceLabel}</span>
-            <span class="mc-recent-time">${timeStr}</span>
-          </div>
-        </div>`;
-      }).join("");
+    if (rows && rows.length > 0) {
+      if (source === "memories") {
+        container.innerHTML = rows.map((mem) => {
+          const date = new Date(mem.created_at);
+          const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
+            " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+          const snippet = (mem.content || "").length > 60 ? mem.content.slice(0, 60) + "…" : (mem.content || "");
+          return `<div class="mc-recent-item">
+            <div class="mc-recent-content">${snippet}</div>
+            <div class="mc-recent-meta">
+              <span class="mc-recent-source">已写入记忆</span>
+              <span class="mc-recent-time">${timeStr}</span>
+            </div>
+          </div>`;
+        }).join("");
+      } else {
+        const LABEL_MAP = {
+          promoted: "候选已记忆", approved: "已确认", new: "候选记忆",
+          candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
+        };
+        container.innerHTML = rows.map((c) => {
+          const date = new Date(c.created_at);
+          const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
+            " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+          const snippet = (c.content || "").length > 60 ? (c.content || "").slice(0, 60) + "…" : (c.content || "");
+          const label = LABEL_MAP[c.status] || "候选记忆";
+          return `<div class="mc-recent-item">
+            <div class="mc-recent-content">${snippet}</div>
+            <div class="mc-recent-meta">
+              <span class="mc-recent-source">${label}</span>
+              <span class="mc-recent-time">${timeStr}</span>
+            </div>
+          </div>`;
+        }).join("");
+      }
       return;
     }
 
-    // ── Step 2: fallback to auto_memory_candidates ────────────────────
-    if (!currentUserId) {
-      if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
-      return;
-    }
-    const { data: candData, error: candError } = await supabaseClient
-      .from("auto_memory_candidates")
-      .select("id, content, status, candidate_type, created_at, user_id")
-      .eq("user_id", currentUserId)
-      .order("created_at", { ascending: false })
-      .limit(3);
-    console.log("[recentMem] candidates error:", candError);
-    console.log("[recentMem] candidates rows:", candData?.length, candData);
-
-    if (!candError && candData && candData.length > 0) {
-      console.log("[recentMem] render target:", container);
-      console.log("[recentMem] rendering candidates");
-      const LABEL_MAP = {
-        promoted: "候选已记忆", approved: "已确认", new: "候选记忆",
-        candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
-      };
-      container.innerHTML = candData.map((c) => {
-        const date = new Date(c.created_at);
-        const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
-          " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-        const snippet = (c.content || "").length > 60 ? (c.content || "").slice(0, 60) + "…" : (c.content || "");
-        const label = LABEL_MAP[c.status] || "候选记忆";
-        return `<div class="mc-recent-item">
-          <div class="mc-recent-content">${snippet}</div>
-          <div class="mc-recent-meta">
-            <span class="mc-recent-source">${label}</span>
-            <span class="mc-recent-time">${timeStr}</span>
-          </div>
-        </div>`;
-      }).join("");
-      return;
-    }
-
-    // ── Both empty: preserve optimistic items, show sync hint if present ──
+    // ── Both empty ─────────────────────────────────────────────────────────
     if (hasOptimistic) {
       const syncHint = container.querySelector(".mc-recent-sync-hint");
       if (!syncHint) {

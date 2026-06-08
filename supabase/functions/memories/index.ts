@@ -126,6 +126,38 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ── recent updates route ──────────────────────────────────────────────────
+
+  if (type === "recent" && req.method === "GET") {
+    const userId = url.searchParams.get("userId");
+
+    // Step 1: memories table (no user_id column yet, return latest 3)
+    const memRes = await fetch(
+      `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at&order=created_at.desc&limit=3`,
+      { headers: dbHeaders }
+    );
+    if (memRes.ok) {
+      const memRows = await memRes.json() as { id: string; content: string; category: string; created_at: string }[];
+      if (Array.isArray(memRows) && memRows.length > 0) {
+        return json({ source: "memories", rows: memRows }, 200);
+      }
+    }
+
+    // Step 2: fallback to auto_memory_candidates filtered by userId
+    if (userId) {
+      const candRes = await fetch(
+        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,content,status,candidate_type,created_at,user_id&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`,
+        { headers: dbHeaders }
+      );
+      if (candRes.ok) {
+        const candRows = await candRes.json() as unknown[];
+        return json({ source: "candidates", rows: Array.isArray(candRows) ? candRows : [] }, 200);
+      }
+    }
+
+    return json({ source: "memories", rows: [] }, 200);
+  }
+
   // ── memories routes (existing) ────────────────────────────────────────────
 
   if (req.method === "GET") {
