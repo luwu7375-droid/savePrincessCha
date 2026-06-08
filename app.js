@@ -3082,10 +3082,15 @@ async function renderRecentMemoryUpdates() {
         .eq("user_id", currentUserId)
         .order("created_at", { ascending: false })
         .limit(3);
+      console.log("[recentMem] currentUserId:", currentUserId);
+      console.log("[recentMem] memories error:", error);
+      console.log("[recentMem] memories rows:", data?.length, data);
       if (!error && data && data.length > 0) memData = data;
     }
 
     if (memData && memData.length > 0) {
+      console.log("[recentMem] render target:", container);
+      console.log("[recentMem] rendering memories");
       container.innerHTML = memData.map((mem) => {
         const date = new Date(mem.created_at);
         const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
@@ -3114,9 +3119,12 @@ async function renderRecentMemoryUpdates() {
       .eq("user_id", currentUserId)
       .order("created_at", { ascending: false })
       .limit(3);
-    console.log("[recentMem] candidates:", candError, candData?.length);
+    console.log("[recentMem] candidates error:", candError);
+    console.log("[recentMem] candidates rows:", candData?.length, candData);
 
     if (!candError && candData && candData.length > 0) {
+      console.log("[recentMem] render target:", container);
+      console.log("[recentMem] rendering candidates");
       const LABEL_MAP = {
         promoted: "候选已记忆", approved: "已确认", new: "候选记忆",
         candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
