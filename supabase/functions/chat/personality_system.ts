@@ -10,7 +10,7 @@
 // L0 (hardcoded identity core) lives in index.ts system prompt, unchanged.
 // This module handles L1 and L2 only.
 
-import { runAutoMemoryVault } from "./auto_memory_vault.ts";
+import { runAutoMemoryVault, promoteAutoMemoryCandidates } from "./auto_memory_vault.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -499,6 +499,26 @@ export async function afterChat(params: AfterChatParams): Promise<void> {
         err instanceof Error ? err.message : String(err),
       )
     );
+
+    // Auto Memory Vault P2 — promotion flow, fire-and-forget, never throws
+    const promotionEnabledRaw = Deno.env.get("AUTO_MEMORY_PROMOTION_ENABLED");
+    if (promotionEnabledRaw === "true") {
+      promoteAutoMemoryCandidates({
+        supabaseUrl,
+        serviceRoleKey,
+        userId,
+        conversationId,
+        limit: 10,
+        dryRun: false,
+      }).then((promotionResult) => {
+        console.log(JSON.stringify({ fn: "promoteAutoMemoryCandidates", ...promotionResult }));
+      }).catch((err) =>
+        console.error(
+          "[afterChat] promotion error:",
+          err instanceof Error ? err.message : String(err),
+        )
+      );
+    }
   }
 
   // 2. Call LLM to extract personality features
