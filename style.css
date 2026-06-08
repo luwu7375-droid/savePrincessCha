@@ -1608,6 +1608,80 @@ img.msg-image { cursor: pointer; }
   font-style: italic;
 }
 
+/* ── 摘要区 ── */
+.mc-debug-summary {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mc-debug-summary-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mc-debug-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+.mc-debug-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  background: oklch(72% 0.18 150 / 0.15);
+  color: oklch(72% 0.18 150);
+  white-space: nowrap;
+}
+.mc-debug-pill--empty {
+  background: var(--bg-raise);
+  color: var(--text-muted);
+}
+.mc-debug-summary-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: center;
+}
+.mc-debug-actions {
+  display: flex;
+  gap: 6px;
+}
+.mc-debug-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-raise);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.mc-debug-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+.mc-debug-btn--copy {
+  background: oklch(72% 0.18 150 / 0.1);
+  color: oklch(72% 0.18 150);
+  border-color: oklch(72% 0.18 150 / 0.3);
+}
+.mc-debug-btn--copy:hover {
+  background: oklch(72% 0.18 150 / 0.2);
+}
+
+/* ── 详情折叠区 ── */
+.mc-debug-detail {
+  border-top: 1px solid var(--border);
+}
+
 .mc-debug-row {
   display: flex;
   justify-content: space-between;

@@ -3233,54 +3233,78 @@ function renderMemoryCenterDebug(log) {
   if (!panel) return;
 
   if (!log) {
-    panel.innerHTML = '<div class="mc-debug-placeholder">还没有本轮记忆调用日志，发送一条消息后显示。</div>';
+    panel.innerHTML = '<div class="mc-debug-placeholder">还没有本轮记忆调试信息，发送一条消息后显示。</div>';
     return;
   }
 
+  // ── 摘要行（始终可见）──────────────────────────────────────────────────
+  const providers = Array.isArray(log.active_memory_providers) ? log.active_memory_providers : [];
+  const providerCount = log.memory_provider_count ?? providers.length;
+  const tokenEst = log.memory_context_tokens_estimated ?? "—";
+  const topicRoute = log.topic_route || log.secondary_route ? [log.topic_route, log.secondary_route].filter(Boolean).join(" / ") : "—";
+
+  // Provider recalled 状态 pill 列表
+  const PROVIDER_LABELS = {
+    persona_memories:      "L1",
+    mastodon_profile:      "用户档案",
+    writing_memory:        "OC写作",
+    project_memory:        "项目",
+    relationship_context:  "关系",
+    life_context:          "生活",
+    historical_ai_usage:   "前世",
+    openai_archive:        "旧记忆",
+    conversation_history:  "历史对话",
+    mastodon_timeline:     "时间线",
+  };
+  const pillsHtml = providers.map((p) => {
+    const label = PROVIDER_LABELS[p] || p;
+    return `<span class="mc-debug-pill">${label}</span>`;
+  }).join("");
+
+  // ── 完整字段表（折叠内）─────────────────────────────────────────���──────
   const fields = [
-    ["legacy_memory_enabled",              log.legacy_memory_enabled],
-    ["active_memory_providers",            Array.isArray(log.active_memory_providers) ? log.active_memory_providers.join(", ") || "—" : "—"],
-    ["memory_provider_count",              log.memory_provider_count],
-    // ── L1 persona_memories ──────────────────────────────────────────
+    // 路由
+    ["topic_route",                        log.topic_route || "—"],
+    ["secondary_route",                    log.secondary_route || "—"],
+    // L1 persona_memories
     ["persona_memories_loaded",            log.persona_memories_loaded],
     ["persona_memories_count",             log.persona_memories_count ?? "—"],
     ["persona_memories_categories",        Array.isArray(log.persona_memories_categories) ? log.persona_memories_categories.join(", ") || "—" : "—"],
-    ["persona_memories_error",             log.persona_memories_error || "—"],
-    // ── mastodon_profile ─────────────────────────────────────────────
+    // mastodon_profile
     ["mastodon_profile_loaded",            log.mastodon_profile_loaded],
-    ["mastodon_profile_chars",             log.mastodon_profile_chars],
-    ["mastodon_profile_tokens_estimated",  log.mastodon_profile_tokens_estimated ?? "—"],
-    // ── mastodon_timeline ────────────────────────────────────────────
-    ["timeline_query_detected",            log.timeline_query_detected],
-    ["timeline_loaded",                    log.timeline_loaded],
-    ["timeline_recalled",                  log.timeline_recalled],
-    ["timeline_hit_count",                 log.timeline_hit_count],
-    ["timeline_hit_keys",                  Array.isArray(log.timeline_hit_keys) ? log.timeline_hit_keys.join(", ") || "—" : "—"],
-    ["timeline_reason",                    log.timeline_reason || "—"],
-    // ── L2 project_memory ────────────────────────────────────────────
-    ["project_memory_loaded",              log.project_memory_loaded],
+    ["mastodon_profile_chars",             log.mastodon_profile_chars ?? "—"],
+    // writing_memory
+    ["writing_memory_recalled",            log.writing_memory_recalled],
+    ["writing_memory_reason",              log.writing_memory_reason || "—"],
+    // project_memory
     ["project_memory_recalled",            log.project_memory_recalled],
     ["project_memory_hit_count",           log.project_memory_hit_count ?? "—"],
-    ["project_memory_keys",                Array.isArray(log.project_memory_keys) ? log.project_memory_keys.join(", ") || "—" : "—"],
-    ["project_memory_reason",              log.project_memory_reason || "—"],
-    // ── L3 openai_archive ────────────────────────────────────────────
-    ["openai_archive_loaded",              log.openai_archive_loaded],
+    ["project_memory_suppressed_reason",   log.project_memory_suppressed_reason || "—"],
+    // relationship_context
+    ["relationship_context_recalled",      log.relationship_context_recalled],
+    ["relationship_context_reason",        log.relationship_context_reason || "—"],
+    // life_context
+    ["life_context_recalled",              log.life_context_recalled],
+    ["life_context_reason",                log.life_context_reason || "—"],
+    // historical_ai_usage
+    ["historical_ai_usage_recalled",       log.historical_ai_usage_recalled],
+    ["historical_ai_usage_reason",         log.historical_ai_usage_reason || "—"],
+    // openai_archive
     ["openai_archive_recalled",            log.openai_archive_recalled],
     ["openai_archive_hit_count",           log.openai_archive_hit_count ?? "—"],
-    ["openai_archive_keys",                Array.isArray(log.openai_archive_keys) ? log.openai_archive_keys.join(", ") || "—" : "—"],
-    ["openai_archive_reason",              log.openai_archive_reason || "—"],
-    ["historical_roleplay_hit_count",      log.historical_roleplay_hit_count ?? "—"],
-    ["historical_roleplay_reason",         log.historical_roleplay_reason || "—"],
-    // ── conversation_history ─────────────────────────────────────────
-    ["conversation_history_query_detected", log.conversation_history_query_detected],
-    ["conversation_history_recalled",       log.conversation_history_recalled],
-    ["conversation_history_hit_count",      log.conversation_history_hit_count ?? "—"],
-    ["conversation_history_reason",         log.conversation_history_reason || "—"],
-    // ── token summary ────────────────────────────────────────────────
-    ["memory_context_tokens_estimated",    log.memory_context_tokens_estimated],
+    // conversation_history
+    ["conversation_history_recalled",      log.conversation_history_recalled],
+    ["conversation_history_hit_count",     log.conversation_history_hit_count ?? "—"],
+    ["conversation_history_reason",        log.conversation_history_reason || "—"],
+    // timeline
+    ["timeline_recalled",                  log.timeline_recalled],
+    ["timeline_hit_keys",                  Array.isArray(log.timeline_hit_keys) ? log.timeline_hit_keys.join(", ") || "—" : "—"],
+    // summary
+    ["memory_context_tokens_estimated",    tokenEst],
+    ["memory_provider_count",              providerCount],
   ];
 
-  panel.innerHTML = fields.map(([key, val]) => {
+  const detailRowsHtml = fields.map(([key, val]) => {
     const valStr = val === null || val === undefined ? "—" : String(val);
     const isTrue = valStr === "true";
     const isFalse = valStr === "false";
@@ -3289,6 +3313,45 @@ function renderMemoryCenterDebug(log) {
       <span class="mc-debug-val${isTrue ? " mc-debug-val--true" : isFalse ? " mc-debug-val--false" : ""}">${valStr}</span>
     </div>`;
   }).join("");
+
+  const detailId = "mcDebugDetail";
+
+  panel.innerHTML = `
+    <div class="mc-debug-summary">
+      <div class="mc-debug-summary-top">
+        <div class="mc-debug-pills">${pillsHtml || '<span class="mc-debug-pill mc-debug-pill--empty">无</span>'}</div>
+        <div class="mc-debug-summary-meta">${tokenEst} tokens · ${topicRoute}</div>
+      </div>
+      <div class="mc-debug-actions">
+        <button class="mc-debug-btn" id="mcDebugToggle" aria-expanded="false" aria-controls="${detailId}">展开详情</button>
+        <button class="mc-debug-btn mc-debug-btn--copy" id="mcDebugCopy">复制 JSON</button>
+      </div>
+    </div>
+    <div class="mc-debug-detail" id="${detailId}" hidden>
+      ${detailRowsHtml}
+    </div>
+  `;
+
+  // 折叠切换
+  panel.querySelector("#mcDebugToggle")?.addEventListener("click", () => {
+    const detail = panel.querySelector(`#${detailId}`);
+    const btn = panel.querySelector("#mcDebugToggle");
+    if (!detail || !btn) return;
+    const isHidden = detail.hidden;
+    detail.hidden = !isHidden;
+    btn.textContent = isHidden ? "收起详情" : "展开详情";
+    btn.setAttribute("aria-expanded", String(isHidden));
+  });
+
+  // 复制 JSON
+  panel.querySelector("#mcDebugCopy")?.addEventListener("click", () => {
+    const btn = panel.querySelector("#mcDebugCopy");
+    navigator.clipboard.writeText(JSON.stringify(log, null, 2)).then(() => {
+      if (btn) { btn.textContent = "已复制"; setTimeout(() => { btn.textContent = "复制 JSON"; }, 1500); }
+    }).catch(() => {
+      if (btn) { btn.textContent = "复制失败"; setTimeout(() => { btn.textContent = "复制 JSON"; }, 1500); }
+    });
+  });
 }
 
 // ── Memory Promotion Poller ────────────────────────────────────────────────────
