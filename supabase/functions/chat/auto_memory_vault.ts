@@ -186,7 +186,7 @@ async function extractVaultCandidates(params: {
 
 const VALID_CANDIDATE_TYPES = new Set(["fact", "preference", "relationship", "event", "emotion", "project"]);
 
-const PROMOTION_ALLOWED_TYPES = new Set(["project", "fact"]);
+const PROMOTION_ALLOWED_TYPES = new Set(["project", "fact", "preference"]);
 
 const SENSITIVE_KEYWORDS = [
   "家人", "家庭", "父母", "妈妈", "爸爸", "兄弟", "姐妹", "孩子",
@@ -512,7 +512,7 @@ function mapCandidateTypeToCategory(
     const isInteractionPref = PREFERENCE_INTERACTION_PATTERNS.some((p) =>
       lower.includes(p)
     );
-    return isInteractionPref ? "interaction_preferences" : null;
+    return isInteractionPref ? "interaction_preferences" : "persona";
   }
   return null;
 }
