@@ -3104,23 +3104,30 @@ async function renderRecentMemoryUpdates() {
       return;
     }
 
-    // ── Step 2: fallback to auto_memory_candidates (promoted or new) ────
+    // ── Step 2: fallback to auto_memory_candidates ────────────────────
+    if (!currentUserId) {
+      if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+      return;
+    }
     const { data: candData, error: candError } = await supabaseClient
       .from("auto_memory_candidates")
-      .select("id, content, summary, status, promoted_at, source_msg_ids, created_at")
-      .in("status", ["promoted", "new"])
+      .select("id, content, status, candidate_type, created_at, user_id")
+      .eq("user_id", currentUserId)
       .order("created_at", { ascending: false })
       .limit(3);
+    console.log("[recentMem] candidates:", candError, candData?.length);
 
     if (!candError && candData && candData.length > 0) {
+      const LABEL_MAP = {
+        promoted: "候选已记忆", approved: "已确认", new: "候选记忆",
+        candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
+      };
       container.innerHTML = candData.map((c) => {
-        const ts = c.promoted_at || c.created_at;
-        const date = new Date(ts);
+        const date = new Date(c.created_at);
         const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
           " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-        const text = c.content || c.summary || "";
-        const snippet = text.length > 60 ? text.slice(0, 60) + "…" : text;
-        const label = c.status === "promoted" ? "候选已记忆" : "候选记忆";
+        const snippet = (c.content || "").length > 60 ? (c.content || "").slice(0, 60) + "…" : (c.content || "");
+        const label = LABEL_MAP[c.status] || "候选记忆";
         return `<div class="mc-recent-item">
           <div class="mc-recent-content">${snippet}</div>
           <div class="mc-recent-meta">
@@ -3144,7 +3151,8 @@ async function renderRecentMemoryUpdates() {
     } else {
       container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
     }
-  } catch (_) {
+  } catch (err) {
+    console.error("[recentMem] error:", err);
     if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
   }
 }
