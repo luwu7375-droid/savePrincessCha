@@ -708,6 +708,7 @@ export async function promoteAutoMemoryCandidates(params: {
           category: targetCategory,
           enabled: true,
           source_msg_ids: candidate.source_msg_ids ?? null,
+          user_id: candidate.user_id ?? null,
         }),
       });
 
