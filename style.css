@@ -1295,6 +1295,54 @@ img.msg-image { cursor: pointer; }
   padding-top: 14px;
 }
 
+/* ── 最近更新区域 ─────────────────────────────────────────────── */
+.mc-recent-updates {
+  margin: 0 14px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 40px;
+}
+.mc-recent-loading,
+.mc-recent-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 4px;
+  opacity: 0.6;
+}
+.mc-recent-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-secondary, transparent);
+}
+.mc-recent-content {
+  font-size: 13px;
+  color: var(--text-primary, inherit);
+  line-height: 1.4;
+  word-break: break-all;
+}
+.mc-recent-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mc-recent-source {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--accent, oklch(70% 0.15 260));
+  opacity: 0.85;
+}
+.mc-recent-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 .mc-legacy-block {
   margin: 0 14px;
   border: 1px solid var(--border);

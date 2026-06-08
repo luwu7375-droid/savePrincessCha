@@ -3013,6 +3013,51 @@ function openMemoryCenter() {
   }
   updateMemoryCenterCards(debug);
   renderMemoryCenterDebug(debug);
+  renderRecentMemoryUpdates();
+}
+
+/**
+ * 查询并渲染最近 3 条自动沉淀的记忆（source_msg_ids IS NOT NULL）。
+ */
+async function renderRecentMemoryUpdates() {
+  const container = document.getElementById("mcRecentUpdates");
+  if (!container) return;
+  container.innerHTML = `<div class="mc-recent-loading">加载中…</div>`;
+
+  if (!supabaseClient) {
+    container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+    return;
+  }
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("memories")
+      .select("id, content, category, created_at, source_msg_ids")
+      .not("source_msg_ids", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    if (error || !data || data.length === 0) {
+      container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+      return;
+    }
+
+    container.innerHTML = data.map((mem) => {
+      const date = new Date(mem.created_at);
+      const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
+        " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+      const snippet = mem.content.length > 60 ? mem.content.slice(0, 60) + "…" : mem.content;
+      return `<div class="mc-recent-item">
+        <div class="mc-recent-content">${snippet}</div>
+        <div class="mc-recent-meta">
+          <span class="mc-recent-source">自动记忆</span>
+          <span class="mc-recent-time">${timeStr}</span>
+        </div>
+      </div>`;
+    }).join("");
+  } catch (_) {
+    container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+  }
 }
 
 /**
