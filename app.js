@@ -1,4 +1,4 @@
-console.log("build cloudflare-0056");
+console.log("build cloudflare-0057");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3078,8 +3078,7 @@ async function renderRecentMemoryUpdates() {
     if (currentUserId) {
       const { data, error } = await supabaseClient
         .from("memories")
-        .select("id, content, category, created_at, user_id")
-        .eq("user_id", currentUserId)
+        .select("id, content, category, created_at")
         .order("created_at", { ascending: false })
         .limit(3);
       console.log("[recentMem] currentUserId:", currentUserId);
