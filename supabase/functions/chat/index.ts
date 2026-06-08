@@ -1495,9 +1495,42 @@ async function callModelWithFallback(
   } catch (err) {
     // Network/connection error thrown by primary — route to fallback if available.
     const errMsg = err instanceof Error ? err.message : String(err);
+    const errName = err instanceof Error ? err.name : "unknown";
+    console.error(JSON.stringify({
+      fn: "callModelWithFallback",
+      event: "primary_fetch_error",
+      primary_error_name: errName,
+      primary_error_message: errMsg.slice(0, 300),
+      primary_providerName: primary.providerName,
+      primary_baseUrl: primary.baseUrl,
+      primary_model: primary.model,
+      has_fallback: Boolean(fallback),
+      fallback_providerName: fallback?.providerName ?? null,
+      fallback_baseUrl: fallback?.baseUrl ?? null,
+      fallback_model: fallback?.model ?? null,
+    }));
     if (!fallback) throw err;
     const fallbackReason = `primary_error: ${errMsg.slice(0, 120)}`;
-    const { res: fallbackRes, ms: fallbackMs } = await callModel(fallback, messages);
+    let fallbackRes: Response;
+    let fallbackMs: number;
+    try {
+      const fb = await callModel(fallback, messages);
+      fallbackRes = fb.res;
+      fallbackMs = fb.ms;
+    } catch (fbErr) {
+      const fbMsg = fbErr instanceof Error ? fbErr.message : String(fbErr);
+      const fbName = fbErr instanceof Error ? fbErr.name : "unknown";
+      console.error(JSON.stringify({
+        fn: "callModelWithFallback",
+        event: "fallback_fetch_error",
+        fallback_error_name: fbName,
+        fallback_error_message: fbMsg.slice(0, 300),
+        fallback_providerName: fallback.providerName,
+        fallback_baseUrl: fallback.baseUrl,
+        fallback_model: fallback.model,
+      }));
+      throw fbErr;
+    }
     return {
       response: fallbackRes,
       usedModel: fallback.model,
@@ -2233,8 +2266,10 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
 
     // Check for recently promoted candidates (last 60s) to signal toast to frontend.
     // Promotion runs fire-and-forget, so this reflects the *previous* turn's result.
+    // Disable with DISABLE_MEMORY_PROMOTED=1 for diagnostics.
     let recentPromotedCount = 0;
-    if (supabaseUrl && serviceRoleKey && userId) {
+    const disableMemoryPromoted = Deno.env.get("DISABLE_MEMORY_PROMOTED") === "1";
+    if (!disableMemoryPromoted && supabaseUrl && serviceRoleKey && userId) {
       try {
         const since = new Date(Date.now() - 60_000).toISOString();
         const promotedRes = await fetch(
@@ -2258,6 +2293,7 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
     }
 
     const afterChatUserId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+    const disableAfterChat = Deno.env.get("DISABLE_AFTERCHAT") === "1";
     const backgroundProviderConfig = resolveProviderForTier("instant");
     const backgroundModel = backgroundProviderConfig.primary.model;
     const backgroundBaseUrl = backgroundProviderConfig.primary.baseUrl;
@@ -2265,6 +2301,7 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
     let responseBody: ReadableStream<Uint8Array> | null = result.response.body;
 
     if (
+      !disableAfterChat &&
       result.response.body &&
       supabaseUrl &&
       serviceRoleKey &&
