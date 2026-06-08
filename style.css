@@ -1375,6 +1375,43 @@ img.msg-image { cursor: pointer; }
 .mc-recent-source-text {
   word-break: break-all;
 }
+.mc-recent-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.mc-recent-action-btn {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.mc-recent-action-btn:hover { opacity: 1; }
+.mc-recent-action-btn--danger { color: oklch(55% 0.18 25); border-color: oklch(55% 0.18 25 / 0.4); }
+.mc-action-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: oklch(20% 0 0 / 0.88);
+  color: #fff;
+  font-size: 13px;
+  padding: 7px 18px;
+  border-radius: 20px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s, transform 0.18s;
+  z-index: 9999;
+}
+.mc-action-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.mc-action-toast--error { background: oklch(40% 0.18 25 / 0.92); }
 
 .mc-legacy-block {
   margin: 0 14px;

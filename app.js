@@ -1,4 +1,4 @@
-console.log("build cloudflare-0065");
+console.log("build cloudflare-0066");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3034,10 +3034,28 @@ function openMemoryCenter() {
  * Optimistically renders promoted candidates into the 最近更新 section.
  * Called immediately when poller hits, before memories table write completes.
 /**
+ * Lightweight toast for memory action feedback.
+ */
+function showMcToast(msg, isError = false) {
+  let el = document.getElementById("mcActionToast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "mcActionToast";
+    el.className = "mc-action-toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.toggle("mc-action-toast--error", isError);
+  el.classList.add("mc-action-toast--visible");
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => el.classList.remove("mc-action-toast--visible"), 2200);
+}
+
+/**
  * Build a single mc-recent-item node using DOM API (no innerHTML injection).
  * Expand/collapse state is stored on the button element itself.
  */
-function buildRecentMemoryItem(content, label, category, timestamp, sourcePreview) {
+function buildRecentMemoryItem(content, label, category, timestamp, sourcePreview, memoryId) {
   const text = content || "";
   const snippet = text.length > 80 ? text.slice(0, 80) + "…" : text;
 
@@ -3102,6 +3120,65 @@ function buildRecentMemoryItem(content, label, category, timestamp, sourcePrevie
   srcRow.appendChild(srcText);
   item.appendChild(srcRow);
 
+  // action buttons (only for memories source, not optimistic)
+  if (memoryId) {
+    const actions = document.createElement("div");
+    actions.className = "mc-recent-actions";
+
+    // copy
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "mc-recent-action-btn";
+    copyBtn.textContent = "复制";
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(text).then(
+        () => showMcToast("已复制"),
+        () => showMcToast("复制失败", true)
+      );
+    });
+    actions.appendChild(copyBtn);
+
+    // disable
+    const disableBtn = document.createElement("button");
+    disableBtn.className = "mc-recent-action-btn";
+    disableBtn.textContent = "禁用";
+    disableBtn.addEventListener("click", async () => {
+      if (!confirm("确定禁用这条记忆吗？")) return;
+      try {
+        const res = await memoryFetch(`?id=${encodeURIComponent(memoryId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled: false }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        showMcToast("已禁用");
+        renderRecentMemoryUpdates();
+      } catch (e) {
+        console.error("[mcAction] disable failed", e);
+        showMcToast("操作失败", true);
+      }
+    });
+    actions.appendChild(disableBtn);
+
+    // delete
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "mc-recent-action-btn mc-recent-action-btn--danger";
+    deleteBtn.textContent = "删除";
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm("确定删除这条记忆吗？")) return;
+      try {
+        const res = await memoryFetch(`?id=${encodeURIComponent(memoryId)}`, { method: "DELETE" });
+        if (!res.ok && res.status !== 204) throw new Error(await res.text());
+        showMcToast("已删除");
+        renderRecentMemoryUpdates();
+      } catch (e) {
+        console.error("[mcAction] delete failed", e);
+        showMcToast("操作失败", true);
+      }
+    });
+    actions.appendChild(deleteBtn);
+
+    item.appendChild(actions);
+  }
+
   return item;
 }
 
@@ -3113,7 +3190,7 @@ function renderRecentMemoryUpdatesOptimistic(items) {
   if (!container || !items || items.length === 0) return;
   container.innerHTML = "";
   items.slice(0, 3).forEach((item) =>
-    container.appendChild(buildRecentMemoryItem(item.content, "自动记忆", item.category || item.candidate_type || "", item.promoted_at || Date.now(), null))
+    container.appendChild(buildRecentMemoryItem(item.content, "自动记忆", item.category || item.candidate_type || "", item.promoted_at || Date.now(), null, null))
   );
 }
 
@@ -3145,7 +3222,7 @@ async function renderRecentMemoryUpdates() {
       container.innerHTML = "";
       if (source === "memories") {
         rows.forEach((mem) =>
-          container.appendChild(buildRecentMemoryItem(mem.content, "已写入记忆", mem.category || "", mem.created_at, mem.source_preview || null))
+          container.appendChild(buildRecentMemoryItem(mem.content, "已写入记忆", mem.category || "", mem.created_at, mem.source_preview || null, mem.id))
         );
       } else {
         const LABEL_MAP = {
@@ -3153,7 +3230,7 @@ async function renderRecentMemoryUpdates() {
           candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
         };
         rows.forEach((c) =>
-          container.appendChild(buildRecentMemoryItem(c.content, LABEL_MAP[c.status] || "候选记忆", c.candidate_type || "", c.created_at, c.source_preview || null))
+          container.appendChild(buildRecentMemoryItem(c.content, LABEL_MAP[c.status] || "候选记忆", c.candidate_type || "", c.created_at, c.source_preview || null, null))
         );
       }
       return;
