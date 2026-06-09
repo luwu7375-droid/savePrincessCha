@@ -79,8 +79,10 @@ supabase secrets set LEGACY_MEMORY_ENABLED="true"   # 默认 false
 ### Memory Center UI
 
 - 前端管理面板，显示各 provider 实时状态和 token 用量
-- **最近更新**区域：展示最近 3 条自动沉淀的记忆，带来源预览（截取触发该记忆的原始消息前 80 字）
-- 每条已写入记忆支持**复制 / 禁用 / 删除**操作（需 admin token）
+- **最近更新**区域：展示最近 3 条自动沉淀的记忆，每条以折叠卡片呈现：
+  - 默认视图：type / status badge、自动标题（content 前 30 字）、2 行摘要
+  - 展开后：完整内容、来源消息预览、置信度、敏感度、source_msg_ids、更新时间
+- 已写入记忆支持**复制 / 禁用 / 删除**操作（需 admin token）；候选记忆仅展示
 - 手动记忆的增删启禁通过 `/functions/v1/memories` 接口操作
 - 记忆管理（高级）（memory_buckets）入口保留，在 Memory Center 底部，仅用于管理和迁移
 
