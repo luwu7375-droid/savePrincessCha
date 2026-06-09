@@ -6,14 +6,17 @@
 
 ---
 
-## 一、当前四层记忆架构
+## 一、当前记忆架构
 
 | 层级 | Provider ID | 注入方式 | 状态 | 说明 |
 |------|-------------|----------|------|------|
+| 长期记忆 L1 | `persona_memories` | always | ✅ 已上线 | memories 表，persona / life / relation 域每轮注入 |
 | 常驻画像 | `mastodon_profile` | always | ✅ 已上线 | 每轮注入，核心用户画像 |
+| 项目记忆 L2 | `project_memory` | route inject | ✅ 已上线 | 话题路由为 project_work 时注入，work / writing 域 |
 | 时间线档案 | `mastodon_timeline` | retrieval_only | ✅ 已上线 | 按需召回，事件 / 地点 / 年份类查询触发 |
-| OpenAI 导出 | `openai_export` | retrieval_only | 🔵 预留 | 未来导入 OpenAI 对话记录，不复用 Mastodon parser |
-| 自动记忆库 | `ombre_vault` | retrieval_only | 🟡 规划中 | 自动沉淀，支持删除 / 禁用 / 降权 |
+| 历史对话 L3 | `conversation_history` | retrieval_only | ✅ 已上线 | 触发词激活，跨会话语义检索，top-5 召回 |
+| 自动记忆库 | `auto_memory_vault` | — | ✅ 已上线 | 对话后自动提取候选并沉淀到 memories 表，经 L1/L2 注入 |
+| OpenAI 导出 | `openai_archive` | retrieval_only | 🔵 预留 | 未来导入历史对话记录，未实现 |
 
 ---
 
@@ -37,17 +40,17 @@
 - **XML 包装**：`<timeline_events source="mastodon_timeline">…</timeline_events>`
 - **日志字段**：`timeline_loaded`、`timeline_query_detected`、`timeline_recalled`、`timeline_hit_count`、`timeline_hit_keys`、`timeline_reason`
 
-### openai_export — 预留
+### openai_archive — 预留
 
 - 未来从 OpenAI conversations.json 导入对话记忆
-- **不复用** Mastodon parser 逻辑
 - 注入方式：retrieval_only，需实现独立的关键词或向量召回
 
-### ombre_vault — 规划中
+### auto_memory_vault — 自动记忆库
 
-- 从每轮对话中自动沉淀高价值记忆片段
-- 支持用户主动删除 / 禁用 / 降权
-- 不自动常驻，所有写入须可审计、可撤销
+- 对话结束后自动提取候选记忆（project / fact / preference 类型白名单）
+- 符合条件的候选沉淀到 `memories` 表，经 `persona_memories`（L1）和 `project_memory`（L2）注入后续回复
+- 可在 Memory Center"最近更新"区域查看、禁用、删除
+- 写入须可审计、可撤销
 
 ---
 
@@ -58,11 +61,10 @@
 | 系统 | 停用原因 |
 |------|----------|
 | `story_seeds` | 硬编码关系叙事，不符合"默认遗忘"原则 |
-| `memory_buckets` 注入 | 盲注污染风险高，已由 provider 架构替代 |
-| `memories` 表直接注入 | 保留表结构用于 distill 工作流，不再注入 system prompt |
+| `memory_buckets` 注入 | 盲注污染风险高，已由 provider 架构替代；表保留，仅用于查看 / 迁移 |
 | 前台"关系史"入口 | 已替换为"记忆中枢" |
 
-**环境变量开关**：`LEGACY_MEMORY_ENABLED`（默认 `false`）。生产环境不得开启。
+**环境变量开关**：`LEGACY_MEMORY_ENABLED`（默认 `false`）。生产环境不得开启。旧沉淀记忆管理入口保留为"记忆管理（高级）"，不参与回复。
 
 ---
 
@@ -124,3 +126,5 @@ memory_context_tokens_estimated // 本轮记忆上下文 token 估算值
 | 2026-06 | Phase 4 完成：mastodon_profile 常驻、mastodon_timeline 按需、遗留系统停用 |
 | 2026-06 | Memory Center UI 第一版上线（四张 provider 卡片 + Debug 区域） |
 | 2026-06 | 架构文档固化入 docs/ |
+| 2026-06 | persona_memories / project_memory / conversation_history / auto_memory_vault 上线；memories 表经 L1/L2 注入；Memory Center 更新为 6 张卡片 |
+| 2026-06 | UI 文案更新："记忆管理（高级）"替换"旧记忆匣"，明确正式记忆与旧沉淀记忆的区别 |

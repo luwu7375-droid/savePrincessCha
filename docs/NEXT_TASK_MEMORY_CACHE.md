@@ -31,7 +31,7 @@
 ## Missing backend memory injection/cache pieces
 
 1. The repo already has Supabase Edge Functions for `/chat` and `/memories`.
-2. The `/chat` function already reads from `memories` and `memory_buckets`.
+2. The `/chat` function reads from `memories` (via persona_memories / project_memory providers). `memory_buckets` is retired and not injected (`LEGACY_MEMORY_ENABLED=false`).
 3. The `/chat` function already injects memory text into the system prompt.
 4. Missing pieces for the next step:
    - no message hash key for cache lookup
