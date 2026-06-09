@@ -1640,7 +1640,7 @@ function renderMemoryItem(mem) {
   // Summary: prefer mem.summary, fall back to auto-generated
   const summary = (mem.summary && mem.summary.trim()) ? mem.summary.trim() : _mcAutoSummary(text);
   // Full content is different from summary only when text is long enough
-  const hasFullContent = text.length > 80;
+  const hasFullContent = text.length > 0;
   const isEnabled = mem.enabled !== false;
 
   let dateStr = "";
@@ -3122,16 +3122,30 @@ function showMcToast(msg, isError = false) {
  * Generate a short title from raw content (≤30 chars, no newlines).
  */
 function _mcAutoTitle(content) {
-  const line = (content || "").replace(/\n+/g, " ").trim();
-  return line.length > 30 ? line.slice(0, 30) + "…" : line;
+  // Strip common verbose openers so title reflects the core concept
+  const PREFIX = /^(用户(?:希望|偏好|需要的是|需要)\s*(?:G|小\s*cha|你)?\s*|G\s*(?:希望|偏好)\s*|小\s*cha\s*(?:希望|偏好)\s*|他(?:希望|偏好)\s*|她(?:希望|偏好)\s*)/;
+  let s = (content || "").replace(/\n+/g, " ").trim();
+  s = s.replace(PREFIX, "").trim();
+  // First phrase before any pause/clause punctuation
+  const seg = s.split(/[，。；：！？…、\n]/)[0].trim();
+  if (seg.length >= 3 && seg.length <= 18) return seg;
+  if (seg.length > 18) return seg.slice(0, 16) + "…";
+  // Segment too short — take a slice of the stripped text
+  const fallback = s.slice(0, 14).trim();
+  return fallback || (content || "").slice(0, 14);
 }
 
 /**
  * Generate a 2-line summary from raw content (≤80 chars).
  */
 function _mcAutoSummary(content) {
-  const text = (content || "").trim();
-  return text.length > 80 ? text.slice(0, 80) + "…" : text;
+  const PREFIX = /^(用户(?:希望|偏好|需要的是|需要)\s*(?:G|小\s*cha|你)?\s*|G\s*(?:希望|偏好)\s*|小\s*cha\s*(?:希望|偏好)\s*|他(?:希望|偏好)\s*|她(?:希望|偏好)\s*)/;
+  let s = (content || "").trim();
+  s = s.replace(PREFIX, "").trim();
+  const sentenceEnd = s.search(/[。；]/);
+  const sentence = sentenceEnd > 0 ? s.slice(0, sentenceEnd + 1) : s;
+  if (sentence.length <= 48) return sentence;
+  return sentence.slice(0, 48) + "…";
 }
 
 /**
