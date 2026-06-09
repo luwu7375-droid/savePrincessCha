@@ -88,11 +88,11 @@
     </main>
   </div>
 
-  <!-- 旧记忆匣弹窗 -->
+  <!-- 记忆管理（高级）弹窗 -->
   <div id="memoryOverlay" class="overlay hidden">
     <div class="modal">
       <div class="modal-header">
-        <span>旧记忆匣</span>
+        <span>记忆管理（高级）</span>
         <button id="closeMemoryButton" type="button">✕</button>
       </div>
       <div id="memoryList"></div>
@@ -142,8 +142,23 @@
         <div id="mcRecentUpdates" class="mc-recent-updates"></div>
 
         <!-- Provider 卡片区 -->
-        <div class="mc-section-label mc-section-label--legacy">记忆来源</div>
+        <div class="mc-section-label">记忆来源</div>
         <div class="mc-providers">
+
+          <!-- persona_memories -->
+          <div class="mc-card mc-card--enabled">
+            <div class="mc-card-top">
+              <div class="mc-card-title">Personal Memories<span class="mc-card-subtitle">长期记忆</span></div>
+              <div class="mc-badges">
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+                <span class="mc-badge mc-badge--inject">always inject</span>
+              </div>
+            </div>
+            <div class="mc-card-meta">
+              <span class="mc-provider-id">persona_memories</span>
+            </div>
+            <div class="mc-card-desc">每轮按分类注入（L1）。persona / life / relation 域覆盖人格、生活、关系上下文。通过"记忆管理（高级）"手动管理。</div>
+          </div>
 
           <!-- mastodon_profile -->
           <div class="mc-card mc-card--enabled">
@@ -160,6 +175,21 @@
             </div>
             <div id="mcProfileStatus" class="mc-card-status"></div>
             <div class="mc-card-desc">每轮注入，用于理解用户。参考资料，不复述来源。</div>
+          </div>
+
+          <!-- project_memory -->
+          <div class="mc-card mc-card--enabled">
+            <div class="mc-card-top">
+              <div class="mc-card-title">Project Memory<span class="mc-card-subtitle">项目记忆</span></div>
+              <div class="mc-badges">
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+                <span class="mc-badge mc-badge--inject">route inject</span>
+              </div>
+            </div>
+            <div class="mc-card-meta">
+              <span class="mc-provider-id">project_memory</span>
+            </div>
+            <div class="mc-card-desc">话题路由为 project_work 时注入（L2）。work / writing 域，涵盖项目进度、代码问题、写作 OC 等内容。</div>
           </div>
 
           <!-- mastodon_timeline -->
@@ -194,19 +224,33 @@
             <div class="mc-card-desc">原始 OpenAI 导出不会在运行时直接读取；这里显示的是已整理入库的历史档案按需召回状态。</div>
           </div>
 
-          <!-- ombre_vault -->
-          <div class="mc-card mc-card--planned">
+          <!-- conversation_history -->
+          <div class="mc-card mc-card--enabled">
             <div class="mc-card-top">
-              <div class="mc-card-title">Auto Memory Vault<span class="mc-card-subtitle">自动记忆库</span></div>
+              <div class="mc-card-title">Conversation History<span class="mc-card-subtitle">历史对话</span></div>
               <div class="mc-badges">
-                <span class="mc-badge mc-badge--planned">规划中</span>
+                <span class="mc-badge mc-badge--enabled">已启用</span>
                 <span class="mc-badge mc-badge--retrieval">retrieval only</span>
               </div>
             </div>
             <div class="mc-card-meta">
-              <span class="mc-provider-id">ombre_vault</span>
+              <span class="mc-provider-id">conversation_history</span>
             </div>
-            <div class="mc-card-desc">未来自动沉淀，可删除、可禁用、可降权。</div>
+            <div class="mc-card-desc">触发词激活，跨会话语义检索，top-5 召回（L3）。</div>
+          </div>
+
+          <!-- auto_memory_vault -->
+          <div class="mc-card mc-card--enabled">
+            <div class="mc-card-top">
+              <div class="mc-card-title">Auto Memory Vault<span class="mc-card-subtitle">自动记忆库</span></div>
+              <div class="mc-badges">
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+              </div>
+            </div>
+            <div class="mc-card-meta">
+              <span class="mc-provider-id">auto_memory_vault</span>
+            </div>
+            <div class="mc-card-desc">对话后自动提取候选，符合白名单（project / fact / preference）的条目沉淀到 memories 表，经 L1/L2 注入后续回复。可在最近更新区域查看并禁用/删除。</div>
           </div>
 
         </div>
@@ -216,24 +260,24 @@
         <div class="mc-legacy-block">
           <div class="mc-legacy-header">
             <span class="mc-legacy-title">Legacy Manual Memory</span>
-            <span class="mc-badge mc-badge--legacy">不参与回复</span>
+            <span class="mc-badge mc-badge--legacy">管理工具</span>
           </div>
           <div class="mc-legacy-rows">
             <div class="mc-legacy-row">
               <span class="mc-legacy-key">memories 表</span>
-              <span class="mc-legacy-val">手动记忆条目，可管理</span>
+              <span class="mc-legacy-val">手动记忆条目，经 L1/L2 注入回复</span>
             </div>
             <div class="mc-legacy-row">
               <span class="mc-legacy-key">memory_buckets 表</span>
-              <span class="mc-legacy-val">沉淀记忆，可管理</span>
+              <span class="mc-legacy-val">旧沉淀摘要桶，不注入回复</span>
             </div>
             <div class="mc-legacy-row">
               <span class="mc-legacy-key">distill candidates</span>
-              <span class="mc-legacy-val">从对话提取，待确认</span>
+              <span class="mc-legacy-val">从对话提取，待确认，不注入回复</span>
             </div>
           </div>
-          <div class="mc-legacy-desc">旧手动记忆工具，保留供管理和迁移。未来可迁移到 Auto Memory Vault。当前不会进入聊天注入。</div>
-          <button class="mc-legacy-open-btn" id="mcLegacyOpenBtn">打开旧记忆匣</button>
+          <div class="mc-legacy-desc">memories 表条目通过 persona_memories（L1）和 project_memory（L2）参与回复注入。memory_buckets 和 distill candidates 属于旧工具，仅用于管理和迁移。</div>
+          <button class="mc-legacy-open-btn" id="mcLegacyOpenBtn">记忆管理（高级）</button>
         </div>
 
         <!-- Debug 区域 -->

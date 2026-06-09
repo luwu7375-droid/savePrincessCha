@@ -1677,7 +1677,7 @@ function renderMemoryItem(mem) {
     if (!r.ok) {
       if (r.status === 401) {
         sessionStorage.removeItem("memory_admin_token");
-        showInlineError(item, "口令过期或错误，请重新打开旧记忆匣。");
+        showInlineError(item, "口令过期或错误，请重新打开记忆管理（高级）。");
       } else {
         let msg = `操作失败（${r.status}）`;
         try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
@@ -1730,7 +1730,7 @@ function renderMemoryItem(mem) {
         if (!r.ok) {
           if (r.status === 401) {
             sessionStorage.removeItem("memory_admin_token");
-            showGlobalMemoryError("口令过期或错误，请重新打开旧记忆匣。");
+            showGlobalMemoryError("口令过期或错误，请重新打开记忆管理（高级）。");
           } else {
             let msg = `删除失败（${r.status}）`;
             try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
@@ -1761,8 +1761,12 @@ function renderMemoryList(memories) {
   if (memories.length > 0) {
     const sectionTitle = document.createElement("div");
     sectionTitle.style.cssText = "font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 18px 4px;";
-    sectionTitle.textContent = "记忆";
+    sectionTitle.textContent = "正式记忆（会参与回复）";
     memoryList.appendChild(sectionTitle);
+    const memoriesDesc = document.createElement("div");
+    memoriesDesc.style.cssText = "font-size:12px;color:var(--text-muted);padding:0 18px 8px;";
+    memoriesDesc.textContent = "这些是当前 memories 表中的长期记忆，可能按分类和触发规则参与回复。";
+    memoryList.appendChild(memoriesDesc);
     for (const mem of memories) {
       memoryList.appendChild(renderMemoryItem(mem));
     }
@@ -1923,8 +1927,8 @@ function renderBucketItem(b) {
     e.preventDefault();
     e.stopPropagation();
     showDialog({
-      title: "删除沉淀记忆",
-      body: "��定删除这条沉淀记忆？",
+      title: "删除旧沉淀记忆",
+      body: "确定删除这条旧沉淀记忆？",
       confirmLabel: "删除",
       confirmClass: "btn-danger",
       onConfirm: async () => {
@@ -1984,7 +1988,7 @@ function editBucket(b) {
   dialog.style.width = "400px";
 
   const h3 = document.createElement("h3");
-  h3.textContent = "编辑沉淀记忆";
+  h3.textContent = "编辑旧沉淀记忆";
   dialog.appendChild(h3);
 
   const titleInput = document.createElement("input");
@@ -2135,8 +2139,12 @@ async function loadMemories() {
 
   const bucketTitle = document.createElement("div");
   bucketTitle.style.cssText = "font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 18px 4px;";
-  bucketTitle.textContent = "沉淀记忆（旧系统 · 不参与回复）";
+  bucketTitle.textContent = "旧沉淀记忆（旧系统 · 默认不参与回复）";
   memoryList.appendChild(bucketTitle);
+  const bucketsDesc = document.createElement("div");
+  bucketsDesc.style.cssText = "font-size:12px;color:var(--text-muted);padding:0 18px 8px;";
+  bucketsDesc.textContent = "这些是早期主题摘要桶，默认不注入 prompt，仅用于查看、备份或迁移。";
+  memoryList.appendChild(bucketsDesc);
 
   for (const b of buckets) {
     memoryList.appendChild(renderBucketItem(b));
@@ -2399,7 +2407,7 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
   if (activeMoreMenu) { closeMoreMenu(); return; }
   const items = [
     { label: "记忆", action: () => openMemoryCenter() },
-    { label: "旧记忆匣（高级）", id: "toggleMemoryButton" },
+    { label: "记忆管理（高级）", id: "toggleMemoryButton" },
   ];
   const menu = document.createElement("div");
   menu.className = "more-menu";

@@ -40,7 +40,7 @@ Cloudflare Pages
                                                    │
                                                    ├─ GET ?type=recent（公开，服务端 service role 读取）
                                                    ├─ GET/POST/PATCH/DELETE memories 表
-                                                   └─ GET/POST/PATCH/DELETE memory_buckets 表（legacy）
+                                                   └─ GET/POST/PATCH/DELETE memory_buckets 表（旧沉淀记忆，默认不参与回复）
 ```
 
 ---
@@ -68,9 +68,9 @@ Cloudflare Pages
 4. `preference` 类型 → `persona` 类别；`fact` → `general`；`project` → `work`
 5. 前端 poller（stream 结束后轮询 8s）检测到新 promotion 后展示 toast 并更新 Memory Center
 
-### Legacy memory（默认 retired）
+### 旧沉淀记忆（默认 retired）
 
-`memory_buckets` 表为旧版主题摘要桶，默认关闭。若需启用：
+`memory_buckets` 表为旧版主题摘要桶，默认关闭，不注入 prompt。若需临时启用（仅用于查看或迁移）：
 
 ```bash
 supabase secrets set LEGACY_MEMORY_ENABLED="true"   # 默认 false
@@ -82,7 +82,7 @@ supabase secrets set LEGACY_MEMORY_ENABLED="true"   # 默认 false
 - **最近更新**区域：展示最近 3 条自动沉淀的记忆，带来源预览（截取触发该记忆的原始消息前 80 字）
 - 每条已写入记忆支持**复制 / 禁用 / 删除**操作（需 admin token）
 - 手动记忆的增删启禁通过 `/functions/v1/memories` 接口操作
-- 旧记忆匣（memory_buckets）入口保留，在 Memory Center 底部
+- 记忆管理（高级）（memory_buckets）入口保留，在 Memory Center 底部，仅用于管理和迁移
 
 ---
 
@@ -168,7 +168,7 @@ supabase secrets set FALLBACK_MODEL="..."          # 可选
 supabase secrets set DB_URL="..."
 supabase secrets set DB_SERVICE_ROLE_KEY="..."
 supabase secrets set MEMORY_ADMIN_TOKEN="..."
-supabase secrets set LEGACY_MEMORY_ENABLED="false" # 默认，不设置等同于 false
+supabase secrets set LEGACY_MEMORY_ENABLED="false" # 默认值，不设置等同于 false；旧沉淀记忆不参与回复
 
 # 自动记忆沉淀开关（默认 false）
 supabase secrets set AUTO_MEMORY_VAULT_ENABLED="true"
@@ -224,7 +224,7 @@ SQL 初始化文件在 `sql/`：
 | `messages.sql` | 消息表 + RLS 策略 |
 | `conversations.sql` | 会话元数据 |
 | `memories.sql` | 手动长期记忆表（含 user_id，L1/L2） |
-| `memory_buckets.sql` | 旧版主题桶（legacy，默认不启用） |
+| `memory_buckets.sql` | 旧沉淀摘要桶（默认不参与回复，仅用于查看 / 迁移） |
 
 Migrations（`supabase/migrations/`）：
 
