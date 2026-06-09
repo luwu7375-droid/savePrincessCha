@@ -3060,79 +3060,172 @@ function showMcToast(msg, isError = false) {
 }
 
 /**
- * Build a single mc-recent-item node using DOM API (no innerHTML injection).
- * Expand/collapse state is stored on the button element itself.
+ * Generate a short title from raw content (≤30 chars, no newlines).
  */
-function buildRecentMemoryItem(content, label, category, timestamp, sourcePreview, memoryId) {
+function _mcAutoTitle(content) {
+  const line = (content || "").replace(/\n+/g, " ").trim();
+  return line.length > 30 ? line.slice(0, 30) + "…" : line;
+}
+
+/**
+ * Generate a 2-line summary from raw content (≤80 chars).
+ */
+function _mcAutoSummary(content) {
+  const text = (content || "").trim();
+  return text.length > 80 ? text.slice(0, 80) + "…" : text;
+}
+
+/**
+ * Build a single mc-recent-item card using DOM API (no innerHTML injection).
+ *
+ * opts = {
+ *   content,          // full text
+ *   label,            // status badge text
+ *   category,         // type/category badge
+ *   timestamp,        // ISO string or epoch
+ *   sourcePreview,    // source message preview
+ *   memoryId,         // truthy → show disable/delete actions
+ *   confidence,       // number 0-1 or null
+ *   sensitivity,      // string or null
+ *   sourceMsgIds,     // array or null
+ * }
+ */
+function buildRecentMemoryItem({ content, label, category, timestamp, sourcePreview, memoryId, confidence, sensitivity, sourceMsgIds }) {
   const text = content || "";
-  const snippet = text.length > 80 ? text.slice(0, 80) + "…" : text;
+  const title = _mcAutoTitle(text);
+  const summary = _mcAutoSummary(text);
 
   const item = document.createElement("div");
   item.className = "mc-recent-item";
 
-  const contentEl = document.createElement("div");
-  contentEl.className = "mc-recent-content";
-  contentEl.textContent = snippet;
-  item.appendChild(contentEl);
+  // ── collapsed header ──────────────────────────────────────────────────────
+  const header = document.createElement("div");
+  header.className = "mc-recent-header";
 
-  const meta = document.createElement("div");
-  meta.className = "mc-recent-meta";
-
-  const sourceEl = document.createElement("span");
-  sourceEl.className = "mc-recent-source";
-  sourceEl.textContent = label;
-  meta.appendChild(sourceEl);
-
+  // badge row: category + label
+  const badges = document.createElement("div");
+  badges.className = "mc-recent-badges";
   if (category) {
     const catEl = document.createElement("span");
-    catEl.className = "mc-recent-category";
+    catEl.className = "mc-recent-badge mc-recent-badge--type";
     catEl.textContent = category;
-    meta.appendChild(catEl);
+    badges.appendChild(catEl);
+  }
+  const labelEl = document.createElement("span");
+  labelEl.className = "mc-recent-badge mc-recent-badge--status";
+  labelEl.textContent = label || "记忆";
+  badges.appendChild(labelEl);
+  header.appendChild(badges);
+
+  // auto title
+  const titleEl = document.createElement("div");
+  titleEl.className = "mc-recent-title";
+  titleEl.textContent = title;
+  header.appendChild(titleEl);
+
+  // 2-line summary
+  const summaryEl = document.createElement("div");
+  summaryEl.className = "mc-recent-summary";
+  summaryEl.textContent = summary;
+  header.appendChild(summaryEl);
+
+  item.appendChild(header);
+
+  // ── details panel (collapsed by default) ─────────────────────────────────
+  const details = document.createElement("div");
+  details.className = "mc-recent-details";
+  details.hidden = true;
+
+  // full content
+  if (text.length > 80) {
+    const fullLabel = document.createElement("div");
+    fullLabel.className = "mc-recent-detail-label";
+    fullLabel.textContent = "完整内容";
+    details.appendChild(fullLabel);
+    const fullText = document.createElement("div");
+    fullText.className = "mc-recent-detail-value mc-recent-full-content";
+    fullText.textContent = text;
+    details.appendChild(fullText);
   }
 
+  // source message preview
+  const srcLabel = document.createElement("div");
+  srcLabel.className = "mc-recent-detail-label";
+  srcLabel.textContent = "来源";
+  details.appendChild(srcLabel);
+  const srcVal = document.createElement("div");
+  srcVal.className = "mc-recent-detail-value";
+  srcVal.textContent = sourcePreview ? `「${sourcePreview}」` : "暂无来源";
+  details.appendChild(srcVal);
+
+  // confidence
+  if (confidence != null) {
+    const confLabel = document.createElement("div");
+    confLabel.className = "mc-recent-detail-label";
+    confLabel.textContent = "置信度";
+    details.appendChild(confLabel);
+    const confVal = document.createElement("div");
+    confVal.className = "mc-recent-detail-value";
+    confVal.textContent = (confidence * 100).toFixed(0) + "%";
+    details.appendChild(confVal);
+  }
+
+  // sensitivity
+  if (sensitivity) {
+    const sensLabel = document.createElement("div");
+    sensLabel.className = "mc-recent-detail-label";
+    sensLabel.textContent = "敏感度";
+    details.appendChild(sensLabel);
+    const sensVal = document.createElement("div");
+    sensVal.className = "mc-recent-detail-value";
+    sensVal.textContent = sensitivity;
+    details.appendChild(sensVal);
+  }
+
+  // source_msg_ids
+  if (sourceMsgIds && sourceMsgIds.length > 0) {
+    const idsLabel = document.createElement("div");
+    idsLabel.className = "mc-recent-detail-label";
+    idsLabel.textContent = "来源消息 ID";
+    details.appendChild(idsLabel);
+    const idsVal = document.createElement("div");
+    idsVal.className = "mc-recent-detail-value";
+    idsVal.textContent = sourceMsgIds.join(", ");
+    details.appendChild(idsVal);
+  }
+
+  // last updated
   const date = new Date(timestamp || Date.now());
   const timeStr = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) +
     " " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-  const timeEl = document.createElement("span");
-  timeEl.className = "mc-recent-time";
-  timeEl.textContent = timeStr;
-  meta.appendChild(timeEl);
+  const updLabel = document.createElement("div");
+  updLabel.className = "mc-recent-detail-label";
+  updLabel.textContent = "更新时间";
+  details.appendChild(updLabel);
+  const updVal = document.createElement("div");
+  updVal.className = "mc-recent-detail-value";
+  updVal.textContent = timeStr;
+  details.appendChild(updVal);
 
-  if (text.length > 80) {
-    const btn = document.createElement("button");
-    btn.className = "mc-recent-expand";
-    btn.textContent = "展开";
-    btn._expanded = false;
-    btn._fullText = text;
-    btn._contentEl = contentEl;
-    btn.addEventListener("click", () => {
-      btn._expanded = !btn._expanded;
-      btn._contentEl.textContent = btn._expanded ? btn._fullText : btn._fullText.slice(0, 80) + "…";
-      btn.textContent = btn._expanded ? "收起" : "展开";
-    });
-    meta.appendChild(btn);
-  }
+  item.appendChild(details);
 
-  item.appendChild(meta);
+  // ── action row ────────────────────────────────────────────────────────────
+  const actions = document.createElement("div");
+  actions.className = "mc-recent-actions";
 
-  // source preview row
-  const srcRow = document.createElement("div");
-  srcRow.className = "mc-recent-source-row";
-  const srcLabel = document.createElement("span");
-  srcLabel.className = "mc-recent-source-label";
-  srcLabel.textContent = "来源：";
-  srcRow.appendChild(srcLabel);
-  const srcText = document.createElement("span");
-  srcText.className = "mc-recent-source-text";
-  srcText.textContent = sourcePreview ? `「${sourcePreview}」` : "暂无来源";
-  srcRow.appendChild(srcText);
-  item.appendChild(srcRow);
+  // expand toggle (always present)
+  const expandBtn = document.createElement("button");
+  expandBtn.className = "mc-recent-action-btn mc-recent-action-btn--expand";
+  expandBtn.textContent = "展开";
+  expandBtn.addEventListener("click", () => {
+    const expanded = !details.hidden;
+    details.hidden = expanded;
+    expandBtn.textContent = expanded ? "展开" : "收起";
+    item.classList.toggle("mc-recent-item--expanded", !expanded);
+  });
+  actions.appendChild(expandBtn);
 
-  // action buttons (only for memories source, not optimistic)
   if (memoryId) {
-    const actions = document.createElement("div");
-    actions.className = "mc-recent-actions";
-
     // copy
     const copyBtn = document.createElement("button");
     copyBtn.className = "mc-recent-action-btn";
@@ -3183,9 +3276,9 @@ function buildRecentMemoryItem(content, label, category, timestamp, sourcePrevie
       }
     });
     actions.appendChild(deleteBtn);
-
-    item.appendChild(actions);
   }
+
+  item.appendChild(actions);
 
   return item;
 }
@@ -3198,7 +3291,17 @@ function renderRecentMemoryUpdatesOptimistic(items) {
   if (!container || !items || items.length === 0) return;
   container.innerHTML = "";
   items.slice(0, 3).forEach((item) =>
-    container.appendChild(buildRecentMemoryItem(item.content, "自动记忆", item.category || item.candidate_type || "", item.promoted_at || Date.now(), null, null))
+    container.appendChild(buildRecentMemoryItem({
+      content: item.content,
+      label: "自动记忆",
+      category: item.category || item.candidate_type || "",
+      timestamp: item.promoted_at || Date.now(),
+      sourcePreview: null,
+      memoryId: null,
+      confidence: item.confidence ?? null,
+      sensitivity: item.sensitivity ?? null,
+      sourceMsgIds: item.source_msg_ids ?? null,
+    }))
   );
 }
 
@@ -3230,7 +3333,17 @@ async function renderRecentMemoryUpdates() {
       container.innerHTML = "";
       if (source === "memories") {
         rows.forEach((mem) =>
-          container.appendChild(buildRecentMemoryItem(mem.content, "已写入记忆", mem.category || "", mem.created_at, mem.source_preview || null, mem.id))
+          container.appendChild(buildRecentMemoryItem({
+            content: mem.content,
+            label: "已写入记忆",
+            category: mem.category || "",
+            timestamp: mem.created_at,
+            sourcePreview: mem.source_preview || null,
+            memoryId: mem.id,
+            confidence: mem.confidence ?? null,
+            sensitivity: mem.sensitivity ?? null,
+            sourceMsgIds: mem.source_msg_ids ?? null,
+          }))
         );
       } else {
         const LABEL_MAP = {
@@ -3238,7 +3351,17 @@ async function renderRecentMemoryUpdates() {
           candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
         };
         rows.forEach((c) =>
-          container.appendChild(buildRecentMemoryItem(c.content, LABEL_MAP[c.status] || "候选记忆", c.candidate_type || "", c.created_at, c.source_preview || null, null))
+          container.appendChild(buildRecentMemoryItem({
+            content: c.content,
+            label: LABEL_MAP[c.status] || "候选记忆",
+            category: c.candidate_type || "",
+            timestamp: c.created_at,
+            sourcePreview: c.source_preview || null,
+            memoryId: null,
+            confidence: c.confidence ?? null,
+            sensitivity: c.sensitivity ?? null,
+            sourceMsgIds: c.source_msg_ids ?? null,
+          }))
         );
       }
       return;
