@@ -1,5 +1,34 @@
 # Changelog
 
+## legacy memory UI rename / memory docs sync
+
+**Date:** 2026-06-09
+**Commits:** `dbee7f6`, `83ee23c`
+**Functions deployed:** none
+**Migration:** none
+
+### What shipped
+
+**UI 文案重命名（`index.html`, `app.js`）**
+- 弹窗标题、菜单项、Memory Center 按钮："旧记忆匣" → "记忆管理（高级）"
+- memories 区块标题："记忆" → "正式记忆（会参与回复）"，补充说明文字
+- memory_buckets 区块标题："沉淀记忆（旧系统 · 不参与回复）" → "旧沉淀记忆（旧系统 · 默认不参与回复）"，补充说明文字
+- Memory Center legacy block 描述更新：明确 memories 表经 L1/L2 注入，memory_buckets 仅用于管理和迁移
+- 错误提示文案、删除/编辑弹窗标题同步更新
+
+**README 文案更新**
+- 架构图注释、章节标题、Memory Center UI 说明、环境变量注释、SQL 文件说明全部对齐新术语
+
+**docs 同步**
+- `memory-index.md`：Provider 状态表更新为 7 个 provider（含 auto_memory_vault、conversation_history 等）；遗留系统状态描述修正
+- `memory-architecture-review.md`：架构表更新；ombre_vault → auto_memory_vault（已上线）；openai_export → openai_archive；停用系统表修正；变更记录补充
+- `NEXT_TASK_MEMORY_CACHE.md`：修正 memory_buckets 仍在读取的过时描述
+
+### 无数据变更
+无 schema 变更，无 Edge Function 部署，无运行时逻辑修改。
+
+---
+
 ## userMessageId evidence chain / fuka-unified-v8
 
 **Date:** 2026-06-08
