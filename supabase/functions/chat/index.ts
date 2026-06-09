@@ -1026,17 +1026,32 @@ async function fetchPersonaMemories(
   serviceRoleKey: string,
 ): Promise<{ rows: PersonaMemoryRow[]; error: string | null }> {
   const cats = L1_CATEGORIES.map((c) => `"${c}"`).join(",");
+  const headers = { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` };
   try {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=in.(${cats})&select=id,content,category&order=created_at.asc`,
-      { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      return { rows: [], error: `HTTP ${res.status}: ${text.slice(0, 80)}` };
+    // Query both tables in parallel — instructions holds the migrated rule-class rows
+    const [memRes, instRes] = await Promise.all([
+      fetch(
+        `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=in.(${cats})&select=id,content,category&order=created_at.asc`,
+        { headers },
+      ),
+      fetch(
+        `${supabaseUrl}/rest/v1/instructions?enabled=eq.true&select=id,content,category&order=created_at.asc`,
+        { headers },
+      ),
+    ]);
+
+    if (!memRes.ok) {
+      const text = await memRes.text();
+      return { rows: [], error: `memories HTTP ${memRes.status}: ${text.slice(0, 80)}` };
     }
-    const rows = (await res.json()) as PersonaMemoryRow[];
-    return { rows, error: null };
+    if (!instRes.ok) {
+      const text = await instRes.text();
+      return { rows: [], error: `instructions HTTP ${instRes.status}: ${text.slice(0, 80)}` };
+    }
+
+    const memRows = (await memRes.json()) as PersonaMemoryRow[];
+    const instRows = (await instRes.json()) as PersonaMemoryRow[];
+    return { rows: [...instRows, ...memRows], error: null };
   } catch (err) {
     return { rows: [], error: err instanceof Error ? err.message : String(err) };
   }
@@ -1055,8 +1070,9 @@ async function compileMemoryContext(
   const activeProviders: string[] = [];
   let context = "";
 
-  // ── persona_memories: L1, always injected from memories table ────────────────
-  // Reads current_context_summary + interaction_preferences from DB.
+  // ── persona_memories: L1, always injected from memories + instructions tables ─
+  // Reads current_context_summary + interaction_preferences from memories,
+  // and all enabled rows from instructions (rule/config class).
   // No keyword gate — these are always-on persona/relation context.
   let personaMemoriesLoaded = false;
   let personaMemoriesCount = 0;
@@ -1073,7 +1089,7 @@ async function compileMemoryContext(
       personaMemoriesCategories = pmRows.map((r) => r.category);
       activeProviders.push("persona_memories");
       const lines = pmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-      context += `\n\n<persona_memories source="memories_table" always_inject="true">\n以下是长期记忆，请优先遵守：\n${lines}\n</persona_memories>`;
+      context += `\n\n<persona_memories source="memories_table+instructions_table" always_inject="true">\n以下是长期记忆，请优先遵守：\n${lines}\n</persona_memories>`;
     }
   }
 

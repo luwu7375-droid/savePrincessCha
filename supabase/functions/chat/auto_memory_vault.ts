@@ -41,6 +41,8 @@ type UpsertCandidateResult =
 
 type RawCandidate = {
   candidate_type: string;
+  title?: string;
+  summary?: string;
   content: string;
   confidence: number;
   sensitivity: number;
@@ -85,7 +87,7 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 ✗ 不过度解读，不添加假设
 
 【输出格式】只输出 JSON，不要解释：
-{"candidates":[{"candidate_type":"fact|preference|relationship|project","content":"简洁的事实描述，不超过60字","confidence":0.85,"sensitivity":0.10,"reason":"提取依据一句话"}]}`;
+{"candidates":[{"candidate_type":"fact|preference|relationship|project","title":"6-16字短标题","summary":"一句话摘要，40-80字","content":"完整可注入记忆内容，不超过80字","confidence":0.85,"sensitivity":0.10,"reason":"提取依据一句话"}]}`;
 
 // ── Action matrix ─────────────────────────────────────────────────────────────
 // Priority order:
@@ -147,7 +149,7 @@ async function extractVaultCandidates(params: {
           { role: "user", content: userContent },
         ],
         stream: false,
-        max_tokens: 500,
+        max_tokens: 700,
         temperature: 0.1,
       }),
     });
@@ -282,6 +284,8 @@ async function upsertCandidate(params: {
     conversation_id: conversationId ?? null,
     source_msg_ids: userMessageId != null ? [userMessageId] : null,
     candidate_type: candidate.candidate_type,
+    title: candidate.title?.trim() || null,
+    summary: candidate.summary?.trim() || null,
     content: candidate.content,
     content_hash: contentHash,
     confidence: candidate.confidence,
@@ -580,7 +584,10 @@ export async function promoteAutoMemoryCandidates(params: {
 
     type CandidateRow = {
       id: string;
+      user_id: string;
       candidate_type: string;
+      title: string | null;
+      summary: string | null;
       content: string;
       confidence: number;
       sensitivity: number;
@@ -705,6 +712,8 @@ export async function promoteAutoMemoryCandidates(params: {
         headers: { ...headers, Prefer: "return=representation" },
         body: JSON.stringify({
           content: candidate.content,
+          title: candidate.title || null,
+          summary: candidate.summary || null,
           category: targetCategory,
           enabled: true,
           source_msg_ids: candidate.source_msg_ids ?? null,

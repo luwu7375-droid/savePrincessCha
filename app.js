@@ -1820,11 +1820,11 @@ function renderMemoryList(memories) {
   if (memories.length > 0) {
     const sectionTitle = document.createElement("div");
     sectionTitle.style.cssText = "font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 18px 4px;";
-    sectionTitle.textContent = "正式记忆（会参与回复）";
+    sectionTitle.textContent = "🧠 记忆（memories）";
     memoryList.appendChild(sectionTitle);
     const memoriesDesc = document.createElement("div");
     memoriesDesc.style.cssText = "font-size:12px;color:var(--text-muted);padding:0 18px 8px;";
-    memoriesDesc.textContent = "这些是当前 memories 表中的长期记忆，可能按分类和触发规则参与回复。";
+    memoriesDesc.textContent = "事件、偏好、项目——会参与回复。";
     memoryList.appendChild(memoriesDesc);
     for (const mem of memories) {
       memoryList.appendChild(renderMemoryItem(mem));
@@ -1835,6 +1835,120 @@ function renderMemoryList(memories) {
     empty.textContent = "暂无记忆";
     memoryList.appendChild(empty);
   }
+}
+
+// ── renderInstructionItem ─────────────────────────────────────────────────────
+// Rule card: no title/summary layers — shows full content directly.
+// Toggle enable/disable and delete only (no edit in this iteration).
+
+function renderInstructionItem(inst) {
+  const text = inst.content || "";
+  const isEnabled = inst.enabled !== false;
+
+  const item = document.createElement("div");
+  item.className = "memory-item" + (isEnabled ? "" : " disabled");
+  item.dataset.instructionId = inst.id;
+
+  const domain = document.createElement("small");
+  domain.className = "memory-domain";
+  domain.textContent = inst.category || "general";
+
+  const mid = document.createElement("div");
+  mid.className = "memory-item-mid";
+
+  const contentEl = document.createElement("div");
+  contentEl.className = "memory-item-summary";
+  contentEl.style.cssText = "-webkit-line-clamp:3;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;";
+  contentEl.textContent = text;
+  mid.appendChild(contentEl);
+
+  const fullEl = document.createElement("div");
+  fullEl.className = "memory-item-full";
+  fullEl.textContent = text;
+  fullEl.hidden = true;
+  mid.appendChild(fullEl);
+
+  item.appendChild(domain);
+  item.appendChild(mid);
+
+  const actions = document.createElement("div");
+  actions.className = "memory-actions";
+
+  const expandBtn = document.createElement("button");
+  expandBtn.type = "button";
+  expandBtn.textContent = "展开";
+  expandBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const expanded = item.classList.toggle("memory-item--expanded");
+    fullEl.hidden = !expanded;
+    contentEl.hidden = expanded;
+    expandBtn.textContent = expanded ? "收起" : "展开";
+  });
+  actions.appendChild(expandBtn);
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.textContent = isEnabled ? "禁用" : "启用";
+  toggleBtn.dataset.id = inst.id;
+  toggleBtn.dataset.enabled = String(isEnabled);
+  toggleBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const b = e.currentTarget;
+    b.disabled = true;
+    const newEnabled = b.dataset.enabled !== "true";
+    let r;
+    try {
+      r = await memoryFetch(`?type=instructions&id=${encodeURIComponent(b.dataset.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: newEnabled }),
+      });
+    } catch (err) {
+      b.disabled = false;
+      showInlineError(item, `网络错误：${err.message}`);
+      return;
+    }
+    b.disabled = false;
+    if (!r.ok) {
+      showInlineError(item, `操作失败（${r.status}）`);
+      return;
+    }
+    b.dataset.enabled = String(newEnabled);
+    b.textContent = newEnabled ? "禁用" : "启用";
+    item.classList.toggle("disabled", !newEnabled);
+  });
+  actions.appendChild(toggleBtn);
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "danger";
+  deleteBtn.textContent = "删除";
+  deleteBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    showDialog({
+      title: "删除长期设定",
+      body: "确定删除这条设定？",
+      confirmLabel: "删除",
+      confirmClass: "btn-danger",
+      onConfirm: async () => {
+        let r;
+        try {
+          r = await memoryFetch(`?type=instructions&id=${encodeURIComponent(inst.id)}`, { method: "DELETE" });
+        } catch (err) {
+          showGlobalMemoryError(`网络错误：${err.message}`);
+          return;
+        }
+        if (!r.ok && r.status !== 204) {
+          showGlobalMemoryError(`删除失败（${r.status}）`);
+          return;
+        }
+        item.remove();
+      },
+    });
+  });
+  actions.appendChild(deleteBtn);
+
+  item.appendChild(actions);
+  return item;
 }
 
 function showMemoryEditDialog(mem, itemEl) {
@@ -2182,6 +2296,34 @@ async function loadMemories() {
   }
 
   memoriesCache = memories;
+
+  // ─── Section 1: instructions (non-critical, no block on failure) ───────────
+  let instructions = [];
+  try {
+    const iRes = await memoryFetch("?type=instructions");
+    if (iRes.ok) {
+      instructions = await iRes.json();
+    }
+  } catch { /* ignore, instructions section simply won't render */ }
+
+  if (Array.isArray(instructions) && instructions.length > 0) {
+    const iTitle = document.createElement("div");
+    iTitle.style.cssText = "font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 18px 4px;";
+    iTitle.textContent = "⚙️ 长期设定（instructions）";
+    memoryList.appendChild(iTitle);
+    const iDesc = document.createElement("div");
+    iDesc.style.cssText = "font-size:12px;color:var(--text-muted);padding:0 18px 8px;";
+    iDesc.textContent = "规则、原则、长期配置——会参与回复。";
+    memoryList.appendChild(iDesc);
+    for (const inst of instructions) {
+      memoryList.appendChild(renderInstructionItem(inst));
+    }
+    const divider0 = document.createElement("div");
+    divider0.style.cssText = "border-top:1px solid var(--border);margin:4px 0";
+    memoryList.appendChild(divider0);
+  }
+
+  // ─── Section 2: memories ───────────────────────────────────────────────────
   renderMemoryList(memoriesCache);
 
   // ��─ Load memory buckets (non-critical) ────────────────────────────────────

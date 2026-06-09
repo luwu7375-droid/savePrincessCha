@@ -191,6 +191,44 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ── instructions routes ───────────────────────────────────────────────────
+
+  if (type === "instructions") {
+    if (req.method === "GET") {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/instructions?select=id,content,category,enabled&order=created_at.asc`,
+        { headers: dbHeaders }
+      );
+      if (!res.ok) return json(await res.json(), 500);
+      const rows = await res.json() as { id: string; content: string; category: string; enabled: boolean }[];
+      return json(rows.map(r => ({ ...r, domain: r.category || "general" })), 200);
+    }
+
+    if (req.method === "PATCH" && id) {
+      const body = await req.json() as { enabled?: unknown; content?: unknown };
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+      if (typeof body.content === "string" && body.content.trim()) patch.content = body.content.trim();
+      const res = await fetch(`${supabaseUrl}/rest/v1/instructions?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { ...dbHeaders, Prefer: "return=representation" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) return json(await res.json(), 500);
+      const rows = await res.json() as unknown[];
+      if (!rows.length) return json({ error: "instruction not found" }, 404);
+      return json(rows[0], 200);
+    }
+
+    if (req.method === "DELETE" && id) {
+      const res = await fetch(`${supabaseUrl}/rest/v1/instructions?id=eq.${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: { ...dbHeaders, Prefer: "return=minimal" },
+      });
+      return new Response(null, { status: res.ok ? 204 : 500, headers: corsHeaders });
+    }
+  }
+
   // ── memories routes ───────────────────────────────────────────────────────
 
   if (req.method === "GET") {
