@@ -1,5 +1,28 @@
 # Changelog
 
+## auto memory card redesign
+
+**Date:** 2026-06-09
+**Commit:** `9423d75`
+**Functions deployed:** none
+**Migration:** none
+
+### What shipped
+
+**自动记忆卡片重设计（`app.js`, `style.css`）**
+- 默认折叠视图：type / status 双 badge + 自动生成标题（content 前 30 字）+ 2 行摘要（前 80 字，CSS line-clamp）
+- 展开面板：完整内容、来源预览、置信度 %、敏感度、source_msg_ids、更新时间
+- 候选记忆（candidates）和已写入记忆（memories）使用同一套卡片结构
+- `buildRecentMemoryItem()` 重构为命名参数对象形式，新增 `confidence` / `sensitivity` / `sourceMsgIds` 字段
+- 新增辅助函数 `_mcAutoTitle()`（30 字截断）和 `_mcAutoSummary()`（80 字截断）
+- 两处调用方（`renderRecentMemoryUpdatesOptimistic`、`renderRecentMemoryUpdates`）同步更新
+- CSS：新增 `.mc-recent-header` / `.mc-recent-badges` / `.mc-recent-badge--type` / `.mc-recent-badge--status` / `.mc-recent-title` / `.mc-recent-summary` / `.mc-recent-details` / `.mc-recent-detail-label` / `.mc-recent-detail-value`；移除旧 meta 行相关类
+
+### 无数据变更
+无 schema 变更，无 Edge Function 部署，无运行时逻辑修改。
+
+---
+
 ## legacy memory UI rename / memory docs sync
 
 **Date:** 2026-06-09
