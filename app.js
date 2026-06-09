@@ -1626,37 +1626,98 @@ function updateMemoryItem(updatedMem) {
   if (idx !== -1) memoriesCache[idx] = updatedMem;
   const el = memoryList.querySelector(`.memory-item[data-memory-id="${CSS.escape(updatedMem.id)}"]`);
   if (!el) return;
-  el.className = "memory-item" + (updatedMem.enabled ? "" : " disabled");
-  const domainEl = el.querySelector(".memory-domain");
-  if (domainEl) domainEl.textContent = updatedMem.domain || "general";
-  const spanEl = el.querySelector("span.memory-content");
-  if (spanEl) spanEl.textContent = updatedMem.content;
-  const toggleBtn = el.querySelector("button[data-id]");
-  if (toggleBtn) {
-    toggleBtn.textContent = updatedMem.enabled ? "禁用" : "启用";
-    toggleBtn.dataset.enabled = updatedMem.enabled;
-  }
+  // Re-render in place so title/summary/expand state stays consistent
+  const wasExpanded = el.classList.contains("memory-item--expanded");
+  const fresh = renderMemoryItem(updatedMem);
+  if (wasExpanded) fresh.classList.add("memory-item--expanded");
+  el.replaceWith(fresh);
 }
 
 function renderMemoryItem(mem) {
+  const text = mem.content || "";
+  // Title: prefer mem.title, fall back to auto-generated (never raw full content)
+  const title   = (mem.title   && mem.title.trim())   ? mem.title.trim()   : _mcAutoTitle(text);
+  // Summary: prefer mem.summary, fall back to auto-generated
+  const summary = (mem.summary && mem.summary.trim()) ? mem.summary.trim() : _mcAutoSummary(text);
+  // Full content is different from summary only when text is long enough
+  const hasFullContent = text.length > 80;
+  const isEnabled = mem.enabled !== false;
+
+  let dateStr = "";
+  try {
+    const d = new Date(mem.updated_at || mem.created_at || Date.now());
+    dateStr = d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+  } catch (_) {}
+
   const item = document.createElement("div");
-  item.className = "memory-item" + (mem.enabled ? "" : " disabled");
+  item.className = "memory-item" + (isEnabled ? "" : " disabled");
   item.dataset.memoryId = mem.id;
 
+  // ── Left: domain label ───────────────────────────────────────────────────
   const domain = document.createElement("small");
   domain.className = "memory-domain";
   domain.textContent = mem.domain || "general";
 
-  const span = document.createElement("span");
-  span.className = "memory-content";
-  span.textContent = mem.content;
+  // ── Middle: content column ───────────────────────────────────────────────
+  const mid = document.createElement("div");
+  mid.className = "memory-item-mid";
 
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.textContent = mem.enabled ? "禁用" : "启用";
-  btn.dataset.id = mem.id;
-  btn.dataset.enabled = String(mem.enabled);
-  btn.addEventListener("click", async (e) => {
+  const titleEl = document.createElement("div");
+  titleEl.className = "memory-item-title";
+  titleEl.textContent = title || "（无标题）";
+  mid.appendChild(titleEl);
+
+  // Summary (2-line clamp via CSS); hidden when expanded
+  const summaryEl = document.createElement("div");
+  summaryEl.className = "memory-item-summary";
+  summaryEl.textContent = summary;
+  mid.appendChild(summaryEl);
+
+  // Full content (hidden by default; only added to DOM when it exists)
+  let fullEl = null;
+  if (hasFullContent) {
+    fullEl = document.createElement("div");
+    fullEl.className = "memory-item-full";
+    fullEl.textContent = text;
+    fullEl.hidden = true;
+    mid.appendChild(fullEl);
+  }
+
+  // Footer: date + status dot
+  const footer = document.createElement("div");
+  footer.className = "memory-item-footer";
+  const metaEl = document.createElement("span");
+  metaEl.className = "memory-item-meta";
+  metaEl.textContent = [isEnabled ? "启用" : "禁用", dateStr].filter(Boolean).join(" · ");
+  footer.appendChild(metaEl);
+  mid.appendChild(footer);
+
+  // ── Right: action buttons ────────────────────────────────────────────────
+  const actions = document.createElement("div");
+  actions.className = "memory-actions";
+
+  // Expand button (only when full content differs from summary)
+  if (hasFullContent) {
+    const expandBtn = document.createElement("button");
+    expandBtn.type = "button";
+    expandBtn.textContent = "展开";
+    expandBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isExp = item.classList.toggle("memory-item--expanded");
+      if (fullEl) fullEl.hidden = !isExp;
+      summaryEl.hidden = isExp;
+      expandBtn.textContent = isExp ? "收起" : "展开";
+    });
+    actions.appendChild(expandBtn);
+  }
+
+  // Toggle enable/disable
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.textContent = isEnabled ? "禁用" : "启用";
+  toggleBtn.dataset.id = mem.id;
+  toggleBtn.dataset.enabled = String(isEnabled);
+  toggleBtn.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();
     const b = e.currentTarget;
@@ -1690,12 +1751,13 @@ function renderMemoryItem(mem) {
     if (updated && updated.id) {
       updateMemoryItem(updated);
     } else {
-      // PATCH didn't return body (shouldn't happen now), fall back to local update
       const cached = memoriesCache.find(m => m.id === mem.id);
       if (cached) updateMemoryItem({ ...cached, enabled: newEnabled });
     }
   });
+  actions.appendChild(toggleBtn);
 
+  // Edit
   const editBtn = document.createElement("button");
   editBtn.type = "button";
   editBtn.textContent = "编辑";
@@ -1703,10 +1765,11 @@ function renderMemoryItem(mem) {
     e.preventDefault();
     e.stopPropagation();
     const current = memoriesCache.find(m => m.id === mem.id) || mem;
-    console.log("memory edit click", { id: current.id });
     showMemoryEditDialog(current, item);
   });
+  actions.appendChild(editBtn);
 
+  // Delete
   const deleteBtn = document.createElement("button");
   deleteBtn.type = "button";
   deleteBtn.className = "danger";
@@ -1742,14 +1805,10 @@ function renderMemoryItem(mem) {
       },
     });
   });
-
-  const actions = document.createElement("div");
-  actions.className = "memory-actions";
-  actions.appendChild(btn);
-  actions.appendChild(editBtn);
   actions.appendChild(deleteBtn);
+
   item.appendChild(domain);
-  item.appendChild(span);
+  item.appendChild(mid);
   item.appendChild(actions);
   return item;
 }
