@@ -92,16 +92,19 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 // ── Action matrix ─────────────────────────────────────────────────────────────
 // Priority order:
 // 1. sensitivity >= 0.70 → quarantine
-// 2. confidence >= 0.85 && sensitivity <= 0.30 → auto_accept
-// 3. confidence >= 0.65 → pending
+// 2. fact/project only: confidence >= 0.90 && sensitivity <= 0.30 → auto_accept
+// 3. confidence >= 0.65 → pending  (preference 类一律落此，需用户确认)
 // 4. else → reject
 
 function computeRecommendedAction(
   confidence: number,
   sensitivity: number,
+  candidateType: string,
 ): "auto_accept" | "pending" | "quarantine" | "reject" {
   if (sensitivity >= 0.70) return "quarantine";
-  if (confidence >= 0.85 && sensitivity <= 0.30) return "auto_accept";
+  // preference 类不允许 auto_accept — 交互偏好应由用户主动确认
+  const autoAcceptTypes = new Set(["fact", "project"]);
+  if (autoAcceptTypes.has(candidateType) && confidence >= 0.90 && sensitivity <= 0.30) return "auto_accept";
   if (confidence >= 0.65) return "pending";
   return "reject";
 }
@@ -430,7 +433,7 @@ export async function runAutoMemoryVault(params: {
         continue;
       }
 
-      const recommendedAction = computeRecommendedAction(confidence, sensitivity);
+      const recommendedAction = computeRecommendedAction(confidence, sensitivity, c.candidate_type);
 
       // Skip reject-classified candidates — no point storing them
       if (recommendedAction === "reject") {

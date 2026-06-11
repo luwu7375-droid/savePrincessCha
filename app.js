@@ -915,10 +915,6 @@ async function callChatAPI(messages, replyMode = "auto") {
     body: JSON.stringify({
       model: modelName,
       messages: [
-        { role: "system", content: `不要输出 <think>、</think>、推理过程、内部思考或分析过程。只输出最终回复。日常聊天、情绪回应、普通问答，控制在 1-3 段内，每段不超过 2 句，不主动写长列表。
-日常闲聊只回应用户刚刚那句话，不复盘、不总结、不安排下一步、不主动推进任务，学习模仿用户的句子长度。
-如果用户明确要求"详细、展开、分析、写代码、排查 bug、写方案、写 PRD、总结文档"，则优先完整解决问题，不限制长度。
-不要为了凑字解释显而易见的事情。\n\n当前应用时间：${(() => { const p = getZonedParts(new Date()); return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`; })()}\n当前应用时区：UTC+8 / Asia/Shanghai\n涉及今天、昨天、现在几点、刚才、上次对话时，一律以当前应用时间为准。` },
         ...messages.map(({ role, content }) => ({ role, content })),
       ],
       stream: true,
@@ -3691,68 +3687,57 @@ function renderMemoryCenterDebug(log) {
   // ── 摘要行（始终可见）──────────────────────────────────────────────────
   const providers = Array.isArray(log.active_memory_providers) ? log.active_memory_providers : [];
   const providerCount = log.memory_provider_count ?? providers.length;
-  const tokenEst = log.memory_context_tokens_estimated ?? "—";
-  const topicRoute = log.topic_route || log.secondary_route ? [log.topic_route, log.secondary_route].filter(Boolean).join(" / ") : "—";
 
   // Provider recalled 状态 pill 列表
   const PROVIDER_LABELS = {
-    persona_memories:      "L1",
-    mastodon_profile:      "用户档案",
-    writing_memory:        "OC写作",
+    persona_memories:      "长期记忆",
+    mastodon_profile:      "用户画像",
+    writing_memory:        "写作",
     project_memory:        "项目",
     relationship_context:  "关系",
     life_context:          "生活",
     historical_ai_usage:   "前世",
-    openai_archive:        "旧记忆",
+    openai_archive:        "历史档案",
     conversation_history:  "历史对话",
     mastodon_timeline:     "时间线",
+    personality_layers:    "人格",
   };
   const pillsHtml = providers.map((p) => {
     const label = PROVIDER_LABELS[p] || p;
     return `<span class="mc-debug-pill">${label}</span>`;
   }).join("");
 
-  // ── 完整字段表（折叠内）─────────────────────────────────────────���──────
+  // ── 折叠详情字段表 ────────────────────────────────────────────────────
   const fields = [
-    // 路由
-    ["topic_route",                        log.topic_route || "—"],
-    ["secondary_route",                    log.secondary_route || "—"],
-    // L1 persona_memories
-    ["persona_memories_loaded",            log.persona_memories_loaded],
-    ["persona_memories_count",             log.persona_memories_count ?? "—"],
-    ["persona_memories_categories",        Array.isArray(log.persona_memories_categories) ? log.persona_memories_categories.join(", ") || "—" : "—"],
-    // mastodon_profile
-    ["mastodon_profile_loaded",            log.mastodon_profile_loaded],
-    ["mastodon_profile_chars",             log.mastodon_profile_chars ?? "—"],
-    // writing_memory
-    ["writing_memory_recalled",            log.writing_memory_recalled],
-    ["writing_memory_reason",              log.writing_memory_reason || "—"],
-    // project_memory
-    ["project_memory_recalled",            log.project_memory_recalled],
-    ["project_memory_hit_count",           log.project_memory_hit_count ?? "—"],
-    ["project_memory_suppressed_reason",   log.project_memory_suppressed_reason || "—"],
-    // relationship_context
-    ["relationship_context_recalled",      log.relationship_context_recalled],
-    ["relationship_context_reason",        log.relationship_context_reason || "—"],
-    // life_context
-    ["life_context_recalled",              log.life_context_recalled],
-    ["life_context_reason",                log.life_context_reason || "—"],
-    // historical_ai_usage
-    ["historical_ai_usage_recalled",       log.historical_ai_usage_recalled],
-    ["historical_ai_usage_reason",         log.historical_ai_usage_reason || "—"],
-    // openai_archive
-    ["openai_archive_recalled",            log.openai_archive_recalled],
-    ["openai_archive_hit_count",           log.openai_archive_hit_count ?? "—"],
-    // conversation_history
-    ["conversation_history_recalled",      log.conversation_history_recalled],
-    ["conversation_history_hit_count",     log.conversation_history_hit_count ?? "—"],
-    ["conversation_history_reason",        log.conversation_history_reason || "—"],
-    // timeline
-    ["timeline_recalled",                  log.timeline_recalled],
-    ["timeline_hit_keys",                  Array.isArray(log.timeline_hit_keys) ? log.timeline_hit_keys.join(", ") || "—" : "—"],
-    // summary
-    ["memory_context_tokens_estimated",    tokenEst],
-    ["memory_provider_count",              providerCount],
+    // 话题
+    ["当前话题",               log.topic_route || "—"],
+    ["次级话题",               log.secondary_route || "—"],
+    // 长期记忆
+    ["长期记忆已加载",         log.persona_memories_loaded],
+    ["长期记忆条数",           log.persona_memories_count ?? "—"],
+    // 用户画像
+    ["用户画像已加载",         log.mastodon_profile_loaded],
+    // 写作记忆
+    ["写作记忆已召回",         log.writing_memory_recalled],
+    ["写作记忆原因",           log.writing_memory_reason || "—"],
+    // 项目记忆
+    ["项目记忆已召回",         log.project_memory_recalled],
+    ["项目记忆命中数",         log.project_memory_hit_count ?? "—"],
+    // 关系上下文
+    ["关系上下文已召回",       log.relationship_context_recalled],
+    // 生活上下文
+    ["生活上下文已召回",       log.life_context_recalled],
+    // 前世档案
+    ["前世档案已召回",         log.historical_ai_usage_recalled],
+    // 历史档案
+    ["历史档案已召回",         log.openai_archive_recalled],
+    // 历史对话
+    ["历史对话已召回",         log.conversation_history_recalled],
+    ["历史对话命中数",         log.conversation_history_hit_count ?? "���"],
+    // 时间线
+    ["时间线已召回",           log.timeline_recalled],
+    // 汇总
+    ["本轮参考来源数",         providerCount],
   ];
 
   const detailRowsHtml = fields.map(([key, val]) => {
@@ -3771,7 +3756,7 @@ function renderMemoryCenterDebug(log) {
     <div class="mc-debug-summary">
       <div class="mc-debug-summary-top">
         <div class="mc-debug-pills">${pillsHtml || '<span class="mc-debug-pill mc-debug-pill--empty">无</span>'}</div>
-        <div class="mc-debug-summary-meta">${tokenEst} tokens · ${topicRoute}</div>
+        <div class="mc-debug-summary-meta">${providerCount} 个来源</div>
       </div>
       <div class="mc-debug-actions">
         <button class="mc-debug-btn" id="mcDebugToggle" aria-expanded="false" aria-controls="${detailId}">展开详情</button>

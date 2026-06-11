@@ -143,13 +143,15 @@ export function compilePersonalityLayerContext(
 ): string {
   let context = "";
 
-  if (l1Features.length > 0) {
-    const lines = l1Features
+  // guideline 类型条目已由 persona_memories / instructions 通道注入，跳过以避免重复。
+  const nonGuidelineL1 = l1Features.filter((f) => f.type !== "guideline");
+  if (nonGuidelineL1.length > 0) {
+    const lines = nonGuidelineL1
       .map((f) => `- ${f.name} (${f.type}): ${f.content}`)
       .join("\n");
     context +=
-      `\n\n<persona_layer1 source="persona_layer1_contexts" always_inject="true">\n` +
-      `以下是人工确认的长期背景和偏好，请优先遵守：\n${lines}\n</persona_layer1>`;
+      `\n\n<persona_layer1 source="persona_layer1_contexts">\n` +
+      `以下是人工确认的长期背景和偏好：\n${lines}\n</persona_layer1>`;
   }
 
   const safeL2 = filterConflictingL2Features(l2Features);

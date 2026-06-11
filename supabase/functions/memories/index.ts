@@ -233,7 +233,7 @@ Deno.serve(async (req) => {
 
   if (req.method === "GET") {
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/memories?select=id,content,category,enabled&order=created_at.asc`,
+      `${supabaseUrl}/rest/v1/memories?select=id,content,category,enabled,title,summary,created_at,updated_at&order=created_at.asc`,
       { headers: dbHeaders }
     );
     if (!res.ok) return json(await res.json(), 500);
