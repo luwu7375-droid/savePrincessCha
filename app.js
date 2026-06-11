@@ -3733,7 +3733,7 @@ function renderMemoryCenterDebug(log) {
     ["历史档案已召回",         log.openai_archive_recalled],
     // 历史对话
     ["历史对话已召回",         log.conversation_history_recalled],
-    ["历史对话命中数",         log.conversation_history_hit_count ?? "���"],
+    ["历史对话命中数",         log.conversation_history_hit_count ?? "—"],
     // 时间线
     ["时间线已召回",           log.timeline_recalled],
     // 汇总
