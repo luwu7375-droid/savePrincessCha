@@ -578,111 +578,6 @@ function selectContextualMemoryRows(rows: MemoryRow[], lastUserMessage: string):
   });
 }
 
-async function fetchEnabledMemories(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  lastUserMessage: string,
-): Promise<{ lines: string[]; ids: string[] }> {
-  const res = await fetch(
-    `${supabaseUrl}/rest/v1/memories?enabled=eq.true&select=id,content,domain&order=created_at.asc`,
-    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
-  );
-  if (!res.ok) return { lines: [], ids: [] };
-  const rows = (await res.json()) as MemoryRow[];
-  const selected = selectContextualMemoryRows(rows, lastUserMessage);
-  return { lines: selected.map((r) => r.content), ids: selected.map((r) => r.id) };
-}
-
-async function fetchMemoryBuckets(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  lastUserMessage: string,
-): Promise<{ summaries: string[]; titles: string[] }> {
-  const res = await fetch(
-    `${supabaseUrl}/rest/v1/memory_buckets?status=eq.active&select=id,title,summary,keywords&order=importance.desc,last_accessed_at.desc.nullslast&limit=10`,
-    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
-  );
-  if (!res.ok) return { summaries: [], titles: [] };
-  const rows = (await res.json()) as { id: string; title: string; summary: string; keywords?: string[] | null }[];
-
-  // 按关键词过滤：bucket 里有 keywords 字段时，必须命中才注入；没有 keywords 字段的跳过（不盲注）
-  const matched = rows.filter((r) => {
-    const kws = r.keywords;
-    if (kws && kws.length > 0) {
-      return messageHitsKeywords(lastUserMessage, kws);
-    }
-    // Legacy buckets with no keywords: weak-match on title + summary tokens
-    const textTokens = `${r.title} ${r.summary}`.split(/\s+/).filter(t => t.length > 1);
-    return textTokens.length > 0 && messageHitsKeywords(lastUserMessage, textTokens);
-  }).slice(0, 2);
-
-  if (matched.length > 0) {
-    const ids = matched.map((r) => r.id).join(",");
-    fetch(`${supabaseUrl}/rest/v1/memory_buckets?id=in.(${ids})`, {
-      method: "PATCH",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({ last_accessed_at: new Date().toISOString() }),
-    }).catch(() => {});
-  }
-
-  return {
-    summaries: matched.map((r) => r.summary),
-    titles: matched.map((r) => r.title),
-  };
-}
-
-// ── Story Seeds ───────────────────────────────────────────────────────────────
-
-type StorySeedRow = {
-  id: string;
-  title: string;
-  content: string;
-  importance: string;
-  themes: string[];
-};
-
-/**
- * Fetches enabled story seeds and filters by themes matching the last user message.
- * A seed is included if any of its themes appears in the user message (case-insensitive).
- * If the message is empty, all enabled seeds are returned (fallback for context-free calls).
- */
-async function fetchStorySeeds(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-  lastUserMessage: string,
-): Promise<StorySeedRow[]> {
-  const res = await fetch(
-    `${supabaseUrl}/rest/v1/story_seeds?enabled=eq.true&select=id,title,content,importance,themes&order=importance.desc,created_at.asc`,
-    { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
-  );
-  if (!res.ok) return [];
-  const all = (await res.json()) as StorySeedRow[];
-
-  if (!lastUserMessage.trim()) return all.slice(0, 4);
-
-  const msg = lastUserMessage.toLocaleLowerCase();
-  const matched = all.filter((s) =>
-    (s.themes || []).some((t) => msg.includes(t.toLocaleLowerCase()))
-  );
-  return matched.slice(0, 4);
-}
-
-/**
- * Compiles story seeds into <relationship_history> block for injection into the system prompt.
- */
-function compileStorySeeds(seeds: StorySeedRow[]): string {
-  if (seeds.length === 0) return "";
-  const stories = seeds
-    .map((s) => `[Story]\nTitle: ${s.title}\n\nContent:\n${s.content}\n[/Story]`)
-    .join("\n\n");
-  return `\n\n<relationship_history>\n\n${stories}\n\n</relationship_history>`;
-}
-
 // ── Conversation History Provider ────────────────────────────────────────────
 //
 // retrieval_only: only fetches when user references a past conversation.
@@ -2239,83 +2134,8 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
     logRecord.has_user_id = userId !== "anon";
     logRecord.user_id_prefix = safeUserIdPrefix(userId);
 
-    // ── Legacy memory system (LEGACY_MEMORY_ENABLED=false by default) ─────────
-    if (LEGACY_MEMORY_ENABLED) {
-      const cacheKey = await hashCacheKey(userId + "|" + hitDomainsFingerprint(lastUserMessage));
-      const cached = _memCache.get(cacheKey);
-
-      let compiledMemoryText: string;
-
-      if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-        _cacheHits += 1;
-        compiledMemoryText = cached.compiledText;
-        logRecord.memory_cache_hit = true;
-        logRecord.memory_count = cached.hitMemoryIds.length;
-        logRecord.hit_memory_ids_count = cached.hitMemoryIds.length;
-      } else {
-        _cacheMisses += 1;
-        const tFetch = Date.now();
-        const [{ lines: memories, ids: memoryIds }, { summaries: buckets, titles: bucketTitles }] = await Promise.all([
-          fetchEnabledMemories(supabaseUrl, serviceRoleKey, lastUserMessage),
-          fetchMemoryBuckets(supabaseUrl, serviceRoleKey, lastUserMessage),
-        ]);
-        logRecord.memory_fetch_ms = Date.now() - tFetch;
-
-        const tCompile = Date.now();
-        let compiled = "";
-        if (memories.length > 0) {
-          compiled +=
-            "\n\n以下是长期记忆，请优先遵守：\n" +
-            memories.map((m, i) => `${i + 1}. ${m}`).join("\n");
-        }
-        if (buckets.length > 0) {
-          compiled +=
-            "\n\n以下是背景参考（最多 2 条，仅供参考）：\n" +
-            buckets.map((b, i) => `${i + 1}. ${b}`).join("\n");
-        }
-        logRecord.memory_compile_ms = Date.now() - tCompile;
-        logRecord.memory_count = memories.length;
-        logRecord.hit_memory_ids_count = memoryIds.length;
-        logRecord.bucket_count = buckets.length;
-        logRecord.bucket_titles = bucketTitles;
-
-        compiledMemoryText = compiled;
-        if (memories.length > 0 || buckets.length > 0) {
-          evictExpiredCacheEntries();
-          _cacheWrites += 1;
-          _memCache.set(cacheKey, {
-            compiledText: compiled,
-            hitMemoryIds: memoryIds,
-            ts: Date.now(),
-          });
-        }
-      }
-
-      // Update log with post-request stats
-      logRecord.memory_cache_hits = _cacheHits;
-      logRecord.memory_cache_misses = _cacheMisses;
-      logRecord.memory_cache_hit_rate = (_cacheHits + _cacheMisses) > 0
-        ? _cacheHits / (_cacheHits + _cacheMisses)
-        : -1;
-      logRecord.memory_cache_size = _memCache.size;
-
-      systemContent += compiledMemoryText;
-
-      // ── Story Seeds (legacy, requires LEGACY_MEMORY_ENABLED=true) ───────────
-      if (payload.storySeedsEnabled === true) {
-        logRecord.story_seeds_enabled = true;
-        const seeds = await fetchStorySeeds(supabaseUrl, serviceRoleKey, lastUserMessage);
-        if (seeds.length > 0) {
-          systemContent += compileStorySeeds(seeds);
-          logRecord.story_seeds_count = seeds.length;
-          logRecord.story_seeds_titles = seeds.map((s) => s.title);
-        }
-      }
-    } else {
-      // legacy_memory_enabled:false — skip all legacy DB reads
-      logRecord.story_seeds_enabled = false;
-    }
-  }
+    // legacy_memory_enabled:false — skip all legacy DB reads
+    logRecord.story_seeds_enabled = false;
 
   // ── New memory provider system ────────────────────────────────────────────
   // Runs regardless of LEGACY_MEMORY_ENABLED. All models consume the same context.
@@ -2383,6 +2203,7 @@ G 可以直接说"不对，这个味儿不对"，也可以下一秒凑过来帮�
     logRecord.historical_ai_usage_recalled = memLog.historical_ai_usage_recalled;
     logRecord.historical_ai_usage_reason = memLog.historical_ai_usage_reason;
     logRecord.memory_context_tokens_estimated = memLog.memory_context_tokens_estimated;
+  }
   }
 
   if (payload.replyMode === "auto") {
