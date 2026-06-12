@@ -76,6 +76,7 @@ type ChatRequest = {
   timeContext?: TimeContext;
   conversation_state?: ConversationState;
   userMessageId?: number | null; // messages.id of the triggering user message
+  rawUserMessage?: string | null; // original user input before any frontend wrapping
 };
 
 // ── Model tier ────────────────────────────────────────────────────────────────
@@ -2011,8 +2012,12 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
   // Runs regardless of LEGACY_MEMORY_ENABLED. All models consume the same context.
   {
     const memUserId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+    // Prefer rawUserMessage (original input before frontend wrapping) for keyword detection.
+    const memUserMessage = (typeof payload.rawUserMessage === "string" && payload.rawUserMessage)
+      ? payload.rawUserMessage
+      : lastUserMessage;
     const { context: memContext, log: memLog } = await compileMemoryContext(
-      lastUserMessage, supabaseUrl, serviceRoleKey, memUserId, conversationId, topicRoute, projectLockTurns, projectSilencedTtl,
+      memUserMessage, supabaseUrl, serviceRoleKey, memUserId, conversationId, topicRoute, projectLockTurns, projectSilencedTtl,
     );
     if (memContext) {
       systemContent += memContext;

@@ -933,6 +933,11 @@ async function callChatAPI(messages, replyMode = "auto") {
         const id = lastUser?.id;
         return id != null && id !== "null" ? Number(id) : null;
       })(),
+      rawUserMessage: (() => {
+        // Always use chatMessages (pre-wrap) to get the real user input for keyword detection.
+        const lastReal = [...chatMessages].reverse().find(m => m.role === "user");
+        return typeof lastReal?.content === "string" ? lastReal.content : null;
+      })(),
     }),
   });
 }
