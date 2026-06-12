@@ -153,16 +153,17 @@ supabase secrets set LEGACY_MEMORY_ENABLED="true"   # 默认 false
 所有需要从 `content` 提取纯文字的地方（话题路由、`rawUserMessage`、编辑对话框等）
 统一走 `extractTextFromMessageContent(content)`，不直接假设 `content` 是 string。
 
-**DB 存储**：当前仅保存文字占位符 `[图片]` 或 `[图片] <文字>`，不保存 base64 数据。
-**已知限制**：刷新页面后图片不保留（仅文字占位符）。等 Supabase Storage 阶段接入后解决。
+**DB 存储**：保存文字占位符 `[图片]` 或 `[图片] <文字>`，不保存 base64 数据。
+**图片持久化**：上传时同步存入 `chat-images` private bucket（路径 `{user_id}/{conv_id}_{ts}.jpg`），`messages.image_storage_path` 存储对象路径。刷新后通过 signed URL（1小时有效）恢复图片显示。
 
-**待完成**：多图批量上传、图片持久化存储（Supabase Storage）、识别成本提示、完整视觉链路（视觉模型调用）。
+**待完成**：多图批量上传、识别成本提示、完整视觉链路（视觉模型调用）。
 
 ---
 
 ## 当前优先级
 
-- **P0 图片**：图片持久化存储、多图批量上传、完整视觉链路
+- **P0 图片（完成）**：图片持久化存储（Supabase Storage 已接入）
+- **P1 图片**：多图批量上传、完整视觉链路（视觉模型调用）
 - **P1 文档对齐**：记忆架构文档与实际 provider 对齐（已更新）
 - **P2 Memory Center 文案**：各 provider 卡片文案与后端实际能力对齐
 - **P3 README / docs 同步**：README 与 docs/ 保持一致（本次更新）
