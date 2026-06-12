@@ -1,4 +1,4 @@
-console.log("build cloudflare-0066");
+console.log("build cloudflare-0067");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -2738,6 +2738,7 @@ newConvButton.addEventListener("click", async () => {
 // ── Submit & reply control ────────────────────────────────────────────────────
 
 let idleTimer = null;
+let statusTimer = null;
 let isReplying = false;
 let autoReplyEnabled = false;
 
@@ -2767,24 +2768,35 @@ function updateAutoReplyToggle() {
 function getAutoReplyDelay(lastUserMessage = "") {
   const text = typeof lastUserMessage === "string" ? lastUserMessage.trim() : "";
   const isQuestion = /[？?吗呢么]$/.test(text) || /怎么|为什么|要不要|可以吗|怎么办|你觉得/.test(text);
-  const looksUnfinished = /[，,、….]$/.test(text) || text.length < 12;
-  const base = isQuestion ? 9000 : looksUnfinished ? 20000 : 14000;
-  const jitter = Math.floor(Math.random() * 5000);
-  return base + jitter;
+  const isShort = text.length <= 8;
+  if (isQuestion) return 0;
+  if (isShort) return 10000 + Math.floor(Math.random() * 4000); // 10–14s
+  return 6000 + Math.floor(Math.random() * 3000); // 6–9s
 }
 
-function cancelAutoReplyTimer(reason = "") {
-  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-  if (reason) setChatStatus("");
+function cancelAutoReplyTimer() {
+  clearTimeout(idleTimer); idleTimer = null;
+  clearTimeout(statusTimer); statusTimer = null;
+  setChatStatus("");
 }
 
 function scheduleAutoReply(lastUserMessage = "") {
   cancelAutoReplyTimer();
   const delay = getAutoReplyDelay(lastUserMessage);
-  setChatStatus("公主在听…");
+  if (delay === 0) {
+    // 问题句：立即触发，不走 idle 状态
+    triggerReply("auto");
+    return;
+  }
+  // 普通句/短句：2s 后才显示 status，避免短时间内输入时闪烁
+  statusTimer = setTimeout(() => {
+    statusTimer = null;
+    if (!idleTimer) return; // idleTimer 已被取消，不再显示
+    setChatStatus("公主在听…");
+  }, 2000);
   idleTimer = setTimeout(() => {
     idleTimer = null;
-    if (messageInput.value.trim() || isComposing) { setChatStatus(""); return; }
+    if (messageInput.value.trim() || isComposing) { cancelAutoReplyTimer(); return; }
     triggerReply("auto");
   }, delay);
 }
@@ -2858,7 +2870,7 @@ function initTierBar() {
 autoReplyToggle.addEventListener("click", () => {
   autoReplyEnabled = !autoReplyEnabled;
   updateAutoReplyToggle();
-  if (!autoReplyEnabled) cancelAutoReplyTimer("off");
+  if (!autoReplyEnabled) cancelAutoReplyTimer();
 });
 
 updateAutoReplyToggle();
@@ -2871,10 +2883,9 @@ document.getElementById("storySeedsBtn")?.addEventListener("click", () => {
 });
 
 async function triggerReply(replyMode) {
-  if (isReplying) return;
-  if (replyMode === "auto" && (messageInput.value.trim() || isComposing)) return;
-  clearTimeout(idleTimer);
-  idleTimer = null;
+  if (isReplying) { cancelAutoReplyTimer(); return; }
+  if (replyMode === "auto" && (messageInput.value.trim() || isComposing)) { cancelAutoReplyTimer(); return; }
+  cancelAutoReplyTimer();
   setChatStatus("正在输入…");
   showTypingIndicator();
   setReplyingState(true);
@@ -2895,7 +2906,7 @@ messageInput.addEventListener("compositionstart", () => { isComposing = true; ca
 messageInput.addEventListener("compositionend", () => { isComposing = false; autoResizeTextarea(messageInput); });
 messageInput.addEventListener("input", () => {
   autoResizeTextarea(messageInput);
-  if (autoReplyEnabled && idleTimer) cancelAutoReplyTimer();
+  if (autoReplyEnabled) cancelAutoReplyTimer();
 });
 messageInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !isComposing) {
@@ -3109,15 +3120,7 @@ messageList.addEventListener("click", (e) => {
 async function handleSubmit() {
   const text = messageInput.value.trim();
   if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading) return;
-  if (isReplying) {
-    const hint = document.getElementById("chatStatus");
-    if (hint) {
-      const prev = hint.textContent;
-      hint.textContent = "等我说完再发…";
-      setTimeout(() => { if (hint.textContent === "等我说完再发…") hint.textContent = prev; }, 1200);
-    }
-    return;
-  }
+  if (isReplying) return;
 
   messageInput.value = "";
   autoResizeTextarea(messageInput);
@@ -3219,7 +3222,7 @@ function buildComposerMenu(anchorBtn) {
     closeComposerMenu();
     autoReplyEnabled = !autoReplyEnabled;
     updateAutoReplyToggle();
-    if (!autoReplyEnabled) cancelAutoReplyTimer("off");
+    if (!autoReplyEnabled) cancelAutoReplyTimer();
   });
   menu.appendChild(autoItem);
 
