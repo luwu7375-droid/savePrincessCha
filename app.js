@@ -692,23 +692,23 @@ async function reloadHistory() {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at")
+    .select("id, role, content, created_at, image_storage_path")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
 
   if (error) { renderWelcomeMessage(); console.error(error); return; }
 
-  const history = [...data].reverse();
+  const resolved = await resolveImagePaths([...data].reverse());
   chatMessages.length = 0;
   messageList.innerHTML = "";
   lastMessageTime = null;
-  if (!history.length) { renderWelcomeMessage(); return; }
-  for (const m of history) {
+  if (!resolved.length) { renderWelcomeMessage(); return; }
+  for (const m of resolved) {
     addMessage(m.content, m.role, m.created_at, {}, m.id);
     chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null });
   }
-  if (history.length > 0) oldestLoadedMessageCreatedAt = history[0].created_at;
+  if (resolved.length > 0) oldestLoadedMessageCreatedAt = resolved[0].created_at;
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
   refreshMessageActions();
 }
