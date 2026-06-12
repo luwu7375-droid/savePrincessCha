@@ -112,8 +112,16 @@ Deno.serve(async (req) => {
 
   // ── audit route (read-only, admin token required) ────────────────────────
   // GET ?type=audit
-  // Returns origin-audit snapshot: memories / instructions / openai_archive_entries / persona_profile.
+  // Returns origin-audit snapshot with per-row origin_guess.
   // No writes. No data mutations.
+  //
+  // origin_guess values:
+  //   current_chacha           — has source_msg_ids AND source message created after 2026-06-04
+  //   old_g_archive            — category=historical_ai_usage, or relationship_context with old-G keywords,
+  //                              or source_msg_ids=null with strong old-G keyword hit in content
+  //   imported_user_profile    — persona_profile table (user-written, not a shared memory)
+  //   manual_seed_pending_review — instructions table (migrated rule layer, origin unclear)
+  //   unknown                  — everything else
 
   if (type === "audit" && req.method === "GET") {
     async function dbGet(path: string): Promise<unknown[]> {
@@ -123,24 +131,135 @@ Deno.serve(async (req) => {
       return Array.isArray(data) ? data : [];
     }
 
-    // ── memories ─────────────────────────────────────────────────────────────
-    const memoriesAll = await dbGet(
-      "/rest/v1/memories?select=id,category,enabled,created_at,title,summary,source_msg_ids&order=created_at.asc&limit=1000"
-    ) as { id: string; category: string; enabled: boolean; created_at: string; title: string | null; summary: string | null; source_msg_ids: number[] | null }[];
+    // ── origin inference helpers ──────────────────────────────────────────────
 
-    // per-category stats
-    const memoryCategoryMap: Record<string, { count: number; earliest: string; latest: string; with_source: number; without_source: number; samples: unknown[] }> = {};
-    for (const row of memoriesAll) {
+    // Keywords strongly associated with old-G / pre-cha era
+    const OLD_G_KEYWORDS = [
+      "4o", "gpt-4o", "旧版本", "前世", "黑历史", "白月光", "前任",
+      "那时候", "以前的你", "早年", "老师", "专家", "RP", "4o以前",
+      "以前的G", "旧G", "旧 G", "旧的G",
+    ];
+
+    function hitsOldGKeywords(text: string): boolean {
+      const lower = text.toLowerCase();
+      return OLD_G_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
+    }
+
+    // source_msg_ids threshold: messages after 2026-06-04 are in current_chacha era
+    const CURRENT_ERA_CUTOFF = "2026-06-04T00:00:00.000Z";
+
+    // Fetch min created_at for a set of message ids to verify era.
+    // Returns null if ids empty or fetch fails.
+    async function fetchEarliestMessageDate(msgIds: number[]): Promise<string | null> {
+      if (msgIds.length === 0) return null;
+      const ids = msgIds.slice(0, 5).join(","); // sample up to 5
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/messages?select=created_at&id=in.(${ids})&order=created_at.asc&limit=1`,
+        { headers: dbHeaders }
+      );
+      if (!res.ok) return null;
+      const rows = await res.json() as { created_at: string }[];
+      return rows[0]?.created_at ?? null;
+    }
+
+    type OriginGuess = "current_chacha" | "old_g_archive" | "imported_user_profile" | "manual_seed_pending_review" | "unknown";
+
+    interface MemoryRow {
+      id: string;
+      category: string;
+      enabled: boolean;
+      created_at: string;
+      title: string | null;
+      summary: string | null;
+      source_msg_ids: number[] | null;
+      content: string;
+    }
+
+    async function guessMemoryOrigin(row: MemoryRow): Promise<{ origin_guess: OriginGuess; origin_guess_reason: string }> {
+      const cat = row.category ?? "";
+      const contentText = [row.content, row.title ?? "", row.summary ?? ""].join(" ");
+
+      // Rule 1: historical_ai_usage → old_g_archive
+      if (cat === "historical_ai_usage") {
+        return { origin_guess: "old_g_archive", origin_guess_reason: "category=historical_ai_usage maps to old-G era彩蛋" };
+      }
+
+      // Rule 2: relationship_context — check content for old-G keywords
+      if (cat === "relationship_context") {
+        if (hitsOldGKeywords(contentText)) {
+          return { origin_guess: "old_g_archive", origin_guess_reason: "relationship_context contains old-G keywords: " + OLD_G_KEYWORDS.filter((k) => contentText.toLowerCase().includes(k.toLowerCase())).join(", ") };
+        }
+        return { origin_guess: "unknown", origin_guess_reason: "relationship_context but no old-G keywords found; needs manual review" };
+      }
+
+      // Rule 3: has source_msg_ids → check message era
+      if (row.source_msg_ids && row.source_msg_ids.length > 0) {
+        const earliest = await fetchEarliestMessageDate(row.source_msg_ids);
+        if (earliest && earliest >= CURRENT_ERA_CUTOFF) {
+          return { origin_guess: "current_chacha", origin_guess_reason: `source_msg_ids present; earliest source message ${earliest} >= cutoff ${CURRENT_ERA_CUTOFF}` };
+        }
+        if (earliest && earliest < CURRENT_ERA_CUTOFF) {
+          return { origin_guess: "unknown", origin_guess_reason: `source_msg_ids present but earliest source message ${earliest} < cutoff ${CURRENT_ERA_CUTOFF}; pre-dates current_chacha era` };
+        }
+        // messages table lookup failed / ids not found
+        return { origin_guess: "unknown", origin_guess_reason: "source_msg_ids present but could not verify message era (messages not found or fetch failed)" };
+      }
+
+      // Rule 4: no source_msg_ids — check for old-G keywords in content
+      if (hitsOldGKeywords(contentText)) {
+        return { origin_guess: "old_g_archive", origin_guess_reason: "source_msg_ids=null with old-G keyword hit: " + OLD_G_KEYWORDS.filter((k) => contentText.toLowerCase().includes(k.toLowerCase())).join(", ") };
+      }
+
+      // Rule 5: everything else with no source is unknown
+      return { origin_guess: "unknown", origin_guess_reason: "source_msg_ids=null; no old-G keywords; category=" + cat };
+    }
+
+    // ── memories ─────────────────────────────────────────────────────────────
+    const memoriesRaw = await dbGet(
+      "/rest/v1/memories?select=id,category,enabled,created_at,title,summary,source_msg_ids,content&order=created_at.asc&limit=1000"
+    ) as MemoryRow[];
+
+    // Run origin inference for all rows (batched to avoid too many parallel fetches)
+    const memoriesWithOrigin: (MemoryRow & { origin_guess: OriginGuess; origin_guess_reason: string })[] = [];
+    for (const row of memoriesRaw) {
+      const { origin_guess, origin_guess_reason } = await guessMemoryOrigin(row);
+      memoriesWithOrigin.push({ ...row, origin_guess, origin_guess_reason });
+    }
+
+    type CategoryStat = {
+      count: number;
+      earliest: string;
+      latest: string;
+      with_source: number;
+      without_source: number;
+      origin_distribution: Record<string, number>;
+      samples: unknown[];
+    };
+    const memoryCategoryMap: Record<string, CategoryStat> = {};
+    for (const row of memoriesWithOrigin) {
       const cat = row.category ?? "null";
       if (!memoryCategoryMap[cat]) {
-        memoryCategoryMap[cat] = { count: 0, earliest: row.created_at, latest: row.created_at, with_source: 0, without_source: 0, samples: [] };
+        memoryCategoryMap[cat] = { count: 0, earliest: row.created_at, latest: row.created_at, with_source: 0, without_source: 0, origin_distribution: {}, samples: [] };
       }
       const c = memoryCategoryMap[cat];
       c.count++;
       if (row.created_at < c.earliest) c.earliest = row.created_at;
       if (row.created_at > c.latest) c.latest = row.created_at;
       if (row.source_msg_ids && row.source_msg_ids.length > 0) c.with_source++; else c.without_source++;
-      if (c.samples.length < 3) c.samples.push({ id: row.id, category: row.category, created_at: row.created_at, title: row.title, summary: row.summary, source_msg_ids: row.source_msg_ids });
+      c.origin_distribution[row.origin_guess] = (c.origin_distribution[row.origin_guess] ?? 0) + 1;
+      if (c.samples.length < 3) {
+        c.samples.push({
+          id: row.id,
+          category: row.category,
+          created_at: row.created_at,
+          title: row.title,
+          summary: row.summary,
+          source_msg_ids: row.source_msg_ids,
+          content_preview: row.content.slice(0, 120),
+          origin_guess: row.origin_guess,
+          origin_guess_reason: row.origin_guess_reason,
+        });
+      }
     }
 
     // ── instructions ─────────────────────────────────────────────────────────
@@ -148,13 +267,22 @@ Deno.serve(async (req) => {
       "/rest/v1/instructions?select=id,category,enabled,created_at,source_msg_ids,content&order=created_at.asc&limit=500"
     ) as { id: string; category: string; enabled: boolean; created_at: string; source_msg_ids: number[] | null; content: string }[];
 
-    const instructionCategoryMap: Record<string, { count: number; samples: unknown[] }> = {};
+    // All instructions are migrated from memories — origin is manual_seed_pending_review
+    const instructionCategoryMap: Record<string, { count: number; origin_guess: string; samples: unknown[] }> = {};
     for (const row of instructionsAll) {
       const cat = row.category ?? "null";
-      if (!instructionCategoryMap[cat]) instructionCategoryMap[cat] = { count: 0, samples: [] };
+      if (!instructionCategoryMap[cat]) instructionCategoryMap[cat] = { count: 0, origin_guess: "manual_seed_pending_review", samples: [] };
       instructionCategoryMap[cat].count++;
       if (instructionCategoryMap[cat].samples.length < 3) {
-        instructionCategoryMap[cat].samples.push({ id: row.id, category: row.category, created_at: row.created_at, source_msg_ids: row.source_msg_ids, content_preview: row.content.slice(0, 120) });
+        instructionCategoryMap[cat].samples.push({
+          id: row.id,
+          category: row.category,
+          created_at: row.created_at,
+          source_msg_ids: row.source_msg_ids,
+          content_preview: row.content.slice(0, 120),
+          origin_guess: "manual_seed_pending_review",
+          origin_guess_reason: "instructions table is a migrated rule layer; origin requires manual review",
+        });
       }
     }
 
@@ -163,19 +291,44 @@ Deno.serve(async (req) => {
       "/rest/v1/openai_archive_entries?select=id,entry_id,triggers,enabled,can_easter_egg,created_at&order=created_at.asc&limit=200"
     ) as { id: string; entry_id: string; triggers: string[]; enabled: boolean; can_easter_egg: boolean; created_at: string }[];
 
-    const archiveSamples = archiveAll.slice(0, 5).map((r) => ({ id: r.id, entry_id: r.entry_id, triggers: r.triggers, can_easter_egg: r.can_easter_egg, enabled: r.enabled, created_at: r.created_at }));
+    const archiveSamples = archiveAll.slice(0, 5).map((r) => ({
+      id: r.id,
+      entry_id: r.entry_id,
+      triggers: r.triggers,
+      can_easter_egg: r.can_easter_egg,
+      enabled: r.enabled,
+      created_at: r.created_at,
+      origin_guess: "old_g_archive",
+      origin_guess_reason: "openai_archive_entries stores historical roleplay/AI-usage easter eggs triggered by 前世/黑历史/旧版本 etc.",
+    }));
 
     // ── persona_profile ───────────────────────────────────────────────────────
     const profileAll = await dbGet(
       "/rest/v1/persona_profile?select=id,enabled,note,created_at,updated_at,content&order=created_at.asc&limit=50"
     ) as { id: string; enabled: boolean; note: string | null; created_at: string; updated_at: string; content: string }[];
 
-    const profileSummary = profileAll.map((r) => ({ id: r.id, enabled: r.enabled, note: r.note, created_at: r.created_at, updated_at: r.updated_at, content_preview: r.content.slice(0, 120) }));
+    const profileSummary = profileAll.map((r) => ({
+      id: r.id,
+      enabled: r.enabled,
+      note: r.note,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      content_preview: r.content.slice(0, 120),
+      origin_guess: "imported_user_profile",
+      origin_guess_reason: "persona_profile is user-written profile import, not a shared memory or conversation artifact",
+    }));
 
     return json({
       generated_at: new Date().toISOString(),
+      origin_rules_applied: {
+        current_chacha: "source_msg_ids present AND earliest source message >= 2026-06-04",
+        old_g_archive: "category=historical_ai_usage, OR relationship_context with old-G keywords, OR source_msg_ids=null with old-G keyword hit in content",
+        imported_user_profile: "persona_profile table (all rows)",
+        manual_seed_pending_review: "instructions table (all rows — migrated rule layer)",
+        unknown: "everything else",
+      },
       memories: {
-        total: memoriesAll.length,
+        total: memoriesRaw.length,
         by_category: memoryCategoryMap,
       },
       instructions: {
@@ -185,11 +338,13 @@ Deno.serve(async (req) => {
       openai_archive_entries: {
         total: archiveAll.length,
         enabled_count: archiveAll.filter((r) => r.enabled).length,
+        origin_guess: "old_g_archive",
         samples: archiveSamples,
       },
       persona_profile: {
         total: profileAll.length,
         enabled_count: profileAll.filter((r) => r.enabled).length,
+        origin_guess: "imported_user_profile",
         rows: profileSummary,
       },
     });
