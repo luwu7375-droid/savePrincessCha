@@ -6,14 +6,14 @@
 
 ## 安全
 
-**本仓库为 private。即便设为 private，以下内容也不应提交到代码仓库：**
+**本仓库为 public。以下内容绝不得提交到代码仓库：**
 
 | 类型 | 说明 | 正确处理方式 |
 |------|------|-------------|
 | 真实用户画像 | `mastodon_profile.ts` 中的个人信息 | 应替换为 mock 占位符，真实内容走 DB 或本地生成文件（.gitignore） |
-| OpenAI 对话档案 | `openai_archive.ts` 中的历史记录内容 | 仅提交加载逻辑和结构，私人内容不提交 |
+| 历史档案内容 | `openai_archive_entries` 或任何历史对话原文 | 仅提交数据结构和逻辑，私人内容不提交 |
 | Mastodon 原文 | `data/memory/mastodon/*.md` 中的原始帖文 | 脱敏摘要可保留，原始内容不提交 |
-| 私人记忆内容 | `memory/` 下的 summaries、merged.json 等 | 不提交到仓库，属于本地数据 |
+| 私人记忆原文 | `memory/` 下的 summaries、merged.json 等 | 不提交到仓库，属于本地数据 |
 | API key | OpenRouter key、任何第三方 API key | 全部走 Supabase secrets |
 | Service role key | `DB_SERVICE_ROLE_KEY` | 仅走 Supabase secrets，绝不出现在前端或代码中 |
 
@@ -30,7 +30,10 @@ Cloudflare Pages
        │                        ├─ L1: persona_memories（手动长期记忆，DB）
        │                        ├─ L1: mastodon_profile（用户核心画像，persona_profile 表）
        │                        ├─ L2: project_memory（项目/工作记忆，DB）
-       │                        ├─ L3: openai_archive（历史对话档案，关键词触发）
+       │                        ├─ L3: relationship_context（关系档案，关键词触发）
+       │                        ├─ L3: life_context（生活照护，关键词触发）
+       │                        ├─ L3: historical_ai_usage（历史档案/背景理解，关键词触发）
+       │                        ├─ L3: mastodon_timeline（时间线，按需召回）
        │                        ├─ L3: conversation_history（跨会话检索，top-5 召回）
        │                        ├─ chat_status（规则化对话状态计算）
        │                        ├─ auto_memory_vault（自动记忆候选生成与沉淀）
@@ -43,6 +46,8 @@ Cloudflare Pages
                                                    └─ GET/POST/PATCH/DELETE memory_buckets 表（旧沉淀记忆，默认不参与回复）
 ```
 
+> **注**：`openai_archive` 已退役，不再注入任何 prompt。DB 表 `openai_archive_entries` 仅作数据查阅用。未来若有历史档案召回需求，将另行设计 `origin_archive` provider，不复活旧 openai_archive 实现。
+
 ---
 
 ## 记忆系统
@@ -54,8 +59,13 @@ Cloudflare Pages
 | L1 | `persona_memories` | `memories` 表（persona/life/relation 域） | 按域匹配，常驻注入 |
 | L1 | `mastodon_profile` | `persona_profile` 表 | 常驻注入 |
 | L2 | `project_memory` | `memories` 表（work/writing 域） | 话题路由到 project_work 时注入 |
-| L3 | `openai_archive` | `openai_archive_entries` 表 | 关键词触发注入 |
+| L3 | `relationship_context` | `memories` 表（relationship_context 类） | 关键词触发注入 |
+| L3 | `life_context` | `memories` 表（life_context 类） | 关键词触发注入 |
+| L3 | `historical_ai_usage` | `memories` 表（historical_ai_usage 类） | 关键词触发注入，仅用于背景理解 |
+| L3 | `mastodon_timeline` | `mastodon_timeline.ts`（内联） | 按需召回（年份/地点/事件类查询） |
 | L3 | `conversation_history` | `messages` 表 | 触发词激活，top-5 语义召回 |
+
+**已退役**：`openai_archive` 不再注入，`openai_archive_entries` 表仅作数据查阅。未来历史档案召回将另行设计 `origin_archive`，不复活旧实现。
 
 ### 自动记忆沉淀（auto_memory_vault）
 
@@ -107,10 +117,9 @@ supabase secrets set LEGACY_MEMORY_ENABLED="true"   # 默认 false
 
 ### 人格与回复
 
-- `G_persona_core`：聪明直给、playful、情绪雷达强、有主角气场
-- `G_reply_style`：情绪先到结构后到，短句，不默认项目化
-- `persona_emotional_boundary`：亲密感表达规则
-- `identity_boundary`：mastodon_profile 描述用户，不描述 G
+- `identity_boundary`：系统 prompt 核心边界，mastodon_profile 描述用户，不描述小钗
+- `core_principles`：价值观与优先级排序（照护 > 项目 > 闲聊）
+- `execution_rules`：回复格式规则（短句、情绪先到结构后到、不默认项目化）
 
 ### 时间感知与话题路由
 
@@ -127,22 +136,25 @@ supabase secrets set LEGACY_MEMORY_ENABLED="true"   # 默认 false
 
 ### 模型档位
 
-- `instant`：FAST_MODEL，max 300 tokens
-- `general`：DEFAULT_MODEL，max 300 tokens
-- `advanced`：ADVANCED_MODEL，max 1200 tokens
-- 一次性 fallback：primary 失败时自动切 FALLBACK_MODEL
+- `instant`：FAST_MODEL（55api primary），max 300 tokens
+- `general`：DEFAULT_MODEL（55api primary），max 300 tokens
+- `advanced`：ADVANCED_MODEL（instant-general-advanced），max 1200 tokens
+- 一次性 fallback：primary 失败时自动切 FALLBACK_MODEL（fuka）
 
 ### 图片上传
 
-单张图片上传、压缩（最长边 1600px，JPEG 0.85）、预览、随消息发送。支持拖拽、粘贴、相册/拍照。
+单图上传、压缩（最长边 1600px，JPEG 0.85）、预览、随消息发送。支持粘贴、拖拽、相册/拍照。支持图片 lightbox 查看大图。
+
+**待完成**：多图批量上传、图片持久化存储、识别成本提示、完整视觉链路（视觉模型调用）。
 
 ---
 
-## 正在修 / 验证中
+## 当前优先级
 
-- **conversation_history L3 验证**：跨会话语义召回端到端效果待验证
-- **Memory Center 文案**：各 provider 卡片文案与后端实际能力对齐
-- **图片上传**：多图批量、识别完整流程未完成
+- **P0 图片**：图片持久化存储、多图批量上传、完整视觉链路
+- **P1 文档对齐**：记忆架构文档与实际 provider 对齐（已更新）
+- **P2 Memory Center 文案**：各 provider 卡片文案与后端实际能力对齐
+- **P3 README / docs 同步**：README 与 docs/ 保持一致（本次更新）
 
 ---
 

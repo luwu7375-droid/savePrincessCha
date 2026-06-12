@@ -3646,7 +3646,7 @@ function updateMemoryCenterCards(debug) {
     }
   }
 
-  // ── OpenAI Archive ───────────────────────────────────────────────────────
+  // ── 历史档案（openai_archive，已退役）─────────────────────────────────────
   const archiveStatusEl = document.getElementById("mcArchiveStatus");
   if (archiveStatusEl) {
     if (debug) {
@@ -3697,7 +3697,7 @@ function renderMemoryCenterDebug(log) {
     relationship_context:  "关系",
     life_context:          "生活",
     historical_ai_usage:   "前世",
-    openai_archive:        "历史档案",
+    openai_archive:        "历史档案（已退役）",
     conversation_history:  "历史对话",
     mastodon_timeline:     "时间线",
     personality_layers:    "人格",
@@ -3730,7 +3730,7 @@ function renderMemoryCenterDebug(log) {
     // 前世档案
     ["前世档案已召回",         log.historical_ai_usage_recalled],
     // 历史档案
-    ["历史档案已召回",         log.openai_archive_recalled],
+    ["历史档案（已退役）",         log.openai_archive_recalled],
     // 历史对话
     ["历史对话已召回",         log.conversation_history_recalled],
     ["历史对话命中数",         log.conversation_history_hit_count ?? "—"],

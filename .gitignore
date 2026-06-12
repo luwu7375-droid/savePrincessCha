@@ -2,3 +2,15 @@ config.js
 config.local.js
 .env
 .env.local
+
+# 私人记忆内容（不提交）
+memory/
+data/memory/
+
+# Wrangler / Supabase 临时文件
+.wrangler/
+supabase/.temp/
+
+# Python 字节码
+__pycache__/
+*.pyc

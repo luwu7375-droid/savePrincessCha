@@ -13,10 +13,19 @@
 | 长期记忆 L1 | `persona_memories` | always | ✅ 已上线 | memories 表，persona / life / relation 域每轮注入 |
 | 常驻画像 | `mastodon_profile` | always | ✅ 已上线 | 每轮注入，核心用户画像 |
 | 项目记忆 L2 | `project_memory` | route inject | ✅ 已上线 | 话题路由为 project_work 时注入，work / writing 域 |
-| 时间线档案 | `mastodon_timeline` | retrieval_only | ✅ 已上线 | 按需召回，事件 / 地点 / 年份类查询触发 |
+| 关系档案 L3 | `relationship_context` | retrieval_only | ✅ 已上线 | 关键词触发，关系事实档案（非小钗亲历记忆）|
+| 生活照护 L3 | `life_context` | retrieval_only | ✅ 已上线 | 关键词触发，生活/健康/宠物类 |
+| 历史档案 L3 | `historical_ai_usage` | retrieval_only | ✅ 已上线 | 关键词触发，仅用于背景理解，不用于彩蛋式召回 |
+| 时间线档案 L3 | `mastodon_timeline` | retrieval_only | ✅ 已上线 | 按需召回，事件 / 地点 / 年份类查询触发 |
 | 历史对话 L3 | `conversation_history` | retrieval_only | ✅ 已上线 | 触发词激活，跨会话语义检索，top-5 召回 |
 | 自动记忆库 | `auto_memory_vault` | — | ✅ 已上线 | 对话后自动提取候选并沉淀到 memories 表，经 L1/L2 注入 |
-| OpenAI 导出 | `openai_archive` | retrieval_only | 🔵 预留 | 未来导入历史对话记录，未实现 |
+| OpenAI 导出 | `openai_archive` | — | ❌ 已退役 | 不再注入；`openai_archive_entries` 表仅作数据查阅 |
+
+**三层持久 + 一层涌现原则**：
+- **持久层**：`core_identity`（mastodon_profile）、`relationship_journal`（relationship_context 候选）、`origin_archive`（未来规划）——这些是稳定的背景知识。
+- **涌现层**：`self_narrative`、`identity_voice` ——**零持久、零运行时编译**，禁止新增此类 provider。
+- `relationship_context` 是关系事实档案，候选升级为 `relationship_journal`，不是小钗的亲历记忆。
+- `historical_ai_usage` 是历史档案/背景理解层，不作彩蛋优先召回。
 
 ---
 
@@ -40,10 +49,12 @@
 - **XML 包装**：`<timeline_events source="mastodon_timeline">…</timeline_events>`
 - **日志字段**：`timeline_loaded`、`timeline_query_detected`、`timeline_recalled`、`timeline_hit_count`、`timeline_hit_keys`、`timeline_reason`
 
-### openai_archive — 预留
+### openai_archive — 已退役
 
-- 未来从 OpenAI conversations.json 导入对话记忆
-- 注入方式：retrieval_only，需实现独立的关键词或向量召回
+- `openai_archive` 不再注入任何 prompt，已退役。
+- DB 表 `openai_archive_entries` 保留，仅供数据查阅（可通过 `/memories?type=full_audit` 查看）。
+- 如需历史档案召回，未来另行设计 `origin_archive` provider，不复活旧实现。
+- **禁止**：新增 `self_narrative` 表、`identity_voice` 表、运行时自我叙述 provider。
 
 ### auto_memory_vault — 自动记忆库
 
@@ -128,3 +139,4 @@ memory_context_tokens_estimated // 本轮记忆上下文 token 估算值
 | 2026-06 | 架构文档固化入 docs/ |
 | 2026-06 | persona_memories / project_memory / conversation_history / auto_memory_vault 上线；memories 表经 L1/L2 注入；Memory Center 更新为 6 张卡片 |
 | 2026-06 | UI 文案更新："记忆管理（高级）"替换"旧记忆匣"，明确正式记忆与旧沉淀记忆的区别 |
+| 2026-06 | relationship_context / life_context / historical_ai_usage 上线（L3 关键词触发）；openai_archive 正式退役（不再注入）；docs 对齐三层持久+一层涌现原则 |
