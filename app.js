@@ -1,4 +1,4 @@
-console.log("build cloudflare-0068");
+console.log("build cloudflare-0069");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -583,18 +583,22 @@ function addAssistantBubbles(rawContent, createdAt, msgId) {
   }
 }
 
-function insertBubblesAnimated(bubbles, createdAt, msgId) {
+// allSiblings=true 时：bubbles 里每一条都作为兄弟气泡插入（第一条已由调用方处理）
+function insertBubblesAnimated(bubbles, createdAt, msgId, allSiblings = false) {
   return new Promise(resolve => {
-    // 先插入第一条
-    insertBubbleSync(bubbles[0], createdAt, msgId, null);
-    if (bubbles.length === 1) { resolve(); return; }
-    let i = 1;
+    if (!allSiblings) {
+      // 先插入第一条作为主气泡
+      insertBubbleSync(bubbles[0], createdAt, msgId, null);
+      if (bubbles.length === 1) { resolve(); return; }
+    } else {
+      if (bubbles.length === 0) { resolve(); return; }
+    }
+    let i = allSiblings ? 0 : 1;
     function next() {
       if (i >= bubbles.length) { resolve(); return; }
       const delay = 600 + Math.floor(Math.random() * 600); // 600–1200ms
       setTimeout(() => {
         showTypingIndicator();
-        // 再等一小段让 typing indicator 可见后插入气泡
         setTimeout(() => {
           removeTypingIndicator();
           insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
@@ -1344,6 +1348,7 @@ async function requestStreamingReply(replyMode = "auto") {
   const decoder = new TextDecoder("utf-8");
   let buffer = "", fullReply = "", streamDone = false;
   let assistantEl = null;
+  let firstSepSeen = false; // 流式中遇到第一个 ||| 后停止更新 DOM
 
   while (!streamDone) {
     const { done, value } = await reader.read();
@@ -1363,8 +1368,18 @@ async function requestStreamingReply(replyMode = "auto") {
           assistantEl = addMessage("", "assistant");
         }
         fullReply += delta;
-        assistantEl.textContent = stripThinking(fullReply);
-        messageList.scrollTop = messageList.scrollHeight;
+        if (!firstSepSeen) {
+          const sepIdx = fullReply.indexOf("|||");
+          if (sepIdx !== -1) {
+            // 定住第一段，后续 delta 只进 fullReply 不渲染
+            assistantEl.textContent = stripThinking(fullReply.slice(0, sepIdx));
+            firstSepSeen = true;
+          } else {
+            assistantEl.textContent = stripThinking(fullReply);
+            messageList.scrollTop = messageList.scrollHeight;
+          }
+        }
+        // firstSepSeen 后：数据继续累积进 fullReply，DOM 不再更新
       }
     }
   }
@@ -1375,9 +1390,6 @@ async function requestStreamingReply(replyMode = "auto") {
     if (assistantEl) assistantEl.closest(".msg-row")?.remove();
     return;
   }
-  // 删除流式临时气泡
-  if (assistantEl) assistantEl.closest(".msg-row")?.remove();
-  removeTypingIndicator();
 
   const replyTime = new Date().toISOString();
   const replyId = await saveMessage("assistant", cleanReply);
@@ -1385,9 +1397,25 @@ async function requestStreamingReply(replyMode = "auto") {
   chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr });
   lastMessageTime = new Date(replyTime).getTime();
 
-  // 切分气泡并逐条弹出
   const bubbles = splitBubbles(cleanReply);
-  await insertBubblesAnimated(bubbles, replyTime, replyIdStr);
+  if (bubbles.length === 1 || !firstSepSeen) {
+    // 单气泡或模型没有输出 |||：直接用临时气泡，原地更新内容并转正
+    if (assistantEl) {
+      assistantEl.textContent = bubbles[0];
+      const row = assistantEl.closest(".msg-row");
+      if (row && replyIdStr) row.dataset.msgId = replyIdStr;
+    } else {
+      insertBubbleSync(bubbles[0], replyTime, replyIdStr, null);
+    }
+  } else {
+    // 多气泡：第一个气泡已经在 assistantEl 里，转正 msgId，后续气泡逐条弹出
+    if (assistantEl) {
+      const row = assistantEl.closest(".msg-row");
+      if (row && replyIdStr) row.dataset.msgId = replyIdStr;
+    }
+    // 从第二段开始动画插入
+    await insertBubblesAnimated(bubbles.slice(1), replyTime, replyIdStr, true);
+  }
 
   refreshMessageActions();
   // After stream ends, start short-polling for memory promotion results
