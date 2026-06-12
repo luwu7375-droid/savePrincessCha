@@ -1,4 +1,4 @@
-console.log("build cloudflare-0067");
+console.log("build cloudflare-0068");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -534,6 +534,79 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   return el;
 }
 
+// ── Multi-bubble helpers ───────────────────────────────────────────────────────
+
+/** 按 ||| 切分原始回复，最多 3 条，超出的并到最后一条 */
+function splitBubbles(rawText) {
+  const parts = rawText.split("|||").map(s => s.trim()).filter(s => s.length > 0);
+  if (parts.length <= 1) return [rawText.trim()];
+  if (parts.length <= 3) return parts;
+  // 超过 3 条：前 2 条保持，剩余并入第 3 条
+  return [parts[0], parts[1], parts.slice(2).join(" ")];
+}
+
+/**
+ * 渲染 assistant 消息，自动处理 ||| 切分。
+ * 同步插入（历史渲染用）：insertBubbleSync
+ * 逐条延迟插入（新回复用）：insertBubblesAnimated（返回 Promise）
+ */
+function insertBubbleSync(text, createdAt, msgId, isSibling) {
+  const el = document.createElement("div");
+  el.className = "message assistant";
+  el.textContent = text;
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+  stack.appendChild(el);
+  const row = document.createElement("div");
+  row.className = "msg-row assistant";
+  if (msgId && !isSibling) row.dataset.msgId = msgId;
+  if (isSibling) row.dataset.bubbleSibling = isSibling; // sibling 存主 msgId
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.title = "查看 G 的状态";
+  avatar.addEventListener("click", (e) => openStatusPanel(e.currentTarget));
+  row.appendChild(avatar);
+  row.appendChild(stack);
+  maybeAddTimeSeparator(createdAt);
+  messageList.appendChild(row);
+  messageList.scrollTop = messageList.scrollHeight;
+  return row;
+}
+
+function addAssistantBubbles(rawContent, createdAt, msgId) {
+  const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
+  if (bubbles.length === 0) return;
+  // 第一个气泡带 msgId，后续气泡带 bubbleSibling=msgId
+  insertBubbleSync(bubbles[0], createdAt, msgId, null);
+  for (let i = 1; i < bubbles.length; i++) {
+    insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
+  }
+}
+
+function insertBubblesAnimated(bubbles, createdAt, msgId) {
+  return new Promise(resolve => {
+    // 先插入第一条
+    insertBubbleSync(bubbles[0], createdAt, msgId, null);
+    if (bubbles.length === 1) { resolve(); return; }
+    let i = 1;
+    function next() {
+      if (i >= bubbles.length) { resolve(); return; }
+      const delay = 600 + Math.floor(Math.random() * 600); // 600–1200ms
+      setTimeout(() => {
+        showTypingIndicator();
+        // 再等一小段让 typing indicator 可见后插入气泡
+        setTimeout(() => {
+          removeTypingIndicator();
+          insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
+          i++;
+          next();
+        }, 400);
+      }, delay);
+    }
+    next();
+  });
+}
+
 function renderWelcomeMessage() {
   messageList.innerHTML = "";
   lastMessageTime = null;
@@ -705,7 +778,11 @@ async function reloadHistory() {
   lastMessageTime = null;
   if (!resolved.length) { renderWelcomeMessage(); return; }
   for (const m of resolved) {
-    addMessage(m.content, m.role, m.created_at, {}, m.id);
+    if (m.role === "assistant") {
+      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null);
+    } else {
+      addMessage(m.content, m.role, m.created_at, {}, m.id);
+    }
     chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null });
   }
   if (resolved.length > 0) oldestLoadedMessageCreatedAt = resolved[0].created_at;
@@ -735,7 +812,11 @@ async function loadOlderMessages() {
   messageList.innerHTML = "";
   lastMessageTime = null;
   for (const m of chatMessages) {
-    addMessage(m.content, m.role, m.created_at, {}, m.id);
+    if (m.role === "assistant") {
+      addAssistantBubbles(m.content, m.created_at, m.id);
+    } else {
+      addMessage(m.content, m.role, m.created_at, {}, m.id);
+    }
   }
   messageList.scrollTop = prevScrollTop + (messageList.scrollHeight - prevScrollHeight);
   oldestLoadedMessageCreatedAt = older[0].created_at;
@@ -1294,11 +1375,20 @@ async function requestStreamingReply(replyMode = "auto") {
     if (assistantEl) assistantEl.closest(".msg-row")?.remove();
     return;
   }
+  // 删除流式临时气泡
+  if (assistantEl) assistantEl.closest(".msg-row")?.remove();
+  removeTypingIndicator();
+
   const replyTime = new Date().toISOString();
   const replyId = await saveMessage("assistant", cleanReply);
-  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyId != null ? String(replyId) : null });
+  const replyIdStr = replyId != null ? String(replyId) : null;
+  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr });
   lastMessageTime = new Date(replyTime).getTime();
-  if (assistantEl && replyId) { const savedRow = assistantEl.closest(".msg-row"); if (savedRow) savedRow.dataset.msgId = replyId; }
+
+  // 切分气泡并逐条弹出
+  const bubbles = splitBubbles(cleanReply);
+  await insertBubblesAnimated(bubbles, replyTime, replyIdStr);
+
   refreshMessageActions();
   // After stream ends, start short-polling for memory promotion results
   startMemoryPromotionPoller(_currentRequestStartTime, _currentRequestUserMessageId);
@@ -1375,7 +1465,16 @@ function refreshMessageActions() {
 }
 
 async function copyMessage(row, btn) {
-  const text = row.querySelector(".message")?.textContent || "";
+  // 多气泡时用原始完整内容（去掉 ||| 分隔符），单气泡降级取 textContent
+  let text = "";
+  const msgId = row.dataset.msgId || row.dataset.bubbleSibling;
+  if (msgId) {
+    const entry = chatMessages.find(m => m.id === msgId);
+    if (entry && typeof entry.content === "string") {
+      text = entry.content.replace(/\|\|\|/g, " ").trim();
+    }
+  }
+  if (!text) text = row.querySelector(".message")?.textContent || "";
   const feedback = (label) => {
     if (!btn) return;
     const prev = btn.textContent;
@@ -1422,6 +1521,8 @@ async function regenerateMessage(row) {
   if (idx === -1) return;
   closeMessageActionMenu();
   chatMessages.splice(idx, 1);
+  // 删除所有属于同一条消息的气泡 row（bubbleSibling 指向此 msgId 的兄弟行）
+  messageList.querySelectorAll(`[data-bubble-sibling="${msgId}"]`).forEach(r => r.remove());
   row.remove();
   if (msgId) await supabaseClient.from("messages").delete().eq("id", msgId);
   triggerReply("forced");
