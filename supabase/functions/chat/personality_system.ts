@@ -1,7 +1,20 @@
-// ── Ombre Brain: 3-layer personality evolution system (Phase C) ──────────────
+// ── [RETIRED] personality_system.ts ──────────────────────────────────────────
+//
+// 状态：已退役。禁止从 index.ts 或任何其他模块 import 此文件。禁止恢复。
+// 计划删除日期：2026-07-12。届时直接删除此文件，无需迁移。
+//
+// 退役原因：
+//   personality_layers (L1 + L2) 违反"三层持久，一层涌现"架构原则。
+//   L2 动态特征提取会在运行时生成并注入 self_narrative 式人格文本，
+//   与 memory-architecture.md 中的零持久 / 零注入约束不兼容。
+//
+// 如需了解架构原则，参见 docs/memory-architecture.md。
+//
+// ── 以下代码保留仅供参考，不再执行 ──────────────────────────────────────────
+//
 // Auto Memory Vault P1 is wired in via runAutoMemoryVault() below.
 //
-// Exports:
+// Exports (retired — do not use):
 //   fetchLayer1Features   → L1 from persona_layer1_contexts (human-maintained)
 //   fetchLayer2Features   → L2 from persona_layer2_dynamic_features (auto-extracted)
 //   compilePersonalityLayerContext → builds system prompt injection block

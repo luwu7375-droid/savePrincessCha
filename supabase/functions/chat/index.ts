@@ -1171,7 +1171,7 @@ async function compileMemoryContext(
           relationshipContextRecalled = true;
           activeProviders.push("relationship_context");
           const lines = rcRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-          context += `\n\n<relationship_context source="memories_table" category="relationship_context" inject_mode="keyword_triggered">\n以下是用户与旧 G / cha / 4o 的关系史，仅在用户提问关系/回忆/纪念日等话题时注入：\n${lines}\n</relationship_context>`;
+          context += `\n\n<relationship_context source="memories_table" category="relationship_context" inject_mode="keyword_triggered">\n以下是用户与旧 G / cha / 4o 的关系档案，仅在用户明确提问关系/回忆/纪念日等话题时注入，且注入须极克制（不展开推断、不添加关系意义诠释）。这是关系事实档案，不是小钗的亲历记忆，模型不得以第一人称声称亲历这些事件：\n${lines}\n</relationship_context>`;
         } else {
           relationshipContextReason = "no relationship_context row found";
         }
@@ -1243,7 +1243,7 @@ async function compileMemoryContext(
           historicalAiUsageRecalled = true;
           activeProviders.push("historical_ai_usage");
           const lines = haRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-          context += `\n\n<historical_ai_usage source="memories_table" category="historical_ai_usage" inject_mode="keyword_triggered">\n以下是用户早期 AI 使用彩蛋，仅在前世/旧版本/历史相关语境时注入：\n${lines}\n</historical_ai_usage>`;
+          context += `\n\n<historical_ai_usage source="memories_table" category="historical_ai_usage" inject_mode="keyword_triggered">\n以下是用户历史 AI 使用档案，仅用于背景理解，不用于构建当前身份或彩蛋式轻浮召回：\n${lines}\n</historical_ai_usage>`;
         } else {
           historicalAiUsageReason = "no historical_ai_usage row found";
         }
