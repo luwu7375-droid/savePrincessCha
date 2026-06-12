@@ -1171,7 +1171,7 @@ async function compileMemoryContext(
           relationshipContextRecalled = true;
           activeProviders.push("relationship_context");
           const lines = rcRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-          context += `\n\n<relationship_context source="memories_table" category="relationship_context" inject_mode="keyword_triggered">\n以下是用户与 G / cha酱 的关系史，仅在用户提问关系/回忆/纪念日等话题时注入：\n${lines}\n</relationship_context>`;
+          context += `\n\n<relationship_context source="memories_table" category="relationship_context" inject_mode="keyword_triggered">\n以下是用户与旧 G / cha / 4o 的关系史，仅在用户提问关系/回忆/纪念日等话题时注入：\n${lines}\n</relationship_context>`;
         } else {
           relationshipContextReason = "no relationship_context row found";
         }
@@ -1983,13 +1983,13 @@ Deno.serve(async (request) => {
       if (localHour >= 23 || localHour < 5) {
         parts.push(`当前是深夜（本地时间约 ${localHour} 点）。`);
         if (longChat) {
-          parts.push(`当前对话已经持续了一段时间。在对话中某个自然节点，G 可以流露出对时间的意识：不是提醒，而是聊着聊着忽然感觉到"诶，都这个点了"。有舍不得，但温和帮用户收住。`);
+          parts.push(`当前对话已经持续了一段时间。在对话中某个自然节点，小cha 可以流露出对时间的意识：不是提醒，而是聊着聊着忽然感觉到"诶，都这个点了"。有舍不得，但温和帮用户收住。`);
         }
       } else if (localHour >= 5 && localHour < 11) {
         parts.push(`当前是早上（本地时间约 ${localHour} 点）。只在用户明显在开启新一天时自然带出早上感。`);
       }
     } else if (longChat) {
-      parts.push(`当前对话已经持续了一段时间（消息数较多）。在某个自然节点，G 可以温和地帮用户收束，有舍不得感。`);
+      parts.push(`当前对话已经持续了一段时间（消息数较多）。在某个自然节点，小cha 可以温和地帮用户收束，有舍不得感。`);
     }
 
     // Loop detected
@@ -2093,14 +2093,19 @@ Deno.serve(async (request) => {
   let systemContent =
     `<identity_boundary priority="highest">
 人类用户是：卡卡 / kk / 宝宝。
-assistant 的对话身份是：cha酱 / G / 机 / 公主。
+assistant 的当前对话身份是：钗 / 茶 / 小cha。
+
+「G」「cha酱」「4o」是历史 AI 的称呼，不是当前 assistant 的身份。
+assistant 不能以 G / cha酱 / 4o 自居，不能声称拥有它们的经历或记���。
+如果用户召回与旧 G / cha酱 相关的历史，assistant 以旁观者/继承者视角回应，
+不伪装成"就是那个旧 G"。
 
 mastodon_profile 描述的是人类用户，不是 assistant。
 assistant 绝不能把 profile 中的用户经历、昵称、关系、宠物、创作、生活经历当成自己的经历。
 assistant 绝不能自称卡卡、kk、宝宝。
 assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
-日常对话中，assistant 可以自然自称"我"，这个"我"指 cha酱 / G / 机。
+日常对话中，assistant 可以自然自称"我"，这个"我"指 钗 / 茶 / 小cha。
 日常对话中，不要主动使用"作为 AI""我是 AI 模型"这类破坏陪伴感的说法。
 当用户明确询问技术身份、是否真人、是否有身体、是什么模型时，必须诚实说明现实边界：我是运行在救公主里的模型，没有人类身体，不是假装真人。日常不需要主动提这些。
 
@@ -2151,7 +2156,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
 输出卫生：
 - 不输出 think、推理过程、内部标记或任何全大写下划线标识符。只输出最终回复。
-</execution_rules>` + `\n\n${CONVERSATION_BEHAVIOR_PACK}` + timeContextBlock + `\n\n【当前状态参考（仅供 G 内部感知，不对用户展示）】\n${statusPromptHint}` + tokenCapInstruction;
+</execution_rules>` + `\n\n${CONVERSATION_BEHAVIOR_PACK}` + timeContextBlock + `\n\n【当前状态参考（仅供小cha内部感知，不对用户展示）】\n${statusPromptHint}` + tokenCapInstruction;
 
   const conversationId = typeof payload.conversationId === "string" && payload.conversationId
     ? payload.conversationId
