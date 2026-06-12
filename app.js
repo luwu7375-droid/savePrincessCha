@@ -587,7 +587,7 @@ function showLegacyDataNotice() {
  * This puts each user's files in their own folder, matching the RLS policy.
  */
 async function uploadImageToStorage(dataUrl, userId, conversationId) {
-  if (!supabaseClient || !dataUrl || !userId) return null;
+  if (!supabaseClient || !dataUrl || !userId || !conversationId) return null;
   try {
     // Convert data URL to Blob
     const res = await fetch(dataUrl);
