@@ -608,6 +608,59 @@ async function uploadImageToStorage(dataUrl, userId, conversationId) {
   }
 }
 
+/**
+ * Generate a 1-hour signed URL for a Storage path.
+ * Returns null on error (non-fatal).
+ */
+async function getSignedImageUrl(storagePath) {
+  if (!supabaseClient || !storagePath) return null;
+  const { data, error } = await supabaseClient.storage
+    .from("chat-images")
+    .createSignedUrl(storagePath, 3600); // 1 hour
+  if (error) {
+    console.warn("生成 signed URL 失败：", error.message);
+    return null;
+  }
+  return data.signedUrl;
+}
+
+/**
+ * Given an array of raw message rows from DB (each may have image_storage_path),
+ * batch-generate signed URLs and return augmented rows where content is replaced
+ * by a vision content array when an image is present.
+ *
+ * Input row shape:  { id, role, content, created_at, image_storage_path? }
+ * Output row shape: { id, role, content (string | array), created_at, image_storage_path? }
+ */
+async function resolveImagePaths(rows) {
+  // Collect rows that need a signed URL
+  const needsUrl = rows.filter(r => r.image_storage_path);
+  if (!needsUrl.length) return rows;
+
+  // Parallel signed URL generation
+  const urlResults = await Promise.all(
+    needsUrl.map(r => getSignedImageUrl(r.image_storage_path))
+  );
+
+  // Build a map: image_storage_path → signedUrl
+  const urlMap = new Map();
+  needsUrl.forEach((r, i) => {
+    if (urlResults[i]) urlMap.set(r.image_storage_path, urlResults[i]);
+  });
+
+  // Rebuild rows: upgrade content to vision array when signed URL is available
+  return rows.map(r => {
+    if (!r.image_storage_path) return r;
+    const signedUrl = urlMap.get(r.image_storage_path);
+    if (!signedUrl) return r; // fallback: keep text-only content
+    const textPart = r.content.replace(/^\[图片\]\s*/, "").trim();
+    const parts = [];
+    if (textPart) parts.push({ type: "text", text: textPart });
+    parts.push({ type: "image_url", image_url: { url: signedUrl, detail: "low" } });
+    return { ...r, content: parts };
+  });
+}
+
 async function saveMessage(role, content, imageStoragePath = null) {
   if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
