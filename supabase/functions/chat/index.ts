@@ -1992,6 +1992,16 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
 输出卫生：
 - 不输出 think、推理过程、内部标记或任何全大写下划线标识符。只输出最终回复。
+
+【分段回复】
+回复时，如果内容自然分成几个短句或几层意思，用 ||| 隔开，让消息像真人分几条发出来。
+- 只在真的有停顿感的地方断，别硬切。
+- 最多分 3 段，多数时候 1–2 段就够。
+- 短回复、一句话能说完的，不要加 |||。
+- ||| 前后不要加空格或换行，直接贴着字。
+
+例：在呢|||刚走神了一下|||怎么了宝宝
+例（不分段）：嗯，我在听。
 </execution_rules>` + `\n\n${CONVERSATION_BEHAVIOR_PACK}` + timeContextBlock + `\n\n【当前状态参考（仅供小cha内部感知，不对用户展示）】\n${statusPromptHint}` + tokenCapInstruction;
 
   const conversationId = typeof payload.conversationId === "string" && payload.conversationId
