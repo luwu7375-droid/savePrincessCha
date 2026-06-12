@@ -720,14 +720,14 @@ async function loadOlderMessages() {
   historyLoadingOlder = true;
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at")
+    .select("id, role, content, created_at, image_storage_path")
     .eq("conversation_id", conversationId)
     .lt("created_at", oldestLoadedMessageCreatedAt)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
   if (error) { console.error("加载更多历史失败：", error); historyLoadingOlder = false; return; }
   if (!data || data.length === 0) { historyHasMore = false; historyLoadingOlder = false; return; }
-  const older = [...data].reverse();
+  const older = await resolveImagePaths([...data].reverse());
   const prevScrollHeight = messageList.scrollHeight;
   const prevScrollTop = messageList.scrollTop;
   const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null }));
