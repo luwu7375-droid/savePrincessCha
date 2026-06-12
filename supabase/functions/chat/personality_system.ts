@@ -108,7 +108,7 @@ export async function fetchLayer1Features(
 }
 
 // ── Fetch Layer 2 ─────────────────────────────────────────────────────────────
-// Top 5 active features with calculated_score > 0.3, ordered by score desc.
+// Top 3 active features with calculated_score > 0.5, ordered by score desc.
 
 export async function fetchLayer2Features(
   supabaseUrl: string,
@@ -119,11 +119,11 @@ export async function fetchLayer2Features(
     const res = await fetch(
       `${supabaseUrl}/rest/v1/persona_layer2_dynamic_features` +
         `?user_id=eq.${encodeURIComponent(userId)}&status=eq.active` +
-        `&calculated_score=gt.0.3` +
+        `&calculated_score=gt.0.5` +
         `&select=id,user_id,conversation_id,name,type,content,strength,importance,activation_count,` +
         `confidence,first_detected_at,last_reinforced_at,decay_rate,calculated_score,` +
         `valence,arousal,contexts,examples,status,resolved,metadata` +
-        `&order=calculated_score.desc&limit=5`,
+        `&order=calculated_score.desc&limit=3`,
       { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
     );
     if (!res.ok) return [];

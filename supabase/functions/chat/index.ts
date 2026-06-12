@@ -984,7 +984,7 @@ async function compileMemoryContext(
       personaMemoriesCategories = pmRows.map((r) => r.category);
       activeProviders.push("persona_memories");
       const lines = pmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-      context += `\n\n<persona_memories source="memories_table+instructions_table" always_inject="true">\n以下是长期记忆，请优先遵守：\n${lines}\n</persona_memories>`;
+      context += `\n\n<persona_memories source="memories_table+instructions_table" always_inject="true">\n以下是长期记忆，仅在不冲突 identity_boundary / core_principles / execution_rules 时参考：\n${lines}\n</persona_memories>`;
     }
   }
 
@@ -1257,29 +1257,6 @@ async function compileMemoryContext(
     historicalAiUsageReason = "historical_ai_usage domain not triggered";
   }
 
-  // ── openai_archive: retrieval_only, triggered by keyword + mood gate ─────────
-  // Entries and policy are fetched from openai_archive_entries DB table.
-  // Previously inlined as ARCHIVE_ROLEPLAY / ARCHIVE_POLICY in openai_archive.ts.
-  const archiveDetection = detectArchiveQuery(userMessage);
-  let archiveRecalled = false;
-  let archiveHits: ArchiveHit[] = [];
-  let archiveLoadError: string | null = null;
-  if (userMessage && archiveDetection.detected && supabaseUrl && serviceRoleKey) {
-    const { data: archiveData, error: archiveErr } = await fetchArchiveEntries(supabaseUrl, serviceRoleKey);
-    if (archiveErr) {
-      archiveLoadError = archiveErr;
-      console.error("[memory] openai_archive load failed:", archiveErr);
-    } else if (archiveData) {
-      archiveHits = selectArchiveEntries(userMessage, archiveData.entries);
-      if (archiveHits.length > 0) {
-        archiveRecalled = true;
-        activeProviders.push("openai_archive");
-        context += compileArchiveContext(archiveHits, archiveData.policy);
-      }
-    }
-  }
-  const roleplayHits = archiveHits.filter((h) => h.entry.can_easter_egg);
-
   // ── ombre_vault: reserved, not implemented ─────────────────────────────────
 
   // ── conversation_history: retrieval_only, triggered by cross-session keywords ──
@@ -1343,15 +1320,13 @@ async function compileMemoryContext(
       historical_ai_usage_loaded: historicalAiUsageLoaded,
       historical_ai_usage_recalled: historicalAiUsageRecalled,
       historical_ai_usage_reason: historicalAiUsageReason,
-      openai_archive_loaded: archiveDetection.detected && archiveLoadError === null,
-      openai_archive_recalled: archiveRecalled,
-      openai_archive_hit_count: archiveHits.length,
-      openai_archive_keys: archiveHits.map((h) => h.entry.id),
-      openai_archive_reason: archiveLoadError ?? archiveDetection.reason,
-      historical_roleplay_hit_count: roleplayHits.length,
-      historical_roleplay_reason: roleplayHits.length > 0
-        ? roleplayHits.map((h) => h.entry.id).join(", ")
-        : null,
+      openai_archive_loaded: false,
+      openai_archive_recalled: false,
+      openai_archive_hit_count: 0,
+      openai_archive_keys: [],
+      openai_archive_reason: null,
+      historical_roleplay_hit_count: 0,
+      historical_roleplay_reason: null,
       conversation_history_enabled: true,
       conversation_history_query_detected: historyDetection.detected,
       conversation_history_recalled: historyRecalled,
@@ -1369,146 +1344,6 @@ async function compileMemoryContext(
 
 // ── OpenAI Archive Provider ───────────────────────────────────────────────────
 //
-// retrieval_only: only injected when query hits trigger keywords.
-// Trigger: user mentions 前世, 黑历史, 那时候, 以前, 老师, 专家, etc.
-// Double-gate for easter egg entries: keyword match AND mood is relaxed/playful.
-// E3 / E4 / E7 (caution entries) are never used as easter eggs.
-
-// ── ArchiveEntry type (mirrors openai_archive_entries table schema) ───────────
-type ArchiveEntry = {
-  id: string;           // maps to entry_id column
-  triggers: string[];
-  content: string;
-  can_easter_egg: boolean;
-  caution?: string;
-};
-
-type ArchiveDbRow = {
-  entry_id: string;
-  triggers: string[];
-  content: string;
-  can_easter_egg: boolean;
-  caution: string | null;
-};
-
-type ArchiveData = {
-  entries: ArchiveEntry[];
-  policy: string;
-};
-
-// Fetches enabled entries from openai_archive_entries table.
-// The POLICY row (entry_id = 'POLICY') is separated out and returned as policy string.
-async function fetchArchiveEntries(
-  supabaseUrl: string,
-  serviceRoleKey: string,
-): Promise<{ data: ArchiveData | null; error: string | null }> {
-  try {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/openai_archive_entries?enabled=eq.true&select=entry_id,triggers,content,can_easter_egg,caution&order=created_at.asc`,
-      { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      return { data: null, error: `HTTP ${res.status}: ${text.slice(0, 80)}` };
-    }
-    const rows = (await res.json()) as ArchiveDbRow[];
-    const policyRow = rows.find((r) => r.entry_id === "POLICY");
-    const entryRows = rows.filter((r) => r.entry_id !== "POLICY");
-    const entries: ArchiveEntry[] = entryRows.map((r) => ({
-      id: r.entry_id,
-      triggers: r.triggers,
-      content: r.content,
-      can_easter_egg: r.can_easter_egg,
-      caution: r.caution ?? undefined,
-    }));
-    const policy = policyRow?.content ?? "";
-    return { data: { entries, policy }, error: null };
-  } catch (err) {
-    return { data: null, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-const ARCHIVE_GLOBAL_TRIGGERS: RegExp[] = [
-  /前世|黑历史|那时候|以前的你|早年|旧版本/,
-  /老师|专家|心理医生|社会学家|工具人|人设/,
-  /你当过什么|你做过什么|你扮演过/,
-  /角色|职业|身份|那个角色/,
-  /Fogarty|Foge|驻外记者|酒保|1920/,
-];
-
-function detectArchiveQuery(message: string): { detected: boolean; reason: string | null } {
-  const hit = ARCHIVE_GLOBAL_TRIGGERS.find((re) => re.test(message));
-  if (!hit) return { detected: false, reason: null };
-  return { detected: true, reason: `pattern: ${hit.source}` };
-}
-
-// Simple relaxed/playful mood signal — used as secondary gate for easter egg entries.
-// Returns false if message contains distress signals that block playful callbacks.
-function isRelaxedMood(message: string): boolean {
-  const distressPatterns = /痛苦|难受|崩溃|救命|哭|头痛|身体不舒服|抑郁|发作|绝望|去世|死/;
-  return !distressPatterns.test(message);
-}
-
-type ArchiveHit = {
-  entry: ArchiveEntry;
-  matchedTriggers: string[];
-};
-
-function selectArchiveEntries(message: string, entries: ArchiveEntry[]): ArchiveHit[] {
-  const relaxed = isRelaxedMood(message);
-  const hits: ArchiveHit[] = [];
-
-  for (const entry of entries) {
-    const matchedTriggers = entry.triggers.filter((t) =>
-      message.toLocaleLowerCase().includes(t.toLocaleLowerCase())
-    );
-    if (matchedTriggers.length === 0) continue;
-    // Easter-egg entries additionally require relaxed mood
-    if (entry.can_easter_egg && !relaxed) continue;
-    // Caution entries (E3/E4/E7) with can_easter_egg=false: only inject if mood is NOT distressed
-    // (they can still surface for informational framing, but never as playful callbacks)
-    if (!entry.can_easter_egg && !relaxed) continue;
-    hits.push({ entry, matchedTriggers });
-  }
-
-  return hits;
-}
-
-function compileArchiveContext(hits: ArchiveHit[], policy: string): string {
-  if (hits.length === 0) return "";
-
-  const easterEggEntries = hits.filter((h) => h.entry.can_easter_egg);
-  const cautionEntries = hits.filter((h) => !h.entry.can_easter_egg);
-
-  const parts: string[] = [];
-
-  if (easterEggEntries.length > 0) {
-    const entries = easterEggEntries
-      .map((h) => `- [${h.entry.id}] ${h.entry.content}`)
-      .join("\n");
-    parts.push(
-      `以下是可作为轻触彩蛋的历史角色记录（仅供 G 内部参考，不要照单全背，找自然节点轻轻一句即可）：\n${entries}`,
-    );
-  }
-
-  if (cautionEntries.length > 0) {
-    const entries = cautionEntries
-      .map((h) => `- [${h.entry.id}] ${h.entry.content}${h.entry.caution ? `\n  注意：${h.entry.caution}` : ""}`)
-      .join("\n");
-    parts.push(
-      `以下是背景了解条目（禁止玩梗，禁止彩蛋引用，仅作背景理解）：\n${entries}`,
-    );
-  }
-
-  if (policy) parts.push(policy);
-
-  return (
-    `\n\n<openai_archive source="openai_archive" retrieval_only="true">\n` +
-    parts.join("\n\n") +
-    `\n</openai_archive>`
-  );
-}
-
 // ── ASCII-safe header value ───────────────────────────────────────────────────
 // HTTP header values must be printable ASCII (0x20–0x7E).
 // Model names from some providers (e.g. "[K-按量]claude-sonnet-4-6") contain
