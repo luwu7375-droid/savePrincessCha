@@ -578,6 +578,36 @@ function showLegacyDataNotice() {
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 
+/**
+ * Upload a compressed image data URL to Supabase Storage.
+ * Returns the storage object path (e.g. "{userId}/{filename}.jpg") on success,
+ * or null on failure (upload errors are non-fatal — chat still works without image persistence).
+ *
+ * Path convention: {userId}/{conversationId}_{timestamp}.jpg
+ * This puts each user's files in their own folder, matching the RLS policy.
+ */
+async function uploadImageToStorage(dataUrl, userId, conversationId) {
+  if (!supabaseClient || !dataUrl || !userId) return null;
+  try {
+    // Convert data URL to Blob
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const timestamp = Date.now();
+    const path = `${userId}/${conversationId}_${timestamp}.jpg`;
+    const { error } = await supabaseClient.storage
+      .from("chat-images")
+      .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+    if (error) {
+      console.warn("图片上传 Storage 失败（非致命）：", error.message);
+      return null;
+    }
+    return path;
+  } catch (err) {
+    console.warn("图片上传 Storage 异常（非致命）：", err.message);
+    return null;
+  }
+}
+
 async function saveMessage(role, content) {
   if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
