@@ -3093,16 +3093,27 @@ async function handleSubmit() {
   refreshMessageActions();
   if (isFirst) updateConvTitle(getActiveConversationId(), text || "[图片]");
 
-  // 后台保存，完成后补 msgId
-  saveMessage("user", dbContent).then((msgId) => {
+  // 后台保存：有图时先上传 Storage，拿到 path 后再写 DB
+  (async () => {
+    let storagePath = null;
+    if (snapshot) {
+      const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
+      const uid = user?.id || currentUserId;
+      storagePath = await uploadImageToStorage(snapshot.dataUrl, uid, getActiveConversationId());
+      if (storagePath === null) {
+        setChatStatus("图片上传失败，消息未发送，请重试");
+        // 回滚乐观渲染
+        chatMessages.pop();
+        msgRow?.remove();
+        return;
+      }
+    }
+    const msgId = await saveMessage("user", dbContent, storagePath).catch(() => null);
     if (msgId != null && msgRow) msgRow.dataset.msgId = String(msgId);
     const entry = chatMessages.findLast?.((m) => m.role === "user" && m.id === null);
     if (entry) entry.id = msgId != null ? String(msgId) : null;
-  }).catch(() => {
-    // 保存失败时静默，不影响聊天流程
-  });
-
-  if (autoReplyEnabled) scheduleAutoReply(text);
+    if (autoReplyEnabled) scheduleAutoReply(text);
+  })();
 }
 
 chatForm.addEventListener("submit", (event) => {
