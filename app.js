@@ -935,8 +935,10 @@ async function callChatAPI(messages, replyMode = "auto") {
       })(),
       rawUserMessage: (() => {
         // Always use chatMessages (pre-wrap) to get the real user input for keyword detection.
+        // extractTextFromMessageContent handles both plain string and vision content arrays.
         const lastReal = [...chatMessages].reverse().find(m => m.role === "user");
-        return typeof lastReal?.content === "string" ? lastReal.content : null;
+        const text = extractTextFromMessageContent(lastReal?.content).trim();
+        return text || null;
       })(),
     }),
   });
@@ -1347,10 +1349,13 @@ async function editUserMessage(row) {
   if (idx === -1) return;
   closeMessageActionMenu();
   const oldContent = chatMessages[idx].content;
+  // oldContent may be a vision array [{type:"text",...},{type:"image_url",...}].
+  // showDialog's input field requires a string, so extract the text portion only.
+  const oldText = extractTextFromMessageContent(oldContent);
 showDialog({
   title: "编辑消息",
   body: "编辑后，这条之后的回复会重新生成。",
-  input: oldContent,
+  input: oldText,
   confirmLabel: "确定",
   onConfirm: async (newContent) => {
       if (!newContent || newContent === oldContent) return;
