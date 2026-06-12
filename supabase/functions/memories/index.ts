@@ -110,6 +110,91 @@ Deno.serve(async (req) => {
     "Content-Type": "application/json",
   };
 
+  // ── audit route (read-only, admin token required) ────────────────────────
+  // GET ?type=audit
+  // Returns origin-audit snapshot: memories / instructions / openai_archive_entries / persona_profile.
+  // No writes. No data mutations.
+
+  if (type === "audit" && req.method === "GET") {
+    async function dbGet(path: string): Promise<unknown[]> {
+      const res = await fetch(`${supabaseUrl}${path}`, { headers: dbHeaders });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    }
+
+    // ── memories ─────────────────────────────────────────────────────────────
+    const memoriesAll = await dbGet(
+      "/rest/v1/memories?select=id,category,enabled,created_at,title,summary,source_msg_ids&order=created_at.asc&limit=1000"
+    ) as { id: string; category: string; enabled: boolean; created_at: string; title: string | null; summary: string | null; source_msg_ids: number[] | null }[];
+
+    // per-category stats
+    const memoryCategoryMap: Record<string, { count: number; earliest: string; latest: string; with_source: number; without_source: number; samples: unknown[] }> = {};
+    for (const row of memoriesAll) {
+      const cat = row.category ?? "null";
+      if (!memoryCategoryMap[cat]) {
+        memoryCategoryMap[cat] = { count: 0, earliest: row.created_at, latest: row.created_at, with_source: 0, without_source: 0, samples: [] };
+      }
+      const c = memoryCategoryMap[cat];
+      c.count++;
+      if (row.created_at < c.earliest) c.earliest = row.created_at;
+      if (row.created_at > c.latest) c.latest = row.created_at;
+      if (row.source_msg_ids && row.source_msg_ids.length > 0) c.with_source++; else c.without_source++;
+      if (c.samples.length < 3) c.samples.push({ id: row.id, category: row.category, created_at: row.created_at, title: row.title, summary: row.summary, source_msg_ids: row.source_msg_ids });
+    }
+
+    // ── instructions ─────────────────────────────────────────────────────────
+    const instructionsAll = await dbGet(
+      "/rest/v1/instructions?select=id,category,enabled,created_at,source_msg_ids,content&order=created_at.asc&limit=500"
+    ) as { id: string; category: string; enabled: boolean; created_at: string; source_msg_ids: number[] | null; content: string }[];
+
+    const instructionCategoryMap: Record<string, { count: number; samples: unknown[] }> = {};
+    for (const row of instructionsAll) {
+      const cat = row.category ?? "null";
+      if (!instructionCategoryMap[cat]) instructionCategoryMap[cat] = { count: 0, samples: [] };
+      instructionCategoryMap[cat].count++;
+      if (instructionCategoryMap[cat].samples.length < 3) {
+        instructionCategoryMap[cat].samples.push({ id: row.id, category: row.category, created_at: row.created_at, source_msg_ids: row.source_msg_ids, content_preview: row.content.slice(0, 120) });
+      }
+    }
+
+    // ── openai_archive_entries ────────────────────────────────────────────────
+    const archiveAll = await dbGet(
+      "/rest/v1/openai_archive_entries?select=id,entry_id,triggers,enabled,can_easter_egg,created_at&order=created_at.asc&limit=200"
+    ) as { id: string; entry_id: string; triggers: string[]; enabled: boolean; can_easter_egg: boolean; created_at: string }[];
+
+    const archiveSamples = archiveAll.slice(0, 5).map((r) => ({ id: r.id, entry_id: r.entry_id, triggers: r.triggers, can_easter_egg: r.can_easter_egg, enabled: r.enabled, created_at: r.created_at }));
+
+    // ── persona_profile ───────────────────────────────────────────────────────
+    const profileAll = await dbGet(
+      "/rest/v1/persona_profile?select=id,enabled,note,created_at,updated_at,content&order=created_at.asc&limit=50"
+    ) as { id: string; enabled: boolean; note: string | null; created_at: string; updated_at: string; content: string }[];
+
+    const profileSummary = profileAll.map((r) => ({ id: r.id, enabled: r.enabled, note: r.note, created_at: r.created_at, updated_at: r.updated_at, content_preview: r.content.slice(0, 120) }));
+
+    return json({
+      generated_at: new Date().toISOString(),
+      memories: {
+        total: memoriesAll.length,
+        by_category: memoryCategoryMap,
+      },
+      instructions: {
+        total: instructionsAll.length,
+        by_category: instructionCategoryMap,
+      },
+      openai_archive_entries: {
+        total: archiveAll.length,
+        enabled_count: archiveAll.filter((r) => r.enabled).length,
+        samples: archiveSamples,
+      },
+      persona_profile: {
+        total: profileAll.length,
+        enabled_count: profileAll.filter((r) => r.enabled).length,
+        rows: profileSummary,
+      },
+    });
+  }
+
   // ── instructions routes ───────────────────────────────────────────────────
 
   if (type === "instructions") {
