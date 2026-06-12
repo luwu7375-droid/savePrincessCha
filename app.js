@@ -608,13 +608,15 @@ async function uploadImageToStorage(dataUrl, userId, conversationId) {
   }
 }
 
-async function saveMessage(role, content) {
+async function saveMessage(role, content, imageStoragePath = null) {
   if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
   const { data: { user } } = await supabaseClient.auth.getUser();
+  const row = { role, content, conversation_id: conversationId, user_id: user.id };
+  if (imageStoragePath) row.image_storage_path = imageStoragePath;
   const { data, error } = await supabaseClient
     .from("messages")
-    .insert({ role, content, conversation_id: conversationId, user_id: user.id })
+    .insert(row)
     .select("id")
     .single();
   if (error) { console.error("保存消息失败：", error); return null; }
