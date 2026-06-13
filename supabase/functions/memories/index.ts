@@ -13,13 +13,39 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
-type MemoryDomain = typeof MEMORY_DOMAINS[number];
+const MEMORY_PROVIDER_CATEGORIES = [
+  "current_context_summary",
+  "interaction_preferences",
+  "identity_context",
+  "project_memory",
+  "writing_memory",
+  "life_context",
+  "relationship_context",
+  "historical_ai_usage",
+] as const;
+type MemoryDomain = typeof MEMORY_PROVIDER_CATEGORIES[number];
+
+const MEMORY_DOMAIN_ALIASES: Record<string, MemoryDomain> = {
+  general: "current_context_summary",
+  persona: "identity_context",
+  work: "project_memory",
+  writing: "writing_memory",
+  life: "life_context",
+  relation: "relationship_context",
+  current_context_summary: "current_context_summary",
+  interaction_preferences: "interaction_preferences",
+  identity_context: "identity_context",
+  project_memory: "project_memory",
+  writing_memory: "writing_memory",
+  life_context: "life_context",
+  relationship_context: "relationship_context",
+  historical_ai_usage: "historical_ai_usage",
+};
 
 function normalizeMemoryDomain(domain: unknown): MemoryDomain {
-  return typeof domain === "string" && MEMORY_DOMAINS.includes(domain as MemoryDomain)
-    ? domain as MemoryDomain
-    : "general";
+  return typeof domain === "string" && MEMORY_DOMAIN_ALIASES[domain]
+    ? MEMORY_DOMAIN_ALIASES[domain]
+    : "current_context_summary";
 }
 
 Deno.serve(async (req) => {
