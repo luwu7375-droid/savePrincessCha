@@ -1839,6 +1839,31 @@ async function memoryFetch(path, options = {}) {
 }
 
 const MEMORY_DOMAINS = ["general", "persona", "work", "writing", "life", "relation"];
+const MEMORY_DOMAIN_TO_PROVIDER_CATEGORY = {
+  general: "current_context_summary",
+  persona: "identity_context",
+  work: "project_memory",
+  writing: "writing_memory",
+  life: "life_context",
+  relation: "relationship_context",
+};
+const PROVIDER_CATEGORY_TO_MEMORY_DOMAIN = {
+  current_context_summary: "general",
+  identity_context: "persona",
+  project_memory: "work",
+  writing_memory: "writing",
+  life_context: "life",
+  relationship_context: "relation",
+};
+
+function memoryDomainToProviderCategory(domain) {
+  return MEMORY_DOMAIN_TO_PROVIDER_CATEGORY[domain] || MEMORY_DOMAIN_TO_PROVIDER_CATEGORY.general;
+}
+
+function providerCategoryToMemoryDomain(category) {
+  return PROVIDER_CATEGORY_TO_MEMORY_DOMAIN[category] ||
+    (MEMORY_DOMAINS.includes(category) ? category : "general");
+}
 
 function normalizeBucketDomain(domain) {
   const compat = { emotion: "relation", creative: "writing", knowledge: "general", preference: "persona" };
@@ -1922,7 +1947,7 @@ function renderMemoryItem(mem) {
   // ── Left: domain label ───────────────────────────────────────────────────
   const domain = document.createElement("small");
   domain.className = "memory-domain";
-  domain.textContent = mem.domain || "general";
+  domain.textContent = providerCategoryToMemoryDomain(mem.domain || mem.category);
 
   // ── Middle: content column ───────────────────────────────────────────────
   const mid = document.createElement("div");
@@ -2242,7 +2267,7 @@ function showMemoryEditDialog(mem, itemEl) {
     option.textContent = d;
     select.appendChild(option);
   }
-  select.value = MEMORY_DOMAINS.includes(mem.domain) ? mem.domain : "general";
+  select.value = providerCategoryToMemoryDomain(mem.domain || mem.category);
   dialog.appendChild(select);
 
   // errorEl must be appended before actions so insertBefore has a valid reference node
@@ -2272,7 +2297,7 @@ function showMemoryEditDialog(mem, itemEl) {
     e.preventDefault();
     e.stopPropagation();
     const content = input.value.trim();
-    const domain = select.value;
+    const domain = memoryDomainToProviderCategory(select.value);
     if (!content) { input.focus(); return; }
     const payload = { content, domain };
     console.log("[memory edit] 保存请求", { id: mem.id, payload });
@@ -2622,7 +2647,7 @@ memoryOverlay.addEventListener("click", (e) => { if (e.target === memoryOverlay)
 addMemoryButton.addEventListener("click", async () => {
   const content = memoryInput.value.trim();
   if (!content) return;
-  const domain = memoryDomainSelect?.value || "general";
+  const domain = memoryDomainToProviderCategory(memoryDomainSelect?.value || "general");
   let res;
   try {
     res = await memoryFetch("", { method: "POST", body: JSON.stringify({ content, domain }) });
