@@ -1,4 +1,4 @@
-console.log("build cloudflare-0071");
+console.log("build cloudflare-0072");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -4104,6 +4104,7 @@ async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessag
   console.log("[vault] request start", {
     userMessage_len: trimmedUser.length,
     assistantMessage_len: assistantMessage.length,
+    userMessageHead: trimmedUser.slice(0, 30),
     userMessageId,
     conversationId,
     route,

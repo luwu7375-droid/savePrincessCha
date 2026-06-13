@@ -215,11 +215,13 @@ Deno.serve(async (req) => {
         debug: {
           userMessage_len: userMessage.trim().length,
           assistantMessage_len: assistantMessage.length,
-          provider_gate: {
-            has_orBaseUrl: Boolean(orBaseUrl),
-            has_orApiKey: Boolean(orApiKey),
-            fastModel,
-          },
+          has_provider_base_url: Boolean(orBaseUrl),
+          has_provider_api_key: Boolean(orApiKey),
+          model: fastModel,
+          p1_raw_candidates_count: p1.raw_candidates_count,
+          p1_inserted_count: p1.inserted_count,
+          p1_pending_count: p1.pending_count,
+          p1_auto_accept_count: p1.auto_accept_count,
           extraction_empty_reason: p1.extraction_empty_reason ?? null,
         },
       }, 200);

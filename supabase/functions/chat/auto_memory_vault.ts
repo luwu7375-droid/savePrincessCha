@@ -69,8 +69,9 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 2. preference: 用户的偏好、喜好、习惯
 3. relationship: 用户与他人的关系信号
 4. project: 用户正在做的项目/工作/计划
-   - 用户明确陈述某个项目当前版本、已完成事项、验收结果、下一步计划时，应提取为 project。
-   - 例：「救公主项目当前版本是 v0.8，已完成单图 Storage 持久化和多气泡短回复验收。」
+   - 用户明确陈述某个项目的当前版本、已完成事项、验收结果、已上线能力、下一步计划时，应提取为 project。即使这句话看起来像工作记录，也属于可记项目状态。
+   - 例：用户消息「救公主项目当前版本是 v0.8，已完成单图 Storage 持久化、自动接话状态修复、多气泡短回复。」
+     → candidate_type=project，content="救公主项目 v0.8 已完成单图 Storage 持久化、自动接话状态修复和多气泡短回复。"
 
 【敏感度规则（sensitivity 字段）】
 - medical（医疗/健康/身体症状）→ sensitivity >= 0.70
@@ -169,11 +170,11 @@ async function extractVaultCandidates(params: {
       const errText = await res.text();
       console.log(JSON.stringify({
         fn: "extractVaultCandidates",
-        event: "llm_http_error",
+        event: "llm_non_ok",
         status: res.status,
-        error_head: errText.slice(0, 200),
+        body_head: errText.slice(0, 200),
       }));
-      return { candidates: [], emptyReason: `llm_http_error:${res.status}` };
+      return { candidates: [], emptyReason: `llm_non_ok:${res.status}` };
     }
     const data = await res.json();
     const text: string = data?.choices?.[0]?.message?.content ?? "";
@@ -223,10 +224,10 @@ async function extractVaultCandidates(params: {
     const msg = err instanceof Error ? err.message : String(err);
     console.log(JSON.stringify({
       fn: "extractVaultCandidates",
-      event: "exception",
+      event: "extract_exception",
       error: msg,
     }));
-    return { candidates: [], emptyReason: `exception:${msg}` };
+    return { candidates: [], emptyReason: `extract_exception:${msg}` };
   }
 }
 
