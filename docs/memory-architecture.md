@@ -119,3 +119,4 @@
 
 - 2026-06-12：初版。架构收敛审计，personality_system.ts retired + 明确删除日期，relationship_context 注入加极克制约束，historical_ai_usage 说明改为历史档案，provider 并发注入上限列为待办。
 - 2026-06-12：新增 functional_context / retrieval 两类层定义，收容 project_memory / writing_memory / life_context / conversation_history / mastodon_timeline；审计表归属层更新；并发注入上限扩展为全层分级预算（总上限 ≤ 1600 tokens）。
+- 2026-06-13：旧沉淀记忆 / memory_buckets / story_seeds 已归档，不参与 prompt 注入，也不在 Memory Center 主界面展示。数据保留于 DB，不做删除。

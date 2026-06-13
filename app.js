@@ -1,4 +1,4 @@
-console.log("build cloudflare-0075");
+console.log("build cloudflare-0076");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -2593,29 +2593,8 @@ async function loadMemories() {
   renderMemoryList(memoriesCache);
 
   // ��─ Load memory buckets (non-critical) ────────────────────────────────────
-  let bRes;
-  try { bRes = await memoryFetch("?type=buckets"); } catch { return; }
-  if (!bRes.ok) return;
-  let buckets = [];
-  try { buckets = await bRes.json(); } catch { return; }
-  if (!Array.isArray(buckets) || buckets.length === 0) return;
-
-  const divider = document.createElement("div");
-  divider.style.cssText = "border-top:1px solid var(--border);margin:4px 0";
-  memoryList.appendChild(divider);
-
-  const bucketTitle = document.createElement("div");
-  bucketTitle.style.cssText = "font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);padding:10px 18px 4px;";
-  bucketTitle.textContent = "旧沉淀记忆（旧系统 · 默认不参与回复）";
-  memoryList.appendChild(bucketTitle);
-  const bucketsDesc = document.createElement("div");
-  bucketsDesc.style.cssText = "font-size:12px;color:var(--text-muted);padding:0 18px 8px;";
-  bucketsDesc.textContent = "这些是早期主题摘要桶，默认不注入 prompt，仅用于查看、备份或迁移。";
-  memoryList.appendChild(bucketsDesc);
-
-  for (const b of buckets) {
-    memoryList.appendChild(renderBucketItem(b));
-  }
+  // memory_buckets (旧系统，已归档，不再在 Memory Center 展示)
+  // 数据保留于 DB，不展示，不注入 prompt。
 }
 
 toggleMemoryButton.addEventListener("click", () => {
@@ -3585,10 +3564,12 @@ function _mcAutoSummary(content) {
  *   sourceMsgIds,     // array or null
  * }
  */
-function buildRecentMemoryItem({ content, label, category, timestamp, sourcePreview, memoryId, confidence, sensitivity, sourceMsgIds }) {
+function buildRecentMemoryItem({ content, title: titleProp, summary: summaryProp, label, category, timestamp, sourcePreview, memoryId, confidence, sensitivity, sourceMsgIds }) {
   const text = content || "";
-  const title = _mcAutoTitle(text);
-  const summary = _mcAutoSummary(text);
+  // Prefer DB-supplied title/summary; fall back to auto-generated from content.
+  const title = titleProp || _mcAutoTitle(text);
+  // Body: prefer explicit summary, then auto-summary, then content itself (never empty).
+  const body = summaryProp || _mcAutoSummary(text) || text.slice(0, 80);
 
   const item = document.createElement("div");
   item.className = "mc-recent-item";
@@ -3612,16 +3593,16 @@ function buildRecentMemoryItem({ content, label, category, timestamp, sourcePrev
   badges.appendChild(labelEl);
   header.appendChild(badges);
 
-  // auto title
+  // title
   const titleEl = document.createElement("div");
   titleEl.className = "mc-recent-title";
   titleEl.textContent = title;
   header.appendChild(titleEl);
 
-  // 2-line summary
+  // summary body (single source of text in main view — no raw content here)
   const summaryEl = document.createElement("div");
   summaryEl.className = "mc-recent-summary";
-  summaryEl.textContent = summary;
+  summaryEl.textContent = body;
   header.appendChild(summaryEl);
 
   item.appendChild(header);
@@ -3631,16 +3612,19 @@ function buildRecentMemoryItem({ content, label, category, timestamp, sourcePrev
   details.className = "mc-recent-details";
   details.hidden = true;
 
-  // full content
-  if (text.length > 80) {
-    const fullLabel = document.createElement("div");
-    fullLabel.className = "mc-recent-detail-label";
-    fullLabel.textContent = "完整内容";
-    details.appendChild(fullLabel);
-    const fullText = document.createElement("div");
-    fullText.className = "mc-recent-detail-value mc-recent-full-content";
-    fullText.textContent = text;
-    details.appendChild(fullText);
+  // raw content under a disclosure element — debug use only, not shown by default
+  if (text) {
+    const rawDisclosure = document.createElement("details");
+    rawDisclosure.className = "mc-recent-raw-details";
+    const rawSummary = document.createElement("summary");
+    rawSummary.className = "mc-recent-detail-label mc-recent-raw-toggle";
+    rawSummary.textContent = "查看原始注入文本";
+    rawDisclosure.appendChild(rawSummary);
+    const rawText = document.createElement("div");
+    rawText.className = "mc-recent-detail-value mc-recent-full-content";
+    rawText.textContent = text;
+    rawDisclosure.appendChild(rawText);
+    details.appendChild(rawDisclosure);
   }
 
   // source message preview
@@ -3788,6 +3772,8 @@ function renderRecentMemoryUpdatesOptimistic(items) {
   items.slice(0, 3).forEach((item) =>
     container.appendChild(buildRecentMemoryItem({
       content: item.content,
+      title: item.title || null,
+      summary: item.summary || null,
       label: "自动记忆",
       category: item.category || item.candidate_type || "",
       timestamp: item.promoted_at || Date.now(),
@@ -3812,7 +3798,7 @@ async function renderRecentMemoryUpdates() {
   }
 
   if (!supabaseClient) {
-    if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+    if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有当前记忆。聊天后，小钗会把候选记忆放进这里。</div>`;
     return;
   }
 
@@ -3830,6 +3816,8 @@ async function renderRecentMemoryUpdates() {
         rows.forEach((mem) =>
           container.appendChild(buildRecentMemoryItem({
             content: mem.content,
+            title: mem.title || null,
+            summary: mem.summary || null,
             label: "已写入记忆",
             category: mem.category || "",
             timestamp: mem.created_at,
@@ -3848,6 +3836,8 @@ async function renderRecentMemoryUpdates() {
         rows.forEach((c) =>
           container.appendChild(buildRecentMemoryItem({
             content: c.content,
+            title: c.title || null,
+            summary: c.summary || null,
             label: LABEL_MAP[c.status] || "候选记忆",
             category: c.candidate_type || "",
             timestamp: c.created_at,
@@ -3872,11 +3862,11 @@ async function renderRecentMemoryUpdates() {
         container.appendChild(hint);
       }
     } else {
-      container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+      container.innerHTML = `<div class="mc-recent-empty">还没有当前记忆。聊天后，小钗会把候选记忆放进这里。</div>`;
     }
   } catch (err) {
     console.error("[recentMem] error:", err);
-    if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有新的记忆更新</div>`;
+    if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有当前记忆。聊天后，小钗会把候选记忆放进这里。</div>`;
   }
 }
 
