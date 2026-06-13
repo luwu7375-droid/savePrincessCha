@@ -1,4 +1,4 @@
-console.log("build cloudflare-0074");
+console.log("build cloudflare-0075");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -4151,6 +4151,7 @@ async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessag
       });
     }
     if (data.ok && typeof data.promoted_count === "number" && data.promoted_count > 0) {
+      console.log("[vault] show toast", data.promoted_count);
       showMemoryToast(data.promoted_count);
     }
   } catch (err) {
@@ -4217,8 +4218,9 @@ async function startMemoryPromotionPoller(sinceIso, userMessageId) {
 let _memoryToastTimer = null;
 
 function showMemoryToast(count) {
+  console.log("[memory-toast] show", count);
   const n = typeof count === "number" ? count : 1;
-  const msg = n === 1 ? "记忆已更新" : `记住了 ${n} 条新内容`;
+  const msg = n > 1 ? `记忆已更新 ×${n}` : "记忆已更新";
 
   // Remove any existing toast first
   const existing = document.querySelector(".memory-toast");
