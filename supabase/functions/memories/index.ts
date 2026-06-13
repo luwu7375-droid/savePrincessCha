@@ -15,6 +15,7 @@ function json(body: unknown, status = 200) {
 
 const MEMORY_PROVIDER_CATEGORIES = [
   "current_context_summary",
+  "interaction_preferences",
   "identity_context",
   "project_memory",
   "writing_memory",
@@ -32,6 +33,7 @@ const MEMORY_DOMAIN_ALIASES: Record<string, MemoryDomain> = {
   life: "life_context",
   relation: "relationship_context",
   current_context_summary: "current_context_summary",
+  interaction_preferences: "interaction_preferences",
   identity_context: "identity_context",
   project_memory: "project_memory",
   writing_memory: "writing_memory",
