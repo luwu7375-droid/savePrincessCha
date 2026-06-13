@@ -1,4 +1,4 @@
-console.log("build cloudflare-0070");
+console.log("build cloudflare-0071");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -4091,8 +4091,18 @@ async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessag
     console.warn("[vault] skipped no token");
     return;
   }
+  // Guard: warn if userMessage looks wrong (empty after trim, or suspiciously short)
+  const trimmedUser = userMessage.trim();
+  if (!trimmedUser) {
+    console.warn("[vault] skipped: userMessage is empty after trim");
+    return;
+  }
+  if (trimmedUser.length < 8) {
+    console.warn("[vault] skipped: userMessage too short", { len: trimmedUser.length, preview: trimmedUser });
+    return;
+  }
   console.log("[vault] request start", {
-    userMessage_len: userMessage.length,
+    userMessage_len: trimmedUser.length,
     assistantMessage_len: assistantMessage.length,
     userMessageId,
     conversationId,

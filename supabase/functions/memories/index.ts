@@ -212,6 +212,16 @@ Deno.serve(async (req) => {
         p1,
         p2,
         promoted_count: p2?.promoted_count ?? 0,
+        debug: {
+          userMessage_len: userMessage.trim().length,
+          assistantMessage_len: assistantMessage.length,
+          provider_gate: {
+            has_orBaseUrl: Boolean(orBaseUrl),
+            has_orApiKey: Boolean(orApiKey),
+            fastModel,
+          },
+          extraction_empty_reason: p1.extraction_empty_reason ?? null,
+        },
       }, 200);
     } catch (err) {
       console.error(JSON.stringify({

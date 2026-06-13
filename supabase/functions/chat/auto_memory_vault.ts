@@ -22,6 +22,7 @@ export type AutoMemoryVaultResult = {
   pending_count: number;
   quarantine_count: number;
   reject_count: number;
+  extraction_empty_reason: string | null;
 };
 
 export type PromotionResult = {
@@ -68,6 +69,8 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 2. preference: 用户的偏好、喜好、习惯
 3. relationship: 用户与他人的关系信号
 4. project: 用户正在做的项目/工作/计划
+   - 用户明确陈述某个项目当前版本、已完成事项、验收结果、下一步计划时，应提取为 project。
+   - 例：「救公主项目当前版本是 v0.8，已完成单图 Storage 持久化和多气泡短回复验收。」
 
 【敏感度规则（sensitivity 字段）】
 - medical（医疗/健康/身体症状）→ sensitivity >= 0.70
@@ -122,6 +125,11 @@ async function hashContent(content: string): Promise<string> {
 
 // ── LLM extraction ────────────────────────────────────────────────────────────
 
+type ExtractionOutcome = {
+  candidates: RawCandidate[];
+  emptyReason: string | null; // non-null when candidates.length === 0
+};
+
 async function extractVaultCandidates(params: {
   userMessage: string;
   gResponse: string;
@@ -129,7 +137,7 @@ async function extractVaultCandidates(params: {
   orBaseUrl: string;
   orApiKey: string;
   fastModel: string;
-}): Promise<RawCandidate[]> {
+}): Promise<ExtractionOutcome> {
   const { userMessage, gResponse, route, orBaseUrl, orApiKey, fastModel } = params;
 
   const userContent =
@@ -157,23 +165,52 @@ async function extractVaultCandidates(params: {
       }),
     });
 
-    if (!res.ok) return [];
+    if (!res.ok) {
+      const errText = await res.text();
+      console.log(JSON.stringify({
+        fn: "extractVaultCandidates",
+        event: "llm_http_error",
+        status: res.status,
+        error_head: errText.slice(0, 200),
+      }));
+      return { candidates: [], emptyReason: `llm_http_error:${res.status}` };
+    }
     const data = await res.json();
     const text: string = data?.choices?.[0]?.message?.content ?? "";
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) {
       console.log(JSON.stringify({
         fn: "extractVaultCandidates",
-        event: "llm_response",
+        event: "no_json_block",
         status: res.status,
         text_head: text.slice(0, 200),
-        candidates_parsed: 0,
-        note: "no JSON block found",
       }));
-      return [];
+      return { candidates: [], emptyReason: "no_json_block" };
     }
-    const parsed = JSON.parse(match[0]) as Partial<ExtractionResponse>;
+
+    let parsed: Partial<ExtractionResponse>;
+    try {
+      parsed = JSON.parse(match[0]) as Partial<ExtractionResponse>;
+    } catch (parseErr) {
+      console.log(JSON.stringify({
+        fn: "extractVaultCandidates",
+        event: "json_parse_error",
+        parse_error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+        text_head: text.slice(0, 200),
+      }));
+      return { candidates: [], emptyReason: "json_parse_error" };
+    }
+
     const candidates = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+    if (candidates.length === 0) {
+      console.log(JSON.stringify({
+        fn: "extractVaultCandidates",
+        event: "empty_candidates",
+        text_head: text.slice(0, 200),
+      }));
+      return { candidates: [], emptyReason: "empty_candidates" };
+    }
+
     console.log(JSON.stringify({
       fn: "extractVaultCandidates",
       event: "llm_response",
@@ -181,9 +218,15 @@ async function extractVaultCandidates(params: {
       text_head: text.slice(0, 200),
       candidates_parsed: candidates.length,
     }));
-    return candidates;
-  } catch {
-    return [];
+    return { candidates, emptyReason: null };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(JSON.stringify({
+      fn: "extractVaultCandidates",
+      event: "exception",
+      error: msg,
+    }));
+    return { candidates: [], emptyReason: `exception:${msg}` };
   }
 }
 
@@ -376,6 +419,7 @@ export async function runAutoMemoryVault(params: {
     pending_count: 0,
     quarantine_count: 0,
     reject_count: 0,
+    extraction_empty_reason: null,
   };
 
   try {
@@ -392,7 +436,7 @@ export async function runAutoMemoryVault(params: {
     // Skip if user message is trivially short (< 8 chars)
     if (userMessage.trim().length < 8) return result;
 
-    const rawCandidates = await extractVaultCandidates({
+    const { candidates: rawCandidates, emptyReason } = await extractVaultCandidates({
       userMessage,
       gResponse,
       route,
@@ -405,9 +449,11 @@ export async function runAutoMemoryVault(params: {
       fn: "runAutoMemoryVault",
       event: "extraction_done",
       raw_candidates_count: rawCandidates.length,
+      empty_reason: emptyReason,
     }));
 
     result.raw_candidates_count = rawCandidates.length;
+    if (emptyReason) result.extraction_empty_reason = emptyReason;
 
     if (rawCandidates.length === 0) return result;
 
@@ -501,6 +547,7 @@ export async function runAutoMemoryVault(params: {
     pending_count: result.pending_count,
     quarantine_count: result.quarantine_count,
     reject_count: result.reject_count,
+    extraction_empty_reason: result.extraction_empty_reason,
   }));
 
   return result;
