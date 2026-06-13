@@ -138,28 +138,39 @@
         <button id="closeMemoryCenterButton" type="button" class="mc-close-btn" aria-label="关闭">✕</button>
       </div>
 
-      <!-- Tab nav -->
-      <div class="mc-tabs" role="tablist">
-        <button class="mc-tab mc-tab--active" id="mcTabRecent" role="tab" aria-selected="true" aria-controls="mcPaneRecent">最近</button>
-        <button class="mc-tab" id="mcTabManage" role="tab" aria-selected="false" aria-controls="mcPaneManage">管理</button>
-      </div>
-
-      <!-- Tab: 最近记忆 -->
-      <div class="mc-pane" id="mcPaneRecent" role="tabpanel" aria-labelledby="mcTabRecent">
+      <!-- 最近记忆 -->
+      <div class="mc-pane" id="mcPaneRecent">
         <div id="mcRecentUpdates" class="mc-recent-updates"></div>
       </div>
 
-      <!-- Tab: 管理 -->
-      <div class="mc-pane mc-pane--hidden" id="mcPaneManage" role="tabpanel" aria-labelledby="mcTabManage">
+      <!-- 入口 -->
+      <div class="mc-center-actions" aria-label="记忆入口">
+        <button class="mc-manage-btn" id="mcSearchPlaceholderBtn" type="button">
+          <span class="mc-manage-btn-label">搜索记忆</span>
+          <span class="mc-manage-btn-arrow">→</span>
+        </button>
+        <button class="mc-manage-btn" id="mcLegacyOpenBtn" type="button">
+          <span class="mc-manage-btn-label">记忆管理</span>
+          <span class="mc-manage-btn-arrow">→</span>
+        </button>
+        <button class="mc-manage-btn" id="mcDebugOpenBtn" type="button">
+          <span class="mc-manage-btn-label">调试中心</span>
+          <span class="mc-manage-btn-arrow">→</span>
+        </button>
+      </div>
+    </div>
+  </div>
 
-        <!-- 管理入口 -->
-        <div class="mc-manage-entry">
-          <button class="mc-manage-btn" id="mcLegacyOpenBtn" type="button">
-            <span class="mc-manage-btn-label">管理全部记忆</span>
-            <span class="mc-manage-btn-arrow">→</span>
-          </button>
-        </div>
+  <!-- 记忆调试中心弹窗 -->
+  <div id="memoryDebugOverlay" class="overlay hidden">
+    <div class="modal memory-center-modal memory-debug-modal">
+      <div class="mc-header">
+        <button id="memoryDebugBackBtn" type="button" class="mc-back-btn">← 记忆</button>
+        <span class="mc-header-title">调试中心</span>
+        <button id="closeMemoryDebugButton" type="button" class="mc-close-btn" aria-label="关闭">✕</button>
+      </div>
 
+      <div class="mc-pane memory-debug-pane">
         <!-- 高级：记忆来源（折叠） -->
         <details class="mc-advanced">
           <summary class="mc-advanced-summary">记忆来源</summary>
@@ -230,7 +241,6 @@
             <div class="mc-debug-placeholder">发送一条消息后显示。</div>
           </div>
         </details>
-
       </div>
     </div>
   </div>

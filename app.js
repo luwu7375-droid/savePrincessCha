@@ -3493,6 +3493,18 @@ initTierBar();
 // ── 记忆中枢 Memory Center ─────────────────────────────────────────────────────
 
 const memoryCenterOverlay = document.getElementById("memoryCenterOverlay");
+const memoryDebugOverlay = document.getElementById("memoryDebugOverlay");
+
+function getLastMemoryDebug() {
+  let debug = window.lastMemoryDebug || null;
+  if (!debug) {
+    try {
+      const stored = localStorage.getItem("lastMemoryDebug");
+      if (stored) debug = JSON.parse(stored);
+    } catch (_) {}
+  }
+  return debug;
+}
 
 document.getElementById("memoryCenterBtn")?.addEventListener("click", () => {
   openMemoryCenter();
@@ -3502,45 +3514,47 @@ document.getElementById("closeMemoryCenterButton")?.addEventListener("click", ()
   memoryCenterOverlay?.classList.add("hidden");
 });
 
+memoryCenterOverlay?.addEventListener("click", (e) => {
+  if (e.target === memoryCenterOverlay) memoryCenterOverlay.classList.add("hidden");
+});
+
+document.getElementById("mcSearchPlaceholderBtn")?.addEventListener("click", () => {
+  showMcToast("搜索稍后接入");
+});
+
 document.getElementById("mcLegacyOpenBtn")?.addEventListener("click", () => {
   memoryCenterOverlay?.classList.add("hidden");
   toggleMemoryButton?.click();
 });
 
-// ── Tab switching ──────────────────────────────────────────────────────────
-function _mcSwitchTab(tabId) {
-  const tabs = ["mcTabRecent", "mcTabManage"];
-  const panes = ["mcPaneRecent", "mcPaneManage"];
-  tabs.forEach((id, i) => {
-    const tab = document.getElementById(id);
-    const pane = document.getElementById(panes[i]);
-    const isActive = id === tabId;
-    if (tab) {
-      tab.classList.toggle("mc-tab--active", isActive);
-      tab.setAttribute("aria-selected", String(isActive));
-    }
-    if (pane) pane.classList.toggle("mc-pane--hidden", !isActive);
-  });
+// ── Debug center overlay ───────────────────────────────────────────────────
+function openMemoryDebugCenter() {
+  if (!memoryDebugOverlay) return;
+  memoryCenterOverlay?.classList.add("hidden");
+  memoryDebugOverlay.classList.remove("hidden");
+  const debug = getLastMemoryDebug();
+  updateMemoryCenterCards(debug);
+  renderMemoryCenterDebug(debug);
 }
 
-document.getElementById("mcTabRecent")?.addEventListener("click", () => _mcSwitchTab("mcTabRecent"));
-document.getElementById("mcTabManage")?.addEventListener("click", () => _mcSwitchTab("mcTabManage"));
+document.getElementById("mcDebugOpenBtn")?.addEventListener("click", openMemoryDebugCenter);
+
+document.getElementById("closeMemoryDebugButton")?.addEventListener("click", () => {
+  memoryDebugOverlay?.classList.add("hidden");
+});
+
+memoryDebugOverlay?.addEventListener("click", (e) => {
+  if (e.target === memoryDebugOverlay) memoryDebugOverlay.classList.add("hidden");
+});
+
+document.getElementById("memoryDebugBackBtn")?.addEventListener("click", () => {
+  memoryDebugOverlay?.classList.add("hidden");
+  openMemoryCenter();
+});
 
 function openMemoryCenter() {
   if (!memoryCenterOverlay) return;
   memoryCenterOverlay.classList.remove("hidden");
-  // 默认显示「最近」tab
-  _mcSwitchTab("mcTabRecent");
-  // 读取最近一次 chat 的 memory debug（内存优先，fallback localStorage）
-  let debug = window.lastMemoryDebug || null;
-  if (!debug) {
-    try {
-      const stored = localStorage.getItem("lastMemoryDebug");
-      if (stored) debug = JSON.parse(stored);
-    } catch (_) {}
-  }
-  updateMemoryCenterCards(debug);
-  renderMemoryCenterDebug(debug);
   renderRecentMemoryUpdates();
 }
 
