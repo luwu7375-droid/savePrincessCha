@@ -1,4 +1,4 @@
-console.log("build cloudflare-0073");
+console.log("build cloudflare-0074");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -4137,6 +4137,19 @@ async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessag
       p2_skipped: data.p2?.skipped_count ?? null,
       p2_duplicate: data.p2?.duplicate_count ?? null,
     });
+    if (data.debug) {
+      console.log("[vault] debug", {
+        userMessage_len: data.debug.userMessage_len,
+        userMessage_head: data.debug.userMessage_head,
+        model: data.debug.model,
+        has_base_url: data.debug.has_provider_base_url,
+        has_api_key: data.debug.has_provider_api_key,
+        p1_raw: data.debug.p1_raw_candidates_count,
+        extraction_event: data.debug.extraction_event,
+        extraction_text_head: data.debug.extraction_text_head,
+        extraction_error: data.debug.extraction_error,
+      });
+    }
     if (data.ok && typeof data.promoted_count === "number" && data.promoted_count > 0) {
       showMemoryToast(data.promoted_count);
     }

@@ -71,9 +71,11 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 2. preference: 用户的偏好、喜好、习惯
 3. relationship: 用户与他人的关系信号
 4. project: 用户正在做的项目/工作/计划
-   - 用户明确陈述某个项目的当前版本、已完成事项、验收结果、已上线能力、下一步计划时，应提取为 project。即使这句话看起来像工作记录，也属于可记项目状态。
-   - 例：用户消息「救公主项目当前版本是 v0.8，已完成单图 Storage 持久化、自动接话状态修复、多气泡短回复。」
-     → candidate_type=project，content="救公主项目 v0.8 已完成单图 Storage 持久化、自动接话状态修复和多气泡短回复。"
+   - 用户明确陈述项目当前版本、已完成事项、验收结果、已上线能力、文档更新、下一步计划时，应提取为 project。
+   - 不要把项目状态更新误判为一次性任务；即使语气像汇报，也属于可记项目状态。
+   - 例：用户消息「我已经做到 v0.9，将 README/docs/frontend 状态更新完成，并完成单图 Storage 持久化、多气泡短回复验收。」
+     应输出：
+     {"candidate_type":"project","title":"救公主v0.9进展","summary":"救公主项目 v0.9 已更新文档状态，并完成单图持久化与多气泡短回复验收。","content":"救公主项目 v0.9 已完成文档状态更新、单图 Storage 持久化和多气泡短回复验收。","confidence":0.92,"sensitivity":0.10,"reason":"用户明确陈述项目版本与已完成事项"}
 
 【敏感度规则（sensitivity 字段）】
 - medical（医疗/健康/身体症状）→ sensitivity >= 0.70
@@ -92,8 +94,9 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 ✗ 不输出已是众所周知的通用信息
 ✗ 不过度解读，不添加假设
 
-【输出格式】只输出 JSON，不要解释：
-{"candidates":[{"candidate_type":"fact|preference|relationship|project","title":"6-16字短标题","summary":"一句话摘要，40-80字","content":"完整可注入记忆内容，不超过80字","confidence":0.85,"sensitivity":0.10,"reason":"提取依据一句话"}]}`;
+【输出格式】只输出 JSON，不要解释，不要加 markdown 代码块：
+{"candidates":[{"candidate_type":"fact|preference|relationship|project","title":"6-16字短标题","summary":"一句话摘要，40-80字","content":"完整可注入记忆内容，不超过80字","confidence":0.85,"sensitivity":0.10,"reason":"提取依据一句话"}]}
+即使没有候选，也必须输出：{"candidates":[]}`;
 
 // ── Action matrix ─────────────────────────────────────────────────────────────
 // Priority order:
