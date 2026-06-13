@@ -1,3 +1,5 @@
+import { runAutoMemoryVault, promoteAutoMemoryCandidates } from "../chat/auto_memory_vault.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-memory-admin-token",
@@ -94,6 +96,132 @@ Deno.serve(async (req) => {
     }
 
     return json({ source: "memories", rows: [] }, 200);
+  }
+
+  // ── vault_after_chat: frontend-triggered P1+P2, admin token required ────────
+  // POST ?type=vault_after_chat
+  // Body: { userId, conversationId?, userMessage, assistantMessage, userMessageId?, route? }
+  // Requires x-memory-admin-token header (same token as other admin routes).
+  // Returns JSON summary; errors are ok:false, never throws.
+
+  if (type === "vault_after_chat" && req.method === "POST") {
+    // ── auth: require admin token ────────────────────────────────────────────
+    const vaultAdminToken = Deno.env.get("MEMORY_ADMIN_TOKEN");
+    if (!vaultAdminToken || req.headers.get("x-memory-admin-token") !== vaultAdminToken) {
+      return json({ ok: false, error: "unauthorized" }, 401);
+    }
+
+    if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "DB not configured" }, 500);
+
+    const vaultEnabled = Deno.env.get("AUTO_MEMORY_VAULT_ENABLED") === "true";
+    if (!vaultEnabled) {
+      return json({ ok: false, reason: "AUTO_MEMORY_VAULT_ENABLED not set" }, 200);
+    }
+
+    let body: {
+      userId?: string;
+      conversationId?: string;
+      userMessage?: string;
+      assistantMessage?: string;
+      userMessageId?: number | null;
+      route?: string | null;
+    };
+    try {
+      body = await req.json();
+    } catch {
+      return json({ ok: false, reason: "invalid JSON body" }, 400);
+    }
+
+    const { userId, conversationId, userMessage, assistantMessage, userMessageId, route } = body;
+    if (!userId || typeof userId !== "string" || !userId.trim()) {
+      return json({ ok: false, reason: "userId required" }, 400);
+    }
+    if (!userMessage || typeof userMessage !== "string" || !userMessage.trim()) {
+      return json({ ok: false, reason: "userMessage required" }, 400);
+    }
+    if (!assistantMessage || typeof assistantMessage !== "string") {
+      return json({ ok: false, reason: "assistantMessage required" }, 400);
+    }
+
+    // ── Resolve LLM provider (mirrors chat/index.ts instant tier) ────────────
+    const orBaseUrl =
+      Deno.env.get("FIFTYFIVE_BASE_URL") ||
+      Deno.env.get("OPENROUTER_BASE_URL") ||
+      "";
+    // instant tier uses FIFTYFIVE_API_KEY_GEMINI first, then generic key, then OpenRouter
+    const legacyFiftyfiveKey = Deno.env.get("FIFTYFIVE_API_KEY") || "";
+    const orApiKey =
+      Deno.env.get("FIFTYFIVE_API_KEY_GEMINI") ||
+      legacyFiftyfiveKey ||
+      Deno.env.get("FIFTYFIVE_API_KEY_GPT") ||
+      Deno.env.get("FIFTYFIVE_API_KEY_CLAUDE") ||
+      Deno.env.get("OPENROUTER_API_KEY") ||
+      "";
+    const fastModel =
+      Deno.env.get("MODEL_INSTANT_PRIMARY") ||
+      Deno.env.get("FAST_MODEL") ||
+      Deno.env.get("MODEL_NAME") ||
+      "";
+
+    console.log(JSON.stringify({
+      fn: "vault_after_chat",
+      event: "provider_gate",
+      has_orBaseUrl: Boolean(orBaseUrl),
+      has_orApiKey: Boolean(orApiKey),
+      has_fastModel: Boolean(fastModel),
+      fastModel,
+      user_id_prefix: userId.slice(0, 6),
+    }));
+
+    if (!orBaseUrl || !orApiKey || !fastModel) {
+      return json({ ok: false, reason: "LLM provider env vars not configured" }, 500);
+    }
+
+    try {
+      // P1 — extract candidates into auto_memory_candidates
+      const p1 = await runAutoMemoryVault({
+        supabaseUrl,
+        serviceRoleKey: serviceKey,
+        userId,
+        conversationId: conversationId || undefined,
+        userMessage,
+        gResponse: assistantMessage,
+        route: route ?? null,
+        orBaseUrl,
+        orApiKey,
+        fastModel,
+        userMessageId: typeof userMessageId === "number" ? userMessageId : null,
+      });
+
+      // P2 — promote eligible auto_accept candidates into memories
+      const promotionEnabled = Deno.env.get("AUTO_MEMORY_PROMOTION_ENABLED") === "true";
+      let p2 = null;
+      if (promotionEnabled) {
+        p2 = await promoteAutoMemoryCandidates({
+          supabaseUrl,
+          serviceRoleKey: serviceKey,
+          userId,
+          conversationId: conversationId || undefined,
+          limit: 10,
+          dryRun: false,
+        });
+      }
+
+      return json({
+        ok: true,
+        p1,
+        p2,
+        promoted_count: p2?.promoted_count ?? 0,
+      }, 200);
+    } catch (err) {
+      console.error(JSON.stringify({
+        fn: "vault_after_chat",
+        event: "error",
+        error: err instanceof Error ? err.message : String(err),
+        user_id_prefix: userId.slice(0, 6),
+      }));
+      return json({ ok: false, reason: err instanceof Error ? err.message : String(err) }, 500);
+    }
   }
 
   // ── all other routes require admin token ─────────────────────────────────

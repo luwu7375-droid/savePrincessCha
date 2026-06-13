@@ -1,4 +1,4 @@
-console.log("build cloudflare-0069");
+console.log("build cloudflare-0070");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -538,11 +538,40 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
 
 /** 按 ||| 切分原始回复，最多 3 条，超出的并到最后一条 */
 function splitBubbles(rawText) {
-  const parts = rawText.split("|||").map(s => s.trim()).filter(s => s.length > 0);
-  if (parts.length <= 1) return [rawText.trim()];
-  if (parts.length <= 3) return parts;
-  // 超过 3 条：前 2 条保持，剩余并入第 3 条
-  return [parts[0], parts[1], parts.slice(2).join(" ")];
+  // ── Primary split: explicit ||| separator ────────────────────────────────
+  if (rawText.includes("|||")) {
+    const parts = rawText.split("|||").map(s => s.trim()).filter(s => s.length > 0);
+    if (parts.length <= 1) return [rawText.trim()];
+    if (parts.length <= 3) return parts;
+    // more than 3: merge tail into third
+    return [parts[0], parts[1], parts.slice(2).join(" ")];
+  }
+
+  // ── Fallback split: Chinese sentence-ending punctuation ──────────────────
+  const text = rawText.trim();
+  // Short replies stay as one bubble
+  if (text.length < 45) return [text];
+
+  // Split on Chinese/common sentence-ending punctuation or newlines.
+  // Keep the delimiter attached to the preceding segment.
+  const segments = text.split(/(?<=[。！？；\n])/).map(s => s.trim()).filter(s => s.length > 0);
+  if (segments.length <= 1) return [text];
+
+  // Merge short tails (< 8 chars) into the preceding segment
+  const merged = [];
+  for (const seg of segments) {
+    if (merged.length > 0 && seg.length < 8) {
+      merged[merged.length - 1] += seg;
+    } else {
+      merged.push(seg);
+    }
+  }
+
+  // Cap at 3 bubbles: merge anything beyond index 1 into a second bubble
+  if (merged.length === 1) return merged;
+  if (merged.length === 2) return merged;
+  // 3+: first bubble is merged[0], second is everything else joined
+  return [merged[0], merged.slice(1).join("")];
 }
 
 /**
@@ -1396,6 +1425,23 @@ async function requestStreamingReply(replyMode = "auto") {
   const replyIdStr = replyId != null ? String(replyId) : null;
   chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr });
   lastMessageTime = new Date(replyTime).getTime();
+
+  // Fire-and-forget vault extraction — never blocks UI
+  {
+    const lastUserMsg = [...chatMessages].reverse().find(m => m.role === "user");
+    const vaultUserMessage = lastUserMsg
+      ? extractTextFromMessageContent(lastUserMsg.content).trim()
+      : "";
+    if (vaultUserMessage) {
+      triggerVaultAfterChat({
+        userMessage: vaultUserMessage,
+        assistantMessage: cleanReply,
+        userMessageId: _currentRequestUserMessageId,
+        conversationId: getActiveConversationId(),
+        route: localStorage.getItem("previousTopicRoute") || null,
+      });
+    }
+  }
 
   const bubbles = splitBubbles(cleanReply);
   if (bubbles.length === 1 || !firstSepSeen) {
@@ -4026,6 +4072,66 @@ function renderMemoryCenterDebug(log) {
       if (btn) { btn.textContent = "复制失败"; setTimeout(() => { btn.textContent = "复制 JSON"; }, 1500); }
     });
   });
+}
+
+// ── Vault After Chat ──────────────────────────────────────────────────────────
+// Fire-and-forget: called after stream ends + assistant message saved.
+// Sends user+assistant text to memories?type=vault_after_chat for P1+P2.
+// Never blocks UI. On success with promoted_count > 0 shows memory toast.
+
+async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessageId, conversationId, route }) {
+  const endpoint = getMemoryEndpoint();
+  if (!endpoint) return;
+  if (!currentUserId) return;
+  if (!userMessage || !assistantMessage) return;
+  // Require admin token — same token used by Memory Center.
+  // If not configured, skip silently: vault is a best-effort feature.
+  const token = getMemoryToken();
+  if (!token) {
+    console.warn("[vault] skipped no token");
+    return;
+  }
+  console.log("[vault] request start", {
+    userMessage_len: userMessage.length,
+    assistantMessage_len: assistantMessage.length,
+    userMessageId,
+    conversationId,
+    route,
+  });
+  try {
+    const res = await fetch(endpoint + "?type=vault_after_chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-memory-admin-token": token },
+      body: JSON.stringify({
+        userId: currentUserId,
+        conversationId: conversationId || null,
+        userMessage,
+        assistantMessage,
+        userMessageId: userMessageId != null ? Number(userMessageId) : null,
+        route: route || null,
+      }),
+    });
+    if (!res.ok) {
+      console.warn("[vault] response non-ok:", res.status);
+      return;
+    }
+    const data = await res.json();
+    console.log("[vault] response", {
+      ok: data.ok,
+      error: data.error ?? data.reason ?? null,
+      inserted_count: data.p1?.inserted_count ?? null,
+      pending_count: data.p1?.pending_count ?? null,
+      auto_accept_count: data.p1?.auto_accept_count ?? null,
+      promoted_count: data.promoted_count ?? null,
+      p2_skipped: data.p2?.skipped_count ?? null,
+      p2_duplicate: data.p2?.duplicate_count ?? null,
+    });
+    if (data.ok && typeof data.promoted_count === "number" && data.promoted_count > 0) {
+      showMemoryToast(data.promoted_count);
+    }
+  } catch (err) {
+    console.warn("[vault] vault_after_chat error:", err);
+  }
 }
 
 // ── Memory Promotion Poller ────────────────────────────────────────────────────

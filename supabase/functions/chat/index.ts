@@ -2245,39 +2245,9 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     const backgroundApiKey = backgroundProviderConfig.primary.apiKey;
     let responseBody: ReadableStream<Uint8Array> | null = result.response.body;
 
-    if (
-      !disableAfterChat &&
-      result.response.body &&
-      supabaseUrl &&
-      serviceRoleKey &&
-      afterChatUserId !== "anon" &&
-      backgroundModel &&
-      backgroundApiKey &&
-      backgroundBaseUrl
-    ) {
-      /* DISABLED: afterChatPersonality tee + background extraction
-      const [clientBody, extractBody] = result.response.body.tee();
-      responseBody = clientBody;
-      afterChatPersonality({
-        streamBody: extractBody,
-        supabaseUrl,
-        serviceRoleKey,
-        userId: afterChatUserId,
-        conversationId,
-        userMessage: lastUserMessage,
-        valence: emotionResult?.valence ?? 0,
-        arousal: emotionResult?.arousal ?? 0,
-        route: topicRoute,
-        orBaseUrl: backgroundBaseUrl,
-        orApiKey: backgroundApiKey,
-        fastModel: backgroundModel,
-        userMessageId: typeof payload.userMessageId === "number" ? payload.userMessageId : null,
-      }).catch((err) =>
-        console.error("[afterChat] error:", err instanceof Error ? err.message : String(err))
-      );
-      */
-      responseBody = result.response.body;
-    }
+    // Vault extraction is now triggered by the frontend after stream completes
+    // (via POST memories?type=vault_after_chat). No tee on the main stream.
+    responseBody = result.response.body;
 
     return new Response(responseBody, {
       status: result.response.status,
