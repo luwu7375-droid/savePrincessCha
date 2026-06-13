@@ -23,6 +23,8 @@ export type AutoMemoryVaultResult = {
   quarantine_count: number;
   reject_count: number;
   extraction_empty_reason: string | null;
+  extraction_debug_event: string | null;
+  extraction_text_head: string | null;
 };
 
 export type PromotionResult = {
@@ -128,7 +130,9 @@ async function hashContent(content: string): Promise<string> {
 
 type ExtractionOutcome = {
   candidates: RawCandidate[];
-  emptyReason: string | null; // non-null when candidates.length === 0
+  emptyReason: string | null;
+  debugEvent: string;      // always set; "ok" when candidates found
+  textHead: string | null; // first 120 chars of LLM output text, or null
 };
 
 async function extractVaultCandidates(params: {
@@ -174,7 +178,7 @@ async function extractVaultCandidates(params: {
         status: res.status,
         body_head: errText.slice(0, 200),
       }));
-      return { candidates: [], emptyReason: `llm_non_ok:${res.status}` };
+      return { candidates: [], emptyReason: `llm_non_ok:${res.status}`, debugEvent: "llm_non_ok", textHead: errText.slice(0, 120) };
     }
     const data = await res.json();
     const text: string = data?.choices?.[0]?.message?.content ?? "";
@@ -186,7 +190,7 @@ async function extractVaultCandidates(params: {
         status: res.status,
         text_head: text.slice(0, 200),
       }));
-      return { candidates: [], emptyReason: "no_json_block" };
+      return { candidates: [], emptyReason: "no_json_block", debugEvent: "no_json_block", textHead: text.slice(0, 120) };
     }
 
     let parsed: Partial<ExtractionResponse>;
@@ -199,7 +203,7 @@ async function extractVaultCandidates(params: {
         parse_error: parseErr instanceof Error ? parseErr.message : String(parseErr),
         text_head: text.slice(0, 200),
       }));
-      return { candidates: [], emptyReason: "json_parse_error" };
+      return { candidates: [], emptyReason: "json_parse_error", debugEvent: "json_parse_error", textHead: text.slice(0, 120) };
     }
 
     const candidates = Array.isArray(parsed.candidates) ? parsed.candidates : [];
@@ -209,7 +213,7 @@ async function extractVaultCandidates(params: {
         event: "empty_candidates",
         text_head: text.slice(0, 200),
       }));
-      return { candidates: [], emptyReason: "empty_candidates" };
+      return { candidates: [], emptyReason: "empty_candidates", debugEvent: "empty_candidates", textHead: text.slice(0, 120) };
     }
 
     console.log(JSON.stringify({
@@ -219,7 +223,7 @@ async function extractVaultCandidates(params: {
       text_head: text.slice(0, 200),
       candidates_parsed: candidates.length,
     }));
-    return { candidates, emptyReason: null };
+    return { candidates, emptyReason: null, debugEvent: "ok", textHead: text.slice(0, 120) };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log(JSON.stringify({
@@ -227,7 +231,7 @@ async function extractVaultCandidates(params: {
       event: "extract_exception",
       error: msg,
     }));
-    return { candidates: [], emptyReason: `extract_exception:${msg}` };
+    return { candidates: [], emptyReason: `extract_exception:${msg}`, debugEvent: "extract_exception", textHead: null };
   }
 }
 
@@ -421,6 +425,8 @@ export async function runAutoMemoryVault(params: {
     quarantine_count: 0,
     reject_count: 0,
     extraction_empty_reason: null,
+    extraction_debug_event: null,
+    extraction_text_head: null,
   };
 
   try {
@@ -429,6 +435,7 @@ export async function runAutoMemoryVault(params: {
       event: "start",
       user_id_prefix: userId.slice(0, 6),
       userMessage_len: userMessage.trim().length,
+      userMessage_head: userMessage.trim().slice(0, 30),
       has_orBaseUrl: Boolean(orBaseUrl),
       has_orApiKey: Boolean(orApiKey),
       fastModel_name: fastModel,
@@ -437,7 +444,7 @@ export async function runAutoMemoryVault(params: {
     // Skip if user message is trivially short (< 8 chars)
     if (userMessage.trim().length < 8) return result;
 
-    const { candidates: rawCandidates, emptyReason } = await extractVaultCandidates({
+    const { candidates: rawCandidates, emptyReason, debugEvent, textHead } = await extractVaultCandidates({
       userMessage,
       gResponse,
       route,
@@ -450,10 +457,13 @@ export async function runAutoMemoryVault(params: {
       fn: "runAutoMemoryVault",
       event: "extraction_done",
       raw_candidates_count: rawCandidates.length,
+      debug_event: debugEvent,
       empty_reason: emptyReason,
     }));
 
     result.raw_candidates_count = rawCandidates.length;
+    result.extraction_debug_event = debugEvent;
+    result.extraction_text_head = textHead;
     if (emptyReason) result.extraction_empty_reason = emptyReason;
 
     if (rawCandidates.length === 0) return result;

@@ -223,6 +223,8 @@ Deno.serve(async (req) => {
           p1_pending_count: p1.pending_count,
           p1_auto_accept_count: p1.auto_accept_count,
           extraction_empty_reason: p1.extraction_empty_reason ?? null,
+          extraction_debug_event: p1.extraction_debug_event ?? null,
+          extraction_text_head: p1.extraction_text_head ?? null,
         },
       }, 200);
     } catch (err) {
