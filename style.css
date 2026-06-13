@@ -1620,6 +1620,62 @@ img.msg-image { cursor: pointer; }
 .mc-action-toast--error { background: oklch(38% 0.16 25 / 0.92); }
 
 /* ── 管理 tab ── */
+.mc-source-summary {
+  padding: 12px 18px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mc-source-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.mc-source-summary-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.mc-source-summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mc-source-summary-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0.45;
+  font-style: italic;
+}
+
+.mc-source-pill {
+  font-size: 11px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 2px 8px;
+}
+
+.mc-source-debug-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  padding: 2px 0;
+}
+.mc-source-debug-btn:hover { opacity: 0.9; }
+
 .mc-center-actions {
   display: flex;
   flex-direction: column;
@@ -1914,6 +1970,15 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
   gap: 12px;
 }
 .mc-debug-row:last-child { border-bottom: none; }
+.mc-debug-row--stack {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+.mc-debug-row--stack .mc-debug-val {
+  text-align: left;
+  white-space: normal;
+}
 .mc-debug-key {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   color: var(--text-muted);

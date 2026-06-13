@@ -1,4 +1,4 @@
-console.log("build cloudflare-0076");
+console.log("build cloudflare-0077");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3495,6 +3495,20 @@ initTierBar();
 const memoryCenterOverlay = document.getElementById("memoryCenterOverlay");
 const memoryDebugOverlay = document.getElementById("memoryDebugOverlay");
 
+const MEMORY_PROVIDER_LABELS = {
+  persona_memories: "长期记忆",
+  mastodon_profile: "用户画像",
+  writing_memory: "写作记忆",
+  project_memory: "项目记忆",
+  relationship_context: "关系上下文",
+  life_context: "生活上下文",
+  historical_ai_usage: "前世档案",
+  openai_archive: "历史档案（已退役）",
+  conversation_history: "历史对话",
+  mastodon_timeline: "时间线",
+  personality_layers: "人格层（已退役）",
+};
+
 function getLastMemoryDebug() {
   let debug = window.lastMemoryDebug || null;
   if (!debug) {
@@ -3518,10 +3532,6 @@ memoryCenterOverlay?.addEventListener("click", (e) => {
   if (e.target === memoryCenterOverlay) memoryCenterOverlay.classList.add("hidden");
 });
 
-document.getElementById("mcSearchPlaceholderBtn")?.addEventListener("click", () => {
-  showMcToast("搜索稍后接入");
-});
-
 document.getElementById("mcLegacyOpenBtn")?.addEventListener("click", () => {
   memoryCenterOverlay?.classList.add("hidden");
   toggleMemoryButton?.click();
@@ -3535,6 +3545,8 @@ function openMemoryDebugCenter() {
   const debug = getLastMemoryDebug();
   updateMemoryCenterCards(debug);
   renderMemoryCenterDebug(debug);
+  renderRecentMemoryDebug();
+  renderMemoryAuditDebug();
 }
 
 document.getElementById("mcDebugOpenBtn")?.addEventListener("click", openMemoryDebugCenter);
@@ -3555,7 +3567,115 @@ document.getElementById("memoryDebugBackBtn")?.addEventListener("click", () => {
 function openMemoryCenter() {
   if (!memoryCenterOverlay) return;
   memoryCenterOverlay.classList.remove("hidden");
+  renderMemorySourceSummary(getLastMemoryDebug());
   renderRecentMemoryUpdates();
+}
+
+function renderMemorySourceSummary(debug) {
+  const list = document.getElementById("mcSourceSummaryList");
+  if (!list) return;
+  list.innerHTML = "";
+  const providers = Array.isArray(debug?.active_memory_providers)
+    ? debug.active_memory_providers
+    : [];
+  const visibleProviders = providers.filter((p) => p !== "openai_archive" && p !== "personality_layers");
+  if (visibleProviders.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "mc-source-summary-empty";
+    empty.textContent = "发送一条消息后显示";
+    list.appendChild(empty);
+    return;
+  }
+  visibleProviders.forEach((provider) => {
+    const item = document.createElement("span");
+    item.className = "mc-source-pill";
+    item.textContent = MEMORY_PROVIDER_LABELS[provider] || provider;
+    list.appendChild(item);
+  });
+}
+
+async function renderRecentMemoryDebug() {
+  const panel = document.getElementById("mcRecentDebugPanel");
+  if (!panel) return;
+  panel.innerHTML = '<div class="mc-debug-placeholder">最近记忆元数据加载中...</div>';
+  try {
+    const userId = currentUserId || "";
+    const resp = await memoryFetch(`?type=recent&userId=${encodeURIComponent(userId)}`);
+    if (!resp.ok) {
+      panel.innerHTML = `<div class="mc-debug-placeholder">最近记忆元数据不可用：HTTP ${resp.status}</div>`;
+      return;
+    }
+    const { source, rows } = await resp.json();
+    panel.innerHTML = "";
+    if (!Array.isArray(rows) || rows.length === 0) {
+      panel.innerHTML = '<div class="mc-debug-placeholder">暂无最近记忆元数据。</div>';
+      return;
+    }
+    const detail = document.createElement("div");
+    detail.className = "mc-debug-detail";
+    rows.slice(0, 5).forEach((row, index) => {
+      const item = document.createElement("div");
+      item.className = "mc-debug-row mc-debug-row--stack";
+      const key = document.createElement("span");
+      key.className = "mc-debug-key";
+      key.textContent = `${index + 1}. ${row.category || row.candidate_type || source || "memory"}`;
+      const val = document.createElement("span");
+      val.className = "mc-debug-val";
+      val.textContent = [
+        `source=${source || "unknown"}`,
+        `source_msg_ids=${Array.isArray(row.source_msg_ids) ? row.source_msg_ids.join(",") || "[]" : "null"}`,
+        `confidence=${row.confidence ?? "—"}`,
+        `sensitivity=${row.sensitivity ?? "—"}`,
+      ].join(" | ");
+      item.append(key, val);
+      detail.appendChild(item);
+    });
+    panel.appendChild(detail);
+  } catch (err) {
+    panel.innerHTML = `<div class="mc-debug-placeholder">最近记忆元数据加载失败：${err instanceof Error ? err.message : String(err)}</div>`;
+  }
+}
+
+async function renderMemoryAuditDebug() {
+  const panel = document.getElementById("mcAuditPanel");
+  if (!panel) return;
+  panel.innerHTML = '<div class="mc-debug-placeholder">审计加载中...</div>';
+  try {
+    const res = await memoryFetch("?type=audit");
+    if (!res.ok) {
+      panel.innerHTML = `<div class="mc-debug-placeholder">审计不可用：HTTP ${res.status}</div>`;
+      return;
+    }
+    const audit = await res.json();
+    const memoriesByCategory = audit?.memories?.by_category || {};
+    const instructionsByCategory = audit?.instructions?.by_category || {};
+    const archive = audit?.openai_archive_entries || {};
+    const rows = [
+      ["memory_buckets", "旧系统，管理页不展示，不注入"],
+      ["distill", "旧沉淀入口保持隐藏"],
+      ["openai_archive", `已退役；${archive.enabled_count ?? 0}/${archive.total ?? 0} enabled`],
+      ["memories origin_guess", Object.entries(memoriesByCategory).map(([cat, stat]) => `${cat}:${JSON.stringify(stat.origin_distribution || {})}`).join(" | ") || "—"],
+      ["instructions origin_guess", Object.entries(instructionsByCategory).map(([cat, stat]) => `${cat}:${stat.origin_guess || "manual_seed_pending_review"}(${stat.count || 0})`).join(" | ") || "—"],
+    ];
+    panel.innerHTML = "";
+    const detail = document.createElement("div");
+    detail.className = "mc-debug-detail";
+    rows.forEach(([key, val]) => {
+      const row = document.createElement("div");
+      row.className = "mc-debug-row";
+      const keyEl = document.createElement("span");
+      keyEl.className = "mc-debug-key";
+      keyEl.textContent = key;
+      const valEl = document.createElement("span");
+      valEl.className = "mc-debug-val";
+      valEl.textContent = String(val);
+      row.append(keyEl, valEl);
+      detail.appendChild(row);
+    });
+    panel.appendChild(detail);
+  } catch (err) {
+    panel.innerHTML = `<div class="mc-debug-placeholder">审计加载失败：${err instanceof Error ? err.message : String(err)}</div>`;
+  }
 }
 
 /**
@@ -3696,42 +3816,6 @@ function buildRecentMemoryItem({ content, title: titleProp, summary: summaryProp
   srcVal.className = "mc-recent-detail-value";
   srcVal.textContent = sourcePreview ? `「${sourcePreview}」` : "暂无来源";
   details.appendChild(srcVal);
-
-  // confidence
-  if (confidence != null) {
-    const confLabel = document.createElement("div");
-    confLabel.className = "mc-recent-detail-label";
-    confLabel.textContent = "置信度";
-    details.appendChild(confLabel);
-    const confVal = document.createElement("div");
-    confVal.className = "mc-recent-detail-value";
-    confVal.textContent = (confidence * 100).toFixed(0) + "%";
-    details.appendChild(confVal);
-  }
-
-  // sensitivity
-  if (sensitivity) {
-    const sensLabel = document.createElement("div");
-    sensLabel.className = "mc-recent-detail-label";
-    sensLabel.textContent = "敏感度";
-    details.appendChild(sensLabel);
-    const sensVal = document.createElement("div");
-    sensVal.className = "mc-recent-detail-value";
-    sensVal.textContent = sensitivity;
-    details.appendChild(sensVal);
-  }
-
-  // source_msg_ids
-  if (sourceMsgIds && sourceMsgIds.length > 0) {
-    const idsLabel = document.createElement("div");
-    idsLabel.className = "mc-recent-detail-label";
-    idsLabel.textContent = "来源消息 ID";
-    details.appendChild(idsLabel);
-    const idsVal = document.createElement("div");
-    idsVal.className = "mc-recent-detail-value";
-    idsVal.textContent = sourceMsgIds.join(", ");
-    details.appendChild(idsVal);
-  }
 
   // last updated
   const date = new Date(timestamp || Date.now());
@@ -4022,22 +4106,8 @@ function renderMemoryCenterDebug(log) {
   const providers = Array.isArray(log.active_memory_providers) ? log.active_memory_providers : [];
   const providerCount = log.memory_provider_count ?? providers.length;
 
-  // Provider recalled 状态 pill 列表
-  const PROVIDER_LABELS = {
-    persona_memories:      "长期记忆",
-    mastodon_profile:      "用户画像",
-    writing_memory:        "写作",
-    project_memory:        "项目",
-    relationship_context:  "关系",
-    life_context:          "生活",
-    historical_ai_usage:   "前世",
-    openai_archive:        "历史档案（已退役）",
-    conversation_history:  "历史对话",
-    mastodon_timeline:     "时间线",
-    personality_layers:    "人格",
-  };
   const pillsHtml = providers.map((p) => {
-    const label = PROVIDER_LABELS[p] || p;
+    const label = MEMORY_PROVIDER_LABELS[p] || p;
     return `<span class="mc-debug-pill">${label}</span>`;
   }).join("");
 
@@ -4046,9 +4116,11 @@ function renderMemoryCenterDebug(log) {
     // 话题
     ["当前话题",               log.topic_route || "—"],
     ["次级话题",               log.secondary_route || "—"],
+    ["active_memory_providers", providers.join(", ") || "—"],
     // 长期记忆
     ["长期记忆已加载",         log.persona_memories_loaded],
     ["长期记忆条数",           log.persona_memories_count ?? "—"],
+    ["长期记忆类别",           Array.isArray(log.persona_memories_categories) ? log.persona_memories_categories.join(", ") : "—"],
     // 用户画像
     ["用户画像已加载",         log.mastodon_profile_loaded],
     // 写作记忆
@@ -4057,6 +4129,8 @@ function renderMemoryCenterDebug(log) {
     // 项目记忆
     ["项目记忆已召回",         log.project_memory_recalled],
     ["项目记忆命中数",         log.project_memory_hit_count ?? "—"],
+    ["项目记忆原因",           log.project_memory_reason || "—"],
+    ["项目记忆抑制原因",       log.project_memory_suppressed_reason || "—"],
     // 关系上下文
     ["关系上下文已召回",       log.relationship_context_recalled],
     // 生活上下文
@@ -4065,6 +4139,10 @@ function renderMemoryCenterDebug(log) {
     ["前世档案已召回",         log.historical_ai_usage_recalled],
     // 历史档案
     ["历史档案（已退役）",         log.openai_archive_recalled],
+    ["历史档案原因",           log.openai_archive_reason || "—"],
+    // 旧系统
+    ["memory_buckets",        "旧系统，管理页不展示"],
+    ["distill",               "旧沉淀入口保持隐藏"],
     // 历史对话
     ["历史对话已召回",         log.conversation_history_recalled],
     ["历史对话命中数",         log.conversation_history_hit_count ?? "—"],
