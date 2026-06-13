@@ -144,10 +144,18 @@ Deno.serve(async (req) => {
     }
 
     // ── Resolve LLM provider (mirrors chat/index.ts instant tier) ────────────
-    const orBaseUrl =
+    const rawBaseUrl =
       Deno.env.get("FIFTYFIVE_BASE_URL") ||
       Deno.env.get("OPENROUTER_BASE_URL") ||
       "";
+    // Normalise to full /chat/completions endpoint (same logic as toCompletionsUrl in chat/index.ts)
+    function toCompletionsUrl(base: string): string {
+      if (base.endsWith("/chat/completions")) return base;
+      const stripped = base.replace(/\/$/, "");
+      if (/\/v\d+$/.test(stripped)) return stripped + "/chat/completions";
+      return stripped + "/v1/chat/completions";
+    }
+    const orBaseUrl = rawBaseUrl ? toCompletionsUrl(rawBaseUrl) : "";
     // instant tier uses FIFTYFIVE_API_KEY_GEMINI first, then generic key, then OpenRouter
     const legacyFiftyfiveKey = Deno.env.get("FIFTYFIVE_API_KEY") || "";
     const orApiKey =
@@ -166,6 +174,8 @@ Deno.serve(async (req) => {
     console.log(JSON.stringify({
       fn: "vault_after_chat",
       event: "provider_gate",
+      raw_base_url: rawBaseUrl.slice(0, 60),
+      resolved_base_url: orBaseUrl.slice(0, 80),
       has_orBaseUrl: Boolean(orBaseUrl),
       has_orApiKey: Boolean(orApiKey),
       has_fastModel: Boolean(fastModel),
