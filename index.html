@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>救公主</title>
-  <link rel="stylesheet" href="style.css?v=cloudflare-0074">
+  <link rel="stylesheet" href="style.css?v=cloudflare-0078">
 </head>
 <body>
   <!-- 登录 overlay -->
@@ -138,28 +138,56 @@
         <button id="closeMemoryCenterButton" type="button" class="mc-close-btn" aria-label="关闭">✕</button>
       </div>
 
-      <!-- Tab nav -->
-      <div class="mc-tabs" role="tablist">
-        <button class="mc-tab mc-tab--active" id="mcTabRecent" role="tab" aria-selected="true" aria-controls="mcPaneRecent">最近</button>
-        <button class="mc-tab" id="mcTabManage" role="tab" aria-selected="false" aria-controls="mcPaneManage">管理</button>
-      </div>
-
-      <!-- Tab: 最近记忆 -->
-      <div class="mc-pane" id="mcPaneRecent" role="tabpanel" aria-labelledby="mcTabRecent">
+      <!-- 最近记忆 -->
+      <div class="mc-pane" id="mcPaneRecent">
         <div id="mcRecentUpdates" class="mc-recent-updates"></div>
       </div>
 
-      <!-- Tab: 管理 -->
-      <div class="mc-pane mc-pane--hidden" id="mcPaneManage" role="tabpanel" aria-labelledby="mcTabManage">
-
-        <!-- 管理入口 -->
-        <div class="mc-manage-entry">
-          <button class="mc-manage-btn" id="mcLegacyOpenBtn" type="button">
-            <span class="mc-manage-btn-label">管理全部记忆</span>
-            <span class="mc-manage-btn-arrow">→</span>
-          </button>
+      <!-- 当前有效记忆来源 -->
+      <div class="mc-center-sources" id="mcCenterSources">
+        <div class="mc-center-source-card">
+          <div class="mc-card-top">
+            <div class="mc-card-title">长期记忆<span class="mc-card-subtitle">每轮参考</span></div>
+            <span class="mc-badge mc-badge--enabled">已启用</span>
+          </div>
+          <div class="mc-card-meta"><span id="mcCenterPersonaMemoriesCount" class="mc-meta-val">—</span></div>
         </div>
+        <div class="mc-center-source-card">
+          <div class="mc-card-top">
+            <div class="mc-card-title">用户画像<span class="mc-card-subtitle">常驻</span></div>
+            <span class="mc-badge mc-badge--enabled">已启用</span>
+          </div>
+          <div class="mc-card-meta"><span id="mcCenterProfileChars" class="mc-meta-val">—</span></div>
+        </div>
+        <div class="mc-center-source-card">
+          <div class="mc-card-top">
+            <div class="mc-card-title">项目记忆<span class="mc-card-subtitle">项目话题</span></div>
+            <span class="mc-badge mc-badge--enabled">已启用</span>
+          </div>
+          <div id="mcCenterProjectStatus" class="mc-card-status"></div>
+        </div>
+      </div>
 
+      <!-- 入口 -->
+      <div class="mc-center-actions" aria-label="记忆入口">
+        <button class="mc-manage-btn" id="mcLegacyOpenBtn" type="button">
+          <span class="mc-manage-btn-label">记忆管理</span>
+          <span class="mc-manage-btn-arrow">→</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 记忆调试中心弹窗 -->
+  <div id="memoryDebugOverlay" class="overlay hidden">
+    <div class="modal memory-center-modal memory-debug-modal">
+      <div class="mc-header">
+        <button id="memoryDebugBackBtn" type="button" class="mc-back-btn">← 记忆</button>
+        <span class="mc-header-title">调试中心</span>
+        <button id="closeMemoryDebugButton" type="button" class="mc-close-btn" aria-label="关闭">✕</button>
+      </div>
+
+      <div class="mc-pane memory-debug-pane">
         <!-- 高级：记忆来源（折叠） -->
         <details class="mc-advanced">
           <summary class="mc-advanced-summary">记忆来源</summary>
@@ -231,6 +259,19 @@
           </div>
         </details>
 
+        <details class="mc-advanced">
+          <summary class="mc-advanced-summary">最近记忆元数据</summary>
+          <div id="mcRecentDebugPanel" class="mc-debug">
+            <div class="mc-debug-placeholder">打开调试中心后加载。</div>
+          </div>
+        </details>
+
+        <details class="mc-advanced">
+          <summary class="mc-advanced-summary">审计与旧系统</summary>
+          <div id="mcAuditPanel" class="mc-debug">
+            <div class="mc-debug-placeholder">打开调试中心后加载。</div>
+          </div>
+        </details>
       </div>
     </div>
   </div>
@@ -244,8 +285,8 @@
     <div id="statusPanelRows"></div>
   </div>
 
-  <script src="public-config.js?v=cloudflare-0074" charset="utf-8"></script>
+  <script src="public-config.js?v=cloudflare-0078" charset="utf-8"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=cloudflare-0074" charset="utf-8"></script>
+  <script src="app.js?v=cloudflare-0078" charset="utf-8"></script>
 </body>
 </html>
