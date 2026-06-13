@@ -3482,9 +3482,30 @@ document.getElementById("mcLegacyOpenBtn")?.addEventListener("click", () => {
   toggleMemoryButton?.click();
 });
 
+// ── Tab switching ──────────────────────────────────────────────────────────
+function _mcSwitchTab(tabId) {
+  const tabs = ["mcTabRecent", "mcTabManage"];
+  const panes = ["mcPaneRecent", "mcPaneManage"];
+  tabs.forEach((id, i) => {
+    const tab = document.getElementById(id);
+    const pane = document.getElementById(panes[i]);
+    const isActive = id === tabId;
+    if (tab) {
+      tab.classList.toggle("mc-tab--active", isActive);
+      tab.setAttribute("aria-selected", String(isActive));
+    }
+    if (pane) pane.classList.toggle("mc-pane--hidden", !isActive);
+  });
+}
+
+document.getElementById("mcTabRecent")?.addEventListener("click", () => _mcSwitchTab("mcTabRecent"));
+document.getElementById("mcTabManage")?.addEventListener("click", () => _mcSwitchTab("mcTabManage"));
+
 function openMemoryCenter() {
   if (!memoryCenterOverlay) return;
   memoryCenterOverlay.classList.remove("hidden");
+  // 默认显示「最近」tab
+  _mcSwitchTab("mcTabRecent");
   // 读取最近一次 chat 的 memory debug（内存优先，fallback localStorage）
   let debug = window.lastMemoryDebug || null;
   if (!debug) {

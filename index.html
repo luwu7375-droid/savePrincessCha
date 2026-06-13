@@ -132,143 +132,105 @@
   <!-- 记忆中枢弹窗 -->
   <div id="memoryCenterOverlay" class="overlay hidden">
     <div class="modal memory-center-modal">
-      <div class="modal-header">
-        <span>记忆</span>
-        <button id="closeMemoryCenterButton" type="button">✕</button>
+      <!-- Header -->
+      <div class="mc-header">
+        <span class="mc-header-title">记忆</span>
+        <button id="closeMemoryCenterButton" type="button" class="mc-close-btn" aria-label="关闭">✕</button>
       </div>
-      <div class="memory-center-body">
-        <!-- 最近更新区域 -->
-        <div class="mc-section-label">最近更新</div>
+
+      <!-- Tab nav -->
+      <div class="mc-tabs" role="tablist">
+        <button class="mc-tab mc-tab--active" id="mcTabRecent" role="tab" aria-selected="true" aria-controls="mcPaneRecent">最近</button>
+        <button class="mc-tab" id="mcTabManage" role="tab" aria-selected="false" aria-controls="mcPaneManage">管理</button>
+      </div>
+
+      <!-- Tab: 最近记忆 -->
+      <div class="mc-pane" id="mcPaneRecent" role="tabpanel" aria-labelledby="mcTabRecent">
         <div id="mcRecentUpdates" class="mc-recent-updates"></div>
+      </div>
 
-        <!-- Provider 卡片区 -->
-        <div class="mc-section-label">记忆来源</div>
-        <div class="mc-providers">
+      <!-- Tab: 管理 -->
+      <div class="mc-pane mc-pane--hidden" id="mcPaneManage" role="tabpanel" aria-labelledby="mcTabManage">
 
-          <!-- persona_memories -->
-          <div class="mc-card mc-card--enabled">
-            <div class="mc-card-top">
-              <div class="mc-card-title">长期记忆<span class="mc-card-subtitle">每轮注入</span></div>
-              <div class="mc-badges">
+        <!-- 管理入口 -->
+        <div class="mc-manage-entry">
+          <button class="mc-manage-btn" id="mcLegacyOpenBtn" type="button">
+            <span class="mc-manage-btn-label">管理全部记忆</span>
+            <span class="mc-manage-btn-arrow">→</span>
+          </button>
+        </div>
+
+        <!-- 高级：记忆来源（折叠） -->
+        <details class="mc-advanced">
+          <summary class="mc-advanced-summary">记忆来源</summary>
+          <div class="mc-providers">
+
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">长期记忆<span class="mc-card-subtitle">每轮注入</span></div>
                 <span class="mc-badge mc-badge--enabled">已启用</span>
               </div>
+              <div class="mc-card-meta"><span id="mcPersonaMemoriesCount" class="mc-meta-val">—</span></div>
+              <div class="mc-card-desc">人格、生活、关系等背景，每轮参考。</div>
             </div>
-            <div class="mc-card-meta">
-              <span id="mcPersonaMemoriesCount" class="mc-meta-val">—</span>
-            </div>
-            <div class="mc-card-desc">包含人格、生活、关系等背景，每轮对话均会参考。通过"记忆管理（高级）"手动管理。</div>
-          </div>
 
-          <!-- mastodon_profile -->
-          <div class="mc-card mc-card--enabled">
-            <div class="mc-card-top">
-              <div class="mc-card-title">用户画像<span class="mc-card-subtitle">常驻</span></div>
-              <div class="mc-badges">
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">用户画像<span class="mc-card-subtitle">常驻</span></div>
                 <span id="mcProfileEnabledBadge" class="mc-badge mc-badge--enabled">已启用</span>
               </div>
+              <div class="mc-card-meta"><span id="mcProfileChars" class="mc-meta-val">—</span></div>
+              <div id="mcProfileStatus" class="mc-card-status"></div>
             </div>
-            <div class="mc-card-meta">
-              <span id="mcProfileChars" class="mc-meta-val">—</span>
-            </div>
-            <div id="mcProfileStatus" class="mc-card-status"></div>
-            <div class="mc-card-desc">描述用户基本信息，帮助 G 理解你的背景和偏好。</div>
-          </div>
 
-          <!-- project_memory -->
-          <div class="mc-card mc-card--enabled">
-            <div class="mc-card-top">
-              <div class="mc-card-title">项目记忆<span class="mc-card-subtitle">话题触发</span></div>
-              <div class="mc-badges">
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">项目记忆<span class="mc-card-subtitle">话题触发</span></div>
                 <span class="mc-badge mc-badge--enabled">已启用</span>
               </div>
             </div>
-            <div class="mc-card-meta">
-            </div>
-            <div class="mc-card-desc">聊到项目、代码、写作时按需参考。</div>
-          </div>
 
-          <!-- mastodon_timeline -->
-          <div class="mc-card mc-card--enabled">
-            <div class="mc-card-top">
-              <div class="mc-card-title">时间线档案<span class="mc-card-subtitle">按需召回</span></div>
-              <div class="mc-badges">
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">时间线档案<span class="mc-card-subtitle">按需召回</span></div>
                 <span class="mc-badge mc-badge--enabled">已启用</span>
               </div>
+              <div id="mcTimelineStatus" class="mc-card-status"></div>
             </div>
-            <div class="mc-card-meta">
-            </div>
-            <div id="mcTimelineStatus" class="mc-card-status"></div>
-            <div class="mc-card-desc">只在问到年份、地点、经历类问题时才会参考。</div>
-          </div>
 
-          <!-- openai_archive (已退役，卡片保留供状态展示) -->
-          <div class="mc-card mc-card--reserved">
-            <div class="mc-card-top">
-              <div class="mc-card-title">历史档案<span class="mc-card-subtitle">已退役</span></div>
-              <div class="mc-badges">
+            <div class="mc-card mc-card--reserved">
+              <div class="mc-card-top">
+                <div class="mc-card-title">历史档案<span class="mc-card-subtitle">已退役</span></div>
                 <span class="mc-badge mc-badge--reserved">未注入</span>
               </div>
+              <div id="mcArchiveStatus" class="mc-card-status"></div>
             </div>
-            <div class="mc-card-meta">
-            </div>
-            <div id="mcArchiveStatus" class="mc-card-status"></div>
-            <div class="mc-card-desc">openai_archive 已退役，不再注入。历史档案召回待 origin_archive 重新设计。</div>
-          </div>
 
-          <!-- conversation_history -->
-          <div class="mc-card mc-card--enabled">
-            <div class="mc-card-top">
-              <div class="mc-card-title">历史对话<span class="mc-card-subtitle">按需召回</span></div>
-              <div class="mc-badges">
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">历史对话<span class="mc-card-subtitle">按需召回</span></div>
                 <span class="mc-badge mc-badge--enabled">已启用</span>
               </div>
             </div>
-            <div class="mc-card-meta">
-            </div>
-            <div class="mc-card-desc">提到"上次聊的""之前说过"等关键词时，跨会话检索相关记录。</div>
-          </div>
 
-          <!-- auto_memory_vault -->
-          <div class="mc-card mc-card--enabled">
-            <div class="mc-card-top">
-              <div class="mc-card-title">自动记忆<span class="mc-card-subtitle">对话后提取</span></div>
-              <div class="mc-badges">
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">自动记忆<span class="mc-card-subtitle">对话后提取</span></div>
                 <span class="mc-badge mc-badge--enabled">已启用</span>
               </div>
             </div>
-            <div class="mc-card-meta">
-            </div>
-            <div class="mc-card-desc">每次对话后自动提取关键信息，确认后沉淀为长期记忆。可在上方"最近更新"区域查看和管理。</div>
-          </div>
 
-        </div>
-
-        <!-- 手动管理区块 -->
-        <div class="mc-section-label">手动管理</div>
-        <div class="mc-legacy-block">
-          <div class="mc-legacy-header">
-            <span class="mc-legacy-title">长期记忆</span>
-            <span class="mc-badge mc-badge--enabled">当前系统</span>
           </div>
-          <div class="mc-legacy-rows">
-            <div class="mc-legacy-row">
-              <span class="mc-legacy-key">已写入记忆</span>
-              <span class="mc-legacy-val">支持启用、禁用、编辑、删除</span>
-            </div>
-            <div class="mc-legacy-row">
-              <span class="mc-legacy-key">自动记忆候选</span>
-              <span class="mc-legacy-val">可在上方"最近更新"查看</span>
-            </div>
-          </div>
-          <div class="mc-legacy-desc">管理当前有效记忆：已写入的长期记忆条目，以及自动记忆沉淀候选。</div>
-          <button class="mc-legacy-open-btn" id="mcLegacyOpenBtn">记忆管理（高级）</button>
-        </div>
+        </details>
 
-        <!-- Debug 区域 -->
-        <div class="mc-section-label mc-section-label--debug">本轮记忆状态</div>
-        <div id="mcDebugPanel" class="mc-debug">
-          <div class="mc-debug-placeholder">发送一条消息后显示。</div>
-        </div>
+        <!-- 高级：本轮状态（折叠） -->
+        <details class="mc-advanced">
+          <summary class="mc-advanced-summary">本轮记忆状态</summary>
+          <div id="mcDebugPanel" class="mc-debug">
+            <div class="mc-debug-placeholder">发送一条消息后显示。</div>
+          </div>
+        </details>
+
       </div>
     </div>
   </div>
