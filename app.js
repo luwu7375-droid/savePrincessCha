@@ -1,4 +1,4 @@
-console.log("build cloudflare-0077");
+console.log("build cloudflare-0078");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3567,31 +3567,39 @@ document.getElementById("memoryDebugBackBtn")?.addEventListener("click", () => {
 function openMemoryCenter() {
   if (!memoryCenterOverlay) return;
   memoryCenterOverlay.classList.remove("hidden");
-  renderMemorySourceSummary(getLastMemoryDebug());
+  renderMemoryCenterSummary(getLastMemoryDebug());
   renderRecentMemoryUpdates();
 }
 
-function renderMemorySourceSummary(debug) {
-  const list = document.getElementById("mcSourceSummaryList");
-  if (!list) return;
-  list.innerHTML = "";
-  const providers = Array.isArray(debug?.active_memory_providers)
-    ? debug.active_memory_providers
-    : [];
-  const visibleProviders = providers.filter((p) => p !== "openai_archive" && p !== "personality_layers");
-  if (visibleProviders.length === 0) {
-    const empty = document.createElement("span");
-    empty.className = "mc-source-summary-empty";
-    empty.textContent = "发送一条消息后显示";
-    list.appendChild(empty);
-    return;
+function renderMemoryCenterSummary(debug) {
+  const personaCountEl = document.getElementById("mcCenterPersonaMemoriesCount");
+  const profileCharsEl = document.getElementById("mcCenterProfileChars");
+  const projectStatusEl = document.getElementById("mcCenterProjectStatus");
+
+  if (personaCountEl) {
+    const count = debug?.persona_memories_count;
+    personaCountEl.textContent = typeof count === "number" ? `${count} 条` : "—";
   }
-  visibleProviders.forEach((provider) => {
-    const item = document.createElement("span");
-    item.className = "mc-source-pill";
-    item.textContent = MEMORY_PROVIDER_LABELS[provider] || provider;
-    list.appendChild(item);
-  });
+
+  if (profileCharsEl) {
+    const chars = debug?.mastodon_profile_chars;
+    const tokens = debug?.mastodon_profile_tokens_estimated ?? Math.ceil((chars || 0) / 3.5);
+    profileCharsEl.textContent = chars ? `${chars} chars · ~${tokens} tokens` : "—";
+  }
+
+  if (projectStatusEl) {
+    if (!debug) {
+      projectStatusEl.textContent = "";
+    } else if (debug.project_memory_recalled) {
+      projectStatusEl.innerHTML =
+        `<span class="mc-status-dot mc-status-dot--ok"></span>` +
+        `<span class="mc-status-text">本轮已参考</span>`;
+    } else {
+      projectStatusEl.innerHTML =
+        `<span class="mc-status-dot mc-status-dot--idle"></span>` +
+        `<span class="mc-status-text">项目话题时参考</span>`;
+    }
+  }
 }
 
 async function renderRecentMemoryDebug() {

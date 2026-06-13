@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>救公主</title>
-  <link rel="stylesheet" href="style.css?v=cloudflare-0077">
+  <link rel="stylesheet" href="style.css?v=cloudflare-0078">
 </head>
 <body>
   <!-- 登录 overlay -->
@@ -143,14 +143,28 @@
         <div id="mcRecentUpdates" class="mc-recent-updates"></div>
       </div>
 
-      <!-- 当前有效来源摘要 -->
-      <div class="mc-source-summary" id="mcSourceSummary">
-        <div class="mc-source-summary-head">
-          <div class="mc-source-summary-title">当前有效来源</div>
-          <button class="mc-source-debug-btn" id="mcDebugOpenBtn" type="button">调试</button>
+      <!-- 当前有效记忆来源 -->
+      <div class="mc-center-sources" id="mcCenterSources">
+        <div class="mc-center-source-card">
+          <div class="mc-card-top">
+            <div class="mc-card-title">长期记忆<span class="mc-card-subtitle">每轮参考</span></div>
+            <span class="mc-badge mc-badge--enabled">已启用</span>
+          </div>
+          <div class="mc-card-meta"><span id="mcCenterPersonaMemoriesCount" class="mc-meta-val">—</span></div>
         </div>
-        <div class="mc-source-summary-list" id="mcSourceSummaryList">
-          <span class="mc-source-summary-empty">发送一条消息后显示</span>
+        <div class="mc-center-source-card">
+          <div class="mc-card-top">
+            <div class="mc-card-title">用户画像<span class="mc-card-subtitle">常驻</span></div>
+            <span class="mc-badge mc-badge--enabled">已启用</span>
+          </div>
+          <div class="mc-card-meta"><span id="mcCenterProfileChars" class="mc-meta-val">—</span></div>
+        </div>
+        <div class="mc-center-source-card">
+          <div class="mc-card-top">
+            <div class="mc-card-title">项目记忆<span class="mc-card-subtitle">项目话题</span></div>
+            <span class="mc-badge mc-badge--enabled">已启用</span>
+          </div>
+          <div id="mcCenterProjectStatus" class="mc-card-status"></div>
         </div>
       </div>
 
@@ -271,8 +285,8 @@
     <div id="statusPanelRows"></div>
   </div>
 
-  <script src="public-config.js?v=cloudflare-0077" charset="utf-8"></script>
+  <script src="public-config.js?v=cloudflare-0078" charset="utf-8"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=cloudflare-0077" charset="utf-8"></script>
+  <script src="app.js?v=cloudflare-0078" charset="utf-8"></script>
 </body>
 </html>
