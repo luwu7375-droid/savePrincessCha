@@ -4062,6 +4062,7 @@ var memoryCenterV2State = {
   auditLoaded: false,
   query: "",
   statusFilter: "all",
+  categoryFilter: "all",
 };
 
 var MEMORY_CENTER_CATEGORY_CONFIG = {
@@ -4220,10 +4221,11 @@ function mcBridgeGetDisplayItems() {
   return normalizeMemoryDisplayItems();
 }
 
-function mcBridgeGetArchiveItems(query, statusFilter) {
+function mcBridgeGetArchiveItems(query, statusFilter, categoryFilter) {
   const items = normalizeMemoryDisplayItems();
   const q = (query || "").trim().toLowerCase();
   const filter = statusFilter || "all";
+  const catFilter = categoryFilter || "all";
   return items.filter((item) => {
     const matchesQuery = !q || item.searchText.includes(q);
     const matchesStatus =
@@ -4232,7 +4234,8 @@ function mcBridgeGetArchiveItems(query, statusFilter) {
       (filter === "disabled" && item.enabled === false) ||
       (filter === "instructions" && item.source === "instructions") ||
       (filter === "recent" && item.source === "recent");
-    return matchesQuery && matchesStatus;
+    const matchesCategory = catFilter === "all" || item.categoryKey === catFilter;
+    return matchesQuery && matchesStatus && matchesCategory;
   });
 }
 
@@ -4511,7 +4514,21 @@ function renderMemoryArchiveView(root, options = {}) {
     memoryCenterV2State.statusFilter = event.target.value;
     renderMemoryCenterCurrentView();
   });
-  toolbar.append(input, select);
+
+  const catSelect = mcEl("select", "mc-status-select");
+  const catOptions = [["all", "全部分类"], ...Object.entries(MEMORY_CENTER_CATEGORY_CONFIG).map(([key, cfg]) => [key, cfg.label])];
+  catOptions.forEach(([value, label]) => {
+    const option = mcEl("option", "", label);
+    option.value = value;
+    option.selected = memoryCenterV2State.categoryFilter === value;
+    catSelect.appendChild(option);
+  });
+  catSelect.addEventListener("change", (event) => {
+    memoryCenterV2State.categoryFilter = event.target.value;
+    renderMemoryCenterCurrentView();
+  });
+
+  toolbar.append(input, select, catSelect);
   root.appendChild(toolbar);
 
   const grid = mcEl("div", "mc-category-grid");
@@ -4531,7 +4548,7 @@ function renderMemoryArchiveView(root, options = {}) {
   root.appendChild(grid);
 
   const list = mcEl("div", "mc-card-list mc-card-list--archive");
-  const filtered = mcBridgeGetArchiveItems(memoryCenterV2State.query, memoryCenterV2State.statusFilter);
+  const filtered = mcBridgeGetArchiveItems(memoryCenterV2State.query, memoryCenterV2State.statusFilter, memoryCenterV2State.categoryFilter);
   const _archiveSnap = mcBridgeGetLabSnapshot();
 
   if (_archiveSnap.loadingStates.loadingArchive && !_archiveSnap.loadingStates.archiveLoaded) {
@@ -4613,10 +4630,13 @@ function renderMemoryLabView(root) {
   const items = snap.displayItems;
 
   const metrics = mcEl("div", "mc-lab-metrics");
+  const tokenVal = (typeof debug?.input_tokens === "number" && typeof debug?.output_tokens === "number")
+    ? `↑${debug.input_tokens} ↓${debug.output_tokens}`
+    : (typeof debug?.input_tokens === "number" ? `↑${debug.input_tokens}` : "暂无本轮数据");
   [
     ["当前模型", debug?.model || "暂无本轮数据"],
-    ["本轮 token", "暂无真实数据"],
-    ["召回记忆", debug ? `${debug.memory_provider_count ?? debug.active_memory_providers?.length ?? 0} 个来源` : "暂无本轮数据"],
+    ["本轮 token", tokenVal],
+    ["召回来源", debug ? `${debug.memory_provider_count ?? debug.active_memory_providers?.length ?? 0} 个` : "暂无本轮数据"],
     ["注入 token", typeof debug?.memory_context_tokens_estimated === "number" ? String(debug.memory_context_tokens_estimated) : "暂无本轮数据"],
   ].forEach(([label, value]) => {
     const card = mcEl("div", "mc-lab-metric");
@@ -4684,15 +4704,90 @@ function renderMemoryLabPanel(title, rows) {
 function renderRecallDebugRows(debug) {
   if (!debug) return [];
   const providers = Array.isArray(debug.active_memory_providers) ? debug.active_memory_providers : [];
-  return [
-    ["来源", providers.length ? providers.map((p) => MEMORY_PROVIDER_LABELS[p] || p).join("、") : "无"],
-    ["项目记忆", debug.project_memory_recalled ? "已召回" : "未触发"],
-    ["写作记忆", debug.writing_memory_recalled ? "已召回" : "未触发"],
-    ["生活上下文", debug.life_context_recalled ? "已召回" : "未触发"],
-    ["关系上下文", debug.relationship_context_recalled ? "已召回" : "未触发"],
-    ["历史对话", debug.conversation_history_recalled ? `${debug.conversation_history_hit_count ?? 0} 条` : "未触发"],
-    ["时间线", debug.timeline_recalled ? `${debug.timeline_hit_count ?? 0} 个命中` : "未触发"],
-  ];
+  const rows = [];
+
+  // 路由决策
+  if (debug.topic_route) rows.push(["话题路由", debug.topic_route + (debug.secondary_route ? ` / ${debug.secondary_route}` : "")]);
+
+  // 激活来源
+  rows.push(["激活来源", providers.length ? providers.map((p) => MEMORY_PROVIDER_LABELS[p] || p).join("、") : "无"]);
+
+  // 长期记忆（persona_memories）
+  if (debug.persona_memories_loaded) {
+    const cats = Array.isArray(debug.persona_memories_categories) ? debug.persona_memories_categories.join("、") : "";
+    rows.push(["长期记忆", `已加载 ${debug.persona_memories_count ?? 0} 条${cats ? `（${cats}）` : ""}`]);
+  } else if (debug.persona_memories_error) {
+    rows.push(["长期记忆", `加载失败: ${debug.persona_memories_error}`]);
+  }
+
+  // 用户画像
+  if (debug.mastodon_profile_loaded) {
+    const chars = debug.mastodon_profile_chars ?? 0;
+    const tok = debug.mastodon_profile_tokens_estimated ?? 0;
+    rows.push(["用户画像", `${chars} 字符 / ~${tok} tokens`]);
+  }
+
+  // 项目记忆
+  if (debug.project_memory_recalled) {
+    const hits = debug.project_memory_hit_count ?? 0;
+    const keys = Array.isArray(debug.project_memory_keys) ? debug.project_memory_keys.join("、") : "";
+    rows.push(["项目记忆", `已召回 ${hits} 条${keys ? `（${keys}）` : ""}`]);
+  } else {
+    const reason = debug.project_memory_suppressed_reason || debug.project_memory_reason || "未触发";
+    rows.push(["项目记忆", reason]);
+  }
+
+  // 写作记忆
+  if (debug.writing_memory_recalled) {
+    rows.push(["写作记忆", "已召回"]);
+  } else {
+    rows.push(["写作记忆", debug.writing_memory_reason || "未触发"]);
+  }
+
+  // 生活上下文
+  if (debug.life_context_recalled) {
+    rows.push(["生活上下文", "已召回"]);
+  } else {
+    rows.push(["生活上下文", debug.life_context_reason || "未触发"]);
+  }
+
+  // 关系上下文
+  if (debug.relationship_context_recalled) {
+    rows.push(["关系上下文", "已召回"]);
+  } else {
+    rows.push(["关系上下文", debug.relationship_context_reason || "未触发"]);
+  }
+
+  // 历史对话
+  if (debug.conversation_history_recalled) {
+    const hitCount = debug.conversation_history_hit_count ?? 0;
+    const convIds = Array.isArray(debug.conversation_history_hit_conversation_ids)
+      ? debug.conversation_history_hit_conversation_ids.slice(0, 3).join("、")
+      : "";
+    rows.push(["历史对话", `${hitCount} 条${convIds ? `（会话: ${convIds}）` : ""}`]);
+  } else {
+    rows.push(["历史对话", debug.conversation_history_reason || "未触发"]);
+  }
+
+  // 时间线
+  if (debug.mastodon_timeline_enabled) {
+    if (debug.timeline_recalled) {
+      const hitKeys = Array.isArray(debug.mastodon_timeline_hit_keys) ? debug.mastodon_timeline_hit_keys.join("、") : "";
+      rows.push(["时间线", `${debug.timeline_hit_count ?? 0} 个命中${hitKeys ? `（${hitKeys}）` : ""}`]);
+    } else {
+      rows.push(["时间线", debug.mastodon_timeline_reason || "未触发"]);
+    }
+  }
+
+  // 历史档案（openai_archive）
+  if (debug.openai_archive_recalled) {
+    const hitKeys = Array.isArray(debug.openai_archive_keys) ? debug.openai_archive_keys.join("、") : "";
+    rows.push(["历史档案", `${debug.openai_archive_hit_count ?? 0} 条${hitKeys ? `（${hitKeys}）` : ""}`]);
+  } else if (debug.openai_archive_loaded === false) {
+    rows.push(["历史档案", debug.openai_archive_reason || "未触发"]);
+  }
+
+  return rows;
 }
 
 function renderAuditRows(audit, loadingStates, errors) {
@@ -4702,12 +4797,44 @@ function renderAuditRows(audit, loadingStates, errors) {
   if (!getMemoryToken() && !audit) return [["状态", "需要记忆口令后显示"]];
   if (errors.auditError && !audit) return [["状态", errors.auditError]];
   if (!audit) return [];
-  return [
-    ["memories", `${audit.memories?.total ?? 0} 条`],
-    ["instructions", `${audit.instructions?.total ?? 0} 条`],
-    ["openai_archive", `${audit.openai_archive_entries?.enabled_count ?? 0}/${audit.openai_archive_entries?.total ?? 0} enabled`],
-    ["persona_profile", `${audit.persona_profile?.enabled_count ?? 0}/${audit.persona_profile?.total ?? 0} enabled`],
-  ];
+
+  const rows = [];
+
+  // 快照时间
+  if (audit.generated_at) rows.push(["快照时间", mcFormatDateTime(audit.generated_at)]);
+
+  // 总量
+  rows.push(["memories", `${audit.memories?.total ?? 0} 条`]);
+  rows.push(["instructions", `${audit.instructions?.total ?? 0} 条`]);
+  rows.push(["openai_archive", `${audit.openai_archive_entries?.enabled_count ?? 0}/${audit.openai_archive_entries?.total ?? 0} enabled`]);
+  rows.push(["persona_profile", `${audit.persona_profile?.enabled_count ?? 0}/${audit.persona_profile?.total ?? 0} enabled`]);
+
+  // memories by_category 分布
+  const byCategory = audit.memories?.by_category;
+  if (byCategory && typeof byCategory === "object") {
+    Object.entries(byCategory).forEach(([cat, data]) => {
+      if (data?.count > 0) {
+        const originParts = data.origin_distribution
+          ? Object.entries(data.origin_distribution)
+              .filter(([, n]) => n > 0)
+              .map(([origin, n]) => `${origin}:${n}`)
+              .join(" ")
+          : "";
+        rows.push([`  └ ${cat}`, `${data.count} 条${originParts ? `（${originParts}）` : ""}`]);
+      }
+    });
+  }
+
+  // persona_profile rows（最多 3 条预览）
+  const profileRows = Array.isArray(audit.persona_profile?.rows) ? audit.persona_profile.rows : [];
+  if (profileRows.length) {
+    profileRows.slice(0, 3).forEach((r, i) => {
+      const preview = r.content_preview ? r.content_preview.slice(0, 40) : r.note || "";
+      rows.push([`  画像 ${i + 1}`, `${r.enabled ? "✓" : "✗"} ${preview}`]);
+    });
+  }
+
+  return rows;
 }
 
 function renderRecentLabRows(rows, loadingStates, errors, recentSource) {
@@ -4716,10 +4843,26 @@ function renderRecentLabRows(rows, loadingStates, errors, recentSource) {
   if (loadingStates.loadingRecent) return [["状态", "最近沉淀加载中..."]];
   if (errors.recentError) return [["状态", errors.recentError]];
   if (!rows.length) return [];
-  return rows.slice(0, 5).map((row, index) => [
-    `${index + 1}. ${row.category || row.candidate_type || recentSource || "memory"}`,
-    mcFormatDateTime(row.created_at || row.promoted_at),
-  ]);
+  const result = [];
+  rows.slice(0, 5).forEach((row, index) => {
+    const cat = row.category || row.candidate_type || recentSource || "memory";
+    const time = mcFormatDateTime(row.created_at || row.promoted_at);
+    result.push([`${index + 1}. ${cat}`, time]);
+
+    // status
+    if (row.status) result.push(["  状态", row.status]);
+
+    // confidence / sensitivity（candidates 专有字段）
+    if (typeof row.confidence === "number") result.push(["  置信度", String(row.confidence)]);
+    if (typeof row.sensitivity === "number") result.push(["  敏感度", String(row.sensitivity)]);
+
+    // source_preview
+    if (row.source_preview) {
+      const preview = String(row.source_preview).slice(0, 60);
+      result.push(["  来源摘要", preview.length < String(row.source_preview).length ? `${preview}…` : preview]);
+    }
+  });
+  return result;
 }
 
 function renderLabEventRows(debug, audit, recentRows) {
