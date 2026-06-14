@@ -4211,6 +4211,156 @@ function normalizeMemoryDisplayItems() {
   });
 }
 
+// ── Memory Center Bridge ──────────────────────────────────────────────────────
+// Getters and fetch wrappers. Four render functions consume only these;
+// they do not read memoryCenterV2State raw fields directly (except
+// state.query / state.statusFilter which are UI-interaction values).
+
+function mcBridgeGetDisplayItems() {
+  return normalizeMemoryDisplayItems();
+}
+
+function mcBridgeGetArchiveItems(query, statusFilter) {
+  const items = normalizeMemoryDisplayItems();
+  const q = (query || "").trim().toLowerCase();
+  const filter = statusFilter || "all";
+  return items.filter((item) => {
+    const matchesQuery = !q || item.searchText.includes(q);
+    const matchesStatus =
+      filter === "all" ||
+      (filter === "enabled" && item.source === "memories" && item.enabled !== false) ||
+      (filter === "disabled" && item.enabled === false) ||
+      (filter === "instructions" && item.source === "instructions") ||
+      (filter === "recent" && item.source === "recent");
+    return matchesQuery && matchesStatus;
+  });
+}
+
+function mcBridgeGetTimelineItems() {
+  return normalizeMemoryDisplayItems().filter((item) => mcSafeDate(item.createdAt));
+}
+
+function mcBridgeGetLabSnapshot() {
+  const state = memoryCenterV2State;
+  const debug = getLastMemoryDebug();
+  const items = normalizeMemoryDisplayItems();
+  return {
+    debug,
+    audit: state.audit,
+    recentRows: state.recentRows,
+    displayItems: items,
+    sourceDistribution: {
+      total: items.length,
+      memories: items.filter((i) => i.sourceType === "memories").length,
+      instructions: items.filter((i) => i.isInstruction).length,
+      recent: items.filter((i) => i.isRecent).length,
+    },
+    loadingStates: {
+      loadingRecent: state.loadingRecent,
+      loadingArchive: state.loadingArchive,
+      loadingAudit: state.loadingAudit,
+      archiveLoaded: state.archiveLoaded,
+      auditLoaded: state.auditLoaded,
+    },
+    errors: {
+      recentError: state.recentError,
+      archiveError: state.archiveError,
+      auditError: state.auditError,
+    },
+    recentSource: state.recentSource,
+  };
+}
+
+async function mcBridgeFetchRecent() {
+  const state = memoryCenterV2State;
+  state.loadingRecent = true;
+  state.recentError = "";
+  try {
+    const userId = currentUserId || "";
+    const data = await fetchMemoryCenterJson(`?type=recent&userId=${encodeURIComponent(userId)}`);
+    state.recentSource = data.source || "";
+    state.recentRows = Array.isArray(data.rows) ? data.rows : [];
+  } catch (err) {
+    state.recentError = err instanceof Error ? err.message : String(err);
+  } finally {
+    state.loadingRecent = false;
+  }
+}
+
+async function mcBridgeFetchMemories() {
+  const state = memoryCenterV2State;
+  try {
+    const value = await fetchMemoryCenterJson("");
+    state.memories = Array.isArray(value) ? value : [];
+    return true;
+  } catch (err) {
+    state.archiveError = err?.message || "档案加载失败";
+    return false;
+  }
+}
+
+async function mcBridgeFetchInstructions() {
+  const state = memoryCenterV2State;
+  try {
+    const value = await fetchMemoryCenterJson("?type=instructions");
+    state.instructions = Array.isArray(value) ? value : [];
+    return true;
+  } catch (err) {
+    if (!state.archiveError) state.archiveError = err?.message || "常驻背景加载失败";
+    return false;
+  }
+}
+
+async function mcBridgeFetchAudit() {
+  const state = memoryCenterV2State;
+  try {
+    state.audit = await fetchMemoryCenterJson("?type=audit");
+    state.auditLoaded = true;
+    return true;
+  } catch (err) {
+    state.auditError = err?.message || "审计加载失败";
+    return false;
+  }
+}
+
+async function mcBridgeRefreshAll() {
+  const state = memoryCenterV2State;
+
+  // Phase 1: recent (no token required)
+  state.loadingRecent = true;
+  state.recentError = "";
+  renderMemoryCenterCurrentView();
+  await mcBridgeFetchRecent();
+  renderMemoryCenterCurrentView();
+
+  // Phase 2: archive + audit (token required)
+  if (!getMemoryToken()) {
+    state.archiveError = "需要记忆口令后显示完整档案";
+    state.auditError = "需要记忆口令后显示审计";
+    return;
+  }
+
+  state.loadingArchive = true;
+  state.loadingAudit = true;
+  state.archiveError = "";
+  state.auditError = "";
+  renderMemoryCenterCurrentView();
+
+  const [memOk, instOk, auditOk] = await Promise.all([
+    mcBridgeFetchMemories(),
+    mcBridgeFetchInstructions(),
+    mcBridgeFetchAudit(),
+  ]);
+
+  state.archiveLoaded = memOk || instOk;
+  state.loadingArchive = false;
+  state.loadingAudit = false;
+  renderMemoryCenterCurrentView();
+}
+
+// ── End Memory Center Bridge ──────────────────────────────────────────────────
+
+
 function mcSetHeader(view) {
   const meta = MEMORY_CENTER_VIEW_META[view] || MEMORY_CENTER_VIEW_META.room;
   const title = document.getElementById("mcViewTitle");
@@ -4280,7 +4430,7 @@ function renderMemoryCenterCurrentView(options = {}) {
 }
 
 function renderMemoryRoomView(root) {
-  const items = normalizeMemoryDisplayItems();
+  const items = mcBridgeGetDisplayItems();
   const debug = getLastMemoryDebug();
 
   const status = mcEl("div", "mc-room-status");
@@ -4298,12 +4448,13 @@ function renderMemoryRoomView(root) {
   const section = mcEl("section", "mc-section");
   section.appendChild(mcEl("h2", "mc-section-title", "最近"));
   const recentWrap = mcEl("div", "mc-card-list");
-  if (memoryCenterV2State.loadingRecent && !items.length) {
+  const _snap = mcBridgeGetLabSnapshot();
+  if (_snap.loadingStates.loadingRecent && !items.length) {
     mcRenderEmpty(recentWrap, "加载中...");
   } else if (items.length) {
     items.slice(0, 2).forEach((item) => recentWrap.appendChild(mcRenderMemoryCard(item, true)));
   } else {
-    mcRenderEmpty(recentWrap, memoryCenterV2State.recentError || "还没有当前记忆。");
+    mcRenderEmpty(recentWrap, _snap.errors.recentError || "还没有当前记忆。");
   }
   section.appendChild(recentWrap);
   root.appendChild(section);
@@ -4332,7 +4483,7 @@ function renderMemoryRoomView(root) {
 }
 
 function renderMemoryArchiveView(root, options = {}) {
-  const items = normalizeMemoryDisplayItems();
+  const items = mcBridgeGetDisplayItems();
   const toolbar = mcEl("div", "mc-archive-toolbar");
   const input = mcEl("input", "mc-search-input");
   input.type = "search";
@@ -4380,28 +4531,18 @@ function renderMemoryArchiveView(root, options = {}) {
   root.appendChild(grid);
 
   const list = mcEl("div", "mc-card-list mc-card-list--archive");
-  const q = memoryCenterV2State.query.trim().toLowerCase();
-  const filtered = items.filter((item) => {
-    const matchesQuery = !q || item.searchText.includes(q);
-    const filter = memoryCenterV2State.statusFilter;
-    const matchesStatus =
-      filter === "all" ||
-      (filter === "enabled" && item.source === "memories" && item.enabled !== false) ||
-      (filter === "disabled" && item.enabled === false) ||
-      (filter === "instructions" && item.source === "instructions") ||
-      (filter === "recent" && item.source === "recent");
-    return matchesQuery && matchesStatus;
-  });
+  const filtered = mcBridgeGetArchiveItems(memoryCenterV2State.query, memoryCenterV2State.statusFilter);
+  const _archiveSnap = mcBridgeGetLabSnapshot();
 
-  if (memoryCenterV2State.loadingArchive && !memoryCenterV2State.archiveLoaded) {
+  if (_archiveSnap.loadingStates.loadingArchive && !_archiveSnap.loadingStates.archiveLoaded) {
     mcRenderEmpty(list, "档案加载中...");
-  } else if (!getMemoryToken() && !memoryCenterV2State.archiveLoaded) {
+  } else if (!getMemoryToken() && !_archiveSnap.loadingStates.archiveLoaded) {
     mcRenderEmpty(list, "完整档案需要记忆口令；这里暂时只显示最近沉淀。");
     items.filter((item) => item.source === "recent").forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
   } else if (filtered.length) {
     filtered.forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
   } else {
-    mcRenderEmpty(list, memoryCenterV2State.archiveError || "没有匹配的记忆。");
+    mcRenderEmpty(list, _archiveSnap.errors.archiveError || "没有匹配的记忆。");
   }
   root.appendChild(list);
 
@@ -4414,7 +4555,7 @@ function renderMemoryArchiveView(root, options = {}) {
 }
 
 function renderMemoryTimelineView(root) {
-  const items = normalizeMemoryDisplayItems().filter((item) => mcSafeDate(item.createdAt));
+  const items = mcBridgeGetTimelineItems();
   const intro = mcEl("div", "mc-footnote", "热力条只代表当前已加载数据，不代表全量历史。");
   root.appendChild(intro);
 
@@ -4465,10 +4606,11 @@ function renderMemoryTimelineView(root) {
 }
 
 function renderMemoryLabView(root) {
-  const debug = getLastMemoryDebug();
-  const recentRows = memoryCenterV2State.recentRows;
-  const audit = memoryCenterV2State.audit;
-  const items = normalizeMemoryDisplayItems();
+  const snap = mcBridgeGetLabSnapshot();
+  const debug = snap.debug;
+  const recentRows = snap.recentRows;
+  const audit = snap.audit;
+  const items = snap.displayItems;
 
   const metrics = mcEl("div", "mc-lab-metrics");
   [
@@ -4485,17 +4627,17 @@ function renderMemoryLabView(root) {
 
   const grid = mcEl("div", "mc-lab-grid");
   grid.appendChild(renderMemoryLabPanel("本轮召回", renderRecallDebugRows(debug)));
-  grid.appendChild(renderMemoryLabPanel("记忆审计", renderAuditRows(audit)));
-  grid.appendChild(renderMemoryLabPanel("最近沉淀", renderRecentLabRows(recentRows)));
+  grid.appendChild(renderMemoryLabPanel("记忆审计", renderAuditRows(audit, snap.loadingStates, snap.errors)));
+  grid.appendChild(renderMemoryLabPanel("最近沉淀", renderRecentLabRows(recentRows, snap.loadingStates, snap.errors, snap.recentSource)));
   grid.appendChild(renderMemoryLabPanel("事件日志", renderLabEventRows(debug, audit, recentRows)));
   root.appendChild(grid);
 
   // bridge 分布统计
   const distRows = [
-    ["总条目", String(items.length)],
-    ["memories", String(items.filter((i) => i.sourceType === "memories").length)],
-    ["instructions", String(items.filter((i) => i.isInstruction).length)],
-    ["recent", String(items.filter((i) => i.isRecent).length)],
+    ["总条目", String(snap.sourceDistribution.total)],
+    ["memories", String(snap.sourceDistribution.memories)],
+    ["instructions", String(snap.sourceDistribution.instructions)],
+    ["recent", String(snap.sourceDistribution.recent)],
   ];
   root.appendChild(renderMemoryLabPanel("bridge 分布", distRows));
 
@@ -4553,10 +4695,12 @@ function renderRecallDebugRows(debug) {
   ];
 }
 
-function renderAuditRows(audit) {
-  if (memoryCenterV2State.loadingAudit) return [["状态", "审计加载中..."]];
+function renderAuditRows(audit, loadingStates, errors) {
+  loadingStates = loadingStates || {};
+  errors = errors || {};
+  if (loadingStates.loadingAudit) return [["状态", "审计加载中..."]];
   if (!getMemoryToken() && !audit) return [["状态", "需要记忆口令后显示"]];
-  if (memoryCenterV2State.auditError && !audit) return [["状态", memoryCenterV2State.auditError]];
+  if (errors.auditError && !audit) return [["状态", errors.auditError]];
   if (!audit) return [];
   return [
     ["memories", `${audit.memories?.total ?? 0} 条`],
@@ -4566,12 +4710,14 @@ function renderAuditRows(audit) {
   ];
 }
 
-function renderRecentLabRows(rows) {
-  if (memoryCenterV2State.loadingRecent) return [["状态", "最近沉淀加载中..."]];
-  if (memoryCenterV2State.recentError) return [["状态", memoryCenterV2State.recentError]];
+function renderRecentLabRows(rows, loadingStates, errors, recentSource) {
+  loadingStates = loadingStates || {};
+  errors = errors || {};
+  if (loadingStates.loadingRecent) return [["状态", "最近沉淀加载中..."]];
+  if (errors.recentError) return [["状态", errors.recentError]];
   if (!rows.length) return [];
   return rows.slice(0, 5).map((row, index) => [
-    `${index + 1}. ${row.category || row.candidate_type || memoryCenterV2State.recentSource || "memory"}`,
+    `${index + 1}. ${row.category || row.candidate_type || recentSource || "memory"}`,
     mcFormatDateTime(row.created_at || row.promoted_at),
   ]);
 }
@@ -4597,62 +4743,8 @@ async function fetchMemoryCenterJson(path) {
 }
 
 async function refreshMemoryCenterData() {
-  memoryCenterV2State.loadingRecent = true;
-  memoryCenterV2State.recentError = "";
-  renderMemoryCenterCurrentView();
-  try {
-    const userId = currentUserId || "";
-    const data = await fetchMemoryCenterJson(`?type=recent&userId=${encodeURIComponent(userId)}`);
-    memoryCenterV2State.recentSource = data.source || "";
-    memoryCenterV2State.recentRows = Array.isArray(data.rows) ? data.rows : [];
-  } catch (err) {
-    memoryCenterV2State.recentError = err instanceof Error ? err.message : String(err);
-  } finally {
-    memoryCenterV2State.loadingRecent = false;
-    renderMemoryCenterCurrentView();
-  }
-
-  if (!getMemoryToken()) {
-    memoryCenterV2State.archiveError = "需要记忆口令后显示完整档案";
-    memoryCenterV2State.auditError = "需要记忆口令后显示审计";
-    return;
-  }
-
-  memoryCenterV2State.loadingArchive = true;
-  memoryCenterV2State.loadingAudit = true;
-  memoryCenterV2State.archiveError = "";
-  memoryCenterV2State.auditError = "";
-  renderMemoryCenterCurrentView();
-
-  const [memoriesResult, instructionsResult, auditResult] = await Promise.allSettled([
-    fetchMemoryCenterJson(""),
-    fetchMemoryCenterJson("?type=instructions"),
-    fetchMemoryCenterJson("?type=audit"),
-  ]);
-
-  if (memoriesResult.status === "fulfilled") {
-    memoryCenterV2State.memories = Array.isArray(memoriesResult.value) ? memoriesResult.value : [];
-  } else {
-    memoryCenterV2State.archiveError = memoriesResult.reason?.message || "档案加载失败";
-  }
-
-  if (instructionsResult.status === "fulfilled") {
-    memoryCenterV2State.instructions = Array.isArray(instructionsResult.value) ? instructionsResult.value : [];
-  } else if (!memoryCenterV2State.archiveError) {
-    memoryCenterV2State.archiveError = instructionsResult.reason?.message || "常驻背景加载失败";
-  }
-
-  if (auditResult.status === "fulfilled") {
-    memoryCenterV2State.audit = auditResult.value;
-  } else {
-    memoryCenterV2State.auditError = auditResult.reason?.message || "审计加载失败";
-  }
-
-  memoryCenterV2State.archiveLoaded = memoriesResult.status === "fulfilled" || instructionsResult.status === "fulfilled";
-  memoryCenterV2State.auditLoaded = auditResult.status === "fulfilled";
-  memoryCenterV2State.loadingArchive = false;
-  memoryCenterV2State.loadingAudit = false;
-  renderMemoryCenterCurrentView();
+  // Delegates to bridge; kept for backwards-compat call sites.
+  await mcBridgeRefreshAll();
 }
 
 function openMemoryCenter() {
