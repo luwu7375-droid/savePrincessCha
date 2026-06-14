@@ -4607,6 +4607,8 @@ function renderMemoryCenterCurrentView(options = {}) {
   const root = document.getElementById("mcViewRoot");
   if (!root) return;
   root.innerHTML = "";
+  // 视图专属 class，供 CSS 控制各视图宽度
+  root.className = `mc-view-root mc-view-root--${memoryCenterV2State.view}`;
   mcSetHeader(memoryCenterV2State.view);
 
   if (memoryCenterV2State.view === "archive") {
@@ -4654,14 +4656,8 @@ function renderMemoryRoomView(root) {
   archiveLink.addEventListener("click", () => switchMemoryCenterView("archive"));
   root.appendChild(archiveLink);
 
-  const timelineLink = mcEl("button", "mc-inline-link mc-inline-link--secondary", "翻开时间线 →");
-  timelineLink.type = "button";
-  timelineLink.addEventListener("click", () => switchMemoryCenterView("timeline"));
-  root.appendChild(timelineLink);
-
   const actions = mcEl("div", "mc-room-actions");
   [
-    ["搜索", "archive", true],
     ["档案馆", "archive", false],
     ["实验室", "lab", false],
   ].forEach(([label, view, focus]) => {
