@@ -2631,6 +2631,9 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
 .mc-lab-key {
   color: oklch(68% 0.006 250);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mc-lab-row-value {

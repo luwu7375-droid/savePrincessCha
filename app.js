@@ -1,4 +1,4 @@
-console.log("build cloudflare-0082");
+console.log("build cloudflare-0083");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -4537,8 +4537,8 @@ function renderMemoryArchiveView(root, options = {}) {
     const card = mcEl("button", "mc-category-card");
     card.type = "button";
     card.addEventListener("click", () => {
-      memoryCenterV2State.query = config.short;
-      renderMemoryCenterCurrentView({ focusSearch: true });
+      memoryCenterV2State.categoryFilter = key;
+      renderMemoryCenterCurrentView();
     });
     const head = mcEl("div", "mc-category-head");
     head.append(mcRenderBadge(config.short, config.tone), mcEl("span", "mc-category-count", count));
@@ -4817,7 +4817,7 @@ function renderAuditRows(audit, loadingStates, errors) {
         const originParts = data.origin_distribution
           ? Object.entries(data.origin_distribution)
               .filter(([, n]) => n > 0)
-              .map(([origin, n]) => `${origin}:${n}`)
+              .map(([origin, n]) => `${origin.slice(0, 12)}:${n}`)
               .join(" ")
           : "";
         rows.push([`  └ ${cat}`, `${data.count} 条${originParts ? `（${originParts}）` : ""}`]);
@@ -4858,7 +4858,7 @@ function renderRecentLabRows(rows, loadingStates, errors, recentSource) {
 
     // source_preview
     if (row.source_preview) {
-      const preview = String(row.source_preview).slice(0, 60);
+      const preview = String(row.source_preview).slice(0, 80);
       result.push(["  来源摘要", preview.length < String(row.source_preview).length ? `${preview}…` : preview]);
     }
   });
