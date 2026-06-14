@@ -1,4 +1,4 @@
-console.log("build cloudflare-0079");
+console.log("build cloudflare-0080");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -2029,7 +2029,7 @@ function renderMemoryItem(mem) {
     if (!r.ok) {
       if (r.status === 401) {
         sessionStorage.removeItem("memory_admin_token");
-        showInlineError(item, "口令过期或错误，请重新打开记忆管理（高级）。");
+        showInlineError(item, "口令过期或错误，请刷新页面后重新进入记忆中心。");
       } else {
         let msg = `操作失败（${r.status}）`;
         try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
@@ -2084,7 +2084,7 @@ function renderMemoryItem(mem) {
         if (!r.ok) {
           if (r.status === 401) {
             sessionStorage.removeItem("memory_admin_token");
-            showGlobalMemoryError("口令过期或错误，请重新打开记忆管理（高级）。");
+            showGlobalMemoryError("口令过期或错误，请刷新页面后重新进入记忆中心。");
           } else {
             let msg = `删除失败（${r.status}）`;
             try { const j = await r.json(); msg = j.error || j.message || msg; } catch { try { msg = await r.text() || msg; } catch {} }
@@ -3531,10 +3531,6 @@ memoryCenterOverlay?.addEventListener("click", (e) => {
   if (e.target === memoryCenterOverlay) memoryCenterOverlay.classList.add("hidden");
 });
 
-document.getElementById("mcLegacyOpenBtn")?.addEventListener("click", () => {
-  memoryCenterOverlay?.classList.add("hidden");
-  toggleMemoryButton?.click();
-});
 
 // ── Debug center overlay ───────────────────────────────────────────────────
 function openMemoryDebugCenter() {
@@ -4556,6 +4552,11 @@ function mcSetHeader(view) {
   if (title) title.textContent = meta.title;
   if (subtitle) subtitle.textContent = meta.subtitle;
   if (back) back.classList.toggle("hidden", view === "room");
+  // 同步桌面 nav active 态
+  document.querySelectorAll(".mc-nav-item").forEach((btn) => {
+    const isActive = btn.dataset.mcView === view;
+    btn.classList.toggle("mc-nav-item--active", isActive);
+  });
 }
 
 function mcRenderEmpty(root, text) {
@@ -4966,6 +4967,17 @@ function openMemoryCenter() {
   memoryCenterV2State.view = "room";
   renderMemoryCenterCurrentView();
   refreshMemoryCenterData();
+  // 绑定桌面 nav 点击（用 _mcNavBound 标记避免重复绑定）
+  if (!memoryCenterOverlay._mcNavBound) {
+    memoryCenterOverlay._mcNavBound = true;
+    memoryCenterOverlay.addEventListener("click", (e) => {
+      const btn = e.target.closest(".mc-nav-item[data-mc-view]");
+      if (btn) switchMemoryCenterView(btn.dataset.mcView);
+    });
+    document.getElementById("mcNavCloseBtn")?.addEventListener("click", () => {
+      memoryCenterOverlay.classList.add("hidden");
+    });
+  }
 }
 
 function renderRecentMemoryUpdatesOptimistic(items) {
