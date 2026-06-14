@@ -1855,6 +1855,23 @@ const PROVIDER_CATEGORY_TO_MEMORY_DOMAIN = {
   life_context: "life",
   relationship_context: "relation",
 };
+const MEMORY_DOMAIN_LABELS = {
+  general: "当前上下文",
+  persona: "身份设定",
+  work: "项目记忆",
+  writing: "写作记忆",
+  life: "生活记忆",
+  relation: "关系记忆",
+};
+const PROVIDER_CATEGORY_LABELS = {
+  current_context_summary: "当前上下文",
+  interaction_preferences: "交互偏好",
+  identity_context: "身份设定",
+  project_memory: "项目记忆",
+  writing_memory: "写作记忆",
+  life_context: "生活记忆",
+  relationship_context: "关系记忆",
+};
 
 function memoryDomainToProviderCategory(domain) {
   return MEMORY_DOMAIN_TO_PROVIDER_CATEGORY[domain] || MEMORY_DOMAIN_TO_PROVIDER_CATEGORY.general;
@@ -1863,6 +1880,17 @@ function memoryDomainToProviderCategory(domain) {
 function providerCategoryToMemoryDomain(category) {
   return PROVIDER_CATEGORY_TO_MEMORY_DOMAIN[category] ||
     (MEMORY_DOMAINS.includes(category) ? category : "general");
+}
+
+function memoryDomainLabel(domain) {
+  return MEMORY_DOMAIN_LABELS[domain] || PROVIDER_CATEGORY_LABELS[domain] || "当前上下文";
+}
+
+function memoryCategoryLabel(category) {
+  const providerCategory = MEMORY_DOMAIN_TO_PROVIDER_CATEGORY[category] || category;
+  return PROVIDER_CATEGORY_LABELS[providerCategory] ||
+    MEMORY_DOMAIN_LABELS[category] ||
+    memoryDomainLabel(providerCategoryToMemoryDomain(category));
 }
 
 function normalizeBucketDomain(domain) {
@@ -1947,7 +1975,7 @@ function renderMemoryItem(mem) {
   // ── Left: domain label ───────────────────────────────────────────────────
   const domain = document.createElement("small");
   domain.className = "memory-domain";
-  domain.textContent = providerCategoryToMemoryDomain(mem.domain || mem.category);
+  domain.textContent = memoryCategoryLabel(mem.domain || mem.category);
 
   // ── Middle: content column ───────────────────────────────────────────────
   const mid = document.createElement("div");
@@ -2142,7 +2170,7 @@ function renderInstructionItem(inst) {
 
   const domain = document.createElement("small");
   domain.className = "memory-domain";
-  domain.textContent = inst.category || "general";
+  domain.textContent = memoryCategoryLabel(inst.category || "general");
 
   const mid = document.createElement("div");
   mid.className = "memory-item-mid";
@@ -2264,7 +2292,7 @@ function showMemoryEditDialog(mem, itemEl) {
   for (const d of MEMORY_DOMAINS) {
     const option = document.createElement("option");
     option.value = d;
-    option.textContent = d;
+    option.textContent = memoryDomainLabel(d);
     select.appendChild(option);
   }
   select.value = providerCategoryToMemoryDomain(mem.domain || mem.category);
@@ -2476,7 +2504,7 @@ function editBucket(b) {
   for (const d of MEMORY_DOMAINS) {
     const option = document.createElement("option");
     option.value = d;
-    option.textContent = d;
+    option.textContent = memoryDomainLabel(d);
     domainSelect.appendChild(option);
   }
   domainSelect.value = MEMORY_DOMAINS.includes(b.domain) ? b.domain : "general";
@@ -3543,7 +3571,7 @@ function openMemoryDebugCenter() {
   memoryCenterOverlay?.classList.add("hidden");
   memoryDebugOverlay.classList.remove("hidden");
   const debug = getLastMemoryDebug();
-  updateMemoryCenterCards(debug);
+  updateMemoryDebugCards(debug);
   renderMemoryCenterDebug(debug);
   renderRecentMemoryDebug();
   renderMemoryAuditDebug();
@@ -4026,7 +4054,7 @@ async function renderRecentMemoryUpdates() {
  * 用 lastMemoryDebug 更新 Core Profile / Timeline Archive 卡片的动态状态行。
  * @param {object|null} debug
  */
-function updateMemoryCenterCards(debug) {
+function updateMemoryDebugCards(debug) {
   // ── Core Profile ────────────────────────────────────────────────────────
   const profileCharsEl = document.getElementById("mcProfileChars");
   const profileStatusEl = document.getElementById("mcProfileStatus");
