@@ -1,4 +1,4 @@
-console.log("build cloudflare-0078");
+console.log("build cloudflare-0079");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -2878,7 +2878,6 @@ document.getElementById("moreButton")?.addEventListener("click", (e) => {
   if (activeMoreMenu) { closeMoreMenu(); return; }
   const items = [
     { label: "记忆", action: () => openMemoryCenter() },
-    { label: "记忆管理（高级）", id: "toggleMemoryButton" },
   ];
   const menu = document.createElement("div");
   menu.className = "more-menu";
@@ -4391,3 +4390,604 @@ function showMemoryToast(count) {
 }
 
 window.showMemoryToast = showMemoryToast;
+
+// Fullscreen Memory Center v2.
+// Keeps the legacy advanced memory manager hidden and preserves the existing
+// auto-memory promotion path by overriding only the visible center renderers.
+
+var memoryCenterV2State = {
+  view: "room",
+  recentSource: "",
+  recentRows: [],
+  memories: [],
+  instructions: [],
+  audit: null,
+  loadingRecent: false,
+  loadingArchive: false,
+  loadingAudit: false,
+  recentError: "",
+  archiveError: "",
+  auditError: "",
+  archiveLoaded: false,
+  auditLoaded: false,
+  query: "",
+  statusFilter: "all",
+};
+
+var MEMORY_CENTER_CATEGORY_CONFIG = {
+  project: { label: "项目记忆", short: "项目", desc: "项目、工作和学习的共同推进", tone: "project" },
+  relation: { label: "关系记忆", short: "关系", desc: "我们之间的重要时刻和情感连接", tone: "relation" },
+  life: { label: "生活记忆", short: "生活", desc: "日常、兴趣爱好和生活点滴", tone: "life" },
+  writing: { label: "写作记忆", short: "写作", desc: "创作、文章和灵感的讨论", tone: "writing" },
+  identity: { label: "身份设定", short: "身份", desc: "关于你的偏好、性格和重要设定", tone: "identity" },
+  preference: { label: "交互偏好", short: "偏好", desc: "你的习惯、风格和交互方式", tone: "preference" },
+  background: { label: "常驻背景", short: "背景", desc: "每轮注入的常驻通用背景", tone: "background" },
+};
+
+var MEMORY_CENTER_VIEW_META = {
+  room: { title: "cha 的房间", subtitle: "我们一起经历的，都好好收着" },
+  archive: { title: "档案馆", subtitle: "我们所有的记忆，按类收着" },
+  timeline: { title: "时间线", subtitle: "我们一起走过的日子，按时间倒着翻" },
+  lab: { title: "实验室", subtitle: "记忆召回、注入与运行详情 · 仅供调试" },
+};
+
+function mcEl(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined && text !== null) el.textContent = String(text);
+  return el;
+}
+
+function mcSafeDate(value) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function mcDateKey(value) {
+  const date = mcSafeDate(value);
+  if (!date) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function mcFormatDateTime(value) {
+  const date = mcSafeDate(value);
+  if (!date) return "暂无时间";
+  const day = date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+  const time = date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  return `${day} ${time}`;
+}
+
+function mcAutoTitle(content) {
+  const text = String(content || "").replace(/\s+/g, " ").trim();
+  if (!text) return "未命名记忆";
+  const first = text.split(/[，。；：！？…\n]/)[0].trim();
+  const title = first || text;
+  return title.length > 24 ? `${title.slice(0, 23)}...` : title;
+}
+
+function mcAutoSummary(content) {
+  const text = String(content || "").replace(/\s+/g, " ").trim();
+  if (!text) return "暂无摘要";
+  return text.length > 84 ? `${text.slice(0, 83)}...` : text;
+}
+
+function mcCategoryKey(category, source) {
+  const raw = String(category || "").toLowerCase();
+  if (source === "instructions") return "background";
+  if (["project_memory", "work", "project"].includes(raw)) return "project";
+  if (["relationship_context", "relation", "relationship"].includes(raw)) return "relation";
+  if (["life_context", "life"].includes(raw)) return "life";
+  if (["writing_memory", "writing"].includes(raw)) return "writing";
+  if (["identity_context", "persona", "preference"].includes(raw)) return "identity";
+  if (["interaction_preferences"].includes(raw)) return "preference";
+  return "background";
+}
+
+function mcStatusLabel(item) {
+  if (item.source === "instructions") return "常驻";
+  if (item.source === "recent") return item.statusLabel || "最近";
+  return item.enabled === false ? "停用" : "已写入";
+}
+
+function normalizeMemoryDisplayItems() {
+  const state = memoryCenterV2State;
+  const seen = new Set();
+  const items = [];
+
+  function push(row, source, extra) {
+    if (!row) return;
+    const id = row.id || `${source}-${items.length}`;
+    const key = `${source}:${id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const content = row.content || row.summary || row.title || "";
+    const category = row.category || row.domain || row.candidate_type || extra?.category || "general";
+    const categoryKey = mcCategoryKey(category, source);
+    const config = MEMORY_CENTER_CATEGORY_CONFIG[categoryKey] || MEMORY_CENTER_CATEGORY_CONFIG.background;
+
+    items.push({
+      id,
+      source,
+      title: row.title || extra?.title || mcAutoTitle(content),
+      summary: row.summary || row.source_preview || extra?.summary || mcAutoSummary(content),
+      content,
+      category,
+      categoryKey,
+      categoryLabel: config.label,
+      categoryShort: config.short,
+      tone: config.tone,
+      enabled: row.enabled !== false,
+      createdAt: row.created_at || row.updated_at || row.promoted_at || extra?.createdAt || null,
+      sourcePreview: row.source_preview || "",
+      status: row.status || "",
+      statusLabel: extra?.statusLabel || row.status || "",
+    });
+  }
+
+  state.memories.forEach((row) => push(row, "memories"));
+  state.instructions.forEach((row) => push(row, "instructions"));
+  state.recentRows.forEach((row) => {
+    const labelMap = {
+      promoted: "候选已记忆",
+      approved: "已确认",
+      new: "候选记忆",
+      candidate: "候选记忆",
+      pending: "待处理",
+    };
+    push(row, "recent", { statusLabel: labelMap[row.status] || (state.recentSource === "memories" ? "已写入" : "最近沉淀") });
+  });
+
+  return items.sort((a, b) => {
+    const at = mcSafeDate(a.createdAt)?.getTime() || 0;
+    const bt = mcSafeDate(b.createdAt)?.getTime() || 0;
+    return bt - at;
+  });
+}
+
+function mcSetHeader(view) {
+  const meta = MEMORY_CENTER_VIEW_META[view] || MEMORY_CENTER_VIEW_META.room;
+  const title = document.getElementById("mcViewTitle");
+  const subtitle = document.getElementById("mcViewSubtitle");
+  const back = document.getElementById("mcBackButton");
+  if (title) title.textContent = meta.title;
+  if (subtitle) subtitle.textContent = meta.subtitle;
+  if (back) back.classList.toggle("hidden", view === "room");
+}
+
+function mcRenderEmpty(root, text) {
+  root.appendChild(mcEl("div", "mc-empty", text));
+}
+
+function mcRenderBadge(text, tone) {
+  const badge = mcEl("span", `mc-chip mc-chip--${tone || "background"}`, text);
+  return badge;
+}
+
+function mcRenderMemoryCard(item, compact) {
+  const card = mcEl("article", "mc-memory-card");
+  const top = mcEl("div", "mc-memory-card-top");
+  const chips = mcEl("div", "mc-chip-row");
+  chips.appendChild(mcRenderBadge(item.categoryShort, item.tone));
+  chips.appendChild(mcRenderBadge(mcStatusLabel(item), "status"));
+  top.appendChild(chips);
+  top.appendChild(mcEl("span", "mc-memory-time", mcFormatDateTime(item.createdAt)));
+
+  const title = mcEl("h3", "mc-memory-title", item.title);
+  const summary = mcEl("p", "mc-memory-summary", item.summary);
+  card.append(top, title, summary);
+
+  if (!compact && item.sourcePreview) {
+    const source = mcEl("div", "mc-memory-source", `来源：${item.sourcePreview}`);
+    card.appendChild(source);
+  }
+  return card;
+}
+
+function switchMemoryCenterView(view, options = {}) {
+  memoryCenterV2State.view = view;
+  renderMemoryCenterCurrentView(options);
+}
+
+function renderMemoryCenterCurrentView(options = {}) {
+  const root = document.getElementById("mcViewRoot");
+  if (!root) return;
+  root.innerHTML = "";
+  mcSetHeader(memoryCenterV2State.view);
+
+  if (memoryCenterV2State.view === "archive") {
+    renderMemoryArchiveView(root, options);
+  } else if (memoryCenterV2State.view === "timeline") {
+    renderMemoryTimelineView(root);
+  } else if (memoryCenterV2State.view === "lab") {
+    renderMemoryLabView(root);
+  } else {
+    renderMemoryRoomView(root);
+  }
+}
+
+function renderMemoryRoomView(root) {
+  const items = normalizeMemoryDisplayItems();
+  const debug = getLastMemoryDebug();
+
+  const status = mcEl("div", "mc-room-status");
+  const avatar = mcEl("div", "mc-room-avatar", "⌂");
+  const copy = mcEl("div", "mc-room-copy");
+  copy.append(
+    mcEl("div", "mc-room-title", "cha 的房间"),
+    mcEl("div", "mc-room-subtitle", "我们一起经历的，都好好收着")
+  );
+  const online = mcEl("div", "mc-online");
+  online.append(mcEl("span", "mc-online-dot"), document.createTextNode("记忆中心在线"));
+  status.append(avatar, copy, online);
+  root.appendChild(status);
+
+  const section = mcEl("section", "mc-section");
+  section.appendChild(mcEl("h2", "mc-section-title", "最近"));
+  const recentWrap = mcEl("div", "mc-card-list");
+  if (memoryCenterV2State.loadingRecent && !items.length) {
+    mcRenderEmpty(recentWrap, "加载中...");
+  } else if (items.length) {
+    items.slice(0, 2).forEach((item) => recentWrap.appendChild(mcRenderMemoryCard(item, true)));
+  } else {
+    mcRenderEmpty(recentWrap, memoryCenterV2State.recentError || "还没有当前记忆。");
+  }
+  section.appendChild(recentWrap);
+  root.appendChild(section);
+
+  const archiveLink = mcEl("button", "mc-inline-link", `走进档案馆，看更早的记忆（共 ${items.length} 条） →`);
+  archiveLink.type = "button";
+  archiveLink.addEventListener("click", () => switchMemoryCenterView("archive"));
+  root.appendChild(archiveLink);
+
+  const timelineLink = mcEl("button", "mc-inline-link mc-inline-link--secondary", "翻开时间线 →");
+  timelineLink.type = "button";
+  timelineLink.addEventListener("click", () => switchMemoryCenterView("timeline"));
+  root.appendChild(timelineLink);
+
+  const actions = mcEl("div", "mc-room-actions");
+  [
+    ["搜索", "archive", true],
+    ["档案馆", "archive", false],
+    ["实验室", "lab", false],
+  ].forEach(([label, view, focus]) => {
+    const btn = mcEl("button", "mc-room-action-btn", label);
+    btn.type = "button";
+    btn.addEventListener("click", () => switchMemoryCenterView(view, { focusSearch: Boolean(focus) }));
+    actions.appendChild(btn);
+  });
+  root.appendChild(actions);
+
+  if (debug?.active_memory_providers?.length) {
+    const note = mcEl("div", "mc-footnote", `本轮参考：${debug.active_memory_providers.length} 个来源`);
+    root.appendChild(note);
+  }
+}
+
+function renderMemoryArchiveView(root, options = {}) {
+  const items = normalizeMemoryDisplayItems();
+  const toolbar = mcEl("div", "mc-archive-toolbar");
+  const input = mcEl("input", "mc-search-input");
+  input.type = "search";
+  input.placeholder = "找一段记忆...";
+  input.value = memoryCenterV2State.query;
+  input.addEventListener("input", (event) => {
+    memoryCenterV2State.query = event.target.value;
+    renderMemoryCenterCurrentView({ focusSearch: true });
+  });
+
+  const select = mcEl("select", "mc-status-select");
+  [
+    ["all", "全部状态"],
+    ["enabled", "已写入"],
+    ["disabled", "停用"],
+    ["instructions", "常驻"],
+    ["recent", "最近沉淀"],
+  ].forEach(([value, label]) => {
+    const option = mcEl("option", "", label);
+    option.value = value;
+    option.selected = memoryCenterV2State.statusFilter === value;
+    select.appendChild(option);
+  });
+  select.addEventListener("change", (event) => {
+    memoryCenterV2State.statusFilter = event.target.value;
+    renderMemoryCenterCurrentView();
+  });
+  toolbar.append(input, select);
+  root.appendChild(toolbar);
+
+  const grid = mcEl("div", "mc-category-grid");
+  Object.entries(MEMORY_CENTER_CATEGORY_CONFIG).forEach(([key, config]) => {
+    const count = items.filter((item) => item.categoryKey === key).length;
+    const card = mcEl("button", "mc-category-card");
+    card.type = "button";
+    card.addEventListener("click", () => {
+      memoryCenterV2State.query = config.short;
+      renderMemoryCenterCurrentView({ focusSearch: true });
+    });
+    const head = mcEl("div", "mc-category-head");
+    head.append(mcRenderBadge(config.short, config.tone), mcEl("span", "mc-category-count", count));
+    card.append(head, mcEl("div", "mc-category-title", config.label), mcEl("div", "mc-category-desc", config.desc), mcEl("div", "mc-category-open", "翻开 →"));
+    grid.appendChild(card);
+  });
+  root.appendChild(grid);
+
+  const list = mcEl("div", "mc-card-list mc-card-list--archive");
+  const q = memoryCenterV2State.query.trim().toLowerCase();
+  const filtered = items.filter((item) => {
+    const text = [item.title, item.summary, item.content, item.categoryLabel, item.categoryShort].join(" ").toLowerCase();
+    const matchesQuery = !q || text.includes(q);
+    const filter = memoryCenterV2State.statusFilter;
+    const matchesStatus =
+      filter === "all" ||
+      (filter === "enabled" && item.source === "memories" && item.enabled !== false) ||
+      (filter === "disabled" && item.enabled === false) ||
+      (filter === "instructions" && item.source === "instructions") ||
+      (filter === "recent" && item.source === "recent");
+    return matchesQuery && matchesStatus;
+  });
+
+  if (memoryCenterV2State.loadingArchive && !memoryCenterV2State.archiveLoaded) {
+    mcRenderEmpty(list, "档案加载中...");
+  } else if (!getMemoryToken() && !memoryCenterV2State.archiveLoaded) {
+    mcRenderEmpty(list, "完整档案需要记忆口令；这里暂时只显示最近沉淀。");
+    items.filter((item) => item.source === "recent").forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
+  } else if (filtered.length) {
+    filtered.forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
+  } else {
+    mcRenderEmpty(list, memoryCenterV2State.archiveError || "没有匹配的记忆。");
+  }
+  root.appendChild(list);
+
+  if (options.focusSearch) {
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+  }
+}
+
+function renderMemoryTimelineView(root) {
+  const items = normalizeMemoryDisplayItems().filter((item) => mcSafeDate(item.createdAt));
+  const intro = mcEl("div", "mc-footnote", "热力条只代表当前已加载数据，不代表全量历史。");
+  root.appendChild(intro);
+
+  const heat = mcEl("div", "mc-heat-panel");
+  const now = new Date();
+  const monthLabel = `${now.getFullYear()} · ${now.getMonth() + 1}月`;
+  heat.appendChild(mcEl("div", "mc-heat-label", monthLabel));
+  const counts = new Map();
+  items.forEach((item) => {
+    const key = mcDateKey(item.createdAt);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  const maxCount = Math.max(1, ...counts.values());
+  const cells = mcEl("div", "mc-heat-cells");
+  for (let i = 27; i >= 0; i -= 1) {
+    const date = new Date(now);
+    date.setDate(now.getDate() - i);
+    const key = mcDateKey(date);
+    const count = counts.get(key) || 0;
+    const level = count === 0 ? 0 : Math.ceil((count / maxCount) * 4);
+    const cell = mcEl("span", `mc-heat-cell mc-heat-cell--${level}`);
+    cell.title = `${key}: ${count} 条`;
+    cells.appendChild(cell);
+  }
+  heat.appendChild(cells);
+  root.appendChild(heat);
+
+  const list = mcEl("div", "mc-timeline-list");
+  if (!items.length) {
+    mcRenderEmpty(list, "当前没有可用于时间线的已加载记忆。");
+  } else {
+    let lastDay = "";
+    items.forEach((item) => {
+      const day = mcDateKey(item.createdAt);
+      if (day !== lastDay) {
+        lastDay = day;
+        list.appendChild(mcEl("div", "mc-timeline-day", day));
+      }
+      const row = mcEl("article", "mc-timeline-item");
+      row.append(mcRenderBadge(item.categoryShort, item.tone));
+      const body = mcEl("div", "mc-timeline-body");
+      body.append(mcEl("div", "mc-timeline-title", item.title), mcEl("div", "mc-timeline-summary", item.summary));
+      row.append(body, mcEl("time", "mc-timeline-time", mcFormatDateTime(item.createdAt).split(" ").pop()));
+      list.appendChild(row);
+    });
+  }
+  root.appendChild(list);
+}
+
+function renderMemoryLabView(root) {
+  const debug = getLastMemoryDebug();
+  const recentRows = memoryCenterV2State.recentRows;
+  const audit = memoryCenterV2State.audit;
+
+  const metrics = mcEl("div", "mc-lab-metrics");
+  [
+    ["当前模型", debug?.model || "暂无本轮数据"],
+    ["本轮 token", "暂无真实数据"],
+    ["召回记忆", debug ? `${debug.memory_provider_count ?? debug.active_memory_providers?.length ?? 0} 个来源` : "暂无本轮数据"],
+    ["注入 token", typeof debug?.memory_context_tokens_estimated === "number" ? String(debug.memory_context_tokens_estimated) : "暂无本轮数据"],
+  ].forEach(([label, value]) => {
+    const card = mcEl("div", "mc-lab-metric");
+    card.append(mcEl("div", "mc-lab-label", label), mcEl("div", "mc-lab-value", value));
+    metrics.appendChild(card);
+  });
+  root.appendChild(metrics);
+
+  const grid = mcEl("div", "mc-lab-grid");
+  grid.appendChild(renderMemoryLabPanel("本轮召回", renderRecallDebugRows(debug)));
+  grid.appendChild(renderMemoryLabPanel("记忆审计", renderAuditRows(audit)));
+  grid.appendChild(renderMemoryLabPanel("最近沉淀", renderRecentLabRows(recentRows)));
+  grid.appendChild(renderMemoryLabPanel("事件日志", renderLabEventRows(debug, audit, recentRows)));
+  root.appendChild(grid);
+}
+
+function renderMemoryLabPanel(title, rows) {
+  const panel = mcEl("section", "mc-lab-panel");
+  panel.appendChild(mcEl("h2", "mc-section-title", title));
+  if (!rows.length) {
+    mcRenderEmpty(panel, "暂无本轮数据");
+    return panel;
+  }
+  const list = mcEl("div", "mc-lab-rows");
+  rows.forEach(([key, value]) => {
+    const row = mcEl("div", "mc-lab-row");
+    row.append(mcEl("span", "mc-lab-key", key), mcEl("span", "mc-lab-row-value", value));
+    list.appendChild(row);
+  });
+  panel.appendChild(list);
+  return panel;
+}
+
+function renderRecallDebugRows(debug) {
+  if (!debug) return [];
+  const providers = Array.isArray(debug.active_memory_providers) ? debug.active_memory_providers : [];
+  return [
+    ["来源", providers.length ? providers.map((p) => MEMORY_PROVIDER_LABELS[p] || p).join("、") : "无"],
+    ["项目记忆", debug.project_memory_recalled ? "已召回" : "未触发"],
+    ["写作记忆", debug.writing_memory_recalled ? "已召回" : "未触发"],
+    ["生活上下文", debug.life_context_recalled ? "已召回" : "未触发"],
+    ["关系上下文", debug.relationship_context_recalled ? "已召回" : "未触发"],
+    ["历史对话", debug.conversation_history_recalled ? `${debug.conversation_history_hit_count ?? 0} 条` : "未触发"],
+    ["时间线", debug.timeline_recalled ? `${debug.timeline_hit_count ?? 0} 个命中` : "未触发"],
+  ];
+}
+
+function renderAuditRows(audit) {
+  if (memoryCenterV2State.loadingAudit) return [["状态", "审计加载中..."]];
+  if (!getMemoryToken() && !audit) return [["状态", "需要记忆口令后显示"]];
+  if (memoryCenterV2State.auditError && !audit) return [["状态", memoryCenterV2State.auditError]];
+  if (!audit) return [];
+  return [
+    ["memories", `${audit.memories?.total ?? 0} 条`],
+    ["instructions", `${audit.instructions?.total ?? 0} 条`],
+    ["openai_archive", `${audit.openai_archive_entries?.enabled_count ?? 0}/${audit.openai_archive_entries?.total ?? 0} enabled`],
+    ["persona_profile", `${audit.persona_profile?.enabled_count ?? 0}/${audit.persona_profile?.total ?? 0} enabled`],
+  ];
+}
+
+function renderRecentLabRows(rows) {
+  if (memoryCenterV2State.loadingRecent) return [["状态", "最近沉淀加载中..."]];
+  if (memoryCenterV2State.recentError) return [["状态", memoryCenterV2State.recentError]];
+  if (!rows.length) return [];
+  return rows.slice(0, 5).map((row, index) => [
+    `${index + 1}. ${row.category || row.candidate_type || memoryCenterV2State.recentSource || "memory"}`,
+    mcFormatDateTime(row.created_at || row.promoted_at),
+  ]);
+}
+
+function renderLabEventRows(debug, audit, recentRows) {
+  const rows = [];
+  if (debug) {
+    rows.push(["本轮召回", `${debug.memory_provider_count ?? 0} 个来源`]);
+    if (typeof debug.memory_context_tokens_estimated === "number") {
+      rows.push(["构建注入内容", `${debug.memory_context_tokens_estimated} tokens`]);
+    }
+    if (debug.model) rows.push(["发送请求到 LLM", debug.model]);
+  }
+  if (audit) rows.push(["审计快照", audit.generated_at ? mcFormatDateTime(audit.generated_at) : "已加载"]);
+  if (recentRows.length) rows.push(["最近沉淀", `${recentRows.length} 条`]);
+  return rows;
+}
+
+async function fetchMemoryCenterJson(path) {
+  const res = await memoryFetch(path);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function refreshMemoryCenterData() {
+  memoryCenterV2State.loadingRecent = true;
+  memoryCenterV2State.recentError = "";
+  renderMemoryCenterCurrentView();
+  try {
+    const userId = currentUserId || "";
+    const data = await fetchMemoryCenterJson(`?type=recent&userId=${encodeURIComponent(userId)}`);
+    memoryCenterV2State.recentSource = data.source || "";
+    memoryCenterV2State.recentRows = Array.isArray(data.rows) ? data.rows : [];
+  } catch (err) {
+    memoryCenterV2State.recentError = err instanceof Error ? err.message : String(err);
+  } finally {
+    memoryCenterV2State.loadingRecent = false;
+    renderMemoryCenterCurrentView();
+  }
+
+  if (!getMemoryToken()) {
+    memoryCenterV2State.archiveError = "需要记忆口令后显示完整档案";
+    memoryCenterV2State.auditError = "需要记忆口令后显示审计";
+    return;
+  }
+
+  memoryCenterV2State.loadingArchive = true;
+  memoryCenterV2State.loadingAudit = true;
+  memoryCenterV2State.archiveError = "";
+  memoryCenterV2State.auditError = "";
+  renderMemoryCenterCurrentView();
+
+  const [memoriesResult, instructionsResult, auditResult] = await Promise.allSettled([
+    fetchMemoryCenterJson(""),
+    fetchMemoryCenterJson("?type=instructions"),
+    fetchMemoryCenterJson("?type=audit"),
+  ]);
+
+  if (memoriesResult.status === "fulfilled") {
+    memoryCenterV2State.memories = Array.isArray(memoriesResult.value) ? memoriesResult.value : [];
+  } else {
+    memoryCenterV2State.archiveError = memoriesResult.reason?.message || "档案加载失败";
+  }
+
+  if (instructionsResult.status === "fulfilled") {
+    memoryCenterV2State.instructions = Array.isArray(instructionsResult.value) ? instructionsResult.value : [];
+  } else if (!memoryCenterV2State.archiveError) {
+    memoryCenterV2State.archiveError = instructionsResult.reason?.message || "常驻背景加载失败";
+  }
+
+  if (auditResult.status === "fulfilled") {
+    memoryCenterV2State.audit = auditResult.value;
+  } else {
+    memoryCenterV2State.auditError = auditResult.reason?.message || "审计加载失败";
+  }
+
+  memoryCenterV2State.archiveLoaded = memoriesResult.status === "fulfilled" || instructionsResult.status === "fulfilled";
+  memoryCenterV2State.auditLoaded = auditResult.status === "fulfilled";
+  memoryCenterV2State.loadingArchive = false;
+  memoryCenterV2State.loadingAudit = false;
+  renderMemoryCenterCurrentView();
+}
+
+function openMemoryCenter() {
+  if (!memoryCenterOverlay) return;
+  memoryCenterOverlay.classList.remove("hidden");
+  memoryCenterV2State.view = "room";
+  renderMemoryCenterCurrentView();
+  refreshMemoryCenterData();
+}
+
+function renderRecentMemoryUpdatesOptimistic(items) {
+  if (!Array.isArray(items) || items.length === 0) return;
+  memoryCenterV2State.recentSource = "candidates";
+  memoryCenterV2State.recentRows = items.concat(memoryCenterV2State.recentRows).slice(0, 5);
+  if (!memoryCenterOverlay?.classList.contains("hidden")) renderMemoryCenterCurrentView();
+}
+
+async function renderRecentMemoryUpdates() {
+  try {
+    const userId = currentUserId || "";
+    const data = await fetchMemoryCenterJson(`?type=recent&userId=${encodeURIComponent(userId)}`);
+    memoryCenterV2State.recentSource = data.source || "";
+    memoryCenterV2State.recentRows = Array.isArray(data.rows) ? data.rows : [];
+    memoryCenterV2State.recentError = "";
+  } catch (err) {
+    memoryCenterV2State.recentError = err instanceof Error ? err.message : String(err);
+  }
+  if (!memoryCenterOverlay?.classList.contains("hidden")) renderMemoryCenterCurrentView();
+}
+
+document.getElementById("mcBackButton")?.addEventListener("click", () => {
+  switchMemoryCenterView("room");
+});
