@@ -2382,7 +2382,7 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
 
 .mc-room-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 18px;
 }
@@ -2814,19 +2814,36 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
     color: oklch(88% 0.005 250);
   }
 
-  /* 右侧主内容区 */
+  /* 右侧主内容区：铺满，滚动只在 view-root 内 */
   .mc-workspace-body {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
   }
 
   /* 阅读宽度由内容区自身 max-width 控制，容器铺满 */
   .mc-workspace-body .mc-view-root {
     padding: 24px 40px 28px;
-    max-width: 900px;
+    width: min(100%, 960px);
+    margin: 0 auto;
+  }
+
+  /* 视图专属宽度覆盖 */
+  .mc-workspace-body .mc-view-root--archive,
+  .mc-workspace-body .mc-view-root--lab {
+    width: min(100%, 1080px);
+  }
+
+  .mc-workspace-body .mc-view-root--room {
+    width: min(100%, 900px);
+  }
+
+  /* 桌面端滚动由 workspace-body 承担，view-root 不再自滚 */
+  .mc-workspace-body .mc-view-root {
+    overflow-y: visible;
+    flex: none;
   }
 }
 
