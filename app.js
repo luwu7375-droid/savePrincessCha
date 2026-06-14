@@ -1,4 +1,4 @@
-console.log("build cloudflare-0080");
+console.log("build cloudflare-0081");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -3527,9 +3527,6 @@ document.getElementById("closeMemoryCenterButton")?.addEventListener("click", ()
   memoryCenterOverlay?.classList.add("hidden");
 });
 
-memoryCenterOverlay?.addEventListener("click", (e) => {
-  if (e.target === memoryCenterOverlay) memoryCenterOverlay.classList.add("hidden");
-});
 
 
 // ── Debug center overlay ───────────────────────────────────────────────────
@@ -4505,11 +4502,14 @@ function normalizeMemoryDisplayItems() {
     const categoryKey = mcCategoryKey(category, source);
     const config = MEMORY_CENTER_CATEGORY_CONFIG[categoryKey] || MEMORY_CENTER_CATEGORY_CONFIG.background;
 
+    const tags = Array.isArray(row.tags) ? row.tags : (row.tags ? String(row.tags).split(",").map((t) => t.trim()).filter(Boolean) : []);
+    const title = row.title || extra?.title || mcAutoTitle(content);
+    const summary = row.summary || row.source_preview || extra?.summary || mcAutoSummary(content);
     items.push({
       id,
       source,
-      title: row.title || extra?.title || mcAutoTitle(content),
-      summary: row.summary || row.source_preview || extra?.summary || mcAutoSummary(content),
+      title,
+      summary,
       content,
       category,
       categoryKey,
@@ -4518,9 +4518,19 @@ function normalizeMemoryDisplayItems() {
       tone: config.tone,
       enabled: row.enabled !== false,
       createdAt: row.created_at || row.updated_at || row.promoted_at || extra?.createdAt || null,
+      updatedAt: row.updated_at || null,
       sourcePreview: row.source_preview || "",
       status: row.status || "",
       statusLabel: extra?.statusLabel || row.status || "",
+      // bridge 新增字段
+      tags,
+      importance: typeof row.importance === "number" ? row.importance : null,
+      sourceType: source,
+      isInstruction: source === "instructions",
+      isRecent: source === "recent",
+      isEnabled: row.enabled !== false,
+      raw: row,
+      searchText: [title, summary, content, ...tags, config.label].join(" ").toLowerCase(),
     });
   }
 
@@ -4719,8 +4729,7 @@ function renderMemoryArchiveView(root, options = {}) {
   const list = mcEl("div", "mc-card-list mc-card-list--archive");
   const q = memoryCenterV2State.query.trim().toLowerCase();
   const filtered = items.filter((item) => {
-    const text = [item.title, item.summary, item.content, item.categoryLabel, item.categoryShort].join(" ").toLowerCase();
-    const matchesQuery = !q || text.includes(q);
+    const matchesQuery = !q || item.searchText.includes(q);
     const filter = memoryCenterV2State.statusFilter;
     const matchesStatus =
       filter === "all" ||
@@ -4806,6 +4815,7 @@ function renderMemoryLabView(root) {
   const debug = getLastMemoryDebug();
   const recentRows = memoryCenterV2State.recentRows;
   const audit = memoryCenterV2State.audit;
+  const items = normalizeMemoryDisplayItems();
 
   const metrics = mcEl("div", "mc-lab-metrics");
   [
@@ -4826,6 +4836,37 @@ function renderMemoryLabView(root) {
   grid.appendChild(renderMemoryLabPanel("最近沉淀", renderRecentLabRows(recentRows)));
   grid.appendChild(renderMemoryLabPanel("事件日志", renderLabEventRows(debug, audit, recentRows)));
   root.appendChild(grid);
+
+  // bridge 分布统计
+  const distRows = [
+    ["总条目", String(items.length)],
+    ["memories", String(items.filter((i) => i.sourceType === "memories").length)],
+    ["instructions", String(items.filter((i) => i.isInstruction).length)],
+    ["recent", String(items.filter((i) => i.isRecent).length)],
+  ];
+  root.appendChild(renderMemoryLabPanel("bridge 分布", distRows));
+
+  // raw 折叠区
+  root.appendChild(mcLabRawSection("raw: lastMemoryDebug", debug));
+  root.appendChild(mcLabRawSection("raw: audit summary", audit));
+  const recentSlice = recentRows.length ? recentRows.slice(0, 5) : null;
+  root.appendChild(mcLabRawSection(`raw: recent rows（最多 5 条，共 ${recentRows.length} 条）`, recentSlice));
+}
+
+function mcLabRawSection(label, data) {
+  const details = document.createElement("details");
+  details.className = "mc-lab-raw";
+  const summary = document.createElement("summary");
+  summary.className = "mc-lab-raw-summary";
+  summary.textContent = data ? label : `${label}（暂无数据）`;
+  details.appendChild(summary);
+  if (data) {
+    const pre = document.createElement("pre");
+    pre.className = "mc-lab-raw-pre";
+    try { pre.textContent = JSON.stringify(data, null, 2); } catch { pre.textContent = String(data); }
+    details.appendChild(pre);
+  }
+  return details;
 }
 
 function renderMemoryLabPanel(title, rows) {

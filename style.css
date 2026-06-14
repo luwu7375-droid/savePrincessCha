@@ -2094,7 +2094,7 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
 }
 
 #memoryCenterOverlay .memory-center-modal {
-  width: min(100vw, 780px);
+  width: 100vw;
   max-width: none;
   height: 100dvh;
   max-height: none;
@@ -2706,12 +2706,6 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
 
 /* ── PC workspace（>820px） ─────────────────────────────────────────────── */
 @media (min-width: 821px) {
-  /* 扩宽 overlay 容器，居中显示工作台 */
-  #memoryCenterOverlay .memory-center-modal {
-    width: min(100vw, 1180px);
-    flex-direction: row;
-  }
-
   /* 移动端顶部 header 在桌面隐藏 */
   #memoryCenterOverlay .mc-shell-header {
     display: none;
@@ -2829,14 +2823,10 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
     overflow: hidden;
   }
 
+  /* 阅读宽度由内容区自身 max-width 控制，容器铺满 */
   .mc-workspace-body .mc-view-root {
-    padding: 24px 32px 28px;
-  }
-
-  /* 桌面端 mc-workspace 里的关闭按钮通过 CSS 注入 */
-  .mc-workspace-body::before {
-    content: "";
-    display: none;
+    padding: 24px 40px 28px;
+    max-width: 900px;
   }
 }
 
@@ -2845,4 +2835,41 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
   .mc-workspace {
     display: none;
   }
+}
+
+/* ── lab raw 折叠区 ─────────────────────────────────────────────────────── */
+.mc-lab-raw {
+  margin-top: 14px;
+  border: 1px solid oklch(28% 0.006 250);
+  border-radius: 8px;
+  background: oklch(13% 0.006 250);
+  overflow: hidden;
+}
+
+.mc-lab-raw-summary {
+  padding: 10px 16px;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: oklch(68% 0.006 250);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.mc-lab-raw-summary::-webkit-details-marker { display: none; }
+.mc-lab-raw-summary::before { content: "▸ "; font-size: 10px; opacity: 0.6; }
+details[open] > .mc-lab-raw-summary::before { content: "▾ "; }
+.mc-lab-raw-summary:hover { color: oklch(85% 0.005 250); }
+
+.mc-lab-raw-pre {
+  margin: 0;
+  padding: 12px 16px 14px;
+  border-top: 1px solid oklch(24% 0.006 250);
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: oklch(76% 0.006 250);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+  line-height: 1.6;
 }
