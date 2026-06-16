@@ -2353,12 +2353,17 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
 }
 
 .mc-memory-full {
+  display: none;
   font-size: 13px;
   line-height: 1.6;
   color: var(--text);
   margin-top: 8px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.mc-memory-card--expanded .mc-memory-full {
+  display: block;
 }
 
 .mc-memory-card--expanded .mc-memory-summary {

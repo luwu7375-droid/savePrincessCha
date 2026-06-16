@@ -1,4 +1,4 @@
-console.log("build cloudflare-0084");
+console.log("build cloudflare-0085");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -4425,7 +4425,7 @@ function mcRenderMemoryCard(item, compact = false) {
   if (item.content && item.content.length > 0) {
     fullEl = mcEl("div", "mc-memory-full");
     fullEl.textContent = item.content;
-    fullEl.hidden = true;
+    // Don't use .hidden, let CSS handle display via .mc-memory-card--expanded
     card.appendChild(fullEl);
   }
 
@@ -4445,8 +4445,6 @@ function mcRenderMemoryCard(item, compact = false) {
       expandBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         const isExp = card.classList.toggle("mc-memory-card--expanded");
-        fullEl.hidden = !isExp;
-        summary.hidden = isExp;
         expandBtn.textContent = isExp ? "收起" : "展开";
       });
       actions.appendChild(expandBtn);
