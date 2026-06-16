@@ -2352,6 +2352,110 @@ details[open] > .mc-advanced-summary::before { content: "▾"; }
   line-height: 1.5;
 }
 
+.mc-memory-full {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mc-memory-card--expanded .mc-memory-summary {
+  display: none;
+}
+
+.mc-memory-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid oklch(31% 0.006 250);
+}
+
+.mc-action-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid oklch(36% 0.006 250);
+  border-radius: 4px;
+  background: oklch(20% 0.006 250);
+  color: oklch(84% 0.006 250);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mc-action-btn:hover {
+  background: oklch(24% 0.006 250);
+  border-color: oklch(46% 0.006 250);
+}
+
+.mc-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mc-action-btn--danger {
+  color: oklch(62% 0.2 25);
+}
+
+.mc-action-btn--danger:hover {
+  background: oklch(62% 0.2 25 / 0.1);
+  border-color: oklch(62% 0.2 25);
+}
+
+.mc-auth-prompt {
+  padding: 32px 24px;
+  text-align: center;
+  border: 1px solid oklch(28% 0.006 250);
+  border-radius: 8px;
+  background: oklch(15% 0.006 250);
+  margin-bottom: 24px;
+}
+
+.mc-auth-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.mc-auth-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: oklch(92% 0.008 250);
+  margin-bottom: 8px;
+}
+
+.mc-auth-desc {
+  font-size: 13px;
+  color: oklch(68% 0.006 250);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.mc-auth-btn {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid oklch(46% 0.08 240);
+  border-radius: 6px;
+  background: oklch(40% 0.08 240);
+  color: oklch(98% 0.004 250);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mc-auth-btn:hover {
+  background: oklch(45% 0.09 240);
+  border-color: oklch(50% 0.09 240);
+}
+
+.mc-section-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: oklch(78% 0.006 250);
+  margin: 20px 0 12px;
+}
+
 .mc-empty {
   padding: 20px 16px;
   border: 1px solid oklch(28% 0.006 250);

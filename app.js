@@ -1,4 +1,4 @@
-console.log("build cloudflare-0083");
+console.log("build cloudflare-0084");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1891,9 +1891,19 @@ function showGlobalMemoryError(msg) {
   errEl.textContent = msg;
 }
 
-function removeMemoryItem(id) {
-  memoriesCache = memoriesCache.filter(m => m.id !== id);
-  const el = memoryList.querySelector(`.memory-item[data-memory-id="${CSS.escape(id)}"]`);
+function removeMemoryItem(id, isInstruction = false) {
+  const state = memoryCenterV2State;
+  if (isInstruction) {
+    state.instructions = state.instructions.filter(i => i.id !== id);
+  } else {
+    state.memories = state.memories.filter(m => m.id !== id);
+  }
+  // Re-render current view if workspace is open
+  if (!memoryCenterOverlay?.classList.contains("hidden")) {
+    renderMemoryCenterCurrentView();
+  }
+  // Legacy panel: remove from DOM if present
+  const el = memoryList?.querySelector(`.memory-item[data-memory-id="${CSS.escape(id)}"]`);
   if (!el) return;
   el.style.transition = "opacity 0.12s, max-height 0.12s";
   el.style.overflow = "hidden";
@@ -1906,12 +1916,22 @@ function removeMemoryItem(id) {
   }, 120);
 }
 
-function updateMemoryItem(updatedMem) {
-  const idx = memoriesCache.findIndex(m => m.id === updatedMem.id);
-  if (idx !== -1) memoriesCache[idx] = updatedMem;
-  const el = memoryList.querySelector(`.memory-item[data-memory-id="${CSS.escape(updatedMem.id)}"]`);
+function updateMemoryItem(updatedMem, isInstruction = false) {
+  const state = memoryCenterV2State;
+  if (isInstruction) {
+    const idx = state.instructions.findIndex(i => i.id === updatedMem.id);
+    if (idx >= 0) state.instructions[idx] = updatedMem;
+  } else {
+    const idx = state.memories.findIndex(m => m.id === updatedMem.id);
+    if (idx >= 0) state.memories[idx] = updatedMem;
+  }
+  // Re-render current view if workspace is open
+  if (!memoryCenterOverlay?.classList.contains("hidden")) {
+    renderMemoryCenterCurrentView();
+  }
+  // Legacy panel: re-render item if present
+  const el = memoryList?.querySelector(`.memory-item[data-memory-id="${CSS.escape(updatedMem.id)}"]`);
   if (!el) return;
-  // Re-render in place so title/summary/expand state stays consistent
   const wasExpanded = el.classList.contains("memory-item--expanded");
   const fresh = renderMemoryItem(updatedMem);
   if (wasExpanded) fresh.classList.add("memory-item--expanded");
@@ -2036,7 +2056,7 @@ function renderMemoryItem(mem) {
     if (updated && updated.id) {
       updateMemoryItem(updated);
     } else {
-      const cached = memoriesCache.find(m => m.id === mem.id);
+      const cached = memoryCenterV2State.memories.find(m => m.id === mem.id);
       if (cached) updateMemoryItem({ ...cached, enabled: newEnabled });
     }
   });
@@ -2049,7 +2069,7 @@ function renderMemoryItem(mem) {
   editBtn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const current = memoriesCache.find(m => m.id === mem.id) || mem;
+    const current = memoryCenterV2State.memories.find(m => m.id === mem.id) || mem;
     showMemoryEditDialog(current, item);
   });
   actions.appendChild(editBtn);
@@ -2386,7 +2406,7 @@ async function loadMemories() {
     return;
   }
 
-  memoriesCache = memories;
+  memoryCenterV2State.memories = memories;
 
   // ─── Section 1: instructions (non-critical, no block on failure) ───────────
   let instructions = [];
@@ -2415,7 +2435,7 @@ async function loadMemories() {
   }
 
   // ─── Section 2: memories ───────────────────────────────────────────────────
-  renderMemoryList(memoriesCache);
+  renderMemoryList(memoryCenterV2State.memories);
 }
 
 toggleMemoryButton.addEventListener("click", () => {
@@ -2466,7 +2486,7 @@ addMemoryButton.addEventListener("click", async () => {
   } catch { newMem = null; }
   memoryInput.value = "";
   if (newMem && newMem.id) {
-    memoriesCache.push(newMem);
+    memoryCenterV2State.memories.push(newMem);
     // Remove "暂无记忆" placeholder if present
     const empty = memoryList.querySelector("div[style*='暂无记忆']");
     if (empty) empty.remove();
@@ -3210,15 +3230,14 @@ memoryDebugOverlay?.addEventListener("click", (e) => {
 
 document.getElementById("memoryDebugBackBtn")?.addEventListener("click", () => {
   memoryDebugOverlay?.classList.add("hidden");
-  openMemoryCenter();
+  // openMemoryCenter is now at line ~5063 with full workspace support
+  if (memoryCenterOverlay) {
+    memoryCenterOverlay.classList.remove("hidden");
+    memoryCenterV2State.view = "archive";
+    renderMemoryCenterCurrentView();
+    refreshMemoryCenterData();
+  }
 });
-
-function openMemoryCenter() {
-  if (!memoryCenterOverlay) return;
-  memoryCenterOverlay.classList.remove("hidden");
-  renderMemoryCenterSummary(getLastMemoryDebug());
-  renderRecentMemoryUpdates();
-}
 
 function renderMemoryCenterSummary(debug) {
   const personaCountEl = document.getElementById("mcCenterPersonaMemoriesCount");
@@ -4388,7 +4407,7 @@ function mcRenderBadge(text, tone) {
   return badge;
 }
 
-function mcRenderMemoryCard(item, compact) {
+function mcRenderMemoryCard(item, compact = false) {
   const card = mcEl("article", "mc-memory-card");
   const top = mcEl("div", "mc-memory-card-top");
   const chips = mcEl("div", "mc-chip-row");
@@ -4401,10 +4420,160 @@ function mcRenderMemoryCard(item, compact) {
   const summary = mcEl("p", "mc-memory-summary", item.summary);
   card.append(top, title, summary);
 
+  // Full content (collapsed by default)
+  let fullEl = null;
+  if (item.content && item.content.length > 0) {
+    fullEl = mcEl("div", "mc-memory-full");
+    fullEl.textContent = item.content;
+    fullEl.hidden = true;
+    card.appendChild(fullEl);
+  }
+
   if (!compact && item.sourcePreview) {
     const source = mcEl("div", "mc-memory-source", `来源：${item.sourcePreview}`);
     card.appendChild(source);
   }
+
+  // Add actions section (only if not compact AND not read-only recent)
+  if (!compact && item.source !== "recent") {
+    const actions = mcEl("div", "mc-memory-actions");
+
+    // Expand button (for all sources if content exists)
+    if (fullEl) {
+      const expandBtn = mcEl("button", "mc-action-btn", "展开");
+      expandBtn.type = "button";
+      expandBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isExp = card.classList.toggle("mc-memory-card--expanded");
+        fullEl.hidden = !isExp;
+        summary.hidden = isExp;
+        expandBtn.textContent = isExp ? "收起" : "展开";
+      });
+      actions.appendChild(expandBtn);
+    }
+
+    // Toggle enable/disable (for memories and instructions)
+    if (item.source === "memories" || item.source === "instructions") {
+      const isEnabled = item.enabled !== false;
+      const toggleBtn = mcEl("button", "mc-action-btn", isEnabled ? "禁用" : "启用");
+      toggleBtn.type = "button";
+      toggleBtn.dataset.id = item.id;
+      toggleBtn.dataset.enabled = String(isEnabled);
+      toggleBtn.dataset.source = item.source;
+
+      toggleBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        const newEnabled = btn.dataset.enabled !== "true";
+        const isInstruction = btn.dataset.source === "instructions";
+
+        let path = `?id=${encodeURIComponent(btn.dataset.id)}`;
+        if (isInstruction) path = `?type=instructions&id=${encodeURIComponent(btn.dataset.id)}`;
+
+        let r;
+        try {
+          r = await memoryFetch(path, {
+            method: "PATCH",
+            body: JSON.stringify({ enabled: newEnabled }),
+          });
+        } catch (err) {
+          btn.disabled = false;
+          showMcToast(`网络错误：${err.message}`, true);
+          return;
+        }
+
+        btn.disabled = false;
+        if (!r.ok) {
+          if (r.status === 401) {
+            sessionStorage.removeItem("memory_admin_token");
+            showMcToast("口令过期，请刷新页面", true);
+          } else {
+            let msg = `操作失败（${r.status}）`;
+            try { const j = await r.json(); msg = j.error || j.message || msg; } catch {}
+            showMcToast(msg, true);
+          }
+          return;
+        }
+
+        let updated;
+        try { updated = await r.json(); } catch { updated = null; }
+        if (updated && updated.id) {
+          updateMemoryItem(updated, isInstruction);
+        } else {
+          const cached = isInstruction
+            ? memoryCenterV2State.instructions.find(i => i.id === item.id)
+            : memoryCenterV2State.memories.find(m => m.id === item.id);
+          if (cached) updateMemoryItem({ ...cached, enabled: newEnabled }, isInstruction);
+        }
+        showMcToast(newEnabled ? "已启用" : "已停用");
+      });
+
+      actions.appendChild(toggleBtn);
+    }
+
+    // Edit button (only for memories, not instructions)
+    if (item.source === "memories") {
+      const editBtn = mcEl("button", "mc-action-btn", "编辑");
+      editBtn.type = "button";
+      editBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const current = memoryCenterV2State.memories.find(m => m.id === item.id) || item.raw;
+        showMemoryEditDialog(current, null);
+      });
+      actions.appendChild(editBtn);
+    }
+
+    // Delete button (for memories and instructions)
+    if (item.source === "memories" || item.source === "instructions") {
+      const deleteBtn = mcEl("button", "mc-action-btn mc-action-btn--danger", "删除");
+      deleteBtn.type = "button";
+      deleteBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isInstruction = item.source === "instructions";
+        showDialog({
+          title: isInstruction ? "删除设定" : "删除记忆",
+          body: isInstruction ? "确定删除这条设定？" : "确定删除这条记忆？",
+          confirmLabel: "删除",
+          confirmClass: "btn-danger",
+          onConfirm: async () => {
+            let path = `?id=${encodeURIComponent(item.id)}`;
+            if (isInstruction) path = `?type=instructions&id=${encodeURIComponent(item.id)}`;
+
+            let r;
+            try {
+              r = await memoryFetch(path, { method: "DELETE" });
+            } catch (err) {
+              showMcToast(`网络错误：${err.message}`, true);
+              return;
+            }
+
+            if (!r.ok) {
+              if (r.status === 401) {
+                sessionStorage.removeItem("memory_admin_token");
+                showMcToast("口令过期，请刷新页面", true);
+              } else {
+                let msg = `删除失败（${r.status}）`;
+                try { const j = await r.json(); msg = j.error || j.message || msg; } catch {}
+                showMcToast(msg, true);
+              }
+              return;
+            }
+
+            removeMemoryItem(item.id, isInstruction);
+            showMcToast("已删除");
+          },
+        });
+      });
+      actions.appendChild(deleteBtn);
+    }
+
+    card.appendChild(actions);
+  }
+
   return card;
 }
 
@@ -4554,7 +4723,34 @@ function renderMemoryArchiveView(root, options = {}) {
   if (_archiveSnap.loadingStates.loadingArchive && !_archiveSnap.loadingStates.archiveLoaded) {
     mcRenderEmpty(list, "档案加载中...");
   } else if (!getMemoryToken() && !_archiveSnap.loadingStates.archiveLoaded) {
-    mcRenderEmpty(list, "完整档案需要记忆口令；这里暂时只显示最近沉淀。");
+    const authPrompt = mcEl("div", "mc-auth-prompt");
+    authPrompt.innerHTML = `
+      <div class="mc-auth-icon">🔒</div>
+      <div class="mc-auth-title">需要记忆口令</div>
+      <div class="mc-auth-desc">输入口令后可查看完整档案并进行管理操作</div>
+    `;
+    const authBtn = mcEl("button", "mc-auth-btn", "输入口令");
+    authBtn.type = "button";
+    authBtn.addEventListener("click", () => {
+      showDialog({
+        title: "记忆管理口令",
+        input: "",
+        inputType: "password",
+        confirmLabel: "确定",
+        onConfirm: (val) => {
+          if (val) {
+            sessionStorage.setItem("memory_admin_token", val);
+            mcBridgeRefreshAll();
+          }
+        },
+      });
+    });
+    authPrompt.appendChild(authBtn);
+    list.appendChild(authPrompt);
+
+    // Still show recent items
+    const recentTitle = mcEl("h3", "mc-section-subtitle", "最近沉淀（无需口令）");
+    list.appendChild(recentTitle);
     items.filter((item) => item.source === "recent").forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
   } else if (filtered.length) {
     filtered.forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
@@ -4893,7 +5089,7 @@ async function refreshMemoryCenterData() {
 function openMemoryCenter() {
   if (!memoryCenterOverlay) return;
   memoryCenterOverlay.classList.remove("hidden");
-  memoryCenterV2State.view = "room";
+  memoryCenterV2State.view = "archive"; // 直接进档案馆，支持 CRUD
   renderMemoryCenterCurrentView();
   refreshMemoryCenterData();
   // 绑定桌面 nav 点击（用 _mcNavBound 标记避免重复绑定）
