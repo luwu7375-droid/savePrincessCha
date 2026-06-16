@@ -1,4 +1,4 @@
-console.log("build cloudflare-0085");
+console.log("build cloudflare-0086");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -4165,6 +4165,7 @@ function mcStatusLabel(item) {
 function normalizeMemoryDisplayItems() {
   const state = memoryCenterV2State;
   const seen = new Set();
+  const seenIds = new Set(); // Track IDs across all sources
   const items = [];
 
   function push(row, source, extra) {
@@ -4172,16 +4173,27 @@ function normalizeMemoryDisplayItems() {
     const id = row.id || `${source}-${items.length}`;
     const key = `${source}:${id}`;
     if (seen.has(key)) return;
-    seen.add(key);
 
-    const content = row.content || row.summary || row.title || "";
+    // Dedup: if this ID exists in memories/instructions, skip recent duplicate
+    if (source === "recent" && row.id && seenIds.has(row.id)) return;
+
+    seen.add(key);
+    if (row.id) seenIds.add(row.id);
+
+    // Clean text fields with trim()
+    const rawContent = String(row.content || "").trim();
+    const rawSummary = String(row.summary || "").trim();
+    const rawTitle = String(row.title || "").trim();
+    const rawSourcePreview = String(row.source_preview || "").trim();
+
+    const content = rawContent || rawSummary || rawTitle || "";
     const category = row.category || row.domain || row.candidate_type || extra?.category || "general";
     const categoryKey = mcCategoryKey(category, source);
     const config = MEMORY_CENTER_CATEGORY_CONFIG[categoryKey] || MEMORY_CENTER_CATEGORY_CONFIG.background;
 
     const tags = Array.isArray(row.tags) ? row.tags : (row.tags ? String(row.tags).split(",").map((t) => t.trim()).filter(Boolean) : []);
-    const title = row.title || extra?.title || mcAutoTitle(content);
-    const summary = row.summary || row.source_preview || extra?.summary || mcAutoSummary(content);
+    const title = rawTitle || extra?.title || mcAutoTitle(content);
+    const summary = rawSummary || rawSourcePreview || extra?.summary || mcAutoSummary(content);
     items.push({
       id,
       source,
@@ -4196,7 +4208,7 @@ function normalizeMemoryDisplayItems() {
       enabled: row.enabled !== false,
       createdAt: row.created_at || row.updated_at || row.promoted_at || extra?.createdAt || null,
       updatedAt: row.updated_at || null,
-      sourcePreview: row.source_preview || "",
+      sourcePreview: rawSourcePreview,
       status: row.status || "",
       statusLabel: extra?.statusLabel || row.status || "",
       // bridge 新增字段
@@ -4247,8 +4259,10 @@ function mcBridgeGetArchiveItems(query, statusFilter, categoryFilter) {
   const catFilter = categoryFilter || "all";
   return items.filter((item) => {
     const matchesQuery = !q || item.searchText.includes(q);
+    // Archive default: exclude recent (memories + instructions only)
+    // Recent only shows when explicitly selected
     const matchesStatus =
-      filter === "all" ||
+      (filter === "all" && item.source !== "recent") ||
       (filter === "enabled" && item.source === "memories" && item.enabled !== false) ||
       (filter === "disabled" && item.enabled === false) ||
       (filter === "instructions" && item.source === "instructions") ||
@@ -4422,7 +4436,8 @@ function mcRenderMemoryCard(item, compact = false) {
 
   // Full content (collapsed by default)
   let fullEl = null;
-  if (item.content && item.content.length > 0) {
+  const hasFullContent = item.content && item.content.trim().length > 0;
+  if (hasFullContent) {
     fullEl = mcEl("div", "mc-memory-full");
     fullEl.textContent = item.content;
     // Don't use .hidden, let CSS handle display via .mc-memory-card--expanded
@@ -4438,8 +4453,8 @@ function mcRenderMemoryCard(item, compact = false) {
   if (!compact && item.source !== "recent") {
     const actions = mcEl("div", "mc-memory-actions");
 
-    // Expand button (for all sources if content exists)
-    if (fullEl) {
+    // Expand button (only if content has actual text after trim)
+    if (hasFullContent) {
       const expandBtn = mcEl("button", "mc-action-btn", "展开");
       expandBtn.type = "button";
       expandBtn.addEventListener("click", (e) => {
