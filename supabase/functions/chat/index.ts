@@ -495,6 +495,11 @@ type RequestLog = {
   conversation_history_filtered_by_route: boolean;
   conversation_history_suppressed_count: number;
   conversation_history_allowed_count: number;
+  running_summary_attempted: boolean;
+  running_summary_injected: boolean;
+  running_summary_message_count: number;
+  running_summary_kept_recent_count: number;
+  running_summary_error: string | null;
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
@@ -1548,6 +1553,130 @@ async function callModelWithFallback(
   };
 }
 
+// ── Running summary (transient) ───────────────────────────────────────────────
+const RUNNING_SUMMARY_TRIGGER_MESSAGES = 30;
+const RUNNING_SUMMARY_KEEP_RECENT_MESSAGES = 20;
+
+type RunningSummaryResult = {
+  summary: string;
+  originalMessageCount: number;
+  keptRecentCount: number;
+};
+
+function messageRoleForSummary(message: unknown): string {
+  if (!message || typeof message !== "object") return "unknown";
+  const role = (message as { role?: unknown }).role;
+  return typeof role === "string" ? role : "unknown";
+}
+
+function messageTextForSummary(message: unknown): string {
+  if (!message || typeof message !== "object") return String(message ?? "");
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object") {
+          const text = (part as { text?: unknown }).text;
+          if (typeof text === "string") return text;
+          const type = (part as { type?: unknown }).type;
+          return typeof type === "string" ? `[${type}]` : "[content]";
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join(" ");
+  }
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return "[unserializable content]";
+  }
+}
+
+async function callModelText(
+  provider: ProviderConfig,
+  messages: unknown[],
+  maxTokens: number,
+): Promise<string> {
+  const timeoutMs = getTimeoutMs(provider.tier);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(provider.baseUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${provider.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: provider.model,
+        messages,
+        stream: false,
+        max_tokens: maxTokens,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`summary_model_${res.status}: ${text.slice(0, 160)}`);
+    }
+    const data = await res.json();
+    const text =
+      data?.choices?.[0]?.message?.content ??
+      data?.choices?.[0]?.text ??
+      "";
+    return typeof text === "string" ? text.trim() : "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function buildRunningSummary(
+  tierProviders: TierProviders,
+  payloadMessages: unknown[],
+): Promise<RunningSummaryResult | null> {
+  if (payloadMessages.length <= RUNNING_SUMMARY_TRIGGER_MESSAGES) return null;
+
+  const olderMessages = payloadMessages.slice(0, -RUNNING_SUMMARY_KEEP_RECENT_MESSAGES);
+  if (olderMessages.length === 0) return null;
+
+  const transcript = olderMessages
+    .map((message, index) => {
+      const role = messageRoleForSummary(message);
+      const text = messageTextForSummary(message).replace(/\s+/g, " ").trim();
+      return `${index + 1}. ${role}: ${text.slice(0, 800)}`;
+    })
+    .join("\n");
+
+  const summaryMessages = [
+    {
+      role: "system",
+      content:
+        "Summarize the older part of this chat for continuing the same conversation. " +
+        "Keep concrete facts, user preferences, commitments, emotional state, unresolved questions, " +
+        "and anything Cha should remember for the immediate reply. Do not invent details.",
+    },
+    {
+      role: "user",
+      content:
+        "Return a concise running summary in English or Chinese matching the transcript language. " +
+        "This summary is transient and must not mention that summarization happened.\n\n" +
+        transcript,
+    },
+  ];
+
+  const summary = await callModelText(tierProviders.primary, summaryMessages, 420);
+  if (!summary) return null;
+
+  return {
+    summary,
+    originalMessageCount: payloadMessages.length,
+    keptRecentCount: RUNNING_SUMMARY_KEEP_RECENT_MESSAGES,
+  };
+}
+
 // ── Gemini Flash emotion analysis ─────────────────────────────────────────────
 // Analyzes last 4 messages for valence, arousal, connection.
 // Returns null on error → caller falls back to rule-based values.
@@ -1744,6 +1873,11 @@ Deno.serve(async (request) => {
     conversation_history_filtered_by_route: false,
     conversation_history_suppressed_count: 0,
     conversation_history_allowed_count: 0,
+    running_summary_attempted: false,
+    running_summary_injected: false,
+    running_summary_message_count: 0,
+    running_summary_kept_recent_count: 0,
+    running_summary_error: null,
     memory_context_tokens_estimated: 0,
     model_call_ms: 0,
     total_ms: 0,
@@ -2101,9 +2235,32 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     systemContent += "\n\n【回复决策】正常回复用户消息。";
   }
 
+  const payloadMessages = payload.messages as unknown[];
+  let modelPayloadMessages = payloadMessages;
+  logRecord.running_summary_message_count = payloadMessages.length;
+
+  if (payloadMessages.length > RUNNING_SUMMARY_TRIGGER_MESSAGES) {
+    logRecord.running_summary_attempted = true;
+    try {
+      const runningSummary = await buildRunningSummary(tierProviders, payloadMessages);
+      if (runningSummary) {
+        systemContent +=
+          "\n\n[Transient running summary]\n" +
+          "Use this temporary summary as context for older messages. It is not persisted memory.\n" +
+          runningSummary.summary;
+        modelPayloadMessages = payloadMessages.slice(-runningSummary.keptRecentCount);
+        logRecord.running_summary_injected = true;
+        logRecord.running_summary_kept_recent_count = runningSummary.keptRecentCount;
+      }
+    } catch (err) {
+      logRecord.running_summary_error = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+      modelPayloadMessages = payloadMessages;
+    }
+  }
+
   const messages = [
     { role: "system", content: systemContent },
-    ...(payload.messages as unknown[]),
+    ...modelPayloadMessages,
   ];
 
   try {
@@ -2185,6 +2342,11 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
       model: logRecord.model,
       fallback_used: logRecord.fallback_used,
       fallback_reason: logRecord.fallback_reason,
+      running_summary_attempted: logRecord.running_summary_attempted,
+      running_summary_injected: logRecord.running_summary_injected,
+      running_summary_message_count: logRecord.running_summary_message_count,
+      running_summary_kept_recent_count: logRecord.running_summary_kept_recent_count,
+      running_summary_error: logRecord.running_summary_error,
     };
     const memoryDebugHeader = base64EncodeUtf8(memoryDebugPayload);
     const chatStatusHeader = base64EncodeUtf8(chatStatus);

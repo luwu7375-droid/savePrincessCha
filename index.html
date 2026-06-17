@@ -42,11 +42,19 @@
     <!-- 主聊天区 -->
     <main class="chat-shell">
       <header class="top-bar">
+        <button id="chatBackButton" type="button" class="icon-btn" title="Back" aria-label="Back">&lt;</button>
         <button id="sidebarToggle" type="button" class="icon-btn" title="会话列表">☰</button>
+        <button id="chaAvatarButton" type="button" class="top-avatar avatar" title="Change Cha avatar" aria-label="Change Cha avatar"></button>
         <h1>救公主</h1>
         <span id="chatStatus" class="chat-status"></span>
+        <button id="chatSearchButton" type="button" class="icon-btn" title="Search messages" aria-label="Search messages">S</button>
         <button id="moreButton" type="button" class="icon-btn" title="更多">⋯</button>
       </header>
+
+      <div id="chatSearchBar" class="chat-search-bar hidden">
+        <input id="chatSearchInput" type="search" placeholder="Search messages">
+        <button id="chatSearchClear" type="button" class="icon-btn" aria-label="Clear search">x</button>
+      </div>
 
       <div id="princessStatusBar" class="princess-status-bar hidden" aria-label="G 当前状态"></div>
 

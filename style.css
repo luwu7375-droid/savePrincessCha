@@ -383,6 +383,46 @@ body {
   white-space: nowrap;
 }
 
+.top-avatar {
+  padding: 0;
+  cursor: pointer;
+}
+
+.top-avatar.avatar::after {
+  content: "Cha";
+  font-size: 9px;
+}
+
+.top-avatar.has-image::after {
+  content: "";
+}
+
+.chat-search-bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 18px;
+  background: var(--bg-deep);
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-search-bar.hidden { display: none; }
+
+.chat-search-bar input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  padding: 7px 10px;
+}
+
+.chat-search-bar input:focus {
+  outline: none;
+  border-color: oklch(52% 0.16 248 / 0.6);
+}
+
 /* ── Princess Status Bar ── */
 .princess-status-bar {
   display: flex;
@@ -458,6 +498,8 @@ body {
 }
 .msg-row.user { justify-content: flex-end; }
 .msg-row.assistant { justify-content: flex-start; }
+.msg-row.search-hidden { display: none; }
+.msg-row.search-hit .message { box-shadow: 0 0 0 2px oklch(70% 0.12 90 / 0.7); }
 
 .avatar {
   width: 28px;
@@ -486,6 +528,14 @@ body {
 }
 .msg-row.user .msg-stack { align-items: flex-end; }
 .msg-row.assistant .msg-stack { align-items: flex-start; }
+
+.read-receipt {
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.65;
+}
 
 /* ── Bubbles ── */
 .message {
