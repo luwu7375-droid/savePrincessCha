@@ -274,6 +274,78 @@ body {
 .dialog-actions .btn-confirm:hover { background: var(--send-hover); }
 .dialog-actions .btn-danger { background: oklch(50% 0.2 25); color: #fff; }
 .dialog-actions .btn-danger:hover { background: oklch(44% 0.2 25); }
+
+.inline-editable {
+  cursor: text;
+  outline: none;
+  border-radius: 6px;
+}
+
+.inline-editable:focus-visible {
+  box-shadow: 0 0 0 2px var(--bubble-me);
+}
+
+.inline-editor {
+  position: fixed;
+  z-index: 80;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+.inline-editor-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.4;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.inline-editor-input:focus {
+  outline: none;
+  border-color: oklch(52% 0.16 248 / 0.6);
+}
+
+.inline-editor-error {
+  color: oklch(62% 0.2 25);
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 6px;
+}
+
+.inline-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inline-editor-btn {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  padding: 6px 10px;
+}
+
+.inline-editor-btn--primary {
+  border-color: var(--bubble-me);
+  background: var(--bubble-me);
+  color: #fff;
+}
+
+.inline-editor-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
 .memory-edit-dialog { width: 420px; }
 
 /* ── Chat shell ── */

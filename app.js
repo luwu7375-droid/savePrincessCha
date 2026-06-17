@@ -407,6 +407,145 @@ function showDialog({ title, body, input, inputType = "text", confirmLabel, conf
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
+let activeInlineEditor = null;
+
+function closeInlineEditor() {
+  if (activeInlineEditor) {
+    activeInlineEditor.remove();
+    activeInlineEditor = null;
+  }
+}
+
+function placeInlineEditor(editor, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const margin = 8;
+  const width = Math.min(320, window.innerWidth - margin * 2);
+  editor.style.width = `${width}px`;
+  document.body.appendChild(editor);
+  const height = editor.offsetHeight || 120;
+  let top = rect.bottom + 6;
+  if (top + height > window.innerHeight - margin) top = rect.top - height - 6;
+  let left = rect.left;
+  left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+  top = Math.max(margin, Math.min(top, window.innerHeight - height - margin));
+  editor.style.left = `${left}px`;
+  editor.style.top = `${top}px`;
+}
+
+function openInlineEditor(anchor, options = {}) {
+  closeInlineEditor();
+  const {
+    load = () => anchor.textContent || "",
+    save,
+    label = anchor.getAttribute("aria-label") || anchor.title || "Edit",
+    multiline = false,
+    inputType = "text",
+    placeholder = "",
+    validate,
+    format = (value) => value,
+  } = options;
+  if (typeof save !== "function") return null;
+
+  const editor = document.createElement("div");
+  editor.className = "inline-editor";
+  editor.setAttribute("role", "dialog");
+  editor.setAttribute("aria-label", label);
+
+  const input = multiline ? document.createElement("textarea") : document.createElement("input");
+  input.className = "inline-editor-input";
+  if (!multiline) input.type = inputType;
+  input.value = String(load() ?? "");
+  input.placeholder = placeholder;
+  if (multiline) input.rows = 3;
+
+  const error = document.createElement("div");
+  error.className = "inline-editor-error";
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "inline-editor-actions";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "inline-editor-btn";
+  cancelBtn.textContent = "Cancel";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "inline-editor-btn inline-editor-btn--primary";
+  saveBtn.textContent = "Save";
+  actions.append(cancelBtn, saveBtn);
+  editor.append(input, error, actions);
+
+  async function submit() {
+    const value = input.value.trim();
+    const validationError = typeof validate === "function" ? validate(value) : "";
+    if (validationError) {
+      error.textContent = validationError;
+      error.hidden = false;
+      return;
+    }
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    error.hidden = true;
+    try {
+      await save(value);
+      anchor.textContent = format(value);
+      closeInlineEditor();
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : String(err);
+      error.hidden = false;
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+    }
+  }
+
+  cancelBtn.addEventListener("click", closeInlineEditor);
+  saveBtn.addEventListener("click", submit);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeInlineEditor();
+    if (event.key === "Enter" && !multiline && !event.isComposing) {
+      event.preventDefault();
+      submit();
+    }
+    if (event.key === "Enter" && multiline && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      submit();
+    }
+  });
+
+  activeInlineEditor = editor;
+  placeInlineEditor(editor, anchor);
+  input.focus();
+  input.select();
+  setTimeout(() => {
+    document.addEventListener("pointerdown", function onPointerDown(event) {
+      if (!activeInlineEditor) return document.removeEventListener("pointerdown", onPointerDown);
+      if (activeInlineEditor.contains(event.target) || anchor.contains(event.target)) return;
+      closeInlineEditor();
+      document.removeEventListener("pointerdown", onPointerDown);
+    });
+  }, 0);
+  return editor;
+}
+
+function attachInlineEditor(anchor, options = {}) {
+  if (!anchor) return;
+  anchor.classList.add("inline-editable");
+  anchor.tabIndex = anchor.tabIndex >= 0 ? anchor.tabIndex : 0;
+  anchor.addEventListener("click", () => openInlineEditor(anchor, options));
+  anchor.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openInlineEditor(anchor, options);
+    }
+  });
+}
+
+window.SavePrincessInlineEdit = {
+  attach: attachInlineEditor,
+  open: openInlineEditor,
+  close: closeInlineEditor,
+};
+
 const APP_TIME_ZONE = "Asia/Shanghai";
 
 function parseDbTime(value) {
