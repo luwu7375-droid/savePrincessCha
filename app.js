@@ -767,11 +767,39 @@ async function resolveImagePaths(rows) {
   });
 }
 
-async function saveMessage(role, content, imageStoragePath = null) {
+const MESSAGE_EVENT_TYPES = new Set(["message", "image", "system", "dream", "voice"]);
+const MESSAGE_SYSTEM_ACTIONS = new Set(["favorite", "edit", "delete", "tag", "game_played"]);
+
+function buildMessageEventFields(fields = {}) {
+  const out = {};
+  if (MESSAGE_EVENT_TYPES.has(fields.type)) out.type = fields.type;
+  if (typeof fields.is_favorite === "boolean") out.is_favorite = fields.is_favorite;
+  if (Array.isArray(fields.ai_tags)) out.ai_tags = fields.ai_tags;
+  if (fields.system_action === null || MESSAGE_SYSTEM_ACTIONS.has(fields.system_action)) {
+    out.system_action = fields.system_action;
+  }
+  if (
+    fields.ref_event_id === null ||
+    Number.isInteger(fields.ref_event_id) ||
+    (typeof fields.ref_event_id === "string" && /^\d+$/.test(fields.ref_event_id))
+  ) {
+    out.ref_event_id = fields.ref_event_id;
+  }
+  return out;
+}
+
+async function saveMessage(role, content, imageStoragePath = null, eventFields = {}) {
   if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
   const { data: { user } } = await supabaseClient.auth.getUser();
-  const row = { role, content, conversation_id: conversationId, user_id: user.id };
+  const row = {
+    role,
+    content,
+    conversation_id: conversationId,
+    user_id: user.id,
+    ...buildMessageEventFields(eventFields),
+  };
+  if (imageStoragePath && !row.type) row.type = "image";
   if (imageStoragePath) row.image_storage_path = imageStoragePath;
   const { data, error } = await supabaseClient
     .from("messages")
