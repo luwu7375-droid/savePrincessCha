@@ -789,24 +789,6 @@ async function uploadImageToStorage(dataUrl, userId, conversationId) {
     contentType: "image/jpeg",
   });
   return uploadResult?.path || null;
-  try {
-    // Convert data URL to Blob
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    const timestamp = Date.now();
-    const path = `${userId}/${conversationId}_${timestamp}.jpg`;
-    const { error } = await supabaseClient.storage
-      .from("chat-images")
-      .upload(path, blob, { contentType: "image/jpeg", upsert: false });
-    if (error) {
-      console.warn("图片上传 Storage 失败（非致命）：", error.message);
-      return null;
-    }
-    return path;
-  } catch (err) {
-    console.warn("图片上传 Storage 异常（非致命）：", err.message);
-    return null;
-  }
 }
 
 /**
