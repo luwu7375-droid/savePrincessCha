@@ -692,8 +692,103 @@ function showLegacyDataNotice() {
  * Path convention: {userId}/{conversationId}_{timestamp}.jpg
  * This puts each user's files in their own folder, matching the RLS policy.
  */
+function getFileExtension(file, fallback = "jpg") {
+  const name = file?.name || "";
+  const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  return ext || fallback;
+}
+
+function defaultStoragePath({ userId, scope = "uploads", file }) {
+  return `${userId}/${scope}_${Date.now()}.${getFileExtension(file)}`;
+}
+
+async function getStorageSignedUrl(bucket, storagePath, expiresIn = 3600) {
+  if (!supabaseClient || !bucket || !storagePath) return null;
+  const { data, error } = await supabaseClient.storage
+    .from(bucket)
+    .createSignedUrl(storagePath, expiresIn);
+  if (error) return null;
+  return data?.signedUrl || null;
+}
+
+async function uploadStorageAsset({ file, dataUrl, bucket = "chat-images", path, contentType, signedUrlExpiresIn = 3600 }) {
+  if (!supabaseClient || (!file && !dataUrl) || !bucket || !path) return null;
+  try {
+    const blob = file || await fetch(dataUrl).then((res) => res.blob());
+    const { error } = await supabaseClient.storage
+      .from(bucket)
+      .upload(path, blob, {
+        contentType: contentType || blob.type || "application/octet-stream",
+        upsert: false,
+      });
+    if (error) {
+      console.warn("Storage upload failed:", error.message);
+      return null;
+    }
+    const signedUrl = await getStorageSignedUrl(bucket, path, signedUrlExpiresIn);
+    return { bucket, path, signedUrl };
+  } catch (err) {
+    console.warn("Storage upload error:", err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+function createStorageUploader(options = {}) {
+  const { accept = "image/*", bucket = "chat-images", scope = "uploads", maxBytes = 20 * 1024 * 1024, pathForFile, onUploaded, onError } = options;
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = accept;
+  input.style.display = "none";
+  document.body.appendChild(input);
+
+  async function open(extra = {}) {
+    const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
+    const userId = extra.userId || user?.id || currentUserId;
+    if (!userId) {
+      const err = new Error("user_id required for upload");
+      if (typeof onError === "function") onError(err);
+      throw err;
+    }
+    return new Promise((resolve) => {
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        input.value = "";
+        if (!file) return resolve(null);
+        if (file.size > maxBytes) {
+          const err = new Error("file exceeds upload size limit");
+          if (typeof onError === "function") onError(err);
+          return resolve(null);
+        }
+        const uploadPath = typeof pathForFile === "function"
+          ? pathForFile({ file, userId, scope, extra })
+          : defaultStoragePath({ file, userId, scope });
+        const result = await uploadStorageAsset({ file, bucket, path: uploadPath, contentType: file.type });
+        if (result && typeof onUploaded === "function") onUploaded(result);
+        if (!result && typeof onError === "function") onError(new Error("upload failed"));
+        resolve(result);
+      };
+      input.click();
+    });
+  }
+
+  return { input, open, destroy: () => input.remove() };
+}
+
+window.SavePrincessUpload = {
+  create: createStorageUploader,
+  upload: uploadStorageAsset,
+  signedUrl: getStorageSignedUrl,
+};
+
 async function uploadImageToStorage(dataUrl, userId, conversationId) {
   if (!supabaseClient || !dataUrl || !userId || !conversationId) return null;
+  const uploadResult = await uploadStorageAsset({
+    dataUrl,
+    bucket: "chat-images",
+    path: `${userId}/${conversationId}_${Date.now()}.jpg`,
+    contentType: "image/jpeg",
+  });
+  return uploadResult?.path || null;
   try {
     // Convert data URL to Blob
     const res = await fetch(dataUrl);
@@ -720,6 +815,8 @@ async function uploadImageToStorage(dataUrl, userId, conversationId) {
  */
 async function getSignedImageUrl(storagePath) {
   if (!supabaseClient || !storagePath) return null;
+  const signedUrl = await getStorageSignedUrl("chat-images", storagePath, 3600);
+  if (signedUrl) return signedUrl;
   const { data, error } = await supabaseClient.storage
     .from("chat-images")
     .createSignedUrl(storagePath, 3600); // 1 hour
