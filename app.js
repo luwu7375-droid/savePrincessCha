@@ -359,7 +359,7 @@ async function switchConversation(id) {
 
 // ── Dialog helper ─────────────────────────────────────────────────────────────
 
-function showDialog({ title, body, input, inputType = "text", confirmLabel, confirmClass, onConfirm }) {
+function showDialog({ title, body, input, inputType = "text", confirmLabel, confirmClass, onConfirm = () => {} }) {
   const overlay = document.createElement("div");
   overlay.className = "dialog-overlay";
 
@@ -3499,6 +3499,173 @@ if (supabaseClient) {
 }
 
 initTierBar();
+
+// ── V2 primary shell / navigation ─────────────────────────────────────────────
+function initV2Shell() {
+  const pages = Array.from(document.querySelectorAll(".v2-page"));
+  const tabs = Array.from(document.querySelectorAll(".bottom-tab"));
+  const shell = document.querySelector(".layout");
+
+  function showPage(pageName) {
+    const target = pages.find((page) => page.dataset.page === pageName) || pages[0];
+    if (!target) return;
+    const activeName = target.dataset.page;
+    pages.forEach((page) => page.classList.toggle("v2-active", page === target));
+    tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === activeName));
+    shell?.setAttribute("data-active-page", activeName);
+    if (activeName === "chat") {
+      requestAnimationFrame(() => {
+        messageList?.scrollTo({ top: messageList.scrollHeight, behavior: "auto" });
+        messageInput?.focus({ preventScroll: true });
+      });
+    }
+  }
+
+  tabs.forEach((tab) => tab.addEventListener("click", () => showPage(tab.dataset.tab)));
+
+  document.querySelectorAll("[data-placeholder-route]").forEach((entry) => {
+    entry.addEventListener("click", () => {
+      const route = entry.dataset.placeholderRoute;
+      showDialog({
+        title: "入口已预留",
+        body: `${route} 将在二级页接入，本轮先保留入口和路由命名。`,
+        confirmLabel: "知道了",
+      });
+    });
+  });
+
+  showPage("home");
+}
+
+function initV2Composer() {
+  const plusButton = document.getElementById("composerMenuBtn");
+  const inputBar = document.getElementById("chatForm");
+  if (!plusButton || !inputBar) return;
+
+  let emojiButton = document.getElementById("emojiButton");
+  if (!emojiButton) {
+    emojiButton = document.createElement("button");
+    emojiButton.id = "emojiButton";
+    emojiButton.type = "button";
+    emojiButton.className = "ghost-icon-btn v2-emoji-btn";
+    emojiButton.title = "Emoji";
+    emojiButton.setAttribute("aria-label", "Emoji");
+    emojiButton.innerHTML = '<img src="assets/icons/chat/emoji.svg" alt="">';
+    inputBar.insertBefore(emojiButton, plusButton);
+  }
+
+  plusButton.innerHTML = '<img src="assets/icons/chat/plus.svg" alt="">';
+  plusButton.title = "更多";
+  plusButton.setAttribute("aria-label", "更多");
+
+  let panel = null;
+  const closePanel = () => {
+    panel?.remove();
+    panel = null;
+    plusButton.classList.remove("active");
+  };
+
+  function addPanelItem(group, { label, desc, icon, onClick, disabled = false }) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "plus-panel-item";
+    item.disabled = Boolean(disabled);
+    item.innerHTML = `<span class="plus-panel-icon">${icon}</span><span><strong>${label}</strong><small>${desc}</small></span>`;
+    item.addEventListener("click", () => {
+      closePanel();
+      onClick?.();
+    });
+    group.appendChild(item);
+  }
+
+  function openPanel() {
+    closePanel();
+    panel = document.createElement("div");
+    panel.className = "plus-panel";
+
+    const actions = document.createElement("div");
+    actions.className = "plus-panel-grid";
+    addPanelItem(actions, {
+      label: "图片上传",
+      desc: "相册或文件",
+      icon: '<span>＋</span>',
+      onClick: () => imageAttachBtn?.click(),
+    });
+    addPanelItem(actions, {
+      label: "戳一下",
+      desc: "轻轻续一句",
+      icon: '<img src="assets/icons/chat/poke.svg" alt="">',
+      disabled: isReplying || !chatMessages.length,
+      onClick: () => triggerReply("forced"),
+    });
+    addPanelItem(actions, {
+      label: autoReplyEnabled ? "自动接话开" : "自动接话关",
+      desc: "空闲时回应",
+      icon: '<img src="assets/icons/chat/regenerate.svg" alt="">',
+      onClick: () => {
+        autoReplyEnabled = !autoReplyEnabled;
+        updateAutoReplyToggle();
+        if (!autoReplyEnabled) cancelAutoReplyTimer();
+      },
+    });
+    addPanelItem(actions, {
+      label: "强制回复",
+      desc: "现在接话",
+      icon: '<span>↗</span>',
+      disabled: isReplying || !chatMessages.length,
+      onClick: () => triggerReply("forced"),
+    });
+    panel.appendChild(actions);
+
+    const gamesTitle = document.createElement("div");
+    gamesTitle.className = "plus-panel-title";
+    gamesTitle.textContent = "游戏模式";
+    panel.appendChild(gamesTitle);
+
+    const games = document.createElement("div");
+    games.className = "plus-panel-games";
+    [
+      ["truth-dare.jpg", "真心话大冒险", "/chat/games/truth-dare"],
+      ["turtle-soup.jpg", "海龟汤", "/chat/games/turtle-soup"],
+      ["trpg.jpg", "跑团", "/chat/games/trpg"],
+      ["wicked.jpg", "女巫的毒药", "/chat/games/wicked"],
+    ].forEach(([asset, label, route]) => {
+      const game = document.createElement("button");
+      game.type = "button";
+      game.className = "plus-panel-game";
+      game.innerHTML = `<img src="assets/icons/games/${asset}" alt=""><span>${label}</span>`;
+      game.addEventListener("click", () => {
+        closePanel();
+        showDialog({
+          title: "游戏入口已预留",
+          body: `${route} 将接入 sandbox 游戏模式，本轮先保留入口。`,
+          confirmLabel: "知道了",
+        });
+      });
+      games.appendChild(game);
+    });
+    panel.appendChild(games);
+
+    inputBar.parentNode.insertBefore(panel, inputBar);
+    plusButton.classList.add("active");
+    requestAnimationFrame(() => panel.classList.add("open"));
+  }
+
+  plusButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    panel ? closePanel() : openPanel();
+  }, true);
+
+  document.addEventListener("click", (event) => {
+    if (!panel) return;
+    if (panel.contains(event.target) || plusButton.contains(event.target)) return;
+    closePanel();
+  });
+}
+
+initV2Shell();
+initV2Composer();
 
 // ── 记忆中枢 Memory Center ─────────────────────────────────────────────────────
 
