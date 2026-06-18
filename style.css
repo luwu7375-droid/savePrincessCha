@@ -2691,3 +2691,84 @@ details[open] > .mc-lab-raw-summary::before { content: "▾ "; }
   overflow-y: auto;
   line-height: 1.6;
 }
+
+/* ── CH10: Game strip ─────────────────────────────────────────────────────── */
+
+.game-strip {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.game-strip::-webkit-scrollbar { display: none; }
+.game-strip.hidden { display: none; }
+
+.game-card {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  min-width: 72px;
+}
+.game-card:hover { background: var(--surface-hover, oklch(22% 0.008 250)); border-color: oklch(44% 0.12 248 / 0.5); }
+.game-card--placeholder { opacity: 0.5; cursor: default; }
+.game-card--placeholder:hover { background: var(--surface); border-color: var(--border); }
+
+.game-card-icon { font-size: 20px; line-height: 1; }
+.game-card-label { font-size: 11px; color: var(--text-muted); text-align: center; white-space: nowrap; }
+.game-card-label small { display: block; font-size: 10px; opacity: 0.7; }
+
+/* ── CH10: In-game banner ──────────────────────────────────────────────────── */
+
+.game-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: oklch(22% 0.04 300 / 0.8);
+  border-top: 1px solid oklch(44% 0.12 300 / 0.4);
+  font-size: 13px;
+}
+.game-banner.hidden { display: none; }
+
+.game-banner-label { color: oklch(85% 0.06 300); font-weight: 500; }
+
+.game-over-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid oklch(55% 0.12 300 / 0.5);
+  border-radius: 6px;
+  background: transparent;
+  color: oklch(75% 0.08 300);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.game-over-btn:hover { background: oklch(30% 0.06 300 / 0.4); }
+
+/* ── Game end separator ───────────────────────────────────────────────────── */
+
+.game-end-separator {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 0;
+  opacity: 0.6;
+}
+
+/* ── Game messages (cosmetic distinction) ─────────────────────────────────── */
+
+.msg-row[data-game-message="true"] .bubble {
+  opacity: 0.9;
+  border-style: dashed;
+}

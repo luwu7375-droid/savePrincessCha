@@ -1,4 +1,4 @@
-console.log("build cloudflare-0086");
+console.log("build cloudflare-0086-game");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -2977,6 +2977,30 @@ async function handleSubmit() {
   if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading) return;
   if (isReplying) return;
 
+  // ── CH10: Slash command interception ──────────────────────────────────────
+  if (text) {
+    const slashCmd = parseSlashCommand(text);
+    if (slashCmd) {
+      messageInput.value = "";
+      autoResizeTextarea(messageInput);
+      if (slashCmd.cmd === "over") {
+        await endGame(true);
+      } else if (slashCmd.cmd === "enter") {
+        await enterGame(slashCmd.game);
+      }
+      return;
+    }
+  }
+
+  // ── CH7: Route to game turn if in active game session ─────────────────────
+  if (isInGame() && text) {
+    messageInput.value = "";
+    autoResizeTextarea(messageInput);
+    await sendGameTurn(text);
+    return;
+  }
+  // ── End game routing ───────────────────────────────────────────────────────
+
   messageInput.value = "";
   autoResizeTextarea(messageInput);
   const snapshot = pendingImage?.dataUrl ? { dataUrl: pendingImage.dataUrl } : null;
@@ -3025,6 +3049,213 @@ async function handleSubmit() {
     if (entry) entry.id = msgId != null ? String(msgId) : null;
     if (autoReplyEnabled) scheduleAutoReply(text);
   })();
+}
+
+// ── CH7/CH8/CH10: Game mode frontend ─────────────────────────────────────────
+//
+// Game sandbox is FULLY ISOLATED from the main chat:
+//   - Game turns go to the /game edge function, NOT to /chat
+//   - Game messages are NOT pushed to chatMessages[]
+//   - afterChat is NOT triggered during a game
+//   - /over ends the game and returns to main chat (writes one system fact event server-side)
+//
+// Slash commands: /wicked  /truth  /turtle  (/trpg shows placeholder, /over ends game)
+
+let activeGameSession = null; // { game, sessionId } | null
+
+function getGameEndpoint() {
+  return getConfigValue("GAME_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_GAME_URL");
+}
+
+function isInGame() {
+  return activeGameSession !== null;
+}
+
+const GAME_LABELS = {
+  wicked: "女巫的毒药",
+  truth_or_dare: "真心话大冒险",
+  turtle_soup: "海龟汤",
+  trpg: "跑团",
+};
+
+const SLASH_TO_GAME = {
+  "/wicked": "wicked",
+  "/truth": "truth_or_dare",
+  "/turtle": "turtle_soup",
+  "/trpg": "trpg",
+};
+
+// ── Game API calls ────────────────────────────────────────────────────────────
+
+async function gameApiCall(body) {
+  const endpoint = getGameEndpoint();
+  if (!endpoint) throw new Error("GAME_API_ENDPOINT 未配置");
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  const userId = user?.id || currentUserId;
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, userId, conversationId: getActiveConversationId() }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error("Game API error " + res.status + ": " + t.slice(0, 200));
+  }
+  return res.json();
+}
+
+// ── Game UI helpers ───────────────────────────────────────────────────────────
+
+function setGameBannerVisible(visible, gameKey) {
+  const banner = document.getElementById("gameBanner");
+  const label = document.getElementById("gameBannerLabel");
+  if (!banner || !label) return;
+  if (visible && gameKey) {
+    label.textContent = "🎮 " + (GAME_LABELS[gameKey] || gameKey);
+    banner.classList.remove("hidden");
+  } else {
+    banner.classList.add("hidden");
+  }
+}
+
+function addGameMessage(text, role) {
+  // Render a message in the chat UI but do NOT push to chatMessages[] (sandbox isolation)
+  const el = addMessage(text, role === "user" ? "user" : "assistant", new Date().toISOString(), { isGameMessage: true });
+  if (el) {
+    const row = el.closest(".msg-row");
+    if (row) row.dataset.gameMessage = "true";
+  }
+  return el;
+}
+
+// ── Enter game ────────────────────────────────────────────────────────────────
+
+async function enterGame(gameKey) {
+  const endpoint = getGameEndpoint();
+  if (!endpoint) {
+    setChatStatus("游戏 API 未配置（GAME_API_ENDPOINT）");
+    return;
+  }
+  if (isReplying) return;
+
+  // TRPG placeholder
+  if (gameKey === "trpg") {
+    addGameMessage("跑团功能敬请期待～目前还在开发中，先等等我。", "assistant");
+    return;
+  }
+
+  setChatStatus("正在进入" + (GAME_LABELS[gameKey] || gameKey) + "…");
+  try {
+    const data = await gameApiCall({ action: "enter", game: gameKey });
+    activeGameSession = { game: gameKey, sessionId: data.sessionId };
+    setGameBannerVisible(true, gameKey);
+    // Close game strip
+    const strip = document.getElementById("gameStrip");
+    if (strip) strip.classList.add("hidden");
+    const toggleBtn = document.getElementById("gameStripToggle");
+    if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
+    // Show Cha's opening message in sandbox (not in chatMessages)
+    if (data.reply) addGameMessage(data.reply, "assistant");
+    setChatStatus("");
+    // Update placeholder
+    const mi = document.getElementById("messageInput");
+    if (mi) mi.placeholder = "游戏中… 输入 /over 退出";
+  } catch (err) {
+    setChatStatus("进入游戏失败：" + err.message);
+  }
+}
+
+// ── Send game turn ────────────────────────────────────────���───────────────────
+
+async function sendGameTurn(text) {
+  // Show user's message in sandbox (NOT in chatMessages)
+  addGameMessage(text, "user");
+
+  // Show typing indicator
+  const typingEl = addTypingIndicator?.() ?? null;
+
+  try {
+    const data = await gameApiCall({ action: "turn", message: text });
+    if (typingEl) removeTypingIndicator?.();
+
+    if (data.reply) addGameMessage(data.reply, "assistant");
+
+    // If game ended server-side (e.g. someone ate the poison candy)
+    if (data.phase === "ended") {
+      await endGame(false); // false = server already wrote event, just clean up UI
+    }
+  } catch (err) {
+    if (typingEl) removeTypingIndicator?.();
+    addGameMessage("游戏出错：" + err.message, "assistant");
+  }
+}
+
+// ── End game (/over) ──────────────────────────────────────────────────────────
+
+async function endGame(callServer = true) {
+  if (!activeGameSession) return;
+  const game = activeGameSession.game;
+  activeGameSession = null;
+  setGameBannerVisible(false);
+
+  if (callServer) {
+    try {
+      await gameApiCall({ action: "over" });
+    } catch (err) {
+      console.warn("[game] /over API error:", err.message);
+    }
+  }
+
+  // Show a local system-style notice in the chat feed (cosmetic, not saved)
+  const label = GAME_LABELS[game] || game;
+  const sep = document.createElement("div");
+  sep.className = "game-end-separator";
+  sep.textContent = "── " + label + " 已结束，返回主聊天 ──";
+  const ml = document.getElementById("messageList");
+  if (ml) ml.appendChild(sep);
+
+  // Reset input placeholder
+  const mi = document.getElementById("messageInput");
+  if (mi) mi.placeholder = "继续说…";
+}
+
+// ── Slash command parser ──────────────────────────────────────────────────────
+
+function parseSlashCommand(text) {
+  const lower = text.trim().toLowerCase();
+  if (lower === "/over") return { cmd: "over" };
+  if (SLASH_TO_GAME[lower]) return { cmd: "enter", game: SLASH_TO_GAME[lower] };
+  return null;
+}
+
+// ── Game strip toggle (CH10) ──────────────────────────────────────────────────
+
+const gameStripToggle = document.getElementById("gameStripToggle");
+const gameStrip = document.getElementById("gameStrip");
+const gameOverBtn = document.getElementById("gameOverBtn");
+
+if (gameStripToggle && gameStrip) {
+  gameStripToggle.addEventListener("click", () => {
+    const open = !gameStrip.classList.contains("hidden");
+    if (open) {
+      gameStrip.classList.add("hidden");
+      gameStripToggle.setAttribute("aria-expanded", "false");
+    } else {
+      gameStrip.classList.remove("hidden");
+      gameStripToggle.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  gameStrip.querySelectorAll(".game-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const gameKey = card.dataset.game;
+      if (gameKey) enterGame(gameKey);
+    });
+  });
+}
+
+if (gameOverBtn) {
+  gameOverBtn.addEventListener("click", () => endGame(true));
 }
 
 chatForm.addEventListener("submit", (event) => {
