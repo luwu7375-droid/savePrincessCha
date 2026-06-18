@@ -3002,6 +3002,38 @@ function autoResizeTextarea(el) {
   el.style.height = el.scrollHeight + "px";
 }
 
+function scrollChatToLatest(behavior = "auto") {
+  if (!messageList) return;
+  requestAnimationFrame(() => {
+    messageList.scrollTo({ top: messageList.scrollHeight, behavior });
+  });
+}
+
+function initKeyboardViewportState() {
+  const shell = document.querySelector(".layout");
+  if (!shell || !window.visualViewport) return;
+
+  const updateKeyboardState = () => {
+    const viewport = window.visualViewport;
+    const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+    const keyboardOpen = inset > 80 && document.activeElement === messageInput;
+    shell.classList.toggle("keyboard-open", keyboardOpen);
+    shell.style.setProperty("--keyboard-inset", keyboardOpen ? `${Math.round(inset)}px` : "0px");
+    if (keyboardOpen) scrollChatToLatest();
+  };
+
+  window.visualViewport.addEventListener("resize", updateKeyboardState);
+  window.visualViewport.addEventListener("scroll", updateKeyboardState);
+  messageInput?.addEventListener("focus", () => {
+    updateKeyboardState();
+    scrollChatToLatest();
+  });
+  messageInput?.addEventListener("blur", () => {
+    setTimeout(updateKeyboardState, 80);
+  });
+  updateKeyboardState();
+}
+
 // ── Model tier selector ────────────────────────────────────────────────────────
 
 const VALID_TIERS = ["instant", "general", "advanced"];
@@ -3093,6 +3125,7 @@ async function triggerReply(replyMode) {
     setChatStatus("");
     setReplyingState(false);
     messageInput.focus();
+    scrollChatToLatest();
   }
 }
 
@@ -3101,6 +3134,7 @@ messageInput.addEventListener("compositionstart", () => { isComposing = true; ca
 messageInput.addEventListener("compositionend", () => { isComposing = false; autoResizeTextarea(messageInput); });
 messageInput.addEventListener("input", () => {
   autoResizeTextarea(messageInput);
+  scrollChatToLatest();
   if (autoReplyEnabled) cancelAutoReplyTimer();
 });
 messageInput.addEventListener("keydown", (e) => {
@@ -3339,6 +3373,7 @@ async function handleSubmit() {
   // Optimistic update：先渲染，不等接口
   const msgEl = addMessage(content, "user", now, {});
   const msgRow = msgEl.closest(".msg-row");
+  scrollChatToLatest();
   const dbContent = snapshot ? (text ? `[图片] ${text}` : "[图片]") : text;
   chatMessages.push({ role: "user", content, created_at: now, id: null });
   refreshMessageActions();
@@ -3370,11 +3405,13 @@ async function handleSubmit() {
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   handleSubmit();
+  scrollChatToLatest();
 });
 
 sendButton.addEventListener("click", (e) => {
   e.preventDefault();
   handleSubmit();
+  scrollChatToLatest();
 });
 
 forceReplyBtn.addEventListener("click", () => {
@@ -3521,7 +3558,7 @@ function initV2Shell() {
     shell?.setAttribute("data-active-page", activeName);
     if (activeName === "chat") {
       requestAnimationFrame(() => {
-        messageList?.scrollTo({ top: messageList.scrollHeight, behavior: "auto" });
+        scrollChatToLatest();
         messageInput?.focus({ preventScroll: true });
       });
     }
@@ -3593,6 +3630,7 @@ function initV2Composer() {
     panel?.remove();
     panel = null;
     plusButton.classList.remove("active");
+    scrollChatToLatest();
   };
 
   function addPanelItem(group, { label, desc, icon, onClick, disabled = false }) {
@@ -3671,7 +3709,10 @@ function initV2Composer() {
 
     inputBar.parentNode.insertBefore(panel, inputBar);
     plusButton.classList.add("active");
-    requestAnimationFrame(() => panel.classList.add("open"));
+    requestAnimationFrame(() => {
+      panel.classList.add("open");
+      scrollChatToLatest();
+    });
   }
 
   plusButton.addEventListener("click", (event) => {
@@ -3679,6 +3720,8 @@ function initV2Composer() {
     event.stopImmediatePropagation();
     panel ? closePanel() : openPanel();
   }, true);
+
+  messageInput?.addEventListener("focus", closePanel);
 
   document.addEventListener("click", (event) => {
     if (!panel) return;
@@ -3689,6 +3732,7 @@ function initV2Composer() {
 
 initV2Shell();
 initV2Composer();
+initKeyboardViewportState();
 
 // ── V2 shared status bar ─────────────────────────────────────────────────────
 async function initV2StatusBars() {
