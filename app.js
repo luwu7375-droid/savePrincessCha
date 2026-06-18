@@ -583,6 +583,12 @@ function zonedDayKey(date) {
 const chatMessages = [];
 let lastMessageTime = null;
 
+// ── Unread state ──────────────────────────────────────────────────────────────
+// chaUnreadCount: number of assistant messages the user hasn't seen yet.
+// Managed by markReadByUser() and updateChaUnreadBadge().
+let chaUnreadCount = 0;
+const chatUnreadBadge = document.getElementById("chatUnreadBadge");
+
 // ── Chat history pagination ────────────────────────────────────────────────────
 const HISTORY_PAGE_SIZE = 20;
 let historyHasMore = false;
@@ -657,11 +663,15 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   const hasImages  = imageParts.length > 0;
   const hasText    = textParts.length > 0 || (!isArray && text);
 
+  // For user messages: read_by_cha_at comes from options (history load) or null (new send).
+  // New sends start as "未读"; history loads use stored value.
+  const readByChaAt = options.readByChaAt ?? null;
+
   // Helper: build a single msg-row and append to messageList
-  function makeRow(msgId) {
+  function makeRow(id) {
     const row = document.createElement("div");
     row.className = `msg-row ${role}`;
-    if (msgId) row.dataset.msgId = msgId;
+    if (id) row.dataset.msgId = id;
     row.dataset.groupId = groupId;
     if (role === "assistant") {
       const avatar = document.createElement("div");
@@ -672,6 +682,15 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     return row;
   }
 
+  // Helper: build read-receipt element for user messages only
+  function makeReceipt(isChaRead) {
+    const el = document.createElement("div");
+    el.className = "read-receipt";
+    el.textContent = isChaRead ? "已读" : "未读";
+    el.dataset.receiptState = isChaRead ? "read" : "unread";
+    return el;
+  }
+
   // ── Case 1: pure text (or system) ─────────────────────────────────────────
   if (!hasImages) {
     const el = document.createElement("div");
@@ -680,12 +699,7 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     const stack = document.createElement("div");
     stack.className = "msg-stack";
     stack.appendChild(el);
-    if (role === "user") {
-      const receipt = document.createElement("div");
-      receipt.className = "read-receipt";
-      receipt.textContent = "read";
-      stack.appendChild(receipt);
-    }
+    if (role === "user") stack.appendChild(makeReceipt(!!readByChaAt));
     const row = makeRow(msgId);
     row.appendChild(stack);
     messageList.appendChild(row);
@@ -694,12 +708,9 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   }
 
   // ── Case 2: has images (with or without text) ─────────────────────────────
-  // Text bubble first (if any), then each image as its own row.
-  // read-receipt only on the last row.
-
   let firstEl = null;
 
-  // 2a. Text bubble
+  // 2a. Text bubble (no receipt — receipt goes on last image row)
   if (hasText) {
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-text`;
@@ -730,12 +741,7 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     stack.className = "msg-stack";
     stack.appendChild(el);
 
-    if (role === "user" && isLast) {
-      const receipt = document.createElement("div");
-      receipt.className = "read-receipt";
-      receipt.textContent = "read";
-      stack.appendChild(receipt);
-    }
+    if (role === "user" && isLast) stack.appendChild(makeReceipt(!!readByChaAt));
 
     const row = makeRow(isLast ? msgId : null);
     if (hasText || idx > 0) row.classList.add("msg-group-row");
@@ -800,13 +806,13 @@ function insertBubbleSync(text, createdAt, msgId, isSibling) {
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
-  const receipt = document.createElement("div");
-  receipt.className = "read-receipt";
-  receipt.textContent = "seen";
-  stack.appendChild(receipt);
+  // No read-receipt on assistant messages — user-read state drives the unread badge only
   const row = document.createElement("div");
   row.className = "msg-row assistant";
-  if (msgId && !isSibling) row.dataset.msgId = msgId;
+  if (msgId && !isSibling) {
+    row.dataset.msgId = msgId;
+    row.dataset.unreadCha = "1"; // cleared by markReadByUser() when user sees it
+  }
   if (isSibling) row.dataset.bubbleSibling = isSibling; // sibling 存主 msgId
   const avatar = document.createElement("div");
   avatar.className = "avatar";
@@ -819,11 +825,12 @@ function insertBubbleSync(text, createdAt, msgId, isSibling) {
   return row;
 }
 
-function addAssistantBubbles(rawContent, createdAt, msgId) {
+function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false) {
   const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
   if (bubbles.length === 0) return;
   // 第一个气泡带 msgId，后续气泡带 bubbleSibling=msgId
-  insertBubbleSync(bubbles[0], createdAt, msgId, null);
+  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null);
+  if (isAlreadyRead && firstRow) delete firstRow.dataset.unreadCha;
   for (let i = 1; i < bubbles.length; i++) {
     insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
   }
@@ -1122,7 +1129,7 @@ async function reloadHistory() {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
@@ -1133,18 +1140,21 @@ async function reloadHistory() {
   chatMessages.length = 0;
   messageList.innerHTML = "";
   lastMessageTime = null;
+  chaUnreadCount = 0;
   if (!resolved.length) { renderWelcomeMessage(); return; }
   for (const m of resolved) {
     if (m.role === "assistant") {
-      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null);
+      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null, !!m.read_by_user_at);
     } else {
-      addMessage(m.content, m.role, m.created_at, {}, m.id);
+      addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at }, m.id);
     }
-    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null });
+    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null });
   }
   if (resolved.length > 0) oldestLoadedMessageCreatedAt = resolved[0].created_at;
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
   refreshMessageActions();
+  syncChaUnreadCount();
+  observeUnreadChaRows();
 }
 
 async function loadOlderMessages() {
@@ -1154,7 +1164,7 @@ async function loadOlderMessages() {
   historyLoadingOlder = true;
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at")
     .eq("conversation_id", conversationId)
     .lt("created_at", oldestLoadedMessageCreatedAt)
     .order("created_at", { ascending: false })
@@ -1164,15 +1174,15 @@ async function loadOlderMessages() {
   const older = await resolveImagePaths([...data].reverse());
   const prevScrollHeight = messageList.scrollHeight;
   const prevScrollTop = messageList.scrollTop;
-  const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null }));
+  const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null }));
   chatMessages.unshift(...newEntries);
   messageList.innerHTML = "";
   lastMessageTime = null;
   for (const m of chatMessages) {
     if (m.role === "assistant") {
-      addAssistantBubbles(m.content, m.created_at, m.id);
+      addAssistantBubbles(m.content, m.created_at, m.id, !!m.read_by_user_at);
     } else {
-      addMessage(m.content, m.role, m.created_at, {}, m.id);
+      addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at }, m.id);
     }
   }
   messageList.scrollTop = prevScrollTop + (messageList.scrollHeight - prevScrollHeight);
@@ -1180,6 +1190,8 @@ async function loadOlderMessages() {
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
   historyLoadingOlder = false;
   refreshMessageActions();
+  syncChaUnreadCount();
+  observeUnreadChaRows();
 }
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
@@ -1749,7 +1761,7 @@ async function requestStreamingReply(replyMode = "auto") {
   const replyTime = new Date().toISOString();
   const replyId = await saveMessage("assistant", cleanReply);
   const replyIdStr = replyId != null ? String(replyId) : null;
-  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr });
+  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null });
   lastMessageTime = new Date(replyTime).getTime();
 
   // Fire-and-forget vault extraction — never blocks UI
@@ -1862,6 +1874,151 @@ function refreshMessageActions() {
     }
     stack.appendChild(actions);
   }
+}
+
+// ── Read state ────────────────────────────────────────────────────────────────
+
+/** Update the chat tab unread badge based on chaUnreadCount. */
+function updateChaUnreadBadge() {
+  if (!chatUnreadBadge) return;
+  if (chaUnreadCount > 0) {
+    chatUnreadBadge.hidden = false;
+    chatUnreadBadge.textContent = chaUnreadCount > 99 ? "99+" : String(chaUnreadCount);
+  } else {
+    chatUnreadBadge.hidden = true;
+    chatUnreadBadge.textContent = "";
+  }
+}
+
+/**
+ * Mark a user message as read by Cha (called when Cha actually processes it).
+ * Updates in-memory chatMessages entry, updates DOM receipt, persists to DB.
+ * @param {string|null} msgId - the message id to mark, or null to mark all pending user messages
+ */
+function markReadByCha(msgId = null) {
+  const now = new Date().toISOString();
+  const targets = msgId
+    ? chatMessages.filter(m => m.role === "user" && m.id === String(msgId) && !m.read_by_cha_at)
+    : chatMessages.filter(m => m.role === "user" && !m.read_by_cha_at);
+
+  if (!targets.length) return;
+
+  targets.forEach(m => { m.read_by_cha_at = now; });
+
+  // Update DOM receipts for these messages
+  refreshUserReceipts();
+
+  // Persist to DB (best-effort, fire and forget)
+  if (supabaseClient) {
+    const ids = targets.map(m => m.id).filter(Boolean).map(Number);
+    if (ids.length) {
+      supabaseClient.from("messages")
+        .update({ read_by_cha_at: now })
+        .in("id", ids)
+        .then(({ error }) => { if (error) console.warn("markReadByCha DB update failed:", error); });
+    }
+  }
+}
+
+/**
+ * Refresh all user-side read-receipt DOM nodes to match current chatMessages state.
+ * Only the receipt under the last user message row in each group needs to be visible;
+ * earlier ones in the same read state are hidden.
+ */
+function refreshUserReceipts() {
+  // Find all user msg-rows that have a receipt
+  const userRows = Array.from(messageList.querySelectorAll(".msg-row.user"));
+  if (!userRows.length) return;
+
+  // Group by groupId to find the last row in each group
+  const groups = new Map();
+  userRows.forEach(row => {
+    const gid = row.dataset.groupId;
+    if (!groups.has(gid)) groups.set(gid, []);
+    groups.get(gid).push(row);
+  });
+
+  // For each group, show receipt only on last row; sync text from chatMessages
+  groups.forEach(rows => {
+    rows.forEach((row, idx) => {
+      const receipt = row.querySelector(".read-receipt");
+      if (!receipt) return;
+      const isLast = idx === rows.length - 1;
+      if (!isLast) { receipt.style.display = "none"; return; }
+      receipt.style.display = "";
+      // Sync state from chatMessages
+      const msgId = row.dataset.msgId;
+      if (msgId) {
+        const entry = chatMessages.find(m => m.id === String(msgId));
+        if (entry) {
+          const isRead = !!entry.read_by_cha_at;
+          receipt.textContent = isRead ? "已读" : "未读";
+          receipt.dataset.receiptState = isRead ? "read" : "unread";
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Mark an assistant message as read by the user.
+ * Called by IntersectionObserver when the message enters the viewport while on Chat tab.
+ * @param {Element} row - the .msg-row.assistant element
+ */
+function markReadByUser(row) {
+  if (!row.dataset.unreadCha) return; // already marked or not a tracked row
+  const msgId = row.dataset.msgId;
+  if (!msgId) return;
+
+  const now = new Date().toISOString();
+  delete row.dataset.unreadCha;
+  chaUnreadCount = Math.max(0, chaUnreadCount - 1);
+  updateChaUnreadBadge();
+
+  // Update in-memory entry
+  const entry = chatMessages.find(m => m.id === String(msgId));
+  if (entry) entry.read_by_user_at = now;
+
+  // Persist to DB (best-effort)
+  if (supabaseClient) {
+    supabaseClient.from("messages")
+      .update({ read_by_user_at: now })
+      .eq("id", Number(msgId))
+      .then(({ error }) => { if (error) console.warn("markReadByUser DB update failed:", error); });
+  }
+}
+
+// IntersectionObserver: watches assistant rows for viewport visibility.
+// Only fires markReadByUser when on the Chat tab.
+const _chaReadObserver = new IntersectionObserver((entries) => {
+  const isOnChat = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+  if (!isOnChat) return;
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const row = entry.target;
+      // Small delay so a quick scroll-past doesn't count as "read"
+      setTimeout(() => {
+        if (!document.contains(row)) return;
+        const stillOnChat = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+        if (!stillOnChat) return;
+        markReadByUser(row);
+        _chaReadObserver.unobserve(row);
+      }, 500);
+    }
+  });
+}, { threshold: 0.5 });
+
+/** Observe all currently unread assistant rows. Called after rendering new messages. */
+function observeUnreadChaRows() {
+  document.querySelectorAll(".msg-row.assistant[data-unread-cha]").forEach(row => {
+    _chaReadObserver.observe(row);
+  });
+}
+
+/** Recount chaUnreadCount from DOM and update badge. */
+function syncChaUnreadCount() {
+  chaUnreadCount = document.querySelectorAll(".msg-row.assistant[data-unread-cha]").length;
+  updateChaUnreadBadge();
 }
 
 async function copyMessage(row, btn) {
@@ -3290,6 +3447,8 @@ async function triggerReply(replyMode) {
   if (isReplying) { cancelAutoReplyTimer(); return; }
   if (replyMode === "auto" && (messageInput.value.trim() || isComposing)) { cancelAutoReplyTimer(); return; }
   cancelAutoReplyTimer();
+  // Mark all unread user messages as read by Cha — Cha is now processing them
+  markReadByCha();
   setChatStatus("正在输入…");
   showTypingIndicator();
   setReplyingState(true);
@@ -3303,6 +3462,9 @@ async function triggerReply(replyMode) {
     setReplyingState(false);
     messageInput.focus();
     scrollChatToLatest();
+    // Observe any new unread assistant rows and update badge
+    syncChaUnreadCount();
+    observeUnreadChaRows();
   }
 }
 
@@ -3555,7 +3717,7 @@ async function handleSubmit() {
     : (msgEl.closest(".msg-row") ? [msgEl.closest(".msg-row")] : []);
   scrollChatToLatest();
   const dbContent = snapshot ? (text ? `[图片] ${text}` : "[图片]") : text;
-  chatMessages.push({ role: "user", content, created_at: now, id: null });
+  chatMessages.push({ role: "user", content, created_at: now, id: null, read_by_cha_at: null, read_by_user_at: null });
   refreshMessageActions();
   if (isFirst) updateConvTitle(getActiveConversationId(), text || "[图片]");
 
@@ -3740,6 +3902,8 @@ function initV2Shell() {
       requestAnimationFrame(() => {
         scrollChatToLatest();
         messageInput?.focus({ preventScroll: true });
+        // Trigger visibility check for unread Cha messages
+        observeUnreadChaRows();
       });
     }
   }

@@ -531,10 +531,20 @@ body {
 
 .read-receipt {
   margin-top: 3px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
   color: var(--text-muted);
-  opacity: 0.65;
+  opacity: 0.55;
+}
+
+/* Unread state is slightly dimmer to signal it's pending */
+.read-receipt[data-receipt-state="unread"] {
+  opacity: 0.38;
+}
+
+/* Read state is a touch more visible */
+.read-receipt[data-receipt-state="read"] {
+  opacity: 0.6;
 }
 
 /* ── Bubbles ── */

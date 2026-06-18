@@ -1486,6 +1486,29 @@ body {
   transform: scale(1.08);
 }
 
+/* ── Chat tab unread badge ── */
+.bottom-tab--cha {
+  position: relative;
+}
+
+.chat-unread-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #e0382c;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
 .dialog-overlay {
   z-index: 60;
 }
