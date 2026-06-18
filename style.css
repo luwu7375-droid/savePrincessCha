@@ -1298,11 +1298,12 @@ body {
 /* ── Message image ── */
 img.msg-image {
   display: block;
-  max-width: 100%;
-  max-height: 300px;
-  border-radius: 12px;
-  margin-bottom: 4px;
+  width: auto;
+  max-width: 260px;
+  max-height: 320px;
+  border-radius: 10px;
   object-fit: contain;
+  cursor: zoom-in;
 }
 
 @media (max-width: 820px) {
@@ -1436,7 +1437,7 @@ img.msg-image {
 .img-bottom-sheet button:hover { background: var(--surface); }
 .img-bottom-sheet-cancel { color: oklch(62% 0.18 248) !important; font-weight: 600; margin-top: 8px; }
 
-img.msg-image { cursor: pointer; }
+img.msg-image { cursor: zoom-in; }
 
 /* ── Memory Center ── */
 .memory-center-modal {
@@ -2949,23 +2950,37 @@ html[data-theme="dark"] {
 .message-image .bubble,
 .msg-row .message.message-image {
   padding: 0 !important;
-  overflow: hidden;
+  overflow: visible;
   background-color: transparent !important;
   border: 0 !important;
-  box-shadow: var(--shadow-light) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  animation: none;
 }
 
 .message-image img,
 .msg-row .message.message-image img,
 img.msg-image {
   display: block;
-  max-width: 100%;
-  width: 100%;
+  width: auto;
+  max-width: 260px;
+  max-height: 320px;
   height: auto;
-  border-radius: var(--bubble-radius);
-  max-height: 300px;
-  object-fit: cover;
+  border-radius: 10px;
+  object-fit: contain;
   margin: 0;
+  box-shadow: 0 1px 4px oklch(0% 0 0 / 0.15);
+  cursor: zoom-in;
+}
+
+/* ── Group row: tight spacing within same-sender consecutive messages ── */
+.msg-row.msg-group-row {
+  margin-top: 4px;
+}
+
+/* Prevent double avatar in grouped assistant rows */
+.msg-row.msg-group-row .avatar {
+  visibility: hidden;
 }
 
 .message-image .image-loading {
@@ -3249,7 +3264,8 @@ img.msg-image {
   .message-image img,
   .msg-row .message.message-image img,
   img.msg-image {
-    max-height: 400px;
+    max-height: 320px;
+    max-width: 280px;
   }
 }
 
@@ -3259,7 +3275,8 @@ img.msg-image {
   .message-image img,
   .msg-row .message.message-image img,
   img.msg-image {
-    max-height: 500px;
+    max-height: 320px;
+    max-width: 280px;
   }
 }
 
@@ -3274,7 +3291,8 @@ img.msg-image {
   .message-image img,
   .msg-row .message.message-image img,
   img.msg-image {
-    max-height: 250px;
+    max-height: 240px;
+    max-width: 220px;
   }
 
   .v2-page--chat .top-bar {

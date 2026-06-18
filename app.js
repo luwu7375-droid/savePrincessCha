@@ -646,48 +646,106 @@ function maybeAddTimeSeparator(createdAt) {
 
 function addMessage(text, role, createdAt = new Date().toISOString(), options = {}, msgId = null) {
   if (!options.skipTimeSeparator) maybeAddTimeSeparator(createdAt);
-  const el = document.createElement("div");
-  const isImageMessage = Array.isArray(text) && text.some(part => part.type === "image_url" && part.image_url?.url);
+
   const speakerClass = role === "assistant" ? "cha-message" : role === "user" ? "user-message" : "system-message";
-  const typeClass = isImageMessage ? "message-image" : role === "system" ? "message-system" : "message-text";
-  el.className = `message ${role} ${speakerClass} ${typeClass}`;
-  if (Array.isArray(text)) {
-    for (const part of text) {
-      if (part.type === "image_url" && part.image_url?.url) {
-        const img = document.createElement("img");
-        img.className = "msg-image";
-        img.src = part.image_url.url;
-        img.alt = "";
-        el.appendChild(img);
-      } else if (part.type === "text" && part.text) {
-        const span = document.createElement("span");
-        span.textContent = part.text;
-        el.appendChild(span);
-      }
+  const groupId = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  // ── Detect parts ─────────────────────────────────────────────────────────
+  const isArray = Array.isArray(text);
+  const imageParts = isArray ? text.filter(p => p.type === "image_url" && p.image_url?.url) : [];
+  const textParts  = isArray ? text.filter(p => p.type === "text" && p.text) : [];
+  const hasImages  = imageParts.length > 0;
+  const hasText    = textParts.length > 0 || (!isArray && text);
+
+  // Helper: build a single msg-row and append to messageList
+  function makeRow(msgId) {
+    const row = document.createElement("div");
+    row.className = `msg-row ${role}`;
+    if (msgId) row.dataset.msgId = msgId;
+    row.dataset.groupId = groupId;
+    if (role === "assistant") {
+      const avatar = document.createElement("div");
+      avatar.className = "avatar";
+      avatar.title = "Cha";
+      row.appendChild(avatar);
     }
-  } else {
-    el.textContent = text;
+    return row;
   }
-  const stack = document.createElement("div");
-  stack.className = "msg-stack";
-  stack.appendChild(el);
-  const receipt = document.createElement("div");
-  receipt.className = "read-receipt";
-  receipt.textContent = role === "user" ? "read" : "seen";
-  stack.appendChild(receipt);
-  const row = document.createElement("div");
-  row.className = `msg-row ${role}`;
-  if (msgId) row.dataset.msgId = msgId;
-  if (role === "assistant") {
-    const avatar = document.createElement("div");
-    avatar.className = "avatar";
-    avatar.title = "Cha";
-    row.appendChild(avatar);
+
+  // ── Case 1: pure text (or system) ─────────────────────────────────────────
+  if (!hasImages) {
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-text`;
+    el.textContent = isArray ? textParts.map(p => p.text).join("") : (text || "");
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+    if (role === "user") {
+      const receipt = document.createElement("div");
+      receipt.className = "read-receipt";
+      receipt.textContent = "read";
+      stack.appendChild(receipt);
+    }
+    const row = makeRow(msgId);
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    messageList.scrollTop = messageList.scrollHeight;
+    return el;
   }
-  row.appendChild(stack);
-  messageList.appendChild(row);
+
+  // ── Case 2: has images (with or without text) ─────────────────────────────
+  // Text bubble first (if any), then each image as its own row.
+  // read-receipt only on the last row.
+
+  let firstEl = null;
+
+  // 2a. Text bubble
+  if (hasText) {
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-text`;
+    el.textContent = isArray ? textParts.map(p => p.text).join("") : (text || "");
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+    const row = makeRow(null);
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    if (!firstEl) firstEl = el;
+  }
+
+  // 2b. Image rows
+  imageParts.forEach((part, idx) => {
+    const isLast = idx === imageParts.length - 1;
+
+    const img = document.createElement("img");
+    img.className = "msg-image";
+    img.src = part.image_url.url;
+    img.alt = "";
+
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-image`;
+    el.appendChild(img);
+
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+
+    if (role === "user" && isLast) {
+      const receipt = document.createElement("div");
+      receipt.className = "read-receipt";
+      receipt.textContent = "read";
+      stack.appendChild(receipt);
+    }
+
+    const row = makeRow(isLast ? msgId : null);
+    if (hasText || idx > 0) row.classList.add("msg-group-row");
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    if (!firstEl) firstEl = el;
+  });
+
   messageList.scrollTop = messageList.scrollHeight;
-  return el;
+  return firstEl;
 }
 
 // ── Multi-bubble helpers ───────────────────────────────────────────────────────
@@ -3491,7 +3549,10 @@ async function handleSubmit() {
 
   // Optimistic update：先渲染，不等接口
   const msgEl = addMessage(content, "user", now, {});
-  const msgRow = msgEl.closest(".msg-row");
+  const msgGroupId = msgEl.closest(".msg-row")?.dataset.groupId;
+  const getMsgRows = () => msgGroupId
+    ? Array.from(messageList.querySelectorAll(`.msg-row[data-group-id="${msgGroupId}"]`))
+    : (msgEl.closest(".msg-row") ? [msgEl.closest(".msg-row")] : []);
   scrollChatToLatest();
   const dbContent = snapshot ? (text ? `[图片] ${text}` : "[图片]") : text;
   chatMessages.push({ role: "user", content, created_at: now, id: null });
@@ -3509,12 +3570,12 @@ async function handleSubmit() {
         setChatStatus("图片上传失败，消息未发送，请重试");
         // 回滚乐观渲染
         chatMessages.pop();
-        msgRow?.remove();
+        getMsgRows().forEach(r => r.remove());
         return;
       }
     }
     const msgId = await saveMessage("user", dbContent, storagePath).catch(() => null);
-    if (msgId != null && msgRow) msgRow.dataset.msgId = String(msgId);
+    if (msgId != null) getMsgRows().forEach(r => { r.dataset.msgId = String(msgId); });
     const entry = chatMessages.findLast?.((m) => m.role === "user" && m.id === null);
     if (entry) entry.id = msgId != null ? String(msgId) : null;
     if (autoReplyEnabled) scheduleAutoReply(text);
