@@ -2958,6 +2958,14 @@ html[data-theme="dark"] {
   animation: none;
 }
 
+.msg-row .message.message-image::after,
+.msg-row .message.message-image::before,
+.message.message-image::after,
+.message.message-image::before {
+  display: none !important;
+  content: none !important;
+}
+
 .message-image img,
 .msg-row .message.message-image img,
 img.msg-image {
