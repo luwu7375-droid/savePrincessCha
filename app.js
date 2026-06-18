@@ -1155,9 +1155,8 @@ async function reloadHistory() {
   refreshMessageActions();
   syncChaUnreadCount();
   observeUnreadChaRows();
+  insertUnreadDivider();
 }
-
-async function loadOlderMessages() {
   if (historyLoadingOlder || !historyHasMore || !oldestLoadedMessageCreatedAt) return;
   const conversationId = getActiveConversationId();
   if (!conversationId || !supabaseClient) return;
@@ -1891,6 +1890,25 @@ function updateChaUnreadBadge() {
 }
 
 /**
+ * Insert the "以下为未读消息" divider before the first unread Cha row.
+ * Safe to call multiple times — removes any existing divider first.
+ */
+function insertUnreadDivider() {
+  document.getElementById("unreadDivider")?.remove();
+  const firstUnread = messageList.querySelector(".msg-row.assistant[data-unread-cha]");
+  if (!firstUnread) return;
+  const divider = document.createElement("div");
+  divider.className = "unread-divider";
+  divider.id = "unreadDivider";
+  divider.setAttribute("aria-hidden", "true");
+  const label = document.createElement("span");
+  label.className = "unread-divider-label";
+  label.textContent = "以下为未读消息";
+  divider.appendChild(label);
+  messageList.insertBefore(divider, firstUnread);
+}
+
+/**
  * Mark a user message as read by Cha (called when Cha actually processes it).
  * Updates in-memory chatMessages entry, updates DOM receipt, persists to DB.
  * @param {string|null} msgId - the message id to mark, or null to mark all pending user messages
@@ -1974,6 +1992,11 @@ function markReadByUser(row) {
   delete row.dataset.unreadCha;
   chaUnreadCount = Math.max(0, chaUnreadCount - 1);
   updateChaUnreadBadge();
+
+  // Remove divider once all unread messages have been seen
+  if (chaUnreadCount === 0) {
+    document.getElementById("unreadDivider")?.remove();
+  }
 
   // Update in-memory entry
   const entry = chatMessages.find(m => m.id === String(msgId));

@@ -1460,8 +1460,8 @@ body {
 
 .chat-unread-badge {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 6px;
+  right: 8px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
@@ -1473,7 +1473,8 @@ body {
   line-height: 16px;
   text-align: center;
   pointer-events: none;
-  z-index: 2;
+  z-index: 3;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
 }
 
 .dialog-overlay {

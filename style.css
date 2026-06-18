@@ -656,6 +656,33 @@ body {
   user-select: none;
 }
 
+/* ── Unread messages divider ── */
+.unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 6px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.unread-divider::before,
+.unread-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  opacity: 0.5;
+}
+
+.unread-divider-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
 /* ── Typing indicator ── */
 .typing-indicator {
   background: var(--bubble-ai);
