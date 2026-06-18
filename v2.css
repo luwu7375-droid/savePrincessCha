@@ -1412,26 +1412,24 @@ body {
   transition: background 0.16s ease, transform 0.16s ease;
 }
 
-.bottom-tab img {
-  width: 24px;
-  height: 24px;
-  object-fit: contain;
-  filter: brightness(0) opacity(0.35);
-  opacity: 1;
+/* ── Tab icon color tokens ── */
+:root {
+  --tab-icon-inactive: rgba(0, 0, 0, 0.22);
+  --tab-icon-active: rgba(0, 0, 0, 0.88);
 }
 
-.bottom-tab[data-tab="home"] img,
-.bottom-tab[data-tab="couple"] img {
+/* Hide <img> for all regular tabs — icons rendered via ::after mask */
+.bottom-tab:not(.bottom-tab--cha) img {
   display: none;
 }
 
-.bottom-tab[data-tab="home"]::after,
-.bottom-tab[data-tab="couple"]::after {
+/* Shared mask-based icon for all four regular tabs */
+.bottom-tab:not(.bottom-tab--cha)::after {
   content: "";
   width: 24px;
   height: 24px;
   display: block;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--tab-icon-inactive);
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
@@ -1450,14 +1448,19 @@ body {
   -webkit-mask-image: url("assets/icons/nav/heart.svg");
 }
 
-.bottom-tab[data-tab="home"].active::after,
-.bottom-tab[data-tab="couple"].active::after {
-  background: #202124;
+.bottom-tab[data-tab="playground"]::after {
+  mask-image: url("assets/icons/nav/star.svg");
+  -webkit-mask-image: url("assets/icons/nav/star.svg");
 }
 
-.bottom-tab.active img {
-  filter: brightness(0);
-  opacity: 1;
+.bottom-tab[data-tab="setting"]::after {
+  mask-image: url("assets/icons/nav/user.svg");
+  -webkit-mask-image: url("assets/icons/nav/user.svg");
+}
+
+/* Active state — same token for all four */
+.bottom-tab:not(.bottom-tab--cha).active::after {
+  background: var(--tab-icon-active);
 }
 
 .bottom-tab--cha {
