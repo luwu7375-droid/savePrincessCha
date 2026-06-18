@@ -3172,11 +3172,11 @@ async function sendGameTurn(text) {
   addGameMessage(text, "user");
 
   // Show typing indicator
-  const typingEl = addTypingIndicator?.() ?? null;
+  showTypingIndicator();
 
   try {
     const data = await gameApiCall({ action: "turn", message: text });
-    if (typingEl) removeTypingIndicator?.();
+    removeTypingIndicator();
 
     if (data.reply) addGameMessage(data.reply, "assistant");
 
@@ -3185,7 +3185,7 @@ async function sendGameTurn(text) {
       await endGame(false); // false = server already wrote event, just clean up UI
     }
   } catch (err) {
-    if (typingEl) removeTypingIndicator?.();
+    removeTypingIndicator();
     addGameMessage("游戏出错：" + err.message, "assistant");
   }
 }
