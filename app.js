@@ -57,6 +57,12 @@ const logoutBtn         = document.getElementById("logoutBtn");
 const imageInput        = document.getElementById("imageInput");
 const imagePreviewBar   = document.getElementById("imagePreviewBar");
 const imageAttachBtn    = document.getElementById("imageAttachBtn");
+const chatBackButton    = document.getElementById("chatBackButton");
+const chaAvatarButton   = document.getElementById("chaAvatarButton");
+const chatSearchButton  = document.getElementById("chatSearchButton");
+const chatSearchBar     = document.getElementById("chatSearchBar");
+const chatSearchInput   = document.getElementById("chatSearchInput");
+const chatSearchClear   = document.getElementById("chatSearchClear");
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -657,6 +663,10 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
+  const receipt = document.createElement("div");
+  receipt.className = "read-receipt";
+  receipt.textContent = role === "user" ? "read" : "seen";
+  stack.appendChild(receipt);
   const row = document.createElement("div");
   row.className = `msg-row ${role}`;
   if (msgId) row.dataset.msgId = msgId;
@@ -725,6 +735,10 @@ function insertBubbleSync(text, createdAt, msgId, isSibling) {
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
+  const receipt = document.createElement("div");
+  receipt.className = "read-receipt";
+  receipt.textContent = "seen";
+  stack.appendChild(receipt);
   const row = document.createElement("div");
   row.className = "msg-row assistant";
   if (msgId && !isSibling) row.dataset.msgId = msgId;
@@ -2788,6 +2802,80 @@ sidebarToggle.addEventListener("click", () => {
 sidebarBackdrop.addEventListener("click", closeMobileSidebar);
 
 // ── More menu (mobile) ────────────────────────────────────────────────────────
+
+chatBackButton?.addEventListener("click", () => {
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.href = "/";
+  }
+});
+
+// Reuse C2: SavePrincessUpload provides the shared Supabase Storage uploader.
+function applyChaAvatar(url) {
+  if (!chaAvatarButton || !url) return;
+  chaAvatarButton.style.backgroundImage = `url("${url}")`;
+  chaAvatarButton.style.backgroundSize = "cover";
+  chaAvatarButton.style.backgroundPosition = "center";
+  chaAvatarButton.classList.add("has-image");
+}
+
+applyChaAvatar(localStorage.getItem("cha_avatar_url") || "");
+
+chaAvatarButton?.addEventListener("click", async () => {
+  if (!window.SavePrincessUpload?.create) return;
+  const uploader = window.SavePrincessUpload.create({
+    bucket: "chat-images",
+    scope: "cha_avatar",
+    pathForFile: ({ file, userId }) => {
+      const ext = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
+      return `${userId}/cha_avatar_${Date.now()}.${ext || "jpg"}`;
+    },
+    onUploaded: (result) => {
+      if (result.signedUrl) {
+        localStorage.setItem("cha_avatar_url", result.signedUrl);
+        applyChaAvatar(result.signedUrl);
+      }
+    },
+  });
+  await uploader.open();
+  uploader.destroy();
+});
+
+function applyChatSearch(query) {
+  const q = query.trim().toLocaleLowerCase();
+  messageList.querySelectorAll(".msg-row").forEach((row) => {
+    const text = row.querySelector(".message")?.textContent?.toLocaleLowerCase() || "";
+    const matched = !q || text.includes(q);
+    row.classList.toggle("search-hidden", !matched);
+    row.classList.toggle("search-hit", Boolean(q && matched));
+  });
+}
+
+chatSearchButton?.addEventListener("click", () => {
+  chatSearchBar?.classList.toggle("hidden");
+  if (!chatSearchBar?.classList.contains("hidden")) {
+    chatSearchInput?.focus();
+    applyChatSearch(chatSearchInput?.value || "");
+  } else {
+    if (chatSearchInput) chatSearchInput.value = "";
+    applyChatSearch("");
+  }
+});
+
+chatSearchInput?.addEventListener("input", () => applyChatSearch(chatSearchInput.value));
+chatSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    chatSearchInput.value = "";
+    chatSearchBar?.classList.add("hidden");
+    applyChatSearch("");
+  }
+});
+chatSearchClear?.addEventListener("click", () => {
+  if (chatSearchInput) chatSearchInput.value = "";
+  applyChatSearch("");
+  chatSearchInput?.focus();
+});
 
 let activeMoreMenu = null;
 
