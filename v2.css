@@ -874,12 +874,6 @@ body {
   object-fit: contain;
 }
 
-.lightning-mark {
-  font-size: 22px;
-  line-height: 1;
-  transform: translateY(-1px);
-}
-
 .plus-panel-item strong,
 .plus-panel-item small {
   display: block;
@@ -961,13 +955,15 @@ body {
   filter: brightness(0);
 }
 
-.bottom-tab.active:not(.bottom-tab--cha) {
-  background: var(--surface-soft);
-  box-shadow: inset 0 0 0 1px var(--border-soft);
+.bottom-tab[data-tab="couple"].active img {
+  display: none;
 }
 
-.bottom-tab.active:not(.bottom-tab--cha) img {
-  transform: scale(1.08);
+.bottom-tab[data-tab="couple"].active::after {
+  content: "♥";
+  color: var(--active);
+  font-size: 24px;
+  line-height: 1;
 }
 
 .bottom-tab--cha {

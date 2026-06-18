@@ -3626,9 +3626,9 @@ function initV2Composer() {
       },
     });
     addPanelItem(actions, {
-      label: "强制回复",
-      desc: "戳一下，让 Cha 接话",
-      icon: '<span class="lightning-mark">↯</span>',
+      label: "戳一下",
+      desc: "让 Cha 接话",
+      icon: '<img src="assets/icons/chat/poke.svg" alt="">',
       disabled: isReplying || !chatMessages.length,
       onClick: () => triggerReply("forced"),
     });
