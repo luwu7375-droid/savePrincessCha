@@ -34,7 +34,7 @@ export async function callGeminiEmotion(
   }
   const prompt =
     "分析以下对话片段中用户的情绪状态。只返回 JSON，不要解释：\n" +
-    \'{"valence": <-0.1到0.1的小数，正为愉快负为低落>, "arousal": <-0.1到0.1的小数，正为活跃负为安静>, "connection": <-0.2到0.2的小数，正为贴近负为疏远>}\n\n\' +
+    '{"valence": <-0.1到0.1的小数，正为愉快负为低落>, "arousal": <-0.1到0.1的小数，正为活跃负为安静>, "connection": <-0.2到0.2的小数，正为贴近负为疏远>}\n\n' +
     "对话片段：\n" +
     last4.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content.slice(0, 200) : "[多媒体内容]"}`).join("\n");
   try {
