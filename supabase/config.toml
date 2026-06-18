@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.memories]
 verify_jwt = false
+
+[functions.game]
+verify_jwt = false
