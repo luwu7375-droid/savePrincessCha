@@ -1416,7 +1416,8 @@ body {
   width: 24px;
   height: 24px;
   object-fit: contain;
-  opacity: 0.72;
+  filter: brightness(0) opacity(0.35);
+  opacity: 1;
 }
 
 .bottom-tab[data-tab="home"] img,
@@ -1430,7 +1431,7 @@ body {
   width: 24px;
   height: 24px;
   display: block;
-  background: #7f7f7f;
+  background: rgba(0, 0, 0, 0.35);
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
@@ -1451,12 +1452,12 @@ body {
 
 .bottom-tab[data-tab="home"].active::after,
 .bottom-tab[data-tab="couple"].active::after {
-  background: #2b2b2b;
+  background: #202124;
 }
 
 .bottom-tab.active img {
-  opacity: 1;
   filter: brightness(0);
+  opacity: 1;
 }
 
 .bottom-tab--cha {
