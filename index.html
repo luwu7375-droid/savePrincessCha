@@ -110,12 +110,11 @@
     <!-- 主聊天区 -->
     <main class="chat-shell v2-page v2-page--chat" data-page="chat" aria-label="Chat">
       <header class="top-bar">
-        <button id="chatBackButton" type="button" class="icon-btn" title="Back" aria-label="Back">&lt;</button>
         <button id="sidebarToggle" type="button" class="icon-btn" title="会话列表">☰</button>
         <button id="chaAvatarButton" type="button" class="top-avatar avatar" title="Change Cha avatar" aria-label="Change Cha avatar"></button>
         <h1>救公主</h1>
-        <span id="chatStatus" class="chat-status"></span>
         <button id="chatOnlineDot" type="button" class="chat-online-dot" title="查看状态" aria-label="查看 Cha 状态"><img src="assets/icons/chat/online-dot.svg" alt=""></button>
+        <span id="chatStatus" class="chat-status"></span>
         <button id="chatSearchButton" type="button" class="icon-btn" title="Search messages" aria-label="Search messages"><img src="assets/icons/others/search.svg" alt=""></button>
       </header>
 
@@ -127,6 +126,78 @@
       <div id="princessStatusBar" class="princess-status-bar hidden" aria-label="G 当前状态"></div>
 
       <section class="message-list" id="messageList" aria-label="消息列表"></section>
+
+      <section class="bubble-system-examples" hidden aria-label="Bubble system examples">
+        <div class="message user-message message-text">
+          <div class="bubble">
+            这是一条文本消息，可以包含 <a href="#">链接</a>
+          </div>
+          <div class="message-meta">
+            <span>14:42</span>
+            <span class="read-indicator"></span>
+          </div>
+        </div>
+
+        <div class="message cha-message message-image">
+          <div class="bubble">
+            <img src="assets/illustrations/couple-space/memory-hall.jpg" alt="Cha 分享的图片" loading="lazy">
+          </div>
+          <div class="message-meta">
+            <span>14:44</span>
+          </div>
+        </div>
+
+        <div class="message user-message message-voice">
+          <div class="bubble">
+            <button class="voice-play-btn" type="button" aria-label="播放语音">▶</button>
+            <div class="voice-waveform">
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+            </div>
+            <span class="voice-duration">2:30</span>
+          </div>
+          <div class="message-meta">
+            <span>14:45</span>
+          </div>
+        </div>
+
+        <div class="message cha-message message-reply">
+          <div class="bubble">
+            <div class="quoted-section">
+              <div class="quoted-author">你</div>
+              <div class="quoted-text">刚才说的那句话</div>
+            </div>
+            <div class="reply-text">对，我同意你的想法。</div>
+          </div>
+          <div class="message-meta">
+            <span>14:46</span>
+          </div>
+        </div>
+
+        <div class="message system-message message-system">
+          <div class="bubble">邀请你一起玩《真心话大冒险》。</div>
+        </div>
+
+        <div class="message cha-message message-card">
+          <div class="bubble">
+            <div class="card-content">
+              <div class="card-title">来玩游戏吧！</div>
+              <div class="card-description">真心话大冒险</div>
+            </div>
+            <div class="card-buttons">
+              <button class="card-button primary" type="button">接受</button>
+              <button class="card-button" type="button">拒绝</button>
+            </div>
+          </div>
+          <div class="message-meta">
+            <span>14:47</span>
+          </div>
+        </div>
+      </section>
 
       <div class="tier-bar" id="tierBar" role="group" aria-label="模型档位">
         <button type="button" class="tier-btn" data-tier="instant">Instant</button>

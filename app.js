@@ -643,7 +643,10 @@ function maybeAddTimeSeparator(createdAt) {
 function addMessage(text, role, createdAt = new Date().toISOString(), options = {}, msgId = null) {
   if (!options.skipTimeSeparator) maybeAddTimeSeparator(createdAt);
   const el = document.createElement("div");
-  el.className = `message ${role}`;
+  const isImageMessage = Array.isArray(text) && text.some(part => part.type === "image_url" && part.image_url?.url);
+  const speakerClass = role === "assistant" ? "cha-message" : role === "user" ? "user-message" : "system-message";
+  const typeClass = isImageMessage ? "message-image" : role === "system" ? "message-system" : "message-text";
+  el.className = `message ${role} ${speakerClass} ${typeClass}`;
   if (Array.isArray(text)) {
     for (const part of text) {
       if (part.type === "image_url" && part.image_url?.url) {
@@ -730,7 +733,7 @@ function splitBubbles(rawText) {
  */
 function insertBubbleSync(text, createdAt, msgId, isSibling) {
   const el = document.createElement("div");
-  el.className = "message assistant";
+  el.className = "message assistant cha-message message-text";
   el.textContent = text;
   const stack = document.createElement("div");
   stack.className = "msg-stack";
