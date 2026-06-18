@@ -950,20 +950,44 @@ body {
   opacity: 0.58;
 }
 
-.bottom-tab.active img {
-  opacity: 1;
-  filter: brightness(0);
-}
-
-.bottom-tab[data-tab="couple"].active img {
+.bottom-tab[data-tab="home"] img,
+.bottom-tab[data-tab="couple"] img {
   display: none;
 }
 
+.bottom-tab[data-tab="home"]::after,
+.bottom-tab[data-tab="couple"]::after {
+  content: "";
+  width: 24px;
+  height: 24px;
+  display: block;
+  background: #D9D9D9;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.bottom-tab[data-tab="home"]::after {
+  mask-image: url("assets/icons/nav/home.svg");
+  -webkit-mask-image: url("assets/icons/nav/home.svg");
+}
+
+.bottom-tab[data-tab="couple"]::after {
+  mask-image: url("assets/icons/nav/heart.svg");
+  -webkit-mask-image: url("assets/icons/nav/heart.svg");
+}
+
+.bottom-tab[data-tab="home"].active::after,
 .bottom-tab[data-tab="couple"].active::after {
-  content: "♥";
-  color: var(--active);
-  font-size: 24px;
-  line-height: 1;
+  background: #2b2b2b;
+}
+
+.bottom-tab.active img {
+  opacity: 1;
+  filter: brightness(0);
 }
 
 .bottom-tab--cha {
