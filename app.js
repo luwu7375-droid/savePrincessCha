@@ -62,8 +62,12 @@ const chaAvatarButton   = document.getElementById("chaAvatarButton");
 const chatSearchButton  = document.getElementById("chatSearchButton");
 const chatOnlineDot     = document.getElementById("chatOnlineDot");
 const chatSearchBar     = document.getElementById("chatSearchBar");
+const chatSearchSheet   = document.getElementById("chatSearchSheet");
+const chatSearchOverlay = document.getElementById("chatSearchOverlay");
+const chatSearchClose   = document.getElementById("chatSearchClose");
 const chatSearchInput   = document.getElementById("chatSearchInput");
 const chatSearchClear   = document.getElementById("chatSearchClear");
+const chatSearchResults = document.getElementById("chatSearchResults");
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -2843,39 +2847,117 @@ chaAvatarButton?.addEventListener("click", async () => {
   uploader.destroy();
 });
 
-function applyChatSearch(query) {
-  const q = query.trim().toLocaleLowerCase();
-  messageList.querySelectorAll(".msg-row").forEach((row) => {
-    const text = row.querySelector(".message")?.textContent?.toLocaleLowerCase() || "";
-    const matched = !q || text.includes(q);
-    row.classList.toggle("search-hidden", !matched);
-    row.classList.toggle("search-hit", Boolean(q && matched));
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  })[char]);
+}
+
+function escapeRegExp(value) {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightSearchKeyword(text, keyword) {
+  const safeText = escapeHtml(text);
+  const safeKeyword = escapeRegExp(keyword.trim());
+  if (!safeKeyword) return safeText;
+  return safeText.replace(new RegExp(`(${safeKeyword})`, "gi"), '<mark class="search-result-highlight">$1</mark>');
+}
+
+function getSearchableMessageRows() {
+  return Array.from(messageList.querySelectorAll(".msg-row:not(#typingIndicatorRow)"))
+    .map((row, index) => {
+      const message = row.querySelector(".message");
+      const text = message?.textContent?.trim() || "";
+      if (!text) return null;
+      if (!row.dataset.searchId) row.dataset.searchId = row.dataset.msgId || `rendered-${index}`;
+      return {
+        id: row.dataset.searchId,
+        row,
+        role: row.classList.contains("user") ? "你" : row.classList.contains("assistant") ? "Cha" : "系统",
+        text,
+      };
+    })
+    .filter(Boolean);
+}
+
+function renderSearchEmpty(text) {
+  if (!chatSearchResults) return;
+  chatSearchResults.innerHTML = `<div class="search-empty">${escapeHtml(text)}</div>`;
+}
+
+function renderChatSearchResults(keyword) {
+  const q = keyword.trim();
+  if (!q) {
+    renderSearchEmpty("输入关键词搜索当前聊天记录");
+    return;
+  }
+
+  const results = getSearchableMessageRows().filter(({ text }) => text.toLocaleLowerCase().includes(q.toLocaleLowerCase()));
+  if (!results.length) {
+    renderSearchEmpty("没有找到相关聊天记录");
+    return;
+  }
+
+  chatSearchResults.innerHTML = results.map(({ id, role, text }) => `
+    <button type="button" class="search-result-item" data-search-target="${escapeHtml(id)}" role="listitem">
+      <span class="search-result-time">${escapeHtml(role)}</span>
+      <span class="search-result-text">${highlightSearchKeyword(text, q)}</span>
+    </button>
+  `).join("");
+}
+
+function openChatSearchSheet() {
+  if (!chatSearchSheet || !chatSearchInput) return;
+  chatSearchSheet.classList.remove("hidden");
+  chatSearchSheet.setAttribute("aria-hidden", "false");
+  renderChatSearchResults(chatSearchInput.value || "");
+  setTimeout(() => chatSearchInput.focus({ preventScroll: true }), 260);
+}
+
+function closeChatSearchSheet({ clear = true } = {}) {
+  if (!chatSearchSheet) return;
+  chatSearchSheet.classList.add("hidden");
+  chatSearchSheet.setAttribute("aria-hidden", "true");
+  if (clear && chatSearchInput) chatSearchInput.value = "";
+  chatSearchInput?.blur();
+  renderSearchEmpty("输入关键词搜索当前聊天记录");
+  messageList.querySelectorAll(".msg-row.search-hit, .msg-row.search-jump-highlight").forEach((row) => {
+    row.classList.remove("search-hit", "search-jump-highlight");
   });
 }
 
-chatSearchButton?.addEventListener("click", () => {
-  chatSearchBar?.classList.toggle("hidden");
-  if (!chatSearchBar?.classList.contains("hidden")) {
-    chatSearchInput?.focus();
-    applyChatSearch(chatSearchInput?.value || "");
-  } else {
-    if (chatSearchInput) chatSearchInput.value = "";
-    applyChatSearch("");
-  }
-});
+function jumpToSearchResult(targetId) {
+  const row = Array.from(messageList.querySelectorAll(".msg-row")).find((item) => item.dataset.searchId === targetId);
+  closeChatSearchSheet({ clear: true });
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.add("search-jump-highlight");
+  setTimeout(() => row.classList.remove("search-jump-highlight"), 2000);
+}
 
-chatSearchInput?.addEventListener("input", () => applyChatSearch(chatSearchInput.value));
+chatSearchButton?.addEventListener("click", openChatSearchSheet);
+chatSearchClose?.addEventListener("click", () => closeChatSearchSheet({ clear: true }));
+chatSearchOverlay?.addEventListener("click", () => closeChatSearchSheet({ clear: true }));
+
+chatSearchInput?.addEventListener("input", () => renderChatSearchResults(chatSearchInput.value));
 chatSearchInput?.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    chatSearchInput.value = "";
-    chatSearchBar?.classList.add("hidden");
-    applyChatSearch("");
-  }
+  if (event.key === "Escape") closeChatSearchSheet({ clear: true });
 });
 chatSearchClear?.addEventListener("click", () => {
   if (chatSearchInput) chatSearchInput.value = "";
-  applyChatSearch("");
-  chatSearchInput?.focus();
+  renderSearchEmpty("输入关键词搜索当前聊天记录");
+  chatSearchInput?.focus({ preventScroll: true });
+});
+
+chatSearchResults?.addEventListener("click", (event) => {
+  const item = event.target.closest(".search-result-item");
+  if (!item) return;
+  jumpToSearchResult(item.dataset.searchTarget || "");
 });
 
 chatOnlineDot?.addEventListener("click", (event) => {
@@ -3013,13 +3095,24 @@ function initKeyboardViewportState() {
   const shell = document.querySelector(".layout");
   if (!shell || !window.visualViewport) return;
 
+  const resetKeyboardState = () => {
+    shell.classList.remove("keyboard-open");
+    shell.style.setProperty("--keyboard-inset", "0px");
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+  };
+
   const updateKeyboardState = () => {
     const viewport = window.visualViewport;
     const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
-    const keyboardOpen = inset > 80 && document.activeElement === messageInput;
+    const activeInput = document.activeElement === messageInput || document.activeElement === chatSearchInput;
+    const keyboardOpen = inset > 80 && activeInput;
     shell.classList.toggle("keyboard-open", keyboardOpen);
     shell.style.setProperty("--keyboard-inset", keyboardOpen ? `${Math.round(inset)}px` : "0px");
-    if (keyboardOpen) scrollChatToLatest();
+    if (keyboardOpen && document.activeElement === messageInput) scrollChatToLatest();
   };
 
   window.visualViewport.addEventListener("resize", updateKeyboardState);
@@ -3029,9 +3122,27 @@ function initKeyboardViewportState() {
     scrollChatToLatest();
   });
   messageInput?.addEventListener("blur", () => {
-    setTimeout(updateKeyboardState, 80);
+    setTimeout(resetKeyboardState, 80);
+  });
+  chatSearchInput?.addEventListener("focus", updateKeyboardState);
+  chatSearchInput?.addEventListener("blur", () => {
+    setTimeout(resetKeyboardState, 80);
   });
   updateKeyboardState();
+}
+
+function initInputKeyboardHints(root = document) {
+  root.querySelectorAll('textarea, input[type="text"], input[type="search"]').forEach((input) => {
+    input.setAttribute("autocapitalize", "off");
+    input.setAttribute("autocorrect", "off");
+    input.setAttribute("spellcheck", "false");
+    if (input.tagName === "TEXTAREA" && !input.hasAttribute("enterkeyhint")) {
+      input.setAttribute("enterkeyhint", "send");
+    }
+    if (input.type === "search" && !input.hasAttribute("enterkeyhint")) {
+      input.setAttribute("enterkeyhint", "search");
+    }
+  });
 }
 
 // ── Model tier selector ────────────────────────────────────────────────────────
@@ -3732,6 +3843,7 @@ function initV2Composer() {
 
 initV2Shell();
 initV2Composer();
+initInputKeyboardHints();
 initKeyboardViewportState();
 
 // ── V2 shared status bar ─────────────────────────────────────────────────────
