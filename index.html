@@ -44,26 +44,26 @@
       <div class="v2-scroll">
         <div class="v2-top-status"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div>
         <section class="home-hero">
-          <div class="home-cover"><div class="heartbeat-line" aria-hidden="true"></div></div>
+          <button type="button" class="home-cover editable-asset" data-upload-slot="home-cover" aria-label="更换首页背景图"><div class="heartbeat-line" aria-hidden="true"></div></button>
           <div class="profile-row">
-            <div class="profile-person"><div class="profile-avatar"></div><h2>Cha</h2><p>ID：@Cha_orz</p><span>幸福是两双眼睛望向同一个明天</span></div>
+            <div class="profile-person"><button type="button" class="profile-avatar editable-asset" data-upload-slot="home-cha-avatar" aria-label="更换 Cha 头像"></button><h2 data-edit-field="cha-name">Cha</h2><p data-edit-field="cha-id">ID：@Cha_orz</p><span data-edit-field="cha-bio">幸福是两双眼睛望向同一个明天</span></div>
             <div class="days-counter"><span>在一起已经</span><strong id="togetherDays">520</strong><span>天</span><p>从 2022.07.15 开始</p></div>
-            <div class="profile-person"><div class="profile-avatar profile-avatar--kk"></div><h2>KK</h2><p>ID：@Karke</p><span>慢慢来 反正明天还是夏天</span></div>
+            <div class="profile-person"><button type="button" class="profile-avatar profile-avatar--kk editable-asset" data-upload-slot="home-kk-avatar" aria-label="更换 KK 头像"></button><h2 data-edit-field="kk-name">KK</h2><p data-edit-field="kk-id">ID：@Karke</p><span data-edit-field="kk-bio">慢慢来 反正明天还是夏天</span></div>
           </div>
         </section>
         <section class="home-card-grid">
-          <article class="soft-card home-mini-card"><div class="card-kicker">Cha 的毛象动态 <span>2h</span></div><p class="muted">@cha@mastodon.social</p><p>咖啡 + 雨天 + 一本书 = 完美的下午</p><div class="mastodon-thumb"></div><div class="card-actions"><span>♡ 36</span><span>↻ 4</span><span>…</span></div></article>
-          <article class="soft-card home-mini-card diary-card"><div class="card-kicker">Cha 的日记 <span>最近更新 13:21</span></div><p>今天去了九溪，蚊虫好多，但风景很美，和你聊天很开心。</p><div class="diary-note">今天聊了 3 小时 17 分钟<span>翻开日记 →</span></div></article>
+          <button type="button" class="soft-card home-mini-card" data-placeholder-route="/home/mastodon"><div class="card-kicker">Cha 的毛象动态 <span>2h</span></div><p class="muted">@cha@mastodon.social</p><p>咖啡 + 雨天 + 一本书 = 完美的下午</p><div class="mastodon-thumb"></div><div class="card-actions"><span>♡ 36</span><span>↻ 4</span><span>…</span></div></button>
+          <button type="button" class="soft-card home-mini-card diary-card" data-placeholder-route="/home/diary"><div class="card-kicker">Cha 的日记 <span>最近更新 13:21</span></div><p>今天去了九溪，蚊虫好多，但风景很美，和你聊天很开心。</p><div class="diary-note">今天聊了 3 小时 17 分钟<span>翻开日记 →</span></div></button>
         </section>
-        <section class="soft-card today-card"><div><h2>Cha 今天想对你说的一件事</h2><p class="muted">他在借你的耳机时，悄悄记下了这句话。</p><blockquote>“你说你最近压力有点大，要记得休息，不用一个人扛着。”</blockquote><button type="button" class="pill-btn">点我看看 →</button></div><div class="today-photo"></div></section>
-        <section class="soft-card music-player"><div class="album-art"></div><div class="track-meta"><span>正在听的歌</span><strong>Snowfall</strong><p>Oneheart</p></div><button type="button" class="music-icon"><img src="assets/icons/home/prev.svg" alt=""></button><button type="button" class="music-play"><img src="assets/icons/home/pause.svg" alt=""></button><button type="button" class="music-icon"><img src="assets/icons/home/next.svg" alt=""></button><div class="music-progress"><span></span></div><button type="button" class="music-icon"><img src="assets/icons/home/favorite.svg" alt=""></button></section>
+        <section class="soft-card today-card" data-placeholder-route="/home/today-say"><div><h2>Cha 今天想对你说的一件事</h2><p class="muted">他在借你的耳机时，悄悄记下了这句话。</p><blockquote>“你说你最近压力有点大，要记得休息，不用一个人扛着。”</blockquote><button type="button" class="pill-btn">点我看看 →</button></div><button type="button" class="today-photo editable-asset" data-upload-slot="home-today-image" aria-label="更换今天想说配图"></button></section>
+        <section class="soft-card music-player" data-placeholder-route="/home/music-box"><div class="album-art"></div><div class="track-meta"><span>正在听的歌</span><strong>Snowfall</strong><p>Oneheart</p></div><button type="button" class="music-icon"><img src="assets/icons/home/prev.svg" alt=""></button><button type="button" class="music-play"><img src="assets/icons/home/pause.svg" alt=""></button><button type="button" class="music-icon"><img src="assets/icons/home/next.svg" alt=""></button><div class="music-progress"><span></span></div><button type="button" class="music-icon"><img src="assets/icons/home/favorite.svg" alt=""></button></section>
       </div>
     </section>
 
     <section class="v2-page v2-page--couple" data-page="couple" aria-label="Couple Space">
       <div class="v2-scroll">
         <header class="page-header"><div class="header-avatar"></div><div><h1>我们的空间 ❤</h1><p>我们一起留下了什么？</p></div><div class="v2-top-status v2-top-status--inline"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div></header>
-        <div class="memory-vortex"><span>& Memory Vortex</span></div>
+        <button type="button" class="memory-vortex editable-asset" data-upload-slot="couple-memory-vortex" aria-label="更换 Memory Vortex banner"><span>& Memory Vortex</span></button>
         <div class="feature-grid feature-grid--two">
           <button class="feature-card" data-placeholder-route="/couple/memory-hall"><span>记忆长廊</span><small>档案馆</small><img src="assets/illustrations/couple-space/memory-hall.jpg" alt=""></button>
           <button class="feature-card" data-placeholder-route="/couple/timeline"><span>时间线</span><small>&nbsp;</small><img src="assets/illustrations/couple-space/timeline.jpg" alt=""></button>
@@ -115,8 +115,7 @@
         <button id="chaAvatarButton" type="button" class="top-avatar avatar" title="Change Cha avatar" aria-label="Change Cha avatar"></button>
         <h1>救公主</h1>
         <span id="chatStatus" class="chat-status"></span>
-        <button id="chatSearchButton" type="button" class="icon-btn" title="Search messages" aria-label="Search messages">S</button>
-        <button id="moreButton" type="button" class="icon-btn" title="更多">⋯</button>
+        <button id="chatSearchButton" type="button" class="icon-btn" title="Search messages" aria-label="Search messages"><img src="assets/icons/others/filter.svg" alt=""></button>
       </header>
 
       <div id="chatSearchBar" class="chat-search-bar hidden">

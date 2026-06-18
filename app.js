@@ -3534,6 +3534,30 @@ function initV2Shell() {
     });
   });
 
+  document.querySelectorAll("[data-upload-slot]").forEach((entry) => {
+    entry.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const slot = entry.dataset.uploadSlot;
+      showDialog({
+        title: "更换入口已预留",
+        body: `${slot} 将复用统一上传组件接入，本轮先保留点击入口。`,
+        confirmLabel: "知道了",
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-edit-field]").forEach((entry) => {
+    entry.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const field = entry.dataset.editField;
+      showDialog({
+        title: "编辑入口已预留",
+        body: `${field} 将复用统一编辑态组件接入，本轮先保留点击入口。`,
+        confirmLabel: "知道了",
+      });
+    });
+  });
+
   showPage("home");
 }
 
@@ -3592,13 +3616,6 @@ function initV2Composer() {
       onClick: () => imageAttachBtn?.click(),
     });
     addPanelItem(actions, {
-      label: "戳一下",
-      desc: "轻轻续一句",
-      icon: '<img src="assets/icons/chat/poke.svg" alt="">',
-      disabled: isReplying || !chatMessages.length,
-      onClick: () => triggerReply("forced"),
-    });
-    addPanelItem(actions, {
       label: autoReplyEnabled ? "自动接话开" : "自动接话关",
       desc: "空闲时回应",
       icon: '<img src="assets/icons/chat/regenerate.svg" alt="">',
@@ -3610,8 +3627,8 @@ function initV2Composer() {
     });
     addPanelItem(actions, {
       label: "强制回复",
-      desc: "现在接话",
-      icon: '<span>↗</span>',
+      desc: "戳一下，让 Cha 接话",
+      icon: '<span class="lightning-mark">↯</span>',
       disabled: isReplying || !chatMessages.length,
       onClick: () => triggerReply("forced"),
     });

@@ -157,13 +157,16 @@ body {
 }
 
 .home-cover {
+  display: block;
+  width: 100%;
   height: 112px;
   border-radius: 20px;
   overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border-soft);
   background:
     linear-gradient(90deg, rgba(255,255,255,0.12), rgba(255,255,255,0.78) 42%, rgba(255,255,255,0.1)),
     linear-gradient(120deg, #dcdeda, #f7f7f5 44%, #d8dad7);
-  border: 1px solid var(--border-soft);
 }
 
 .heartbeat-line {
@@ -190,6 +193,8 @@ body {
   border-radius: 999px;
   margin: 0 auto 8px;
   box-shadow: var(--shadow-card);
+  display: block;
+  padding: 0;
 }
 
 .profile-avatar--kk {
@@ -231,6 +236,11 @@ body {
 .home-mini-card {
   min-height: 170px;
   padding: 18px;
+  width: 100%;
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .card-kicker {
@@ -290,6 +300,7 @@ body {
   padding: 20px;
   margin-top: 16px;
   border-radius: var(--radius-card-lg);
+  cursor: pointer;
 }
 
 .today-card h2,
@@ -307,6 +318,8 @@ body {
 .today-photo {
   min-height: 132px;
   border-radius: 16px;
+  width: 100%;
+  padding: 0;
 }
 
 .pill-btn {
@@ -327,6 +340,7 @@ body {
   gap: 12px;
   padding: 14px;
   margin-top: 16px;
+  cursor: pointer;
 }
 
 .album-art {
@@ -385,6 +399,8 @@ body {
 }
 
 .memory-vortex {
+  display: block;
+  width: 100%;
   height: 132px;
   border-radius: 8px;
   border: 1px solid var(--border-soft);
@@ -394,6 +410,8 @@ body {
   margin-bottom: 18px;
   overflow: hidden;
   position: relative;
+  padding: 0;
+  text-align: left;
 }
 
 .memory-vortex span {
@@ -428,6 +446,34 @@ body {
   font: inherit;
   text-align: center;
   cursor: pointer;
+}
+
+.editable-asset,
+[data-edit-field] {
+  cursor: pointer;
+}
+
+.editable-asset {
+  position: relative;
+}
+
+.editable-asset::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86) url("assets/icons/others/edit.svg") center / 12px 12px no-repeat;
+  border: 1px solid var(--border-soft);
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.editable-asset:hover::after,
+.editable-asset:focus-visible::after {
+  opacity: 1;
 }
 
 .feature-card img {
@@ -598,7 +644,7 @@ body {
   border: 0;
   background: transparent;
   display: grid;
-  grid-template-columns: 32px 48px 1fr 32px 32px;
+  grid-template-columns: 32px 48px 1fr 32px;
   gap: 12px;
   align-items: center;
 }
@@ -783,7 +829,7 @@ body {
 
 .plus-panel-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -798,13 +844,14 @@ body {
 }
 
 .plus-panel-item {
-  min-height: 66px;
-  display: grid;
-  grid-template-columns: 34px 1fr;
+  min-height: 82px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 7px;
   padding: 10px;
-  text-align: left;
+  text-align: center;
 }
 
 .plus-panel-item:disabled {
@@ -825,6 +872,12 @@ body {
   width: 18px;
   height: 18px;
   object-fit: contain;
+}
+
+.lightning-mark {
+  font-size: 22px;
+  line-height: 1;
+  transform: translateY(-1px);
 }
 
 .plus-panel-item strong,
@@ -888,10 +941,12 @@ body {
 .bottom-tab {
   border: 0;
   background: transparent;
+  border-radius: 18px;
   height: 48px;
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: background 0.16s ease, transform 0.16s ease;
 }
 
 .bottom-tab img {
@@ -906,10 +961,20 @@ body {
   filter: brightness(0);
 }
 
+.bottom-tab.active:not(.bottom-tab--cha) {
+  background: var(--surface-soft);
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+
+.bottom-tab.active:not(.bottom-tab--cha) img {
+  transform: scale(1.08);
+}
+
 .bottom-tab--cha {
   align-self: end;
   height: 74px;
   transform: translateY(-12px);
+  border-radius: 24px;
 }
 
 .bottom-tab--cha img {
@@ -917,6 +982,17 @@ body {
   height: 56px;
   opacity: 1;
   filter: none !important;
+  transition: transform 0.16s ease;
+}
+
+.bottom-tab--cha.active {
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: var(--shadow-card);
+  transform: translateY(-17px);
+}
+
+.bottom-tab--cha.active img {
+  transform: scale(1.08);
 }
 
 .dialog-overlay {
