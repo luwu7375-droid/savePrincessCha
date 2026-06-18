@@ -2865,13 +2865,15 @@ html[data-theme="dark"] {
 .bubble,
 .msg-row .message {
   position: relative;
-  border-radius: var(--bubble-radius) !important;
-  box-shadow: var(--shadow-light) !important;
-  padding: var(--bubble-padding) !important;
-  max-width: var(--bubble-max-width);
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+  padding: 12px 16px !important;
+  max-width: 320px;
   min-width: var(--bubble-min-width);
   word-wrap: break-word;
   overflow-wrap: break-word;
+  white-space: normal;
+  word-break: normal;
   transition: box-shadow var(--transition-quick), transform var(--transition-quick);
   cursor: default;
   -webkit-user-select: text;
@@ -3192,8 +3194,8 @@ img.msg-image {
 }
 
 .v2-page--chat .top-bar {
-  grid-template-columns: 48px max-content 24px 1fr !important;
-  column-gap: 8px !important;
+  grid-template-columns: 48px max-content 44px 1fr 44px !important;
+  column-gap: 4px !important;
 }
 
 .v2-page--chat .top-bar h1 {
@@ -3201,10 +3203,10 @@ img.msg-image {
   white-space: nowrap;
 }
 
-.v2-page--chat .chat-online-dot {
+.v2-page--chat .online-dot-hitbox {
   align-self: center;
   justify-self: start;
-  margin-left: -2px;
+  margin-left: -4px;
 }
 
 .v2-page--chat .chat-status {
@@ -3276,8 +3278,8 @@ img.msg-image {
   }
 
   .v2-page--chat .top-bar {
-    grid-template-columns: 48px max-content 22px 1fr !important;
-    gap: 7px !important;
+    grid-template-columns: 48px max-content 44px 1fr 44px !important;
+    gap: 4px !important;
   }
 }
 

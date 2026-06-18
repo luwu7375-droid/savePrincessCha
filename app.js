@@ -127,7 +127,7 @@ document.getElementById("closeStatusPanelBtn")?.addEventListener("click", closeS
 document.addEventListener("click", (e) => {
   const panel = document.getElementById("statusPanel");
   if (!panel || panel.classList.contains("hidden")) return;
-  if (!panel.contains(e.target) && !e.target.closest("#chatOnlineDot")) closeStatusPanel();
+  if (!panel.contains(e.target) && !e.target.closest("#chatOnlineDot, .top-bar h1")) closeStatusPanel();
 });
 
 document.getElementById("themeOptions")?.addEventListener("click", (e) => {
@@ -1555,6 +1555,7 @@ function openStatusPanel(anchor) {
   const panel = document.getElementById("statusPanel");
   const rows  = document.getElementById("statusPanelRows");
   if (!panel || !rows) return;
+  window.closeV2PlusPanel?.();
 
   const s = _lastPrincessStatus || getDefaultPrincessStatus();
   rows.innerHTML = STAT_META.map(({ key, label }) => {
@@ -1568,17 +1569,19 @@ function openStatusPanel(anchor) {
     </div>`;
   }).join("");
 
-  // Position near anchor, stay within viewport
+  // Position near the chat header/status affordance, stay within the app shell.
   if (anchor) {
     const rect   = anchor.getBoundingClientRect();
-    const panelW = 228;
+    const shell = document.querySelector(".layout")?.getBoundingClientRect();
+    const panelW = Math.min(280, window.innerWidth - 28);
     const panelH = 220;
+    const minLeft = (shell?.left ?? 0) + 14;
+    const maxRight = (shell?.right ?? window.innerWidth) - 14;
     let left = rect.left;
-    let top  = rect.bottom + 6;
-    if (left + panelW > window.innerWidth  - 8) left = window.innerWidth  - panelW - 8;
-    if (left < 8) left = 8;
-    if (top  + panelH > window.innerHeight - 8) top  = rect.top - panelH - 6;
-    if (top < 8) top = 8;
+    let top  = rect.bottom + 8;
+    if (left + panelW > maxRight) left = maxRight - panelW;
+    if (left < minLeft) left = minLeft;
+    if (top + panelH > window.innerHeight - 12) top = Math.max(rect.bottom + 8, window.innerHeight - panelH - 12);
     panel.style.left = left + "px";
     panel.style.top  = top  + "px";
   }
@@ -2965,6 +2968,11 @@ chatOnlineDot?.addEventListener("click", (event) => {
   openStatusPanel(event.currentTarget);
 });
 
+document.querySelector(".v2-page--chat .top-bar h1")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  openStatusPanel(chatOnlineDot || event.currentTarget);
+});
+
 let activeMoreMenu = null;
 
 function closeMoreMenu() {
@@ -3743,6 +3751,7 @@ function initV2Composer() {
     plusButton.classList.remove("active");
     scrollChatToLatest();
   };
+  window.closeV2PlusPanel = closePanel;
 
   function addPanelItem(group, { label, desc, icon, onClick, disabled = false }) {
     const item = document.createElement("button");
@@ -3758,6 +3767,7 @@ function initV2Composer() {
   }
 
   function openPanel() {
+    closeStatusPanel();
     closePanel();
     panel = document.createElement("div");
     panel.className = "plus-panel";
