@@ -60,6 +60,7 @@ const imageAttachBtn    = document.getElementById("imageAttachBtn");
 const chatBackButton    = document.getElementById("chatBackButton");
 const chaAvatarButton   = document.getElementById("chaAvatarButton");
 const chatSearchButton  = document.getElementById("chatSearchButton");
+const chatOnlineDot     = document.getElementById("chatOnlineDot");
 const chatSearchBar     = document.getElementById("chatSearchBar");
 const chatSearchInput   = document.getElementById("chatSearchInput");
 const chatSearchClear   = document.getElementById("chatSearchClear");
@@ -122,7 +123,7 @@ document.getElementById("closeStatusPanelBtn")?.addEventListener("click", closeS
 document.addEventListener("click", (e) => {
   const panel = document.getElementById("statusPanel");
   if (!panel || panel.classList.contains("hidden")) return;
-  if (!panel.contains(e.target) && !e.target.closest(".avatar") && !e.target.closest("#princessStatusBar")) closeStatusPanel();
+  if (!panel.contains(e.target) && !e.target.closest("#chatOnlineDot")) closeStatusPanel();
 });
 
 document.getElementById("themeOptions")?.addEventListener("click", (e) => {
@@ -673,8 +674,7 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   if (role === "assistant") {
     const avatar = document.createElement("div");
     avatar.className = "avatar";
-    avatar.title = "查看 G 的状态";
-    avatar.addEventListener("click", (e) => openStatusPanel(e.currentTarget));
+    avatar.title = "Cha";
     row.appendChild(avatar);
   }
   row.appendChild(stack);
@@ -745,8 +745,7 @@ function insertBubbleSync(text, createdAt, msgId, isSibling) {
   if (isSibling) row.dataset.bubbleSibling = isSibling; // sibling 存主 msgId
   const avatar = document.createElement("div");
   avatar.className = "avatar";
-  avatar.title = "查看 G 的状态";
-  avatar.addEventListener("click", (e) => openStatusPanel(e.currentTarget));
+  avatar.title = "Cha";
   row.appendChild(avatar);
   row.appendChild(stack);
   maybeAddTimeSeparator(createdAt);
@@ -1491,10 +1490,9 @@ function saveLastPrincessStatus(status) {
 function renderPrincessStatusBar() {
   const bar = document.getElementById("princessStatusBar");
   if (!bar) return;
-  const s = _lastPrincessStatus || getDefaultPrincessStatus();
-  bar.innerHTML = `<span class="princess-status-text">${s.display || ""}</span>`;
-  bar.classList.remove("hidden");
-  bar.onclick = () => openStatusPanel(bar);
+  bar.innerHTML = "";
+  bar.classList.add("hidden");
+  bar.onclick = null;
 }
 
 function updatePrincessStatusBar(status) {
@@ -1534,16 +1532,16 @@ const STAT_META = [
 
 function statBarColor(key, pct) {
   if (key === "energy")
-    return pct > 70 ? "#4ade80" : pct > 40 ? "#facc15" : "#f87171";
+    return pct > 70 ? "#B7C7BA" : pct > 40 ? "#D8CFB8" : "#D5BDBD";
   if (key === "clarity")
-    return pct > 80 ? "#60a5fa" : "#94a3b8";
+    return pct > 80 ? "#AFC2C4" : "#C9CED1";
   if (key === "valence")
-    return pct > 60 ? "#4ade80" : pct > 40 ? "#facc15" : "#f87171";
+    return pct > 60 ? "#B7C7BA" : pct > 40 ? "#D8CFB8" : "#D5BDBD";
   if (key === "arousal")
-    return pct > 60 ? "#c084fc" : pct > 40 ? "#e2e8f0" : "#60a5fa";
+    return pct > 60 ? "#C9C0D3" : pct > 40 ? "#D6D6D0" : "#B9C7CF";
   if (key === "connection")
-    return pct > 60 ? "#f472b6" : pct > 40 ? "#fb923c" : "#94a3b8";
-  return "#94a3b8";
+    return pct > 60 ? "#D4BFC7" : pct > 40 ? "#D1C3B4" : "#C9CED1";
+  return "#C9CED1";
 }
 
 function openStatusPanel(anchor) {
@@ -2875,6 +2873,11 @@ chatSearchClear?.addEventListener("click", () => {
   if (chatSearchInput) chatSearchInput.value = "";
   applyChatSearch("");
   chatSearchInput?.focus();
+});
+
+chatOnlineDot?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  openStatusPanel(event.currentTarget);
 });
 
 let activeMoreMenu = null;
