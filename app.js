@@ -3684,6 +3684,74 @@ function initV2Composer() {
 initV2Shell();
 initV2Composer();
 
+// ── V2 shared status bar ─────────────────────────────────────────────────────
+async function initV2StatusBars() {
+  const bars = Array.from(document.querySelectorAll(".v2-top-status"));
+  if (!bars.length) return;
+
+  let serverBase = new Date();
+  let clientBase = Date.now();
+  try {
+    const response = await fetch(window.location.href, { method: "HEAD", cache: "no-store" });
+    const serverDate = response.headers.get("date");
+    if (serverDate) {
+      const parsed = new Date(serverDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        serverBase = parsed;
+        clientBase = Date.now();
+      }
+    }
+  } catch (_) {
+    serverBase = new Date();
+    clientBase = Date.now();
+  }
+
+  function currentServerTime() {
+    return new Date(serverBase.getTime() + (Date.now() - clientBase));
+  }
+
+  function formatStatusTime(date) {
+    return date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
+  function updateBars() {
+    const timeText = formatStatusTime(currentServerTime());
+    bars.forEach((bar) => {
+      const parts = bar.querySelectorAll("span");
+      if (parts[1]) parts[1].textContent = "冰岛 · -2°C";
+      if (parts[2]) parts[2].textContent = timeText;
+    });
+  }
+
+  bars.forEach((bar) => {
+    bar.setAttribute("role", "button");
+    bar.setAttribute("tabindex", "0");
+    bar.setAttribute("aria-label", "状态设置：定位、天气、时间");
+    bar.addEventListener("click", () => {
+      showDialog({
+        title: "状态设置入口已预留",
+        body: "定位、天气和时间将接入统一编辑态；当前默认使用服务器时间，位置和天气暂为冰岛 · -2°C。",
+        confirmLabel: "知道了",
+      });
+    });
+    bar.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        bar.click();
+      }
+    });
+  });
+
+  updateBars();
+  window.setInterval(updateBars, 30 * 1000);
+}
+
+initV2StatusBars();
+
 // ── 记忆中枢 Memory Center ─────────────────────────────────────────────────────
 
 const memoryCenterOverlay = document.getElementById("memoryCenterOverlay");

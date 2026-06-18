@@ -93,6 +93,13 @@ body {
   font-size: 12px;
   line-height: 1.35;
   margin-bottom: 18px;
+  cursor: pointer;
+  border-radius: 14px;
+}
+
+.v2-top-status:focus-visible {
+  outline: 2px solid rgba(32, 32, 32, 0.18);
+  outline-offset: 4px;
 }
 
 .v2-weather {
@@ -610,7 +617,7 @@ body {
   width: 30px;
   height: 30px;
   object-fit: contain;
-  opacity: 0.72;
+  opacity: 1;
 }
 
 .setting-row strong {
