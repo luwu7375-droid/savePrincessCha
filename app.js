@@ -1157,6 +1157,8 @@ async function reloadHistory() {
   observeUnreadChaRows();
   insertUnreadDivider();
 }
+
+async function loadOlderHistory() {
   if (historyLoadingOlder || !historyHasMore || !oldestLoadedMessageCreatedAt) return;
   const conversationId = getActiveConversationId();
   if (!conversationId || !supabaseClient) return;
