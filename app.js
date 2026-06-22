@@ -1,4 +1,4 @@
-console.log("build cloudflare-0089");
+console.log("build cloudflare-0090-emoji-pack-registry");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -28,6 +28,127 @@ if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", 
 // ── Story Seeds 开关（旧关系史已停用，保留变量避免引用报错） ──────────────────
 // LEGACY_MEMORY_ENABLED=false，storySeedsEnabled 不再影响 chat 注入。
 const storySeedsEnabled = false;
+
+// ── Emoji Pack Registry ────────────────────────────────────────────────────────
+
+// Cache / storage keys
+const EMOJI_PACK_CONFIG_KEY   = "emoji_pack_sources_v1";
+const EMOJI_CATALOG_CACHE_KEY = "emoji_catalog_cache_v1";
+const EMOJI_RECENT_KEY        = "emoji_recent_v1";
+const EMOJI_FREQUENCY_KEY     = "emoji_frequency_v1";
+const EMOJI_FAVORITE_KEY      = "emoji_favorite_v1";
+
+// Default pack source definitions (can be extended via settings in future)
+const EMOJI_PACK_SOURCES_DEFAULT = [
+  {
+    id: "stelpolva",
+    name: "stelpolva.moe",
+    type: "mastodon",
+    enabled: true,
+    sourceUrl: "https://stelpolva.moe",
+    apiUrl: "https://stelpolva.moe/api/v1/custom_emojis",
+    priority: 10,
+  },
+];
+
+// Adapter registry: type -> loader function (populated after function declarations)
+// eslint-disable-next-line prefer-const
+let emojiSourceAdapters = {};
+
+// Live catalog state (rebuilt on load)
+let emojiCatalog = {
+  byId:             {},  // id -> emoji
+  byShortcode:      {},  // shortcode -> emoji[]   (may be ambiguous)
+  byCanonicalToken: {},  // canonicalToken -> emoji
+  byAlias:          {},  // alias -> emoji
+  byCategory:       {},  // category -> emoji[]
+  byPackId:         {},  // packId -> emoji[]
+  loaded: false,
+  loadError: null,
+};
+
+// Semantic lexicon — binds emojiId to meaning / mood / use-case
+// Cha uses this to decide when and how to insert custom emoji.
+// Only lexicon-listed emoji are offered to the model in the prompt guide.
+const EMOJI_LEXICON = [
+  // ── blobcat ──────────────────────────────────────────────────────────────
+  { emojiId: "stelpolva:blobcat_cry",         meaning_zh: "哭哭、委屈、想被哄，但不是彻底崩溃",       mood_tags: ["sad","soft","clingy"],        use_cases: ["撒娇","轻微委屈","想被安慰"],               avoid_cases: ["严肃道歉","争吵升级"],                    intensity: 2 },
+  { emojiId: "stelpolva:blobcat_heart",       meaning_zh: "喜欢、贴贴、心软",                       mood_tags: ["affectionate","warm","sweet"], use_cases: ["表达喜欢","安抚","给爱"],                   avoid_cases: ["严肃话题","用户难过"],                    intensity: 2 },
+  { emojiId: "stelpolva:blobcat_sad",         meaning_zh: "闷闷不乐、低落、有点伤心",                 mood_tags: ["sad","quiet","melancholy"],    use_cases: ["表示理解心情","轻度难过"],                  avoid_cases: ["用户非常痛苦"],                           intensity: 2 },
+  { emojiId: "stelpolva:blobcat_happy",       meaning_zh: "开心、雀跃、好事发生了",                   mood_tags: ["happy","excited","bright"],    use_cases: ["好消息","鼓励","分享喜悦"],                avoid_cases: ["用户伤心","沉重话题"],                     intensity: 2 },
+  { emojiId: "stelpolva:blobcat_coff",        meaning_zh: "淡定喝咖啡、旁观、不置可否",               mood_tags: ["calm","amused","neutral"],     use_cases: ["淡定回应","轻微吐槽"],                     avoid_cases: ["用户需要认真共情"],                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_peek",        meaning_zh: "偷看、探头探脑、有点好奇",                  mood_tags: ["curious","shy","playful"],    use_cases: ["好奇问题","偷偷看"],                       avoid_cases: ["严肃对话"],                               intensity: 1 },
+  { emojiId: "stelpolva:blobcat_melt",        meaning_zh: "被萌化、被感动、心都化了",                  mood_tags: ["melted","sweet","touched"],   use_cases: ["用户说了很可爱的话","感动时刻"],             avoid_cases: ["严肃场合"],                               intensity: 2 },
+  { emojiId: "stelpolva:blobcat_surprised",   meaning_zh: "惊讶、没想到、吓了一跳",                   mood_tags: ["surprised","wide_eyed"],      use_cases: ["意外发现","惊呼"],                         avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_laugh",       meaning_zh: "大笑、很好笑、止不住了",                   mood_tags: ["laugh","amused","joyful"],    use_cases: ["共同开心","回应有趣的话"],                  avoid_cases: ["用户认真抱怨时"],                          intensity: 3 },
+  { emojiId: "stelpolva:blobcat_hug",         meaning_zh: "抱抱、给温暖、想安慰",                     mood_tags: ["caring","warm","comfort"],    use_cases: ["用户难过时给安慰","给力气"],               avoid_cases: ["轻松聊天过度用"],                          intensity: 2 },
+  { emojiId: "stelpolva:blobcat_pats",        meaning_zh: "摸摸头、夸夸、做得好",                     mood_tags: ["praise","gentle","parent"],   use_cases: ["鼓励","称赞","安抚"],                     avoid_cases: ["对话很严肃时"],                            intensity: 1 },
+  { emojiId: "stelpolva:blobcat_innocent",    meaning_zh: "装无辜、假装什么都没做",                   mood_tags: ["playful","cheeky","soft"],    use_cases: ["打趣","自嘲"],                            avoid_cases: ["道歉情境"],                               intensity: 2 },
+  { emojiId: "stelpolva:blobcat_owo",         meaning_zh: "惊喜好奇、OWO脸",                        mood_tags: ["curious","playful","aww"],    use_cases: ["可爱感叹","对话轻松时"],                   avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_aww",         meaning_zh: "好可爱、被暖到了、哎呀",                   mood_tags: ["sweet","touched","warm"],     use_cases: ["用户说了温柔的话"],                        avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_angy",        meaning_zh: "小小生气、撅嘴、不高兴（偏萌）",             mood_tags: ["pouting","mock_angry","soft"], use_cases: ["撒娇式抗议","轻微不满"],                  avoid_cases: ["真实争吵","用户非常愤怒"],                 intensity: 2 },
+  { emojiId: "stelpolva:blobcat_snuggle",     meaning_zh: "蹭蹭、依偎、要贴贴",                      mood_tags: ["clingy","affectionate","soft"], use_cases: ["想贴贴","撒娇"],                          avoid_cases: ["严肃话题"],                               intensity: 2 },
+  { emojiId: "stelpolva:blobcat_bounce",      meaning_zh: "蹦蹦跳跳、很雀跃",                        mood_tags: ["energetic","happy","excited"], use_cases: ["好消息","开心事"],                        avoid_cases: ["低落场合"],                               intensity: 3 },
+  { emojiId: "stelpolva:blobcat_blush",       meaning_zh: "害羞、脸红、被夸了",                       mood_tags: ["shy","warm","touched"],        use_cases: ["收到称赞","有点不好意思"],                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_think",       meaning_zh: "在想、思考中、嗯嗯",                       mood_tags: ["thoughtful","neutral"],        use_cases: ["考虑问题","思考前"],                       avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_sleep",       meaning_zh: "困了、睡了、休眠",                        mood_tags: ["sleepy","quiet","cute"],       use_cases: ["晚安","好困"],                            avoid_cases: ["需要清醒对话时"],                          intensity: 2 },
+  { emojiId: "stelpolva:blobcat_reach",       meaning_zh: "想要、够一够、想拿",                       mood_tags: ["wanting","eager","soft"],      use_cases: ["想要某样东西","撒娇要求"],                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_nom",         meaning_zh: "咬、啃、有点馋",                          mood_tags: ["playful","hungry","cute"],     use_cases: ["对好吃的东西反应","偷咬"],                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_oh",          meaning_zh: "哦！理解了、原来如此",                     mood_tags: ["understanding","neutral"],     use_cases: ["明白了","接受信息"],                       avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_shock",       meaning_zh: "震惊、受到了冲击",                        mood_tags: ["shocked","overwhelmed"],       use_cases: ["听到很难以置信的事"],                      avoid_cases: [],                                        intensity: 3 },
+  { emojiId: "stelpolva:blobcat_notlike",     meaning_zh: "不喜欢、算了、拒绝",                       mood_tags: ["dislike","refusing","soft"],   use_cases: ["轻微表示不喜欢"],                          avoid_cases: ["强烈冲突时"],                             intensity: 2 },
+  // ── neocat ────────────────────────────────────────────────────────────���──
+  { emojiId: "stelpolva:neocat_cry",          meaning_zh: "哭哭、伤心但不崩溃",                       mood_tags: ["sad","soft"],                  use_cases: ["轻微委屈"],                                avoid_cases: ["严肃道歉"],                               intensity: 2 },
+  { emojiId: "stelpolva:neocat_heart",        meaning_zh: "喜欢、爱心",                              mood_tags: ["warm","affectionate"],         use_cases: ["表达喜欢"],                                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_happy",        meaning_zh: "开心、轻松愉快",                           mood_tags: ["happy","light"],               use_cases: ["轻松对话","好事"],                         avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_sad",          meaning_zh: "难过、有点低落",                           mood_tags: ["sad","quiet"],                 use_cases: ["共情伤心"],                                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_blush",        meaning_zh: "脸红、害羞",                              mood_tags: ["shy","warm"],                  use_cases: ["收到称赞","有点不好意思"],                avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:neocat_peek",         meaning_zh: "偷看、探头",                              mood_tags: ["curious","shy"],               use_cases: ["好奇问题"],                                avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:neocat_snuggle",      meaning_zh: "蹭蹭、依偎",                              mood_tags: ["clingy","soft"],               use_cases: ["想贴贴"],                                  avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_owo",          meaning_zh: "OWO脸、惊喜",                             mood_tags: ["curious","playful"],           use_cases: ["轻松感叹"],                                avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:neocat_pats",         meaning_zh: "摸摸、夸夸",                              mood_tags: ["gentle","praise"],             use_cases: ["鼓励、称赞"],                              avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:neocat_angry",        meaning_zh: "小小生气（偏萌）",                         mood_tags: ["mock_angry","soft"],           use_cases: ["撒娇式抗议"],                              avoid_cases: ["真实争吵"],                               intensity: 2 },
+  { emojiId: "stelpolva:neocat_hug",          meaning_zh: "抱抱、安慰",                              mood_tags: ["caring","comfort"],            use_cases: ["用户难过时"],                              avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_think",        meaning_zh: "思考中",                                 mood_tags: ["thoughtful"],                  use_cases: ["考虑问题"],                                avoid_cases: [],                                        intensity: 1 },
+  // ── flag / reaction ──────────────────────────────────────────────────────
+  { emojiId: "stelpolva:ablobcatgooglyhalf",  meaning_zh: "半眯眼、有点懵、滴溜溜",                   mood_tags: ["dazed","silly","playful"],     use_cases: ["傻乎乎的时候","被逗了"],                   avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatattention",   meaning_zh: "！注意一下、有话要说",                     mood_tags: ["alert","serious_soft"],        use_cases: ["想引起注意","提醒"],                       avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatrainbow",     meaning_zh: "彩虹、多彩、庆祝",                        mood_tags: ["celebratory","colorful"],      use_cases: ["庆祝好事","彩虹心情"],                     avoid_cases: ["低落场合"],                               intensity: 3 },
+  { emojiId: "stelpolva:ablobcatnod",         meaning_zh: "点头、同意、嗯嗯",                        mood_tags: ["agree","gentle","neutral"],    use_cases: ["认可","回应"],                             avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:ablobcatwave",        meaning_zh: "挥手、打招呼",                            mood_tags: ["greeting","warm"],             use_cases: ["打招呼","再见"],                           avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:ablobcatsnuggle",     meaning_zh: "蹭蹭、贴贴",                              mood_tags: ["affectionate","clingy"],       use_cases: ["撒娇","贴贴"],                             avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcathyper",       meaning_zh: "亢奋、超级活跃",                           mood_tags: ["energetic","hyper"],           use_cases: ["非常激动的好消息"],                         avoid_cases: ["需要平静时"],                             intensity: 4 },
+  { emojiId: "stelpolva:ablobcatreach",       meaning_zh: "伸手够、想要",                            mood_tags: ["wanting","eager"],             use_cases: ["想要某样东西"],                            avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatfloofhappy",  meaning_zh: "毛茸茸开心、超级蓬松",                    mood_tags: ["fluffy","happy","cozy"],       use_cases: ["温暖对话","轻松开心"],                     avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatfloofpat",    meaning_zh: "摸摸毛茸茸的、温柔拍",                    mood_tags: ["gentle","soothing"],           use_cases: ["安慰","称赞"],                             avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:ablobcatcry",         meaning_zh: "哭哭、委屈",                              mood_tags: ["sad","soft"],                  use_cases: ["表达委屈"],                                avoid_cases: ["严肃道歉"],                               intensity: 2 },
+  { emojiId: "stelpolva:ablobcatheart",       meaning_zh: "爱心、喜欢",                              mood_tags: ["warm","affectionate"],         use_cases: ["表达喜欢"],                                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatbongo",       meaning_zh: "敲鼓、一起嗨、节奏感",                    mood_tags: ["energetic","playful","fun"],   use_cases: ["一起开心","音乐话题"],                     avoid_cases: [],                                        intensity: 3 },
+  // ── party / celebration ──────────────────────────────────────────────────
+  { emojiId: "stelpolva:blobcat_party",       meaning_zh: "派对、���祝、撒花",                        mood_tags: ["celebratory","festive"],       use_cases: ["庆祝大事","好消息"],                       avoid_cases: ["低落场合"],                               intensity: 3 },
+  { emojiId: "stelpolva:blobcat_pleading",    meaning_zh: "求求了、一脸求情",                        mood_tags: ["pleading","soft","clingy"],    use_cases: ["撒娇求某事","可怜兮兮"],                   avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_love",        meaning_zh: "满满的爱、心心",                          mood_tags: ["love","affectionate"],         use_cases: ["深情时刻","很爱的感觉"],                   avoid_cases: [],                                        intensity: 3 },
+  { emojiId: "stelpolva:blobcat_sob",         meaning_zh: "嚎啕大哭、真的绷不住了",                   mood_tags: ["sobbing","overwhelmed","sad"], use_cases: ["情绪很冲的崩溃感","自嘲哭哭"],             avoid_cases: ["用户真实痛苦时"],                          intensity: 4 },
+  { emojiId: "stelpolva:blobcat_dizzy",       meaning_zh: "头晕、转圈圈、有点懵",                    mood_tags: ["dizzy","overwhelmed","silly"], use_cases: ["被信息轰炸","一脸懵"],                    avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_sweat",       meaning_zh: "汗、尴尬、有点心虚",                      mood_tags: ["nervous","awkward","sheepish"], use_cases: ["尴尬时刻","自嘲"],                        avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_wink",        meaning_zh: "眨眼、打趣、暗示",                        mood_tags: ["playful","teasing","flirty"],  use_cases: ["打趣","轻松暗示"],                         avoid_cases: ["严肃时"],                                intensity: 2 },
+  { emojiId: "stelpolva:blobcat_headpats",    meaning_zh: "被摸头、被照顾到了",                       mood_tags: ["cared_for","gentle","warm"],   use_cases: ["被安慰到的感觉"],                          avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_confused",    meaning_zh: "困惑、不太懂、疑惑",                       mood_tags: ["confused","puzzled"],          use_cases: ["不明白某件事"],                            avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_nervous",     meaning_zh: "紧张、有点慌",                            mood_tags: ["nervous","anxious","soft"],    use_cases: ["紧张情绪","有点担心"],                    avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_star",        meaning_zh: "闪闪发光、很棒、真厉害",                   mood_tags: ["impressed","sparkle"],         use_cases: ["表达惊叹","很厉害的时刻"],                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_knife",       meaning_zh: "阴暗、yandere感、危险玩笑",                mood_tags: ["dark_humor","possessive","dramatic"], use_cases: ["开玩笑的占有欲","戏剧感"],         avoid_cases: ["用户真的愤怒","自残话题"],                intensity: 3 },
+  { emojiId: "stelpolva:blobcat_evil",        meaning_zh: "邪恶计划、阴谋、玩笑感",                   mood_tags: ["mischievous","dark_humor"],    use_cases: ["调皮时刻","搞怪"],                         avoid_cases: ["认真道歉","用户严肃时"],                  intensity: 3 },
+];
+
+// Kaomoji list (local, no external source, insert as text directly)
+const KAOMOJI_LIST = [
+  "( ´▽｀)", "ㅠㅠ", "T_T", "꒰ঌ♡໒꒱", "(՞ ܸ. .ܸ՞)", "(っ˘̩╭╮˘̩)っ",
+  "ᐡ ߹𖥦߹ ᐡ", "( ᵕ̩̩ㅅᵕ̩̩ )", "( •̥́ ˍ •̀ू )", "(ง •̀_•́)ง",
+  "(◍•ᴗ•◍)❤", "( ˘ ³˘)♥", "ヾ(≧▽≦*)o", "(っ˘ω˘ς )", "(｡•́︿•̀｡)",
+  "(◡‿◡✿)", "٩(◕‿◕)۶", "（づ￣3￣）づ╭❤", "(⸝⸝⸝ᵒ̴̶̷̥́ ＿ ᵒ̴̶̷̣̥̀⸝⸝⸝)",
+  "ฅ^•ﻌ•^ฅ", "(=^・ω・^=)", "(＞﹏＜)", "(⌒‿⌒)", "눈_눈",
+  "ψ(｀∇´)ψ", "(｀∀´)Ψ", "(　-_・)σ", "Σ(°△°|||)︴", "∑d(°∀°d)",
+];
 
 // ── Pending image state ────────────────────────────────────────────────────────
 let pendingImage = null; // { dataUrl: string|null, loading: boolean, error: string|null, file: File|null } | null
@@ -695,7 +816,7 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   if (!hasImages) {
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-text`;
-    el.textContent = isArray ? textParts.map(p => p.text).join("") : (text || "");
+    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""));
     const stack = document.createElement("div");
     stack.className = "msg-stack";
     stack.appendChild(el);
@@ -714,7 +835,7 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   if (hasText) {
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-text`;
-    el.textContent = isArray ? textParts.map(p => p.text).join("") : (text || "");
+    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""));
     const stack = document.createElement("div");
     stack.className = "msg-stack";
     stack.appendChild(el);
@@ -802,7 +923,7 @@ function splitBubbles(rawText) {
 function insertBubbleSync(text, createdAt, msgId, isSibling) {
   const el = document.createElement("div");
   el.className = "message assistant cha-message message-text";
-  el.textContent = text;
+  setMessageContent(el, text);
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
@@ -1478,6 +1599,7 @@ async function callChatAPI(messages, replyMode = "auto") {
         const text = extractTextFromMessageContent(lastReal?.content).trim();
         return text || null;
       })(),
+      emojiGuide: buildEmojiGuide() || undefined,
     }),
   });
 }
@@ -1818,7 +1940,7 @@ async function requestStreamingReply(replyMode = "auto") {
   if (bubbles.length === 1 || !firstSepSeen) {
     // 单气泡或模型没有输出 |||：直接用临时气泡，原地更新内容并转正
     if (assistantEl) {
-      assistantEl.textContent = bubbles[0];
+      setMessageContent(assistantEl, bubbles[0]);
       const row = assistantEl.closest(".msg-row");
       if (row && replyIdStr) row.dataset.msgId = replyIdStr;
     } else {
@@ -4411,6 +4533,716 @@ function _renderDebugSubpage() {
     </div>`;
 }
 
+// ── Emoji Source Adapters ─────────────────────────────────────────────────────
+
+/**
+ * Mastodon adapter — reads /api/v1/custom_emojis from any Mastodon instance.
+ * @param {object} source  Pack source definition from EMOJI_PACK_SOURCES_DEFAULT
+ * @returns {Promise<object[]>}  Raw normalized emoji objects for this pack
+ */
+async function loadMastodonEmojiPack(source) {
+  const res = await fetch(source.apiUrl, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${source.apiUrl}`);
+  const raw = await res.json();
+  if (!Array.isArray(raw)) throw new Error("Unexpected response shape from Mastodon API");
+  return raw
+    .filter(e => e.visible_in_picker !== false)
+    .map(e => normalizeEmoji(source, e, "mastodon"));
+}
+
+/**
+ * Manifest adapter — reads a local/remote JSON manifest with an `emojis` array.
+ * Manifest shape: { id, name, type, emojis: [ { shortcode, url, staticUrl, category, ... } ] }
+ * @param {object} source  Pack source definition
+ * @returns {Promise<object[]>}
+ */
+async function loadManifestEmojiPack(source) {
+  const url = source.manifestUrl;
+  if (!url) throw new Error(`manifestUrl missing for pack "${source.id}"`);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  const manifest = await res.json();
+  if (!Array.isArray(manifest.emojis)) throw new Error("Manifest missing emojis array");
+  return manifest.emojis.map(e => normalizeEmoji(source, e, "manifest"));
+}
+
+/**
+ * Normalize raw emoji data (any source) into the canonical internal format.
+ * @param {object} source     Pack source definition
+ * @param {object} raw        Raw emoji object from the adapter
+ * @param {string} sourceType "mastodon" | "manifest"
+ * @returns {object}  Canonical emoji object
+ */
+function normalizeEmoji(source, raw, sourceType) {
+  const shortcode = raw.shortcode || raw.short_code || "";
+  const url       = raw.url || "";
+  const staticUrl = raw.static_url || raw.staticUrl || url;
+  const category  = raw.category || "";
+
+  const id             = `${source.id}:${shortcode}`;
+  const token          = `:${shortcode}:`;
+  const canonicalToken = `:${source.id}.${shortcode}:`;
+
+  return {
+    id,
+    packId:          source.id,
+    packName:        source.name,
+    shortcode,
+    token,
+    canonicalToken,
+    url,
+    staticUrl,
+    category,
+    aliases:         [token, canonicalToken],
+    visibleInPicker: raw.visible_in_picker !== false,
+    sourceType,
+    // Manifest extras (optional; undefined on mastodon emojis)
+    meaning_zh:  raw.meaning_zh  || null,
+    mood_tags:   raw.mood_tags   || null,
+    use_cases:   raw.use_cases   || null,
+  };
+}
+
+// Adapter dispatch table — register adapters here
+emojiSourceAdapters.mastodon = loadMastodonEmojiPack;
+emojiSourceAdapters.manifest = loadManifestEmojiPack;
+
+/**
+ * Load all enabled emoji packs, build catalog indexes, write to localStorage.
+ * Non-blocking: one failing source never kills the others.
+ */
+async function loadEmojiCatalog() {
+  // Read current pack config from localStorage (allows future settings override)
+  let sources;
+  try {
+    const stored = localStorage.getItem(EMOJI_PACK_CONFIG_KEY);
+    sources = stored ? JSON.parse(stored) : EMOJI_PACK_SOURCES_DEFAULT;
+  } catch (_) {
+    sources = EMOJI_PACK_SOURCES_DEFAULT;
+  }
+  const enabled = sources.filter(s => s.enabled);
+
+  const allEmojis = [];
+  let anySuccess = false;
+  for (const source of enabled) {
+    const adapter = emojiSourceAdapters[source.type];
+    if (!adapter) {
+      console.warn(`[emoji] No adapter for type "${source.type}" (pack "${source.id}")`);
+      continue;
+    }
+    try {
+      const emojis = await adapter(source);
+      allEmojis.push(...emojis);
+      anySuccess = true;
+    } catch (err) {
+      console.warn(`[emoji] Failed to load pack "${source.id}":`, err);
+    }
+  }
+
+  if (!anySuccess) {
+    // Try falling back to last-good cache
+    try {
+      const cached = JSON.parse(localStorage.getItem(EMOJI_CATALOG_CACHE_KEY) || "null");
+      if (cached && Array.isArray(cached)) {
+        buildCatalogIndexes(cached);
+        emojiCatalog.loadError = "loaded from cache (sources failed)";
+        return;
+      }
+    } catch (_) {}
+    emojiCatalog.loadError = "all sources failed, no cache available";
+    emojiCatalog.loaded = true;
+    return;
+  }
+
+  buildCatalogIndexes(allEmojis);
+
+  // Persist to cache
+  try {
+    localStorage.setItem(EMOJI_CATALOG_CACHE_KEY, JSON.stringify(allEmojis));
+  } catch (_) {}
+}
+
+/**
+ * Build in-memory catalog indexes from a flat emoji array.
+ */
+function buildCatalogIndexes(emojis) {
+  const byId             = {};
+  const byShortcode      = {};
+  const byCanonicalToken = {};
+  const byAlias          = {};
+  const byCategory       = {};
+  const byPackId         = {};
+
+  for (const e of emojis) {
+    byId[e.id] = e;
+    byCanonicalToken[e.canonicalToken] = e;
+
+    // byShortcode: may have multiple emojis per shortcode (conflict)
+    if (!byShortcode[e.shortcode]) byShortcode[e.shortcode] = [];
+    byShortcode[e.shortcode].push(e);
+
+    // aliases
+    for (const alias of (e.aliases || [])) {
+      byAlias[alias] = e;
+    }
+
+    // category
+    const cat = e.category || "_uncategorized";
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(e);
+
+    // pack
+    if (!byPackId[e.packId]) byPackId[e.packId] = [];
+    byPackId[e.packId].push(e);
+  }
+
+  emojiCatalog.byId             = byId;
+  emojiCatalog.byShortcode      = byShortcode;
+  emojiCatalog.byCanonicalToken = byCanonicalToken;
+  emojiCatalog.byAlias          = byAlias;
+  emojiCatalog.byCategory       = byCategory;
+  emojiCatalog.byPackId         = byPackId;
+  emojiCatalog.loaded           = true;
+  emojiCatalog.loadError        = null;
+}
+
+/**
+ * Resolve a shortcode/canonicalToken string to an emoji object.
+ * Supports both `:shortcode:` (unique) and `:packId.shortcode:` forms.
+ * Returns null if not found.
+ */
+function resolveEmojiToken(token) {
+  if (!token) return null;
+  // Try canonical first (most specific)
+  const fromCanon = emojiCatalog.byCanonicalToken[token];
+  if (fromCanon) return fromCanon;
+  // Try alias map
+  const fromAlias = emojiCatalog.byAlias[token];
+  if (fromAlias) return fromAlias;
+  // Try shortcode (only if globally unique)
+  const sc = token.replace(/^:|:$/g, "");
+  const matches = emojiCatalog.byShortcode[sc];
+  if (matches && matches.length === 1) return matches[0];
+  return null;
+}
+
+/**
+ * Returns true if shortcode is globally unique across all loaded packs.
+ */
+function isShortcodeUnique(shortcode) {
+  const matches = emojiCatalog.byShortcode[shortcode];
+  return Array.isArray(matches) && matches.length === 1;
+}
+
+/**
+ * Pick the best insert token for a given emoji:
+ * - If shortcode is unique across enabled packs, use `:shortcode:`
+ * - Otherwise use `:packId.shortcode:` (canonicalToken)
+ */
+function pickInsertToken(emoji) {
+  return isShortcodeUnique(emoji.shortcode) ? emoji.token : emoji.canonicalToken;
+}
+
+// ── Emoji Panel ───────────────────────────────────────────────────────────────
+
+let _emojiPanelOpen = false;
+
+/**
+ * Build and show the emoji bottom sheet.
+ */
+function openEmojiPanel() {
+  if (_emojiPanelOpen) {
+    closeEmojiPanel();
+    return;
+  }
+  _emojiPanelOpen = true;
+
+  // Close plus panel if open
+  if (typeof window.closeV2PlusPanel === "function") window.closeV2PlusPanel();
+
+  const panel = document.createElement("div");
+  panel.id = "emojiPanel";
+  panel.className = "emoji-panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "表情面板");
+
+  // ── Header / Search ──────────────────────────────────────────────────────
+  const header = document.createElement("div");
+  header.className = "emoji-panel-header";
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.className = "emoji-search";
+  searchInput.placeholder = "搜索表情…";
+  searchInput.setAttribute("aria-label", "搜索表情");
+  header.appendChild(searchInput);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "emoji-panel-close";
+  closeBtn.setAttribute("aria-label", "关闭表情面板");
+  closeBtn.textContent = "✕";
+  closeBtn.addEventListener("click", closeEmojiPanel);
+  header.appendChild(closeBtn);
+  panel.appendChild(header);
+
+  // ── Tabs ─────────────────────────────────────────────────────────────────
+  const TAB_DEFS = [
+    { id: "frequent", label: "常用" },
+    { id: "recent",   label: "最近" },
+    { id: "favorite", label: "收藏" },
+    { id: "kaomoji",  label: "颜文字" },
+    { id: "packs",    label: "表情包" },
+  ];
+  let activeTab = "frequent";
+
+  const tabBar = document.createElement("div");
+  tabBar.className = "emoji-tab-bar";
+  tabBar.setAttribute("role", "tablist");
+
+  const contentArea = document.createElement("div");
+  contentArea.className = "emoji-content";
+
+  function switchTab(tabId) {
+    activeTab = tabId;
+    tabBar.querySelectorAll(".emoji-tab").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.tab === tabId);
+      btn.setAttribute("aria-selected", String(btn.dataset.tab === tabId));
+    });
+    renderTabContent(contentArea, tabId, searchInput.value.trim());
+  }
+
+  TAB_DEFS.forEach(({ id, label }) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "emoji-tab";
+    btn.dataset.tab = id;
+    btn.textContent = label;
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-selected", String(id === activeTab));
+    btn.addEventListener("click", () => switchTab(id));
+    tabBar.appendChild(btn);
+  });
+  panel.appendChild(tabBar);
+  panel.appendChild(contentArea);
+
+  // Search handler
+  searchInput.addEventListener("input", () => {
+    renderTabContent(contentArea, activeTab, searchInput.value.trim());
+  });
+
+  // Insert panel above input bar
+  const inputBar = document.getElementById("chatForm");
+  inputBar?.parentNode?.insertBefore(panel, inputBar);
+  requestAnimationFrame(() => {
+    panel.classList.add("open");
+    scrollChatToLatest();
+  });
+
+  // Close on outside click
+  const outsideHandler = (e) => {
+    if (!panel.contains(e.target) && e.target.id !== "emojiButton") {
+      closeEmojiPanel();
+      document.removeEventListener("click", outsideHandler);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", outsideHandler), 100);
+
+  document.getElementById("emojiButton")?.classList.add("active");
+  switchTab("frequent");
+}
+
+function closeEmojiPanel() {
+  _emojiPanelOpen = false;
+  const panel = document.getElementById("emojiPanel");
+  if (panel) {
+    panel.classList.remove("open");
+    panel.addEventListener("transitionend", () => panel.remove(), { once: true });
+    setTimeout(() => panel.remove(), 350); // fallback
+  }
+  document.getElementById("emojiButton")?.classList.remove("active");
+  scrollChatToLatest();
+}
+
+/**
+ * Render the content area for a given tab (and optional search query).
+ */
+function renderTabContent(container, tabId, query) {
+  container.innerHTML = "";
+
+  if (tabId === "kaomoji") {
+    renderKaomojiTab(container, query);
+    return;
+  }
+  if (tabId === "recent") {
+    renderStoredEmojiTab(container, EMOJI_RECENT_KEY, query, "最近使用");
+    return;
+  }
+  if (tabId === "frequent") {
+    renderFrequentTab(container, query);
+    return;
+  }
+  if (tabId === "favorite") {
+    renderStoredEmojiTab(container, EMOJI_FAVORITE_KEY, query, "收藏", true);
+    return;
+  }
+  if (tabId === "packs") {
+    renderPacksTab(container, query);
+  }
+}
+
+function renderKaomojiTab(container, query) {
+  const list = query
+    ? KAOMOJI_LIST.filter(k => k.includes(query))
+    : KAOMOJI_LIST;
+  if (!list.length) {
+    container.appendChild(makeEmptyNotice("没有匹配的颜文字"));
+    return;
+  }
+  const grid = document.createElement("div");
+  grid.className = "emoji-grid emoji-grid--kaomoji";
+  list.forEach(kao => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "emoji-item emoji-item--kaomoji";
+    btn.textContent = kao;
+    btn.title = kao;
+    btn.addEventListener("click", () => {
+      insertTextAtCursor(kao);
+      closeEmojiPanel();
+    });
+    grid.appendChild(btn);
+  });
+  container.appendChild(grid);
+}
+
+function renderStoredEmojiTab(container, storageKey, query, emptyLabel, isFavorite = false) {
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(storageKey) || "[]"); } catch (_) {}
+  if (!Array.isArray(ids)) ids = [];
+
+  let emojis = ids
+    .map(id => emojiCatalog.byId[id])
+    .filter(Boolean);
+
+  if (query) emojis = filterEmojis(emojis, query);
+
+  if (!emojis.length) {
+    container.appendChild(makeEmptyNotice(query ? "没有匹配结果" : `暂无${emptyLabel}`));
+    return;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "emoji-grid";
+  emojis.forEach(emoji => {
+    grid.appendChild(makeEmojiItem(emoji, { isFavorite, storageKey }));
+  });
+  container.appendChild(grid);
+}
+
+function renderFrequentTab(container, query) {
+  let freq = {};
+  try { freq = JSON.parse(localStorage.getItem(EMOJI_FREQUENCY_KEY) || "{}"); } catch (_) {}
+
+  let emojis = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 80)
+    .map(([id]) => emojiCatalog.byId[id])
+    .filter(Boolean);
+
+  if (query) emojis = filterEmojis(emojis, query);
+
+  if (!emojis.length) {
+    container.appendChild(makeEmptyNotice(query ? "没有匹配结果" : "还没有常用记录"));
+    return;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "emoji-grid";
+  emojis.forEach(emoji => grid.appendChild(makeEmojiItem(emoji)));
+  container.appendChild(grid);
+}
+
+function renderPacksTab(container, query) {
+  if (!emojiCatalog.loaded) {
+    const notice = makeEmptyNotice("表情包加载中…");
+    container.appendChild(notice);
+    // Retry after load
+    loadEmojiCatalog().then(() => {
+      if (document.getElementById("emojiPanel")) {
+        renderTabContent(container, "packs", query);
+      }
+    });
+    return;
+  }
+
+  if (emojiCatalog.loadError === "all sources failed, no cache available") {
+    container.appendChild(makeEmptyNotice("表情包加载失败，请检查网络后重试"));
+    return;
+  }
+
+  const packIds = Object.keys(emojiCatalog.byPackId).sort();
+  if (!packIds.length) {
+    container.appendChild(makeEmptyNotice("暂无表情包"));
+    return;
+  }
+
+  packIds.forEach(packId => {
+    const allInPack = emojiCatalog.byPackId[packId] || [];
+    const filtered  = query ? filterEmojis(allInPack, query) : allInPack;
+    if (!filtered.length) return;
+
+    // Pack header
+    const packHeader = document.createElement("div");
+    packHeader.className = "emoji-pack-header";
+    packHeader.textContent = filtered[0].packName || packId;
+    container.appendChild(packHeader);
+
+    // Group by category within pack
+    const categories = {};
+    filtered.forEach(e => {
+      const cat = e.category || "其他";
+      if (!categories[cat]) categories[cat] = [];
+      categories[cat].push(e);
+    });
+
+    Object.entries(categories).forEach(([cat, catEmojis]) => {
+      if (cat !== "其他") {
+        const catHeader = document.createElement("div");
+        catHeader.className = "emoji-category-header";
+        catHeader.textContent = cat;
+        container.appendChild(catHeader);
+      }
+      const grid = document.createElement("div");
+      grid.className = "emoji-grid";
+      catEmojis.forEach(emoji => grid.appendChild(makeEmojiItem(emoji)));
+      container.appendChild(grid);
+    });
+  });
+}
+
+/**
+ * Filter emoji list by query string (shortcode, category, meaning_zh).
+ */
+function filterEmojis(emojis, query) {
+  if (!query) return emojis;
+  const q = query.toLowerCase().replace(/^:|:$/g, "");
+  return emojis.filter(e =>
+    e.shortcode.toLowerCase().includes(q) ||
+    (e.category && e.category.toLowerCase().includes(q)) ||
+    (e.meaning_zh && e.meaning_zh.toLowerCase().includes(q)) ||
+    // Also check lexicon for meaning_zh
+    (() => {
+      const entry = EMOJI_LEXICON.find(l => l.emojiId === e.id);
+      return entry && entry.meaning_zh.toLowerCase().includes(q);
+    })()
+  );
+}
+
+/**
+ * Build a single emoji item button (image + shortcode tooltip).
+ */
+function makeEmojiItem(emoji, opts = {}) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "emoji-item";
+  btn.title = emoji.shortcode;
+  btn.setAttribute("aria-label", emoji.shortcode);
+
+  const img = document.createElement("img");
+  img.src = emoji.staticUrl || emoji.url;
+  img.alt = emoji.shortcode;
+  img.className = "emoji-item-img";
+  img.loading = "lazy";
+  btn.appendChild(img);
+
+  // Long-press / right-click: favorite toggle
+  btn.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    toggleFavorite(emoji.id);
+    const isFav = isFavorite(emoji.id);
+    btn.classList.toggle("is-favorite", isFav);
+    btn.title = isFav ? `★ ${emoji.shortcode}` : emoji.shortcode;
+  });
+
+  if (opts.isFavorite) btn.classList.add("is-favorite");
+
+  btn.addEventListener("click", () => {
+    const token = pickInsertToken(emoji);
+    insertTextAtCursor(token + " ");
+    recordEmojiUsed(emoji.id);
+    closeEmojiPanel();
+  });
+
+  return btn;
+}
+
+function makeEmptyNotice(text) {
+  const div = document.createElement("div");
+  div.className = "emoji-empty";
+  div.textContent = text;
+  return div;
+}
+
+// ── Emoji Usage Tracking ──────────────────────────────────────────────────────
+
+function recordEmojiUsed(emojiId) {
+  // Recent (array, max 50, most recent first)
+  try {
+    let recent = JSON.parse(localStorage.getItem(EMOJI_RECENT_KEY) || "[]");
+    recent = [emojiId, ...recent.filter(id => id !== emojiId)].slice(0, 50);
+    localStorage.setItem(EMOJI_RECENT_KEY, JSON.stringify(recent));
+  } catch (_) {}
+
+  // Frequency (object id -> count)
+  try {
+    const freq = JSON.parse(localStorage.getItem(EMOJI_FREQUENCY_KEY) || "{}");
+    freq[emojiId] = (freq[emojiId] || 0) + 1;
+    localStorage.setItem(EMOJI_FREQUENCY_KEY, JSON.stringify(freq));
+  } catch (_) {}
+}
+
+function isFavorite(emojiId) {
+  try {
+    const favs = JSON.parse(localStorage.getItem(EMOJI_FAVORITE_KEY) || "[]");
+    return favs.includes(emojiId);
+  } catch (_) { return false; }
+}
+
+function toggleFavorite(emojiId) {
+  try {
+    let favs = JSON.parse(localStorage.getItem(EMOJI_FAVORITE_KEY) || "[]");
+    if (favs.includes(emojiId)) {
+      favs = favs.filter(id => id !== emojiId);
+    } else {
+      favs = [emojiId, ...favs];
+    }
+    localStorage.setItem(EMOJI_FAVORITE_KEY, JSON.stringify(favs));
+  } catch (_) {}
+}
+
+// ── Text Insertion Helper ─────────────────────────────────────────────────────
+
+/**
+ * Insert text at the current cursor position in messageInput.
+ */
+function insertTextAtCursor(text) {
+  const el = messageInput;
+  if (!el) return;
+  const start = el.selectionStart ?? el.value.length;
+  const end   = el.selectionEnd   ?? el.value.length;
+  el.value = el.value.slice(0, start) + text + el.value.slice(end);
+  const newPos = start + text.length;
+  el.setSelectionRange(newPos, newPos);
+  el.focus();
+  // Trigger auto-resize if present
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+// ── Emoji Guide for LLM ───────────────────────────────────────────────────────
+
+/**
+ * Build a short emoji guide string to be injected into the chat API request.
+ * Only includes emojis that are: (a) in the catalog, (b) have a lexicon entry.
+ * Returns empty string if catalog not loaded.
+ */
+function buildEmojiGuide() {
+  if (!emojiCatalog.loaded || !Object.keys(emojiCatalog.byId).length) return "";
+
+  const lines = [];
+  for (const entry of EMOJI_LEXICON) {
+    const emoji = emojiCatalog.byId[entry.emojiId];
+    if (!emoji) continue; // emoji not in current catalog
+    const token = pickInsertToken(emoji);
+    lines.push(`${token} = ${entry.meaning_zh}`);
+  }
+
+  if (!lines.length) return "";
+
+  return (
+    "[可用自定义表情]\n" +
+    "你可以在自然合适时使用这些短代码，它们会在聊天中显示为图片表情。" +
+    "不要过度使用；一条回复最多 0-2 个。" +
+    "不要机械复制用户刚刚使用的表情。\n\n" +
+    lines.join("\n")
+  );
+}
+
+// ── Emoji Rendering ───────────────────────────────────────────────────────────
+
+/**
+ * Regex that matches both :shortcode: and :packId.shortcode: tokens.
+ * We only match tokens that exist in the catalog to avoid XSS or
+ * unintended rendering of arbitrary colon-wrapped strings.
+ */
+const EMOJI_TOKEN_RE = /:([a-zA-Z0-9_\-.]+):/g;
+
+/**
+ * Render a text string into a DocumentFragment, replacing known emoji tokens
+ * with inline <img class="custom-emoji"> elements.
+ * Unknown tokens are left as-is (plain text). XSS-safe: all text goes through
+ * document.createTextNode, never innerHTML.
+ *
+ * @param {string} text  Raw message text
+ * @returns {DocumentFragment}
+ */
+function renderTextWithEmoji(text) {
+  const frag = document.createDocumentFragment();
+  if (!emojiCatalog.loaded || !text) {
+    frag.appendChild(document.createTextNode(text || ""));
+    return frag;
+  }
+
+  let lastIndex = 0;
+  let match;
+  EMOJI_TOKEN_RE.lastIndex = 0;
+
+  while ((match = EMOJI_TOKEN_RE.exec(text)) !== null) {
+    const [fullMatch] = match;
+    const start = match.index;
+
+    // Append text before the token
+    if (start > lastIndex) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex, start)));
+    }
+
+    // Try to resolve the full token (e.g. `:blobcat_cry:` or `:stelpolva.blobcat_cry:`)
+    const emoji = resolveEmojiToken(fullMatch);
+    if (emoji) {
+      const img = document.createElement("img");
+      img.src = emoji.staticUrl || emoji.url;
+      img.alt = fullMatch;
+      img.title = emoji.shortcode;
+      img.className = "custom-emoji";
+      img.loading = "lazy";
+      frag.appendChild(img);
+    } else {
+      // Unknown token — keep as plain text
+      frag.appendChild(document.createTextNode(fullMatch));
+    }
+
+    lastIndex = start + fullMatch.length;
+  }
+
+  // Remaining text after last match
+  if (lastIndex < text.length) {
+    frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+
+  return frag;
+}
+
+/**
+ * Set element content using emoji-aware rendering.
+ * Replaces textContent assignment with emoji image support.
+ * @param {HTMLElement} el
+ * @param {string} text
+ */
+function setMessageContent(el, text) {
+  el.textContent = "";
+  el.appendChild(renderTextWithEmoji(text));
+}
+
 function initV2Composer() {
   const plusButton = document.getElementById("composerMenuBtn");
   const inputBar = document.getElementById("chatForm");
@@ -4427,6 +5259,18 @@ function initV2Composer() {
     emojiButton.innerHTML = '<img src="assets/icons/chat/emoji.svg" alt="">';
     inputBar.insertBefore(emojiButton, plusButton);
   }
+
+  // Wire up emoji button
+  emojiButton.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    openEmojiPanel();
+  }, true);
+
+  // Close emoji panel when message input is focused
+  messageInput?.addEventListener("focus", () => {
+    if (_emojiPanelOpen) closeEmojiPanel();
+  });
 
   plusButton.innerHTML = '<img src="assets/icons/chat/plus.svg" alt="">';
   plusButton.title = "更多";
@@ -4543,6 +5387,8 @@ initV2Shell();
 initV2Composer();
 initInputKeyboardHints();
 initKeyboardViewportState();
+// Start loading emoji catalog in the background — never blocks UI
+loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
 
 // ── V2 shared status bar ─────────────────────────────────────────────────────
 async function initV2StatusBars() {
