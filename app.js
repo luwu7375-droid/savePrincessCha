@@ -5406,6 +5406,8 @@ function closeEmojiPanel() {
  */
 function renderTabContent(container, tabId, query) {
   container.innerHTML = "";
+  // Packs tab uses its own internal scroll; other tabs rely on the container scroll
+  container.classList.toggle("emoji-content--packs", tabId === "packs");
 
   if (tabId === "kaomoji") {
     renderKaomojiTab(container, query);
@@ -5583,38 +5585,86 @@ function renderPacksTab(container, query) {
     return;
   }
 
+  // Collect all emojis (optionally filtered by search query)
+  const allEmojis = [];
   packIds.forEach(packId => {
-    const allInPack = emojiCatalog.byPackId[packId] || [];
-    const filtered  = query ? filterEmojis(allInPack, query) : allInPack;
-    if (!filtered.length) return;
-
-    // Pack header
-    const packHeader = document.createElement("div");
-    packHeader.className = "emoji-pack-header";
-    packHeader.textContent = filtered[0].packName || packId;
-    container.appendChild(packHeader);
-
-    // Group by category within pack
-    const categories = {};
-    filtered.forEach(e => {
-      const cat = e.category || "其他";
-      if (!categories[cat]) categories[cat] = [];
-      categories[cat].push(e);
-    });
-
-    Object.entries(categories).forEach(([cat, catEmojis]) => {
-      if (cat !== "其他") {
-        const catHeader = document.createElement("div");
-        catHeader.className = "emoji-category-header";
-        catHeader.textContent = cat;
-        container.appendChild(catHeader);
-      }
-      const grid = document.createElement("div");
-      grid.className = "emoji-grid";
-      catEmojis.forEach(emoji => grid.appendChild(makeEmojiItem(emoji)));
-      container.appendChild(grid);
-    });
+    const inPack = emojiCatalog.byPackId[packId] || [];
+    const filtered = query ? filterEmojis(inPack, query) : inPack;
+    allEmojis.push(...filtered);
   });
+
+  if (!allEmojis.length) {
+    container.appendChild(makeEmptyNotice("没有匹配结果"));
+    return;
+  }
+
+  // Collect unique categories while preserving insertion order
+  const catOrder = [];
+  const catSet = new Set();
+  allEmojis.forEach(e => {
+    const cat = e.category || "其他";
+    if (!catSet.has(cat)) { catSet.add(cat); catOrder.push(cat); }
+  });
+
+  // ── Category rail ────────────────────────────────────────────────────────
+  const rail = document.createElement("div");
+  rail.className = "emoji-cat-rail";
+
+  let activeCat = null; // null = "全部"
+
+  // Grid container — rendered once, swapped out on category change
+  const gridWrap = document.createElement("div");
+  gridWrap.className = "emoji-packs-grid-wrap";
+
+  function renderGrid(cat) {
+    gridWrap.innerHTML = "";
+    const emojis = cat === null
+      ? allEmojis
+      : allEmojis.filter(e => (e.category || "其他") === cat);
+
+    if (!emojis.length) {
+      gridWrap.appendChild(makeEmptyNotice("没有匹配结果"));
+      return;
+    }
+    const grid = document.createElement("div");
+    grid.className = "emoji-grid";
+    emojis.forEach(emoji => grid.appendChild(makeEmojiItem(emoji)));
+    gridWrap.appendChild(grid);
+  }
+
+  function selectCat(cat, chipEl) {
+    activeCat = cat;
+    rail.querySelectorAll(".emoji-cat-chip").forEach(c => {
+      c.classList.toggle("active", c === chipEl);
+      c.setAttribute("aria-selected", String(c === chipEl));
+    });
+    renderGrid(cat);
+  }
+
+  // "全部" chip
+  const allChip = document.createElement("button");
+  allChip.type = "button";
+  allChip.className = "emoji-cat-chip active";
+  allChip.textContent = "全部";
+  allChip.setAttribute("role", "tab");
+  allChip.setAttribute("aria-selected", "true");
+  allChip.addEventListener("click", () => selectCat(null, allChip));
+  rail.appendChild(allChip);
+
+  catOrder.forEach(cat => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "emoji-cat-chip";
+    chip.textContent = cat;
+    chip.setAttribute("role", "tab");
+    chip.setAttribute("aria-selected", "false");
+    chip.addEventListener("click", () => selectCat(cat, chip));
+    rail.appendChild(chip);
+  });
+
+  container.appendChild(rail);
+  container.appendChild(gridWrap);
+  renderGrid(null);
 }
 
 /**
