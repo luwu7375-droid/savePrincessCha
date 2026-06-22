@@ -1277,6 +1277,7 @@ async function reloadHistory() {
   syncChaUnreadCount();
   observeUnreadChaRows();
   insertUnreadDivider();
+  refreshUserReceipts();
   // If user is already on the Chat tab, immediately mark visible assistant rows as read
   markVisibleAssistantRowsRead();
 }
@@ -1316,6 +1317,7 @@ async function loadOlderHistory() {
   refreshMessageActions();
   syncChaUnreadCount();
   observeUnreadChaRows();
+  refreshUserReceipts();
 }
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
@@ -2126,11 +2128,29 @@ function markReadByCha(msgId = null) {
  * Refresh all user-side read-receipt DOM nodes to match current chatMessages state.
  * Only the receipt under the last user message row in each group needs to be visible;
  * earlier ones in the same read state are hidden.
+ *
+ * A user message is treated as read if:
+ *   (a) entry.read_by_cha_at is set in chatMessages, OR
+ *   (b) a subsequent assistant message exists in chatMessages after it —
+ *       Cha has already replied, so showing "未读" would be misleading.
  */
 function refreshUserReceipts() {
   // Find all user msg-rows that have a receipt
   const userRows = Array.from(messageList.querySelectorAll(".msg-row.user"));
   if (!userRows.length) return;
+
+  // Pre-compute: which user message ids have an assistant message after them?
+  // Walk backwards through chatMessages; once we pass an assistant entry, all
+  // preceding user entries in that streak are considered covered.
+  const coveredByAssistant = new Set();
+  let sawAssistant = false;
+  for (let i = chatMessages.length - 1; i >= 0; i--) {
+    const m = chatMessages[i];
+    if (m.role === "assistant") { sawAssistant = true; continue; }
+    if (m.role === "user" && sawAssistant && m.id) {
+      coveredByAssistant.add(String(m.id));
+    }
+  }
 
   // Group by groupId to find the last row in each group
   const groups = new Map();
@@ -2153,7 +2173,7 @@ function refreshUserReceipts() {
       if (msgId) {
         const entry = chatMessages.find(m => m.id === String(msgId));
         if (entry) {
-          const isRead = !!entry.read_by_cha_at;
+          const isRead = !!entry.read_by_cha_at || coveredByAssistant.has(String(msgId));
           receipt.textContent = isRead ? "已读" : "未读";
           receipt.dataset.receiptState = isRead ? "read" : "unread";
         }
