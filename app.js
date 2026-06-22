@@ -1991,6 +1991,9 @@ async function requestStreamingReply(replyMode = "auto") {
   preloadVisibleMessageEmojis();
 
   refreshMessageActions();
+  // Sync user read receipts now that a new assistant message has been appended.
+  // This ensures all user messages before the reply get the watermark treatment.
+  refreshUserReceipts();
   // After stream ends, start short-polling for memory promotion results
   startMemoryPromotionPoller(_currentRequestStartTime, _currentRequestUserMessageId);
 }
@@ -2127,14 +2130,26 @@ function insertUnreadDivider() {
 
 /**
  * Mark a user message as read by Cha (called when Cha actually processes it).
+ * Applies a read watermark: marking message N as read also marks all earlier
+ * unread user messages (index < N) as read, so receipts never appear inverted.
  * Updates in-memory chatMessages entry, updates DOM receipt, persists to DB.
  * @param {string|null} msgId - the message id to mark, or null to mark all pending user messages
  */
 function markReadByCha(msgId = null) {
   const now = new Date().toISOString();
-  const targets = msgId
-    ? chatMessages.filter(m => m.role === "user" && m.id === String(msgId) && !m.read_by_cha_at)
-    : chatMessages.filter(m => m.role === "user" && !m.read_by_cha_at);
+
+  let targets;
+  if (msgId == null) {
+    // null → mark every unread user message
+    targets = chatMessages.filter(m => m.role === "user" && !m.read_by_cha_at);
+  } else {
+    // msgId given → mark that message AND all earlier unread user messages (watermark cascade)
+    const anchorIdx = chatMessages.findIndex(m => m.role === "user" && m.id === String(msgId));
+    if (anchorIdx === -1) return;
+    targets = chatMessages
+      .slice(0, anchorIdx + 1)
+      .filter(m => m.role === "user" && !m.read_by_cha_at);
+  }
 
   if (!targets.length) return;
 
@@ -2157,31 +2172,66 @@ function markReadByCha(msgId = null) {
 
 /**
  * Refresh all user-side read-receipt DOM nodes to match current chatMessages state.
- * Only the receipt under the last user message row in each group needs to be visible;
- * earlier ones in the same read state are hidden.
  *
- * A user message is treated as read if:
- *   (a) entry.read_by_cha_at is set in chatMessages, OR
- *   (b) a subsequent assistant message exists in chatMessages after it —
- *       Cha has already replied, so showing "未读" would be misleading.
+ * Read watermark rule: once a user message is considered read, every earlier
+ * user message is also considered read. This prevents the visible inversion where
+ * an older message shows "未读" while a newer one shows "已读".
+ *
+ * A user message at index i is initially read if:
+ *   (a) entry.read_by_cha_at is set, OR
+ *   (b) an assistant message exists anywhere after index i in chatMessages.
+ *
+ * The watermark then extends read status backwards: every user message whose
+ * index is <= the latest initially-read user message index is also read.
+ *
+ * UI: only the last user message row in each group shows a receipt; all earlier
+ * rows in the group are hidden to avoid visual clutter.
  */
 function refreshUserReceipts() {
   // Find all user msg-rows that have a receipt
   const userRows = Array.from(messageList.querySelectorAll(".msg-row.user"));
   if (!userRows.length) return;
 
-  // Pre-compute: which user message ids have an assistant message after them?
-  // Walk backwards through chatMessages; once we pass an assistant entry, all
-  // preceding user entries in that streak are considered covered.
-  const coveredByAssistant = new Set();
-  let sawAssistant = false;
-  for (let i = chatMessages.length - 1; i >= 0; i--) {
-    const m = chatMessages[i];
-    if (m.role === "assistant") { sawAssistant = true; continue; }
-    if (m.role === "user" && sawAssistant && m.id) {
-      coveredByAssistant.add(String(m.id));
+  // --- Step 1: pre-compute read state map using watermark ---
+
+  // Build an index-keyed list of user messages from chatMessages
+  const userEntries = []; // { index, id, read_by_cha_at }
+  for (let i = 0; i < chatMessages.length; i++) {
+    if (chatMessages[i].role === "user") {
+      userEntries.push({ index: i, id: chatMessages[i].id, read_by_cha_at: chatMessages[i].read_by_cha_at });
     }
   }
+
+  // Pre-compute whether each chatMessages index has an assistant message after it
+  // by scanning once from the right.
+  const hasAssistantAfter = new Array(chatMessages.length).fill(false);
+  let sawAssistant = false;
+  for (let i = chatMessages.length - 1; i >= 0; i--) {
+    if (chatMessages[i].role === "assistant") { sawAssistant = true; }
+    hasAssistantAfter[i] = sawAssistant;
+  }
+
+  // Find latestReadUserIndex: the highest chatMessages index of a user message
+  // that is directly read (by read_by_cha_at or by having an assistant after it).
+  let latestReadUserIndex = -1;
+  for (const entry of userEntries) {
+    const directlyRead = !!entry.read_by_cha_at || hasAssistantAfter[entry.index];
+    if (directlyRead && entry.index > latestReadUserIndex) {
+      latestReadUserIndex = entry.index;
+    }
+  }
+
+  // Build id → isRead map applying the watermark
+  const userReadStateById = new Map();
+  for (const entry of userEntries) {
+    if (!entry.id) continue;
+    const isRead = !!entry.read_by_cha_at
+      || hasAssistantAfter[entry.index]
+      || entry.index <= latestReadUserIndex;
+    userReadStateById.set(String(entry.id), isRead);
+  }
+
+  // --- Step 2: update DOM ---
 
   // Group by groupId to find the last row in each group
   const groups = new Map();
@@ -2191,7 +2241,7 @@ function refreshUserReceipts() {
     groups.get(gid).push(row);
   });
 
-  // For each group, show receipt only on last row; sync text from chatMessages
+  // For each group, show receipt only on last row; sync text from read state map
   groups.forEach(rows => {
     rows.forEach((row, idx) => {
       const receipt = row.querySelector(".read-receipt");
@@ -2199,15 +2249,11 @@ function refreshUserReceipts() {
       const isLast = idx === rows.length - 1;
       if (!isLast) { receipt.style.display = "none"; return; }
       receipt.style.display = "";
-      // Sync state from chatMessages
       const msgId = row.dataset.msgId;
       if (msgId) {
-        const entry = chatMessages.find(m => m.id === String(msgId));
-        if (entry) {
-          const isRead = !!entry.read_by_cha_at || coveredByAssistant.has(String(msgId));
-          receipt.textContent = isRead ? "已读" : "未读";
-          receipt.dataset.receiptState = isRead ? "read" : "unread";
-        }
+        const isRead = userReadStateById.get(String(msgId)) ?? false;
+        receipt.textContent = isRead ? "已读" : "未读";
+        receipt.dataset.receiptState = isRead ? "read" : "unread";
       }
     });
   });
