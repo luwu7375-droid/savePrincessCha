@@ -7702,7 +7702,39 @@ function showToast(message) {
 }
 
 // ── Service Worker registration ───────────────────────────────────────────────
-if ("serviceWorker" in navigator) {
+// SW is disabled on localhost and *.dev.* preview deployments.
+// On those hosts we also proactively unregister any previously installed SW
+// and clear all spc-shell-* caches so stale assets can't mask fresh deploys.
+const _SW_DEV_HOST =
+  location.hostname === "localhost" ||
+  location.hostname === "127.0.0.1" ||
+  location.hostname.includes(".dev.") ||
+  location.hostname.includes("dev.");
+
+async function _cleanupSwAndCaches() {
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.filter((k) => k.startsWith("spc-shell")).map((k) => caches.delete(k))
+      );
+    }
+    console.info("[SW] unregistered and stale caches cleared");
+  } catch (err) {
+    console.warn("[SW] cleanup failed:", err);
+  }
+}
+
+if (_SW_DEV_HOST) {
+  // Dev / preview: tear down any existing SW so we always load fresh files.
+  _cleanupSwAndCaches();
+} else if ("serviceWorker" in navigator) {
+  // Production: register the cleanup SW which will unregister itself after
+  // deleting all caches. Re-enable a real caching SW in a future PR.
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch((err) => {
       console.warn("[SW] registration failed:", err);
