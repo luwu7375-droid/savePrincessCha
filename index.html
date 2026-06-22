@@ -94,18 +94,33 @@
     </section>
 
     <section class="v2-page v2-page--setting" data-page="setting" aria-label="Setting">
-      <div class="v2-scroll">
+      <!-- 设置主页面 -->
+      <div class="v2-scroll settings-main-view" id="settingsMainView">
         <div class="v2-top-status"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div>
         <header class="settings-title"><h1>设置</h1><p>管理与个性化</p></header>
         <div class="settings-list">
-          <button class="setting-row" data-placeholder-route="/settings/api"><img src="assets/icons/settings/api.svg" alt=""><span><strong>API 设置</strong><small>管理 API 与连接</small></span><b>›</b></button>
-          <button class="setting-row" data-placeholder-route="/settings/backup"><img src="assets/icons/settings/backup.svg" alt=""><span><strong>备份</strong><small>数据备份与恢复</small></span><b>›</b></button>
-          <button class="setting-row" data-placeholder-route="/settings/theme"><img src="assets/icons/settings/theme.svg" alt=""><span><strong>美化</strong><small>主题、壁纸与界面</small></span><b>›</b></button>
-          <button class="setting-row" data-placeholder-route="/settings/prompt"><img src="assets/icons/settings/prompt.svg" alt=""><span><strong>Prompt 管理</strong><small>管理 Cha 的提示词</small></span><b>›</b></button>
-          <button class="setting-row" data-placeholder-route="/settings/memory"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>记忆管理</strong><small>记忆数据管理与清理</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="api"><img src="assets/icons/settings/api.svg" alt=""><span><strong>API 设置</strong><small>管理 API 与连接</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="backup"><img src="assets/icons/settings/backup.svg" alt=""><span><strong>备份</strong><small>数据备份与恢复</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="beautify"><img src="assets/icons/settings/theme.svg" alt=""><span><strong>美化</strong><small>主题、壁纸与界面</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="prompt"><img src="assets/icons/settings/prompt.svg" alt=""><span><strong>Prompt 管理</strong><small>管理 Cha 的提示词</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="memory"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>记忆管理</strong><small>记忆数据管理与清理</small></span><b>›</b></button>
           <button class="setting-row" id="worldBooksSettingRow"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>世界书</strong><small>Prompt 知识库与设定注入</small></span><b>›</b></button>
-          <button class="setting-row" data-placeholder-route="/settings/debug"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>Debug 页面</strong><small>开发者调试与日志</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="emoji"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>表情包管理</strong><small>管理自定义表情包来源、常用和缓存</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="chat"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>聊天设置</strong><small>气泡、背景、输入栏与消息显示</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="debug"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>Debug 页面</strong><small>开发者调试与日志</small></span><b>›</b></button>
         </div>
+      </div>
+
+      <!-- 设置二级子页面容器 -->
+      <div class="settings-subpage" id="settingsSubpage" hidden>
+        <header class="settings-subpage-header">
+          <button type="button" class="settings-back-btn" id="settingsBackBtn" aria-label="返回设置">←</button>
+          <div class="settings-subpage-title-block">
+            <h1 id="settingsSubpageTitle"></h1>
+            <p id="settingsSubpageSubtitle"></p>
+          </div>
+        </header>
+        <div class="settings-subpage-body" id="settingsSubpageBody"></div>
       </div>
     </section>
 

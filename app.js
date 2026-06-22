@@ -1858,7 +1858,34 @@ function canRegenerateRow(row) {
     chatMessages.some(m => m.id === row.dataset.msgId);
 }
 
+function refreshGroupClasses() {
+  const rows = Array.from(messageList.querySelectorAll(
+    ".msg-row.user, .msg-row.assistant"
+  ));
+  let runStart = 0;
+  for (let i = 0; i <= rows.length; i++) {
+    const currentRole = i < rows.length
+      ? (rows[i].classList.contains("user") ? "user" : "assistant")
+      : null;
+    if (i === rows.length || (i > 0 && currentRole !== (rows[i-1].classList.contains("user") ? "user" : "assistant"))) {
+      const runLen = i - runStart;
+      for (let j = runStart; j < i; j++) {
+        const row = rows[j];
+        row.classList.remove("msg-group-row", "msg-group-last");
+        if (runLen > 1 && j > runStart) {
+          row.classList.add("msg-group-row");
+        }
+        if (runLen > 1 && j === i - 1) {
+          row.classList.add("msg-group-last");
+        }
+      }
+      runStart = i;
+    }
+  }
+}
+
 function refreshMessageActions() {
+  refreshGroupClasses();
   document.querySelectorAll(".msg-actions").forEach(el => el.remove());
   const rows = getMessageRows();
   const lastAssistantRow = [...rows].reverse().find(r => r.classList.contains("assistant"));
@@ -4015,33 +4042,31 @@ function initV2Shell() {
         markVisibleAssistantRowsRead();
       });
     }
+    // When leaving setting tab, close any open subpage
+    if (activeName !== "setting") {
+      closeSettingsSubpage();
+    }
   }
 
   tabs.forEach((tab) => tab.addEventListener("click", () => showPage(tab.dataset.tab)));
 
+  // ── Settings subpage entries ───────────────────────────────────────────
+  document.querySelectorAll("[data-settings-subpage]").forEach((entry) => {
+    entry.addEventListener("click", () => {
+      openSettingsSubpage(entry.dataset.settingsSubpage);
+    });
+  });
+
+  const settingsBackBtn = document.getElementById("settingsBackBtn");
+  settingsBackBtn?.addEventListener("click", () => closeSettingsSubpage());
+
+  // ── Legacy placeholder routes (non-settings pages) ────────────────────
   document.querySelectorAll("[data-placeholder-route]").forEach((entry) => {
     entry.addEventListener("click", () => {
       const route = entry.dataset.placeholderRoute;
-
-      // ── Settings routes with real implementations ─────────────────────────
-      if (route === "/settings/memory") {
-        // Open legacy memory overlay (view / edit / add / delete)
-        toggleMemoryButton.click();
-        return;
-      }
-      if (route === "/settings/api") {
-        const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
-        showDialog({
-          title: "API 设置 · 模型档位",
-          body: `当前档位：${tierLabel}\n\n切换档位：聊天页底部的 Instant / General / Advanced 按钮（桌面），或聊天页 + 菜单上方的档位选择器（移动端）。`,
-          confirmLabel: "知道了",
-        });
-        return;
-      }
-
       showDialog({
         title: "入口已预留",
-        body: `${route} 将在二级页接入，本轮先保留入口和路由命名。`,
+        body: `${route} 将在后续版本接入。`,
         confirmLabel: "知道了",
       });
     });
@@ -4072,6 +4097,318 @@ function initV2Shell() {
   });
 
   showPage("home");
+}
+
+// ── Settings subpage system ─────────────────────────────────────────────────
+
+var _currentSettingsSubpage = null;
+
+var SETTINGS_SUBPAGE_META = {
+  api:      { title: "API 设置",    subtitle: "模型、接口与连接配置" },
+  backup:   { title: "备份",        subtitle: "导出与恢复数据" },
+  beautify: { title: "美化",        subtitle: "主题、壁纸、气泡与开屏图" },
+  prompt:   { title: "Prompt 管理", subtitle: "管理 Cha 的各场景提示词" },
+  memory:   { title: "记忆管理",    subtitle: "" },
+  emoji:    { title: "表情包管理",  subtitle: "管理自定义表情包来源、常用和缓存" },
+  chat:     { title: "聊天设置",    subtitle: "气泡、背景、输入栏与消息显示" },
+  debug:    { title: "Debug 页面",  subtitle: "日志、版本与环境信息" },
+};
+
+function openSettingsSubpage(type) {
+  const subpage = document.getElementById("settingsSubpage");
+  const mainView = document.getElementById("settingsMainView");
+  const titleEl = document.getElementById("settingsSubpageTitle");
+  const subtitleEl = document.getElementById("settingsSubpageSubtitle");
+  const bodyEl = document.getElementById("settingsSubpageBody");
+  if (!subpage || !mainView || !titleEl || !subtitleEl || !bodyEl) return;
+
+  const meta = SETTINGS_SUBPAGE_META[type] || { title: type, subtitle: "" };
+  titleEl.textContent = meta.title;
+  subtitleEl.textContent = meta.subtitle;
+  bodyEl.innerHTML = renderSettingsSubpage(type);
+
+  _currentSettingsSubpage = type;
+  mainView.hidden = true;
+  subpage.hidden = false;
+
+  // If memory subpage, bind memory center events after render
+  if (type === "memory") {
+    _initSettingsMemorySubpage(bodyEl);
+  }
+}
+
+function closeSettingsSubpage() {
+  const subpage = document.getElementById("settingsSubpage");
+  const mainView = document.getElementById("settingsMainView");
+  if (!subpage || !mainView) return;
+  subpage.hidden = true;
+  mainView.hidden = false;
+  _currentSettingsSubpage = null;
+}
+
+function renderSettingsSubpage(type) {
+  switch (type) {
+    case "api":
+      return _renderApiSubpage();
+    case "backup":
+      return _renderBackupSubpage();
+    case "beautify":
+      return _renderBeautifySubpage();
+    case "prompt":
+      return _renderPromptSubpage();
+    case "memory":
+      return _renderMemorySubpage();
+    case "emoji":
+      return _renderEmojiSubpage();
+    case "chat":
+      return _renderChatSubpage();
+    case "debug":
+      return _renderDebugSubpage();
+    default:
+      return `<div class="settings-empty-state"><strong>${type}</strong><p>此页面尚未实现。</p></div>`;
+  }
+}
+
+function _renderApiSubpage() {
+  const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">模型档位</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>当前档位</strong><small>影响回复质量与速度</small></div>
+          <span class="settings-row-value">${tierLabel}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>切换档位</strong><small>在聊天页底部或 + 菜单选择</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">接口配置</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>Provider</strong><small>API 服务商</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>Endpoint</strong><small>接口地址</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderBackupSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">导出</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>导出全部数据</strong><small>聊天记录、记忆、设置</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>导出聊天记录</strong><small>仅当前会话</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">导入</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>从备份恢复</strong><small>覆盖当前数据</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderBeautifySubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">主题与壁纸</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>主题色</strong><small>当前：灰白冷淡</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>聊天背景壁纸</strong><small>自定义聊天页背景</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>开屏图</strong><small>启动页封面</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">气泡</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>气泡主题</strong><small>消息气泡样式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderPromptSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">场景 Prompt</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>主聊天</strong><small>日常对话</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>日记</strong><small>Cha 的日记写作</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>毛象</strong><small>Mastodon 发帖风格</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>游戏</strong><small>Playground 游戏模式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderMemorySubpage() {
+  return `<div id="settingsMemoryMount" style="min-height:200px"></div>`;
+}
+
+function _initSettingsMemorySubpage(container) {
+  // Reuse the existing memory center v2 state and render functions,
+  // but mounted inside the subpage body instead of the overlay.
+  const mount = container.querySelector("#settingsMemoryMount");
+  if (!mount) return;
+  memoryCenterV2State.view = "archive";
+  // Render archive view directly into the mount point
+  mount.innerHTML = "";
+  const viewRoot = document.createElement("div");
+  viewRoot.id = "settingsMemoryViewRoot";
+  viewRoot.className = "mc-view-root";
+  mount.appendChild(viewRoot);
+  _renderMemoryCenterInto(viewRoot);
+  refreshMemoryCenterData();
+}
+
+function _renderMemoryCenterInto(root) {
+  // Delegate to existing renderMemoryCenterCurrentView but point at custom root
+  var savedRoot = document.getElementById("mcViewRoot");
+  var fakeRoot = root;
+  // Temporarily swap so renderMemoryCenterCurrentView writes here
+  var _origGetById = document.getElementById.bind(document);
+  var _patchActive = true;
+  var _origGetEl = document.getElementById;
+  document.getElementById = function(id) {
+    if (_patchActive && id === "mcViewRoot") return fakeRoot;
+    return _origGetEl.call(document, id);
+  };
+  try {
+    renderMemoryCenterCurrentView();
+  } finally {
+    document.getElementById = _origGetEl;
+    _patchActive = false;
+  }
+}
+
+function _renderEmojiSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">已启用来源</div>
+      <div class="settings-empty-state">
+        <strong>暂无自定义表情包来源</strong>
+        <p>添加后可在聊天中使用自定义表情包</p>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">缓存</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>清理表情包缓存</strong><small>释放本地存储空间</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderChatSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">外观</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>聊天背景</strong><small>自定义聊天页壁纸</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>气泡样式</strong><small>消息气泡外观</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">输入栏</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>输入栏布局</strong><small>按钮排列方式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">消息显示</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>时间戳</strong><small>消息时间显示方式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>已读标记</strong><small>显示消息已读状态</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderDebugSubpage() {
+  const buildLabel = (document.querySelector("script[src*='app.js']")?.src.match(/v=([^&]+)/) || [])[1] || "unknown";
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">版本与环境</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>构建版本</strong></div>
+          <span class="settings-row-value">${buildLabel}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>平台</strong></div>
+          <span class="settings-row-value">${navigator.userAgent.includes("Mobile") ? "Mobile" : "Desktop"}</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">日志</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>记忆注入日志</strong><small>最近一轮注入状态</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>Prompt 状态</strong><small>当前 system prompt 摘要</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
 }
 
 function initV2Composer() {
