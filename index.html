@@ -252,26 +252,19 @@
     </nav>
   </div>
 
-  <!-- 记忆管理（高级）弹窗 -->
+  <!-- 记忆管理弹窗（legacy，入口已迁移至记忆中心页面） -->
   <div id="memoryOverlay" class="overlay hidden">
     <div class="modal">
       <div class="modal-header">
-        <span>记忆管理（高级）</span>
+        <span>记忆管理</span>
         <button id="closeMemoryButton" type="button">✕</button>
       </div>
       <div id="memoryList"></div>
-      <div class="memory-add">
-        <select id="memoryDomainSelect" aria-label="Memory domain">
-          <option value="general">general</option>
-          <option value="persona">persona</option>
-          <option value="work">work</option>
-          <option value="writing">writing</option>
-          <option value="life">life</option>
-          <option value="relation">relation</option>
-        </select>
-        <textarea id="memoryInput" rows="1" placeholder="新增记忆..."></textarea>
-        <button id="addMemoryButton" type="button">添加</button>
-      </div>
+      <!-- 添加记忆 UI 已移除 -->
+      <!-- keep these hidden elements so JS refs don't throw -->
+      <select id="memoryDomainSelect" hidden aria-hidden="true"></select>
+      <textarea id="memoryInput" hidden aria-hidden="true"></textarea>
+      <button id="addMemoryButton" hidden type="button"></button>
     </div>
   </div>
 

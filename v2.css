@@ -1790,6 +1790,8 @@ body {
 
 .emoji-grid--kaomoji {
   gap: 6px;
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .emoji-item {
@@ -1812,15 +1814,7 @@ body {
   background: var(--border-soft);
 }
 
-.emoji-item.is-favorite::after {
-  content: "★";
-  position: absolute;
-  top: 1px;
-  right: 2px;
-  font-size: 8px;
-  color: #f4c430;
-  line-height: 1;
-}
+/* favorite star removed */
 
 .emoji-item-img {
   width: 30px;
@@ -1831,12 +1825,17 @@ body {
 .emoji-item--kaomoji {
   width: auto;
   min-width: 44px;
-  height: 36px;
-  padding: 4px 10px;
+  max-width: 100%;
+  height: auto;
+  min-height: 36px;
+  padding: 6px 10px;
   font-size: 15px;
   border-radius: 18px;
   background: var(--surface-soft);
   color: var(--text-main);
+  white-space: nowrap;
+  overflow: visible;
+  line-height: 1.4;
 }
 
 .emoji-item--kaomoji:hover {
@@ -1902,4 +1901,62 @@ body {
     width: 38px;
     height: 38px;
   }
+}
+
+/* ── Composer emoji preview ─────────────────────────────────────────────────── */
+.composer-emoji-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  padding: 6px 14px;
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  border-top: 1px solid var(--border-soft, rgba(0,0,0,0.08));
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-main);
+  pointer-events: none;   /* never steals clicks or focus */
+  user-select: none;
+  min-height: 36px;
+  word-break: break-word;
+}
+
+.composer-emoji-preview[hidden] {
+  display: none;
+}
+
+.composer-emoji-preview .custom-emoji {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  vertical-align: middle;
+  margin: 0 1px;
+}
+
+/* ── Composer emoji preview ─────────────────────────────────────────────────── */
+.composer-emoji-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px 4px;
+  min-height: 0;
+  pointer-events: none;
+  user-select: none;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.composer-emoji-preview[hidden] {
+  display: none;
+}
+
+.composer-emoji-preview .custom-emoji {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  vertical-align: middle;
+  margin: 0 1px;
 }
