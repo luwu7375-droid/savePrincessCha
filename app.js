@@ -479,6 +479,7 @@ async function switchConversation(id) {
   if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
   setActiveConversationId(id);
   _conversationStartedAt = null; // reset for new conversation context
+  chatRenderState.renderedConversationId = null; // force full re-render
   renderConvList();
   await reloadHistory();
 }
@@ -715,6 +716,12 @@ const HISTORY_PAGE_SIZE = 20;
 let historyHasMore = false;
 let historyLoadingOlder = false;
 let oldestLoadedMessageCreatedAt = null;
+
+// ── Chat render state — used to skip full re-render on tab switch ─────────────
+const chatRenderState = {
+  renderedConversationId: null,
+  renderedMessageCount: 0,
+}
 
 function formatMsgTime(iso) {
   const d = parseDbTime(iso);
@@ -1235,7 +1242,7 @@ async function saveMessage(role, content, imageStoragePath = null, eventFields =
   return data?.id || null;
 }
 
-async function reloadHistory() {
+async function reloadHistory(opts = {}) {
   if (!supabaseClient) { renderWelcomeMessage(); return; }
   const conversationId = getActiveConversationId();
   if (!conversationId) { renderWelcomeMessage(); return; }
@@ -1273,6 +1280,9 @@ async function reloadHistory() {
   }
   if (resolved.length > 0) oldestLoadedMessageCreatedAt = resolved[0].created_at;
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
+  // Stamp render state so tab switches don't re-render needlessly
+  chatRenderState.renderedConversationId = conversationId;
+  chatRenderState.renderedMessageCount = chatMessages.length;
   refreshMessageActions();
   syncChaUnreadCount();
   observeUnreadChaRows();
@@ -4416,6 +4426,19 @@ function initV2Shell() {
         observeUnreadChaRows();
         markVisibleAssistantRowsRead();
       });
+      // Skip reload if already rendered for this conversation with same message count
+      const currentConvId = getActiveConversationId();
+      if (
+        chatRenderState.renderedConversationId === currentConvId &&
+        chatRenderState.renderedMessageCount === chatMessages.length &&
+        messageList.children.length > 0
+      ) {
+        return;
+      }
+      // Only reload if not already rendered or conversation changed
+      if (chatRenderState.renderedConversationId !== currentConvId) {
+        reloadHistory();
+      }
     }
     // When leaving setting tab, close any open subpage
     if (activeName !== "setting") {
@@ -5767,6 +5790,302 @@ initInputKeyboardHints();
 initKeyboardViewportState();
 // Start loading emoji catalog in the background — never blocks UI
 loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
+
+// ── Shortcode Emoji Suggestion Bar ───────────────────────────────────────────
+
+/**
+ * Detect an active (unclosed) shortcode prefix at the cursor position.
+ * Returns null if there is no active shortcode prefix under the cursor.
+ *
+ * Matches tokens like: :0220  :blob  :stelpolva.blob
+ * Does NOT match already-closed tokens like :0220: (trailing colon present).
+ *
+ * @param {string} text
+ * @param {number} cursorIndex
+ * @returns {{ active: boolean, query: string, rawToken: string, start: number, end: number } | null}
+ */
+function getActiveEmojiQuery(text, cursorIndex) {
+  // Search backwards from cursor for a colon that opens a token
+  let colonPos = -1;
+  for (let i = cursorIndex - 1; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === ":") {
+      colonPos = i;
+      break;
+    }
+    // Token body chars: alphanumeric, _, -, .
+    if (!/[a-zA-Z0-9_\-.]/.test(ch)) break;
+  }
+  if (colonPos === -1) return null;
+
+  const rawToken = text.slice(colonPos, cursorIndex);
+  // Must be at least ":x" (one char after colon)
+  if (rawToken.length < 2) return null;
+
+  // If the very next char (after cursor) is ":", this is already a closed token
+  if (text[cursorIndex] === ":") return null;
+
+  const query = rawToken.slice(1); // strip leading ":"
+  // query must be valid shortcode chars only
+  if (!/^[a-zA-Z0-9_\-.]*$/.test(query)) return null;
+
+  return { active: true, query, rawToken, start: colonPos, end: cursorIndex };
+}
+
+/**
+ * Filter emoji catalog for suggestion candidates matching `query`.
+ * Returns up to `limit` emoji objects, ranked by match quality.
+ *
+ * @param {string} query
+ * @param {number} [limit=24]
+ * @returns {Array}
+ */
+function filterEmojiSuggestions(query, limit = 24) {
+  if (!emojiCatalog.loaded || !query) return [];
+  const q = query.toLowerCase();
+
+  const exact = [];
+  const prefix = [];
+  const contains = [];
+  const alias = [];
+  const meta = [];
+
+  const seen = new Set();
+
+  const addUniq = (arr, emoji) => {
+    if (!seen.has(emoji.id)) {
+      seen.add(emoji.id);
+      arr.push(emoji);
+    }
+  };
+
+  // Walk all emojis from byId (flat, stable order)
+  for (const emoji of Object.values(emojiCatalog.byId)) {
+    const sc = (emoji.shortcode || "").toLowerCase();
+    const cat = (emoji.category || "").toLowerCase();
+    // shortcode exact
+    if (sc === q) { addUniq(exact, emoji); continue; }
+    // shortcode prefix
+    if (sc.startsWith(q)) { addUniq(prefix, emoji); continue; }
+    // shortcode contains
+    if (sc.includes(q)) { addUniq(contains, emoji); continue; }
+    // aliases
+    if ((emoji.aliases || []).some(a => a.toLowerCase().includes(q))) { addUniq(alias, emoji); continue; }
+    // category or lexicon meaning
+    if (cat.includes(q)) { addUniq(meta, emoji); continue; }
+  }
+  // Also check lexicon meanings
+  for (const entry of EMOJI_LEXICON) {
+    if (seen.has(entry.emojiId)) continue;
+    const meaning = (entry.meaning_zh || "").toLowerCase();
+    if (meaning.includes(q)) {
+      const emoji = emojiCatalog.byId[entry.emojiId];
+      if (emoji) addUniq(meta, emoji);
+    }
+  }
+
+  return [...exact, ...prefix, ...contains, ...alias, ...meta].slice(0, limit);
+}
+
+/**
+ * Replace the active shortcode token in `text` with `replacement`,
+ * given that the token spans [tokenStart, tokenEnd).
+ *
+ * @param {string} text
+ * @param {number} tokenStart
+ * @param {number} tokenEnd
+ * @param {string} replacement  full closed token e.g. ":blobcat_cry:"
+ * @returns {{ newText: string, newCursor: number }}
+ */
+function replaceTokenInText(text, tokenStart, tokenEnd, replacement) {
+  const newText = text.slice(0, tokenStart) + replacement + text.slice(tokenEnd);
+  return { newText, newCursor: tokenStart + replacement.length };
+}
+
+/**
+ * Build and manage the emoji suggestion bar above the input.
+ */
+function initEmojiSuggestionBar() {
+  const inputEl = messageInput;
+  const chatShell = document.querySelector(".chat-shell");
+  if (!inputEl || !chatShell) return;
+
+  // Create suggestion bar DOM
+  const bar = document.createElement("div");
+  bar.id = "emojiSuggestionBar";
+  bar.className = "emoji-suggestion-bar";
+  bar.setAttribute("aria-label", "表情联想");
+  bar.setAttribute("role", "listbox");
+  bar.hidden = true;
+
+  const track = document.createElement("div");
+  track.className = "emoji-suggestion-track";
+  bar.appendChild(track);
+
+  // Insert bar just before the input-bar (inside chat-shell)
+  const inputBar = document.getElementById("chatForm");
+  if (inputBar && inputBar.parentNode) {
+    inputBar.parentNode.insertBefore(bar, inputBar);
+  } else {
+    chatShell.appendChild(bar);
+  }
+
+  let _activeSuggestions = [];
+  let _highlightIndex = 0;
+  let _activeQuery = null; // { query, rawToken, start, end }
+
+  function hideSuggestions() {
+    bar.hidden = true;
+    _activeSuggestions = [];
+    _activeQuery = null;
+    track.innerHTML = "";
+  }
+
+  function renderSuggestions(emojis, queryInfo) {
+    _activeSuggestions = emojis;
+    _activeQuery = queryInfo;
+    _highlightIndex = 0;
+    track.innerHTML = "";
+
+    if (!emojis.length) {
+      hideSuggestions();
+      return;
+    }
+
+    emojis.forEach((emoji, idx) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "emoji-suggestion-item";
+      item.setAttribute("role", "option");
+      item.dataset.idx = idx;
+      item.setAttribute("aria-label", emoji.shortcode);
+
+      const img = document.createElement("img");
+      img.src = emoji.staticUrl || emoji.url;
+      img.alt = emoji.shortcode;
+      img.className = "emoji-suggestion-img";
+      img.loading = "lazy";
+      item.appendChild(img);
+
+      const label = document.createElement("span");
+      label.className = "emoji-suggestion-label";
+      label.textContent = emoji.shortcode.length > 12
+        ? emoji.shortcode.slice(0, 11) + "…"
+        : emoji.shortcode;
+      item.appendChild(label);
+
+      item.addEventListener("pointerdown", (e) => {
+        // Use pointerdown so we can prevent the textarea from losing focus
+        e.preventDefault();
+      });
+      item.addEventListener("click", () => {
+        commitSuggestion(emoji);
+      });
+      track.appendChild(item);
+    });
+
+    setHighlight(0);
+    bar.hidden = false;
+    // Scroll track to start on fresh query
+    track.scrollLeft = 0;
+  }
+
+  function setHighlight(idx) {
+    if (!_activeSuggestions.length) return;
+    _highlightIndex = Math.max(0, Math.min(idx, _activeSuggestions.length - 1));
+    Array.from(track.children).forEach((item, i) => {
+      item.classList.toggle("emoji-suggestion-item--active", i === _highlightIndex);
+    });
+    // Scroll highlighted item into view
+    const activeItem = track.children[_highlightIndex];
+    if (activeItem) {
+      activeItem.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }
+
+  function commitSuggestion(emoji) {
+    if (!_activeQuery) return;
+    const token = pickInsertToken(emoji);
+    const { newText, newCursor } = replaceTokenInText(
+      inputEl.value,
+      _activeQuery.start,
+      _activeQuery.end,
+      token
+    );
+    inputEl.value = newText;
+    inputEl.setSelectionRange(newCursor, newCursor);
+    inputEl.focus();
+    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+    recordEmojiUsed(emoji.id);
+    hideSuggestions();
+  }
+
+  // Update suggestions on input
+  function onInput() {
+    const text = inputEl.value;
+    const cursor = inputEl.selectionStart ?? text.length;
+    const queryInfo = getActiveEmojiQuery(text, cursor);
+    if (!queryInfo) {
+      hideSuggestions();
+      return;
+    }
+    if (!emojiCatalog.loaded) {
+      // Catalog not ready yet — defer silently
+      hideSuggestions();
+      return;
+    }
+    const suggestions = filterEmojiSuggestions(queryInfo.query);
+    renderSuggestions(suggestions, queryInfo);
+  }
+
+  inputEl.addEventListener("input", onInput);
+
+  // Also update on cursor move (click / arrow keys)
+  inputEl.addEventListener("keyup", (e) => {
+    if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+      onInput();
+    }
+  });
+
+  // Keyboard navigation within suggestion bar
+  inputEl.addEventListener("keydown", (e) => {
+    if (bar.hidden || !_activeSuggestions.length) return;
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      setHighlight(_highlightIndex + 1);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      setHighlight(_highlightIndex - 1);
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      // Tab selects suggestion; Enter sends only when suggestion bar is visible
+      if (_activeSuggestions.length) {
+        e.preventDefault();
+        commitSuggestion(_activeSuggestions[_highlightIndex]);
+      }
+    } else if (e.key === "Escape") {
+      hideSuggestions();
+    }
+  });
+
+  // Hide when input loses focus (but allow clicks on suggestion items via pointerdown)
+  inputEl.addEventListener("blur", () => {
+    // Small delay to allow pointerdown → click on suggestion items
+    setTimeout(() => {
+      if (!bar.contains(document.activeElement)) {
+        hideSuggestions();
+      }
+    }, 150);
+  });
+
+  // Hide on outside click
+  document.addEventListener("click", (e) => {
+    if (!bar.hidden && !bar.contains(e.target) && e.target !== inputEl) {
+      hideSuggestions();
+    }
+  });
+}
+
+initEmojiSuggestionBar();
 
 // Composer emoji preview removed: per UX spec, no separate preview bar above
 // the input. The textarea stores raw shortcodes; emoji render in the message

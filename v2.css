@@ -2071,6 +2071,87 @@ body {
   display: none !important;
 }
 
+/* ── Emoji Suggestion Bar ──────────────────────────────────────────────────── */
+
+#emojiSuggestionBar {
+  /* Position just above the input-bar, inside chat-shell */
+  margin: 0 20px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+  /* Animate in */
+  animation: suggestion-bar-in 0.16s ease both;
+  z-index: 12;
+  position: relative;
+}
+
+#emojiSuggestionBar[hidden] {
+  display: none;
+}
+
+@keyframes suggestion-bar-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.emoji-suggestion-track {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.emoji-suggestion-track::-webkit-scrollbar {
+  display: none;
+}
+
+.emoji-suggestion-item {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 52px;
+  padding: 5px 4px 4px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: var(--surface-soft);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.emoji-suggestion-item:hover {
+  background: var(--border-soft);
+}
+
+.emoji-suggestion-item--active {
+  background: var(--border-soft);
+  border-color: var(--accent, #a78bfa);
+}
+
+.emoji-suggestion-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.emoji-suggestion-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 48px;
+  line-height: 1.2;
+}
+
 /* ── Chat more button ──────────────────────────────────────────────────────── */
 
 #chatMoreBtn {
@@ -2358,4 +2439,170 @@ body {
 .settings-row-action-btn:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* ── Settings memory page: light v2 overrides ───────────────────────────────
+   Override the dark oklch theme from style.css when rendered inside Settings.
+   The .settings-memory-page wrapper is added by _renderMemorySubpage().
+   Specificity: .settings-memory-page .mc-* beats the bare .mc-* rules.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.settings-memory-page {
+  background: transparent;
+  color: var(--text-main);
+}
+
+/* View root scroll area */
+.settings-memory-page .mc-view-root {
+  padding: 0;
+  overflow-y: visible;
+}
+
+.settings-memory-page .mc-view-root::-webkit-scrollbar-thumb {
+  background: var(--border-soft);
+}
+
+/* Section titles */
+.settings-memory-page .mc-section-title {
+  color: var(--text-muted);
+}
+
+/* Room status row */
+.settings-memory-page .mc-room-subtitle {
+  color: var(--text-muted);
+}
+
+.settings-memory-page .mc-online {
+  color: var(--text-muted);
+}
+
+/* Cards */
+.settings-memory-page .mc-memory-card,
+.settings-memory-page .mc-category-card,
+.settings-memory-page .mc-lab-panel,
+.settings-memory-page .mc-lab-metric,
+.settings-memory-page .mc-heat-panel {
+  background: var(--surface);
+  border-color: var(--border-soft);
+  color: var(--text-main);
+}
+
+/* Memory card content */
+.settings-memory-page .mc-memory-title {
+  color: var(--text-main);
+}
+
+.settings-memory-page .mc-memory-summary {
+  color: var(--text-muted);
+}
+
+.settings-memory-page .mc-memory-source {
+  color: var(--text-muted);
+  border-top-color: var(--border-soft);
+}
+
+.settings-memory-page .mc-memory-time {
+  color: var(--text-muted);
+}
+
+.settings-memory-page .mc-memory-actions {
+  border-top-color: var(--border-soft);
+}
+
+/* Chips */
+.settings-memory-page .mc-chip {
+  background: rgba(30, 30, 30, 0.07);
+  color: var(--text-muted);
+  border-color: transparent;
+}
+
+.settings-memory-page .mc-chip--project,
+.settings-memory-page .mc-chip--identity {
+  background: rgba(60, 100, 220, 0.1);
+  color: #3d5cb8;
+}
+
+.settings-memory-page .mc-chip--relation {
+  background: rgba(200, 60, 100, 0.1);
+  color: #b83060;
+}
+
+.settings-memory-page .mc-chip--life {
+  background: rgba(30, 160, 100, 0.1);
+  color: #1a7a50;
+}
+
+.settings-memory-page .mc-chip--writing {
+  background: rgba(40, 120, 190, 0.1);
+  color: #2060a0;
+}
+
+.settings-memory-page .mc-chip--preference {
+  background: rgba(180, 120, 20, 0.1);
+  color: #8a6010;
+}
+
+.settings-memory-page .mc-chip--background,
+.settings-memory-page .mc-chip--status {
+  background: rgba(30, 30, 30, 0.07);
+  color: var(--text-muted);
+  border-color: var(--border-soft);
+}
+
+/* Action buttons */
+.settings-memory-page .mc-action-btn {
+  background: var(--surface);
+  border-color: var(--border-soft);
+  color: var(--text-main);
+}
+
+.settings-memory-page .mc-action-btn:hover {
+  background: var(--surface-soft);
+}
+
+/* Archive toolbar */
+.settings-memory-page .mc-archive-toolbar {
+  background: var(--surface-soft, var(--surface));
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-memory-page .mc-search-input {
+  background: var(--surface);
+  color: var(--text-main);
+  border: 1px solid var(--border-soft);
+}
+
+.settings-memory-page .mc-status-select {
+  background: var(--surface);
+  color: var(--text-main);
+  border: 1px solid var(--border-soft);
+}
+
+/* Inline link */
+.settings-memory-page .mc-inline-link {
+  color: var(--text-muted);
+  background: none;
+  border: none;
+}
+
+/* Lab panel */
+.settings-memory-page .mc-footnote {
+  color: var(--text-muted);
+}
+
+/* Room actions */
+.settings-memory-page .mc-room-action-btn {
+  background: var(--surface);
+  color: var(--text-main);
+  border-color: var(--border-soft);
+}
+
+/* Category card */
+.settings-memory-page .mc-category-card {
+  background: var(--surface);
+}
+
+/* Empty state */
+.settings-memory-page .mc-empty {
+  color: var(--text-muted);
 }
