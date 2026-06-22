@@ -5148,6 +5148,10 @@ function pickInsertToken(emoji) {
 
 let _emojiPanelOpen = false;
 
+// ── Emoji search mode state machine ──────────────────────────────────────────
+// "browse" = normal tab content; "search" = search results overlay
+let _emojiPanelMode = "browse"; // "browse" | "search"
+
 /**
  * Build and show the emoji bottom sheet.
  */
@@ -5157,6 +5161,7 @@ function openEmojiPanel() {
     return;
   }
   _emojiPanelOpen = true;
+  _emojiPanelMode = "browse";
 
   // Close plus panel if open
   if (typeof window.closeV2PlusPanel === "function") window.closeV2PlusPanel();
@@ -5167,16 +5172,27 @@ function openEmojiPanel() {
   panel.setAttribute("role", "dialog");
   panel.setAttribute("aria-label", "表情面板");
 
-  // ── Header / Search ──────────────────────────────────────────────────────
+  // ── Header: search input + cancel (cancel only visible in search mode) ──
   const header = document.createElement("div");
   header.className = "emoji-panel-header";
+
+  const searchWrap = document.createElement("div");
+  searchWrap.className = "emoji-search-wrap";
 
   const searchInput = document.createElement("input");
   searchInput.type = "search";
   searchInput.className = "emoji-search";
   searchInput.placeholder = "搜索表情…";
   searchInput.setAttribute("aria-label", "搜索表情");
-  header.appendChild(searchInput);
+  searchWrap.appendChild(searchInput);
+  header.appendChild(searchWrap);
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "emoji-search-cancel";
+  cancelBtn.setAttribute("aria-label", "取消搜索");
+  cancelBtn.textContent = "取消";
+  header.appendChild(cancelBtn);
 
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
@@ -5190,7 +5206,6 @@ function openEmojiPanel() {
   // ── Tabs ─────────────────────────────────────────────────────────────────
   const TAB_DEFS = [
     { id: "frequent", label: "常用" },
-    { id: "recent",   label: "最近" },
     { id: "kaomoji",  label: "颜文字" },
     { id: "packs",    label: "表情包" },
   ];
@@ -5200,16 +5215,24 @@ function openEmojiPanel() {
   tabBar.className = "emoji-tab-bar";
   tabBar.setAttribute("role", "tablist");
 
-  const contentArea = document.createElement("div");
-  contentArea.className = "emoji-content";
+  // Browse content area (normal tabs)
+  const browseArea = document.createElement("div");
+  browseArea.className = "emoji-content emoji-browse-area";
+
+  // Search content area (hidden until search mode)
+  const searchArea = document.createElement("div");
+  searchArea.className = "emoji-content emoji-search-area";
+  searchArea.hidden = true;
 
   function switchTab(tabId) {
+    // Switching tab always exits search mode
+    if (_emojiPanelMode === "search") exitSearchMode(false);
     activeTab = tabId;
     tabBar.querySelectorAll(".emoji-tab").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.tab === tabId);
       btn.setAttribute("aria-selected", String(btn.dataset.tab === tabId));
     });
-    renderTabContent(contentArea, tabId, searchInput.value.trim());
+    renderTabContent(browseArea, tabId, "");
   }
 
   TAB_DEFS.forEach(({ id, label }) => {
@@ -5223,12 +5246,50 @@ function openEmojiPanel() {
     btn.addEventListener("click", () => switchTab(id));
     tabBar.appendChild(btn);
   });
-  panel.appendChild(tabBar);
-  panel.appendChild(contentArea);
 
-  // Search handler
+  panel.appendChild(tabBar);
+  panel.appendChild(browseArea);
+  panel.appendChild(searchArea);
+
+  // ── Search mode helpers ───────────────────────────────────────────────────
+  function enterSearchMode() {
+    if (_emojiPanelMode === "search") return;
+    _emojiPanelMode = "search";
+    panel.classList.add("emoji-panel--search");
+    tabBar.classList.add("emoji-tab-bar--hidden");
+    browseArea.hidden = true;
+    searchArea.hidden = false;
+    cancelBtn.classList.add("emoji-search-cancel--visible");
+    renderSearchResults(searchArea, searchInput.value.trim());
+  }
+
+  function exitSearchMode(clearInput = true) {
+    if (_emojiPanelMode === "browse") return;
+    _emojiPanelMode = "browse";
+    panel.classList.remove("emoji-panel--search");
+    tabBar.classList.remove("emoji-tab-bar--hidden");
+    browseArea.hidden = false;
+    searchArea.hidden = true;
+    searchArea.innerHTML = "";
+    cancelBtn.classList.remove("emoji-search-cancel--visible");
+    if (clearInput) {
+      searchInput.value = "";
+      searchInput.blur();
+    }
+  }
+
+  // Enter search mode on focus
+  searchInput.addEventListener("focus", enterSearchMode);
+
+  // Update results as user types
   searchInput.addEventListener("input", () => {
-    renderTabContent(contentArea, activeTab, searchInput.value.trim());
+    if (_emojiPanelMode !== "search") enterSearchMode();
+    renderSearchResults(searchArea, searchInput.value.trim());
+  });
+
+  // Cancel exits search mode
+  cancelBtn.addEventListener("click", () => {
+    exitSearchMode(true);
   });
 
   // Insert panel into chat-shell (absolute positioned, so doesn't affect flex flow)
@@ -5257,6 +5318,7 @@ function openEmojiPanel() {
 
 function closeEmojiPanel() {
   _emojiPanelOpen = false;
+  _emojiPanelMode = "browse";
   const panel = document.getElementById("emojiPanel");
   const chatShell = document.querySelector(".chat-shell");
   chatShell?.classList.remove("emoji-panel-open");
@@ -5270,7 +5332,7 @@ function closeEmojiPanel() {
 }
 
 /**
- * Render the content area for a given tab (and optional search query).
+ * Render the content area for a given tab (browse mode only).
  */
 function renderTabContent(container, tabId, query) {
   container.innerHTML = "";
@@ -5293,6 +5355,64 @@ function renderTabContent(container, tabId, query) {
   }
   if (tabId === "packs") {
     renderPacksTab(container, query);
+  }
+}
+
+/**
+ * Render search results across the full catalog (search mode).
+ */
+function renderSearchResults(container, query) {
+  container.innerHTML = "";
+
+  if (!query) {
+    container.appendChild(makeEmptyNotice("输入关键词搜索表情…"));
+    return;
+  }
+
+  // Search across all catalog emojis
+  const allEmojis = Object.values(emojiCatalog.byId);
+  const matchedEmojis = filterEmojis(allEmojis, query);
+
+  // Also search kaomoji
+  const matchedKaomoji = KAOMOJI_LIST.filter(k => k.includes(query));
+
+  if (!matchedEmojis.length && !matchedKaomoji.length) {
+    container.appendChild(makeEmptyNotice("没有匹配结果"));
+    return;
+  }
+
+  if (matchedEmojis.length) {
+    const grid = document.createElement("div");
+    grid.className = "emoji-search-results-grid";
+    matchedEmojis.forEach(emoji => {
+      grid.appendChild(makeEmojiItem(emoji, { inSearchMode: true }));
+    });
+    container.appendChild(grid);
+  }
+
+  if (matchedKaomoji.length) {
+    if (matchedEmojis.length) {
+      const divider = document.createElement("div");
+      divider.className = "emoji-search-section-label";
+      divider.textContent = "颜文字";
+      container.appendChild(divider);
+    }
+    const kaoGrid = document.createElement("div");
+    kaoGrid.className = "emoji-grid emoji-grid--kaomoji";
+    matchedKaomoji.forEach(kao => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "emoji-item emoji-item--kaomoji";
+      btn.textContent = kao;
+      btn.title = kao;
+      btn.addEventListener("click", () => {
+        insertTextAtCursor(kao);
+        closeEmojiPanel();
+        scrollChatToLatest();
+      });
+      kaoGrid.appendChild(btn);
+    });
+    container.appendChild(kaoGrid);
   }
 }
 
@@ -5428,37 +5548,58 @@ function renderPacksTab(container, query) {
 }
 
 /**
- * Filter emoji list by query string (shortcode, category, meaning_zh).
+ * Pre-computed lexicon map for O(1) lookup by emojiId.
+ * Rebuilt lazily on first use; reset to null when catalog reloads.
+ */
+let _lexiconMap = null;
+function getLexiconMap() {
+  if (!_lexiconMap) {
+    _lexiconMap = Object.create(null);
+    for (const entry of EMOJI_LEXICON) {
+      _lexiconMap[entry.emojiId] = entry;
+    }
+  }
+  return _lexiconMap;
+}
+
+/**
+ * Filter emoji list by query string.
+ * Matches: shortcode, category, meaning_zh (on emoji object or lexicon),
+ * use_cases (lexicon), mood_tags (lexicon), pack name.
  */
 function filterEmojis(emojis, query) {
   if (!query) return emojis;
   const q = query.toLowerCase().replace(/^:|:$/g, "");
-  return emojis.filter(e =>
-    e.shortcode.toLowerCase().includes(q) ||
-    (e.category && e.category.toLowerCase().includes(q)) ||
-    (e.meaning_zh && e.meaning_zh.toLowerCase().includes(q)) ||
-    // Also check lexicon for meaning_zh
-    (() => {
-      const entry = EMOJI_LEXICON.find(l => l.emojiId === e.id);
-      return entry && entry.meaning_zh.toLowerCase().includes(q);
-    })()
-  );
+  const lmap = getLexiconMap();
+  return emojis.filter(e => {
+    if (e.shortcode.toLowerCase().includes(q)) return true;
+    if (e.category && e.category.toLowerCase().includes(q)) return true;
+    if (e.meaning_zh && e.meaning_zh.toLowerCase().includes(q)) return true;
+    if (e.packName && e.packName.toLowerCase().includes(q)) return true;
+    const lex = lmap[e.id];
+    if (!lex) return false;
+    if (lex.meaning_zh && lex.meaning_zh.toLowerCase().includes(q)) return true;
+    if (lex.use_cases && lex.use_cases.some(u => u.toLowerCase().includes(q))) return true;
+    if (lex.mood_tags && lex.mood_tags.some(t => t.toLowerCase().includes(q))) return true;
+    return false;
+  });
 }
 
 /**
  * Build a single emoji item button (image + shortcode tooltip).
+ * When opts.inSearchMode is true, uses search-result item class.
  */
 function makeEmojiItem(emoji, opts = {}) {
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "emoji-item";
+  btn.className = opts.inSearchMode ? "emoji-search-result-item" : "emoji-item";
   btn.title = emoji.shortcode;
   btn.setAttribute("aria-label", emoji.shortcode);
 
   const img = document.createElement("img");
   img.src = emoji.staticUrl || emoji.url;
   img.alt = emoji.shortcode;
-  img.className = "emoji-item-img";
+  img.className = opts.inSearchMode ? "emoji-search-result-img" : "emoji-item-img";
   img.loading = "lazy";
   btn.appendChild(img);
 
