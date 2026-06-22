@@ -153,6 +153,12 @@ const KAOMOJI_LIST = [
 // ── Pending image state ────────────────────────────────────────────────────────
 let pendingImage = null; // { dataUrl: string|null, loading: boolean, error: string|null, file: File|null } | null
 
+// ── Inline edit-message state ─────────────────────────────────────────────────
+let composerEditMode = "send"; // "send" | "edit"
+let editingMessageId = null;
+let editingMessageRow = null;
+let editingOriginalText = "";
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const chatForm          = document.getElementById("chatForm");
@@ -477,6 +483,8 @@ async function deleteConv(id) {
 
 async function switchConversation(id) {
   if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
+  // Cancel any in-progress message edit to avoid carrying state to another conversation
+  if (composerEditMode === "edit") exitEditMessageMode({ restoreDraft: false });
   setActiveConversationId(id);
   _conversationStartedAt = null; // reset for new conversation context
   chatRenderState.renderedConversationId = null; // force full re-render
@@ -2358,44 +2366,8 @@ async function editUserMessage(row) {
   if (idx === -1) return;
   closeMessageActionMenu();
   const oldContent = chatMessages[idx].content;
-  // oldContent may be a vision array [{type:"text",...},{type:"image_url",...}].
-  // showDialog's input field requires a string, so extract the text portion only.
   const oldText = extractTextFromMessageContent(oldContent);
-showDialog({
-  title: "编辑消息",
-  body: "编辑后，这条之后的回复会重新生成。",
-  input: oldText,
-  confirmLabel: "确定",
-  onConfirm: async (newContent) => {
-      if (!newContent || newContent === oldContent) return;
-      if (!msgId) return;
-
-const { error: updateError } = await supabaseClient
-  .from("messages")
-  .update({ content: newContent })
-  .eq("id", msgId);
-
-if (updateError) {
-  console.error("编辑消息失败：", updateError);
-  addMessage(`编辑失败：${updateError.message}`, "assistant");
-  return;
-}
-
-chatMessages[idx].content = newContent;
-setMessageContent(row.querySelector(".message"), newContent);
-
-const afterIdx = idx + 1;
-const toRemove = chatMessages.slice(afterIdx);
-chatMessages.splice(afterIdx);
-
-for (const m of toRemove) {
-  if (m.id) await supabaseClient.from("messages").delete().eq("id", m.id);
-}
-
-await reloadHistory();
-await triggerReply("forced");
-    }
-  });
+  enterEditMessageMode(row, msgId, oldText);
 }
 
 messageList.addEventListener("mouseenter", refreshMessageActions);
@@ -3497,6 +3469,59 @@ const forceReplyBtn = document.getElementById("forceReplyBtn");
 const autoReplyToggle = document.getElementById("autoReplyToggle");
 const sendButton = document.getElementById("sendButton");
 
+// ── Inline edit-message helpers ───────────────────────────────────────────────
+function enterEditMessageMode(row, msgId, originalText) {
+  composerEditMode = "edit";
+  editingMessageId = msgId;
+  editingMessageRow = row;
+  editingOriginalText = originalText;
+
+  messageInput.value = originalText;
+  autoResizeTextarea(messageInput);
+  messageInput.focus();
+  // Move cursor to end
+  const len = originalText.length;
+  messageInput.setSelectionRange(len, len);
+
+  // Visual indicator: change send button to checkmark (save) icon
+  sendButton.setAttribute("aria-label", "保存编辑");
+  sendButton.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 9.5L7 13.5L15 5" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  sendButton.classList.add("edit-mode");
+
+  // Show cancel button next to send
+  let cancelEditBtn = document.getElementById("cancelEditBtn");
+  if (!cancelEditBtn) {
+    cancelEditBtn = document.createElement("button");
+    cancelEditBtn.id = "cancelEditBtn";
+    cancelEditBtn.type = "button";
+    cancelEditBtn.className = "ghost-icon-btn cancel-edit-btn";
+    cancelEditBtn.setAttribute("aria-label", "取消编辑");
+    cancelEditBtn.title = "取消编辑";
+    cancelEditBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+    cancelEditBtn.addEventListener("click", () => exitEditMessageMode({ restoreDraft: false }));
+    sendButton.parentNode.insertBefore(cancelEditBtn, sendButton);
+  }
+}
+
+/** Exit inline edit mode, restoring the composer to normal send mode. */
+function exitEditMessageMode({ restoreDraft = false } = {}) {
+  composerEditMode = "send";
+  editingMessageId = null;
+  editingMessageRow = null;
+  editingOriginalText = "";
+
+  // Clear composer
+  messageInput.value = "";
+  autoResizeTextarea(messageInput);
+
+  // Restore send button
+  sendButton.setAttribute("aria-label", "发送");
+  sendButton.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V3M9 3L4 8M9 3L14 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  sendButton.classList.remove("edit-mode");
+
+  document.getElementById("cancelEditBtn")?.remove();
+}
+
 function setReplyingState(replying) {
   isReplying = replying;
   // Only sendButton and forceReplyBtn are disabled during reply.
@@ -3949,12 +3974,57 @@ messageInput.addEventListener("paste", (e) => {
   }
 });
 
+/** Save an edited user message (called from handleSubmit when in edit mode). */
+async function saveEditedMessage(newText) {
+  const msgId = editingMessageId;
+  const row = editingMessageRow;
+  if (!msgId || !row) { exitEditMessageMode(); return; }
+
+  const idx = chatMessages.findIndex(m => m.id === msgId);
+  if (idx === -1) { exitEditMessageMode(); return; }
+
+  const { error: updateError } = await supabaseClient
+    .from("messages")
+    .update({ content: newText })
+    .eq("id", msgId);
+
+  if (updateError) {
+    console.error("编辑消息失败：", updateError);
+    setChatStatus(`编辑失败：${updateError.message}`);
+    setTimeout(() => setChatStatus(""), 3000);
+    return; // keep edit mode so user can retry
+  }
+
+  chatMessages[idx].content = newText;
+  setMessageContent(row.querySelector(".message"), newText);
+
+  // Remove all subsequent messages and retrigger reply
+  const afterIdx = idx + 1;
+  const toRemove = chatMessages.slice(afterIdx);
+  chatMessages.splice(afterIdx);
+  for (const m of toRemove) {
+    if (m.id) await supabaseClient.from("messages").delete().eq("id", m.id);
+  }
+
+  exitEditMessageMode();
+  await reloadHistory();
+  await triggerReply("forced");
+}
+
 messageList.addEventListener("click", (e) => {
   const img = e.target.closest("img.msg-image");
   if (img) showLightbox(img.src);
 });
 
 async function handleSubmit() {
+  // ── Edit mode: save the edited message ──────────────────────────────────────
+  if (composerEditMode === "edit") {
+    const newText = messageInput.value.trim();
+    if (!newText) return; // prevent saving empty message
+    await saveEditedMessage(newText);
+    return;
+  }
+
   const text = messageInput.value.trim();
   if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading) return;
   if (isReplying) {
@@ -6074,6 +6144,7 @@ function initEmojiSuggestionBar() {
   let _activeSuggestions = [];
   let _highlightIndex = 0;
   let _activeQuery = null; // { query, rawToken, start, end }
+  let _selectingItem = false; // true during pointerdown→commitSuggestion to block blur-close
 
   function hideSuggestions() {
     bar.hidden = true;
@@ -6116,10 +6187,10 @@ function initEmojiSuggestionBar() {
       item.appendChild(label);
 
       item.addEventListener("pointerdown", (e) => {
-        // Use pointerdown so we can prevent the textarea from losing focus
+        // Prevent textarea blur before selection fires (blur fires before click/pointerup)
         e.preventDefault();
-      });
-      item.addEventListener("click", () => {
+        e.stopPropagation();
+        _selectingItem = true;
         commitSuggestion(emoji);
       });
       track.appendChild(item);
@@ -6146,6 +6217,7 @@ function initEmojiSuggestionBar() {
 
   function commitSuggestion(emoji) {
     if (!_activeQuery) return;
+    _selectingItem = false;
     const token = pickInsertToken(emoji);
     const { newText, newCursor } = replaceTokenInText(
       inputEl.value,
@@ -6210,12 +6282,14 @@ function initEmojiSuggestionBar() {
 
   // Hide when input loses focus (but allow clicks on suggestion items via pointerdown)
   inputEl.addEventListener("blur", () => {
-    // Small delay to allow pointerdown → click on suggestion items
+    // Use flag + delay: pointerdown sets _selectingItem=true before blur fires,
+    // so we skip the close. On real blur-away, flag is false and we close.
     setTimeout(() => {
+      if (_selectingItem) { _selectingItem = false; return; }
       if (!bar.contains(document.activeElement)) {
         hideSuggestions();
       }
-    }, 150);
+    }, 200);
   });
 
   // Hide on outside click
