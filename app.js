@@ -1949,6 +1949,7 @@ async function requestStreamingReply(replyMode = "auto") {
   } else {
     // 多气泡：第一个气泡已经在 assistantEl 里，转正 msgId，后续气泡逐条弹出
     if (assistantEl) {
+      setMessageContent(assistantEl, bubbles[0]);
       const row = assistantEl.closest(".msg-row");
       if (row && replyIdStr) row.dataset.msgId = replyIdStr;
     }
@@ -2351,7 +2352,7 @@ if (updateError) {
 }
 
 chatMessages[idx].content = newContent;
-row.querySelector(".message").textContent = newContent;
+setMessageContent(row.querySelector(".message"), newContent);
 
 const afterIdx = idx + 1;
 const toRemove = chatMessages.slice(afterIdx);
@@ -3157,22 +3158,7 @@ async function loadMemories() {
 }
 
 toggleMemoryButton.addEventListener("click", () => {
-  if (!getMemoryToken()) {
-    showDialog({
-      title: "记忆管理口令",
-      input: "",
-      inputType: "password",
-      confirmLabel: "确定",
-      onConfirm: (val) => {
-        if (val) sessionStorage.setItem("memory_admin_token", val);
-        memoryOverlay.classList.remove("hidden");
-        loadMemories();
-      },
-    });
-  } else {
-    memoryOverlay.classList.remove("hidden");
-    loadMemories();
-  }
+  openMemoryCenter();
 });
 
 closeMemoryButton.addEventListener("click", () => memoryOverlay.classList.add("hidden"));
@@ -4186,6 +4172,24 @@ function initV2Shell() {
   document.querySelectorAll("[data-placeholder-route]").forEach((entry) => {
     entry.addEventListener("click", () => {
       const route = entry.dataset.placeholderRoute;
+
+      // ── Settings routes with real implementations ─────────────────────────
+      if (route === "/settings/memory") {
+        // Open memory center page (v2) directly — no password gate
+        openMemoryCenter();
+        return;
+      }
+      if (route === "/settings/api") {
+        const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
+        showDialog({
+          title: "API 设置 · 模型档位",
+          body: `当前档位：${tierLabel}\n\n切换档位：聊天页底部的 Instant / General / Advanced 按钮（桌面），或聊天页 + 菜单上方的档位选择器（移动端）。`,
+          confirmLabel: "知道了",
+        });
+        return;
+      }
+
+
       showDialog({
         title: "入口已预留",
         body: `${route} 将在后续版本接入。`,
@@ -4790,7 +4794,6 @@ function openEmojiPanel() {
   const TAB_DEFS = [
     { id: "frequent", label: "常用" },
     { id: "recent",   label: "最近" },
-    { id: "favorite", label: "收藏" },
     { id: "kaomoji",  label: "颜文字" },
     { id: "packs",    label: "表情包" },
   ];
@@ -5056,16 +5059,10 @@ function makeEmojiItem(emoji, opts = {}) {
   img.loading = "lazy";
   btn.appendChild(img);
 
-  // Long-press / right-click: favorite toggle
+  // Long-press / right-click: no-op (favorite removed)
   btn.addEventListener("contextmenu", (e) => {
     e.preventDefault();
-    toggleFavorite(emoji.id);
-    const isFav = isFavorite(emoji.id);
-    btn.classList.toggle("is-favorite", isFav);
-    btn.title = isFav ? `★ ${emoji.shortcode}` : emoji.shortcode;
   });
-
-  if (opts.isFavorite) btn.classList.add("is-favorite");
 
   btn.addEventListener("click", () => {
     const token = pickInsertToken(emoji);
@@ -5389,6 +5386,69 @@ initInputKeyboardHints();
 initKeyboardViewportState();
 // Start loading emoji catalog in the background — never blocks UI
 loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
+
+// ── Composer emoji preview ────────────────────────────────────────────────────
+// Shows a rendered preview of custom emoji tokens above the input bar.
+// textarea keeps the raw shortcode text; this layer is visual-only.
+(function initComposerEmojiPreview() {
+  const chatForm = document.getElementById("chatForm");
+  if (!chatForm || !messageInput) return;
+
+  const preview = document.createElement("div");
+  preview.className = "composer-emoji-preview";
+  preview.setAttribute("aria-hidden", "true");
+  // Insert directly before the chat input form
+  chatForm.parentNode.insertBefore(preview, chatForm);
+
+  function hasKnownEmojiToken(text) {
+    if (!emojiCatalog.loaded || !text) return false;
+    EMOJI_TOKEN_RE.lastIndex = 0;
+    let m;
+    while ((m = EMOJI_TOKEN_RE.exec(text)) !== null) {
+      if (resolveEmojiToken(m[0])) return true;
+    }
+    return false;
+  }
+
+  function updatePreview() {
+    const text = messageInput.value;
+    if (!hasKnownEmojiToken(text)) {
+      preview.hidden = true;
+      preview.textContent = "";
+      return;
+    }
+    preview.hidden = false;
+    preview.textContent = "";
+    preview.appendChild(renderTextWithEmoji(text));
+  }
+
+  messageInput.addEventListener("input", updatePreview);
+
+  // Clear preview on successful send (chatForm submit)
+  chatForm.addEventListener("submit", () => {
+    preview.hidden = true;
+    preview.textContent = "";
+  }, true);
+
+  // Also clear when conversation is switched (messageList cleared)
+  const _origClearChat = window.clearChatMessages;
+  if (typeof _origClearChat === "function") {
+    window.clearChatMessages = function(...args) {
+      preview.hidden = true;
+      preview.textContent = "";
+      return _origClearChat.apply(this, args);
+    };
+  }
+
+  // Re-run after catalog loads so an already-typed token becomes visible
+  const _origLoadCatalog = window.loadEmojiCatalog;
+  if (typeof _origLoadCatalog === "function") {
+    const origPromise = loadEmojiCatalog;
+    // Hook: after catalog resolves, refresh preview
+    const _catalog = loadEmojiCatalog;
+    window._composerPreviewRefresh = updatePreview;
+  }
+})();
 
 // ── V2 shared status bar ─────────────────────────────────────────────────────
 async function initV2StatusBars() {
@@ -6654,20 +6714,14 @@ async function mcBridgeFetchAudit() {
 async function mcBridgeRefreshAll() {
   const state = memoryCenterV2State;
 
-  // Phase 1: recent (no token required)
+  // Phase 1: recent
   state.loadingRecent = true;
   state.recentError = "";
   renderMemoryCenterCurrentView();
   await mcBridgeFetchRecent();
   renderMemoryCenterCurrentView();
 
-  // Phase 2: archive + audit (token required)
-  if (!getMemoryToken()) {
-    state.archiveError = "需要记忆口令后显示完整档案";
-    state.auditError = "需要记忆口令后显示审计";
-    return;
-  }
-
+  // Phase 2: archive + audit
   state.loadingArchive = true;
   state.loadingAudit = true;
   state.archiveError = "";
@@ -7027,36 +7081,6 @@ function renderMemoryArchiveView(root, options = {}) {
 
   if (_archiveSnap.loadingStates.loadingArchive && !_archiveSnap.loadingStates.archiveLoaded) {
     mcRenderEmpty(list, "档案加载中...");
-  } else if (!getMemoryToken() && !_archiveSnap.loadingStates.archiveLoaded) {
-    const authPrompt = mcEl("div", "mc-auth-prompt");
-    authPrompt.innerHTML = `
-      <div class="mc-auth-icon">🔒</div>
-      <div class="mc-auth-title">需要记忆口令</div>
-      <div class="mc-auth-desc">输入口令后可查看完整档案并进行管理操作</div>
-    `;
-    const authBtn = mcEl("button", "mc-auth-btn", "输入口令");
-    authBtn.type = "button";
-    authBtn.addEventListener("click", () => {
-      showDialog({
-        title: "记忆管理口令",
-        input: "",
-        inputType: "password",
-        confirmLabel: "确定",
-        onConfirm: (val) => {
-          if (val) {
-            sessionStorage.setItem("memory_admin_token", val);
-            mcBridgeRefreshAll();
-          }
-        },
-      });
-    });
-    authPrompt.appendChild(authBtn);
-    list.appendChild(authPrompt);
-
-    // Still show recent items
-    const recentTitle = mcEl("h3", "mc-section-subtitle", "最近沉淀（无需口令）");
-    list.appendChild(recentTitle);
-    items.filter((item) => item.source === "recent").forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
   } else if (filtered.length) {
     filtered.forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
   } else {
