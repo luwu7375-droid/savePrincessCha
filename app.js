@@ -37,6 +37,11 @@ const EMOJI_CATALOG_CACHE_KEY = "emoji_catalog_cache_v1";
 const EMOJI_RECENT_KEY        = "emoji_recent_v1";
 const EMOJI_FREQUENCY_KEY     = "emoji_frequency_v1";
 const EMOJI_FAVORITE_KEY      = "emoji_favorite_v1";
+const EMOJI_RENDER_CACHE_KEY  = "emoji_render_cache_v1";
+// Increment when render cache format changes to force a full rebuild.
+const EMOJI_RENDER_CACHE_VERSION = 1;
+// Maximum number of per-message render cache entries kept in localStorage.
+const EMOJI_RENDER_CACHE_MAX_ENTRIES = 500;
 
 // Default pack source definitions (can be extended via settings in future)
 const EMOJI_PACK_SOURCES_DEFAULT = [
@@ -831,7 +836,9 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   if (!hasImages) {
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-text`;
-    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""));
+    // Use real msgId if available; fall back to tempId for optimistic messages
+    const cacheIdStr = msgId != null ? String(msgId) : (options.tempId || undefined);
+    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""), { messageId: cacheIdStr });
     const stack = document.createElement("div");
     stack.className = "msg-stack";
     stack.appendChild(el);
@@ -843,14 +850,15 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     return el;
   }
 
-  // ── Case 2: has images (with or without text) ─────────────────────────────
+  // ── Case 2: has images (with or without text) ──────────────────────────��──
   let firstEl = null;
 
   // 2a. Text bubble (no receipt — receipt goes on last image row)
   if (hasText) {
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-text`;
-    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""));
+    const cacheIdStr = msgId != null ? String(msgId) : (options.tempId || undefined);
+    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""), { messageId: cacheIdStr });
     const stack = document.createElement("div");
     stack.className = "msg-stack";
     stack.appendChild(el);
@@ -938,7 +946,7 @@ function splitBubbles(rawText) {
 function insertBubbleSync(text, createdAt, msgId, isSibling) {
   const el = document.createElement("div");
   el.className = "message assistant cha-message message-text";
-  setMessageContent(el, text);
+  setMessageContent(el, text, { messageId: msgId != null ? String(msgId) : undefined });
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
@@ -1298,6 +1306,8 @@ async function reloadHistory(opts = {}) {
   refreshUserReceipts();
   // If user is already on the Chat tab, immediately mark visible assistant rows as read
   markVisibleAssistantRowsRead();
+  // Pre-warm emoji image cache for visible messages (non-blocking)
+  preloadVisibleMessageEmojis();
 }
 
 async function loadOlderHistory() {
@@ -1960,7 +1970,7 @@ async function requestStreamingReply(replyMode = "auto") {
   if (bubbles.length === 1 || !firstSepSeen) {
     // 单气泡或模型没有输出 |||：直接用临时气泡，原地更新内容并转正
     if (assistantEl) {
-      setMessageContent(assistantEl, bubbles[0]);
+      setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
       const row = assistantEl.closest(".msg-row");
       if (row && replyIdStr) row.dataset.msgId = replyIdStr;
     } else {
@@ -1969,13 +1979,16 @@ async function requestStreamingReply(replyMode = "auto") {
   } else {
     // 多气泡：第一个气泡已经在 assistantEl 里，转正 msgId，后续气泡逐条弹出
     if (assistantEl) {
-      setMessageContent(assistantEl, bubbles[0]);
+      setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
       const row = assistantEl.closest(".msg-row");
       if (row && replyIdStr) row.dataset.msgId = replyIdStr;
     }
     // 从第二段开始动画插入
     await insertBubblesAnimated(bubbles.slice(1), replyTime, replyIdStr, true);
   }
+
+  // Pre-warm emoji image cache for the freshly received reply (non-blocking)
+  preloadVisibleMessageEmojis();
 
   refreshMessageActions();
   // After stream ends, start short-polling for memory promotion results
@@ -4015,7 +4028,9 @@ async function saveEditedMessage(newText) {
   }
 
   chatMessages[idx].content = newText;
-  setMessageContent(row.querySelector(".message"), newText);
+  // Invalidate old render cache before re-rendering with new content
+  invalidateRenderCache(msgId);
+  setMessageContent(row.querySelector(".message"), newText, { messageId: String(msgId) });
 
   // Remove all subsequent messages and retrigger reply
   const afterIdx = idx + 1;
@@ -4072,7 +4087,10 @@ async function handleSubmit() {
   }
 
   // Optimistic update：先渲染，不等接口
-  const msgEl = addMessage(content, "user", now, {});
+  // Assign a temp id so the render cache can be written immediately and migrated
+  // to the real server id once the DB insert returns.
+  const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const msgEl = addMessage(content, "user", now, { tempId });
   const msgGroupId = msgEl.closest(".msg-row")?.dataset.groupId;
   const getMsgRows = () => msgGroupId
     ? Array.from(messageList.querySelectorAll(`.msg-row[data-group-id="${msgGroupId}"]`))
@@ -4092,14 +4110,21 @@ async function handleSubmit() {
       storagePath = await uploadImageToStorage(snapshot.dataUrl, uid, getActiveConversationId());
       if (storagePath === null) {
         setChatStatus("图片上传失败，消息未发送，请重试");
-        // 回滚乐观渲染
+        // 回滚乐观渲染，清理 temp render cache
         chatMessages.pop();
         getMsgRows().forEach(r => r.remove());
+        invalidateRenderCache(tempId);
         return;
       }
     }
     const msgId = await saveMessage("user", dbContent, storagePath).catch(() => null);
-    if (msgId != null) getMsgRows().forEach(r => { r.dataset.msgId = String(msgId); });
+    if (msgId != null) {
+      getMsgRows().forEach(r => { r.dataset.msgId = String(msgId); });
+      // Migrate render cache from tempId to real msgId
+      if (text) {
+        migrateRenderCacheTempId(tempId, String(msgId), hashString(text));
+      }
+    }
     const entry = chatMessages.findLast?.((m) => m.role === "user" && m.id === null);
     if (entry) entry.id = msgId != null ? String(msgId) : null;
     if (autoReplyEnabled) scheduleAutoReply(text);
@@ -5194,6 +5219,10 @@ function buildCatalogIndexes(emojis) {
   emojiCatalog.byPackId         = byPackId;
   emojiCatalog.loaded           = true;
   emojiCatalog.loadError        = null;
+
+  // Hydrate any message elements that were rendered before the catalog was ready.
+  // Only touches elements marked data-emoji-rendered="0" to avoid re-processing.
+  _hydratePendingMessageElements();
 }
 
 /**
@@ -5214,6 +5243,28 @@ function resolveEmojiToken(token) {
   const matches = emojiCatalog.byShortcode[sc];
   if (matches && matches.length === 1) return matches[0];
   return null;
+}
+
+/**
+ * Re-render message elements that were painted before the emoji catalog
+ * finished loading (data-emoji-rendered="0"). Only processes visible elements
+ * to avoid doing work for off-screen content.
+ */
+function _hydratePendingMessageElements() {
+  // querySelectorAll is live — snapshot into array to avoid re-entry issues
+  const pending = Array.from(
+    messageList ? messageList.querySelectorAll(".message[data-emoji-rendered='0']") : []
+  );
+  if (!pending.length) return;
+  for (const el of pending) {
+    const rawText = el.textContent; // the plain-text content we stored earlier
+    const cacheId = el.dataset.pendingEmojiId || "";
+    // Re-use setMessageContent which will now find the catalog ready
+    el.dataset.emojiRendered = ""; // clear so setMessageContent doesn't skip
+    el.dataset.contentHash = "";
+    setMessageContent(el, rawText, { messageId: cacheId || undefined });
+    delete el.dataset.pendingEmojiId;
+  }
 }
 
 /**
@@ -5856,6 +5907,184 @@ function buildEmojiGuide() {
 
 // ── Emoji Rendering ───────────────────────────────────────────────────────────
 
+// ── Emoji Render Cache ────────────────────────────────────────────────────────
+
+/**
+ * Lightweight, non-cryptographic hash for short strings (djb2 variant).
+ * Used to build per-message cache keys so edits always bust the cache.
+ */
+function hashString(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) + h) ^ str.charCodeAt(i);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * In-memory render cache (populated from localStorage on first access).
+ * Structure: { [key]: { messageId, contentHash, tokens, updatedAt, version } }
+ *
+ * tokens[] entries: { token, emojiId, shortcode, url, staticUrl, alt }
+ */
+let _emojiRenderCache = null;
+
+function _loadRenderCache() {
+  if (_emojiRenderCache !== null) return;
+  try {
+    const raw = localStorage.getItem(EMOJI_RENDER_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    // Drop entries from old format versions
+    const cleaned = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (v && v.version === EMOJI_RENDER_CACHE_VERSION) cleaned[k] = v;
+    }
+    _emojiRenderCache = cleaned;
+  } catch (_) {
+    _emojiRenderCache = {};
+  }
+}
+
+function _saveRenderCache() {
+  if (!_emojiRenderCache) return;
+  try {
+    // Trim to most recent EMOJI_RENDER_CACHE_MAX_ENTRIES entries by updatedAt
+    const entries = Object.entries(_emojiRenderCache);
+    if (entries.length > EMOJI_RENDER_CACHE_MAX_ENTRIES) {
+      entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt);
+      _emojiRenderCache = Object.fromEntries(entries.slice(0, EMOJI_RENDER_CACHE_MAX_ENTRIES));
+    }
+    localStorage.setItem(EMOJI_RENDER_CACHE_KEY, JSON.stringify(_emojiRenderCache));
+  } catch (_) {}
+}
+
+/**
+ * Build a cache key from messageId (or tempId) + contentHash.
+ */
+function _renderCacheKey(messageId, contentHash) {
+  return `${messageId}:${contentHash}`;
+}
+
+/**
+ * Look up a cached render result. Returns the tokens array or null.
+ */
+function getRenderCacheTokens(messageId, contentHash) {
+  if (!messageId) return null;
+  _loadRenderCache();
+  const key = _renderCacheKey(messageId, contentHash);
+  return _emojiRenderCache[key]?.tokens ?? null;
+}
+
+/**
+ * Write a render result to the cache (both memory and localStorage).
+ * tokens: array of { token, emojiId, shortcode, url, staticUrl, alt }
+ */
+function setRenderCacheTokens(messageId, contentHash, tokens) {
+  if (!messageId) return;
+  _loadRenderCache();
+  const key = _renderCacheKey(messageId, contentHash);
+  _emojiRenderCache[key] = {
+    messageId,
+    contentHash,
+    tokens,
+    updatedAt: Date.now(),
+    version: EMOJI_RENDER_CACHE_VERSION,
+  };
+  _saveRenderCache();
+}
+
+/**
+ * Invalidate all cache entries for a given messageId (e.g. after edit/delete).
+ */
+function invalidateRenderCache(messageId) {
+  if (!messageId) return;
+  _loadRenderCache();
+  const prefix = `${messageId}:`;
+  let changed = false;
+  for (const k of Object.keys(_emojiRenderCache)) {
+    if (k.startsWith(prefix)) {
+      delete _emojiRenderCache[k];
+      changed = true;
+    }
+  }
+  if (changed) _saveRenderCache();
+}
+
+/**
+ * Migrate a temp-id cache entry to the real messageId once the server responds.
+ * Removes the old key and writes a new one without re-parsing.
+ */
+function migrateRenderCacheTempId(tempId, realId, contentHash) {
+  if (!tempId || !realId) return;
+  _loadRenderCache();
+  const oldKey = _renderCacheKey(tempId, contentHash);
+  const entry = _emojiRenderCache[oldKey];
+  if (!entry) return;
+  delete _emojiRenderCache[oldKey];
+  const newKey = _renderCacheKey(realId, contentHash);
+  _emojiRenderCache[newKey] = { ...entry, messageId: realId };
+  _saveRenderCache();
+}
+
+// ── Emoji Image Preload / Cache Storage ───────────────────────────────────────
+
+const EMOJI_IMAGE_CACHE_NAME = "custom_emoji_images_v1";
+
+/**
+ * Preload a single custom-emoji image URL into Cache Storage (if available)
+ * so subsequent `<img src=url>` loads hit the browser cache instantly.
+ * Never throws — failures are silent.
+ */
+async function preloadCustomEmojiImage(url) {
+  if (!url) return;
+  try {
+    if ("caches" in window) {
+      const cache = await caches.open(EMOJI_IMAGE_CACHE_NAME);
+      // Check before fetching to avoid unnecessary network requests
+      const existing = await cache.match(url);
+      if (existing) return;
+      const resp = await fetch(url, { mode: "cors", cache: "force-cache" });
+      if (resp.ok) {
+        await cache.put(url, resp);
+      }
+    } else {
+      // Fallback: fire-and-forget <link rel=prefetch> or Image()
+      const img = new Image();
+      img.src = url;
+    }
+  } catch (_) {
+    // CORS / opaque / network failure — ignore, <img> will still load normally
+  }
+}
+
+/**
+ * Preload all custom-emoji images found in a tokens array (non-blocking).
+ * Safe to call after writing render cache; never blocks message display.
+ */
+function preloadTokenImages(tokens) {
+  if (!tokens || !tokens.length) return;
+  // Use setTimeout so we don't hold up the current rendering frame
+  setTimeout(() => {
+    for (const t of tokens) {
+      preloadCustomEmojiImage(t.staticUrl || t.url);
+    }
+  }, 0);
+}
+
+/**
+ * Scan visible message elements and preload emoji images they contain.
+ * Called after history loads to warm up the browser cache.
+ */
+function preloadVisibleMessageEmojis() {
+  const imgs = messageList.querySelectorAll(".message .custom-emoji");
+  if (!imgs.length) return;
+  setTimeout(() => {
+    for (const img of imgs) {
+      preloadCustomEmojiImage(img.src);
+    }
+  }, 0);
+}
+
 /**
  * Regex that matches both :shortcode: and :packId.shortcode: tokens.
  * We only match tokens that exist in the catalog to avoid XSS or
@@ -5872,61 +6101,144 @@ const EMOJI_TOKEN_RE = /:([a-zA-Z0-9_\-.]+):/g;
  * @param {string} text  Raw message text
  * @returns {DocumentFragment}
  */
+/**
+ * Parse text into a tokens array (plain strings + resolved emoji objects).
+ * Always runs against the live catalog; result is suitable for caching.
+ *
+ * Returns an array of:
+ *   { type: "text", value: string }
+ * | { type: "emoji", token, emojiId, shortcode, url, staticUrl, alt }
+ * | { type: "unknown", value: string }   ← unresolved :token:
+ */
+function parseEmojiTokens(text) {
+  const tokens = [];
+  if (!text) return tokens;
+  let lastIndex = 0;
+  let match;
+  EMOJI_TOKEN_RE.lastIndex = 0;
+  while ((match = EMOJI_TOKEN_RE.exec(text)) !== null) {
+    const [fullMatch] = match;
+    const start = match.index;
+    if (start > lastIndex) {
+      tokens.push({ type: "text", value: text.slice(lastIndex, start) });
+    }
+    const emoji = resolveEmojiToken(fullMatch);
+    if (emoji) {
+      tokens.push({
+        type: "emoji",
+        token: fullMatch,
+        emojiId: emoji.id,
+        shortcode: emoji.shortcode,
+        url: emoji.url,
+        staticUrl: emoji.staticUrl,
+        alt: fullMatch,
+      });
+    } else {
+      tokens.push({ type: "unknown", value: fullMatch });
+    }
+    lastIndex = start + fullMatch.length;
+  }
+  if (lastIndex < text.length) {
+    tokens.push({ type: "text", value: text.slice(lastIndex) });
+  }
+  return tokens;
+}
+
+/**
+ * Build a DocumentFragment from a pre-parsed tokens array.
+ * Does NOT require emojiCatalog to be loaded — works purely from cached data.
+ */
+function buildFragmentFromTokens(tokens) {
+  const frag = document.createDocumentFragment();
+  for (const t of tokens) {
+    if (t.type === "emoji") {
+      const img = document.createElement("img");
+      img.src = t.staticUrl || t.url;
+      img.alt = t.alt || t.token;
+      img.title = t.shortcode;
+      img.className = "custom-emoji";
+      img.loading = "lazy";
+      frag.appendChild(img);
+    } else {
+      frag.appendChild(document.createTextNode(t.value));
+    }
+  }
+  return frag;
+}
+
+/**
+ * Render a text string into a DocumentFragment, replacing known emoji tokens
+ * with inline <img class="custom-emoji"> elements.
+ * Unknown tokens are left as-is (plain text). XSS-safe: all text goes through
+ * document.createTextNode, never innerHTML.
+ *
+ * @param {string} text  Raw message text
+ * @returns {DocumentFragment}
+ */
 function renderTextWithEmoji(text) {
   const frag = document.createDocumentFragment();
   if (!emojiCatalog.loaded || !text) {
     frag.appendChild(document.createTextNode(text || ""));
     return frag;
   }
-
-  let lastIndex = 0;
-  let match;
-  EMOJI_TOKEN_RE.lastIndex = 0;
-
-  while ((match = EMOJI_TOKEN_RE.exec(text)) !== null) {
-    const [fullMatch] = match;
-    const start = match.index;
-
-    // Append text before the token
-    if (start > lastIndex) {
-      frag.appendChild(document.createTextNode(text.slice(lastIndex, start)));
-    }
-
-    // Try to resolve the full token (e.g. `:blobcat_cry:` or `:stelpolva.blobcat_cry:`)
-    const emoji = resolveEmojiToken(fullMatch);
-    if (emoji) {
-      const img = document.createElement("img");
-      img.src = emoji.staticUrl || emoji.url;
-      img.alt = fullMatch;
-      img.title = emoji.shortcode;
-      img.className = "custom-emoji";
-      img.loading = "lazy";
-      frag.appendChild(img);
-    } else {
-      // Unknown token — keep as plain text
-      frag.appendChild(document.createTextNode(fullMatch));
-    }
-
-    lastIndex = start + fullMatch.length;
-  }
-
-  // Remaining text after last match
-  if (lastIndex < text.length) {
-    frag.appendChild(document.createTextNode(text.slice(lastIndex)));
-  }
-
-  return frag;
+  const tokens = parseEmojiTokens(text);
+  return buildFragmentFromTokens(tokens);
 }
 
 /**
- * Set element content using emoji-aware rendering.
- * Replaces textContent assignment with emoji image support.
+ * Set element content using emoji-aware rendering with message-level render cache.
+ *
  * @param {HTMLElement} el
  * @param {string} text
+ * @param {{ messageId?: string|number, tempId?: string }} [opts]
  */
-function setMessageContent(el, text) {
+function setMessageContent(el, text, opts = {}) {
+  const rawText = text || "";
+  const contentHash = hashString(rawText);
+
+  // Resolve the id to use for cache lookup (real id preferred, fall back to tempId)
+  const cacheId = String(opts.messageId || opts.tempId || "");
+
+  // ── Skip re-render if the DOM is already up-to-date ───────────────────────
+  if (
+    el.dataset.emojiRendered === "1" &&
+    el.dataset.contentHash === contentHash
+  ) {
+    return;
+  }
+
+  // ── Try render cache (works even before catalog is loaded) ────────────────
+  const cached = cacheId ? getRenderCacheTokens(cacheId, contentHash) : null;
+  if (cached) {
+    el.textContent = "";
+    el.appendChild(buildFragmentFromTokens(cached));
+    el.dataset.emojiRendered = "1";
+    el.dataset.contentHash = contentHash;
+    return;
+  }
+
+  // ── Catalog not loaded yet: show plain text, schedule hydration ───────────
+  if (!emojiCatalog.loaded) {
+    el.textContent = rawText;
+    el.dataset.emojiRendered = "0";
+    el.dataset.contentHash = contentHash;
+    if (cacheId) el.dataset.pendingEmojiId = cacheId;
+    return;
+  }
+
+  // ── Full parse + render ───────────────────────────────────────────────────
+  const tokens = parseEmojiTokens(rawText);
   el.textContent = "";
-  el.appendChild(renderTextWithEmoji(text));
+  el.appendChild(buildFragmentFromTokens(tokens));
+  el.dataset.emojiRendered = "1";
+  el.dataset.contentHash = contentHash;
+
+  // Write to render cache only if we have resolved at least one emoji
+  if (cacheId && tokens.some(t => t.type === "emoji")) {
+    setRenderCacheTokens(cacheId, contentHash, tokens);
+    // Pre-warm image cache in background
+    preloadTokenImages(tokens.filter(t => t.type === "emoji"));
+  }
 }
 
 function initV2Composer() {
