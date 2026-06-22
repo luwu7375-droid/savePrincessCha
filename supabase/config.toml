@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.scheduler]
 verify_jwt = false
+
+[functions.game]
+verify_jwt = false
