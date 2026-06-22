@@ -1,4 +1,4 @@
-console.log("build cloudflare-0086");
+console.log("build cloudflare-0089");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -1156,6 +1156,8 @@ async function reloadHistory() {
   syncChaUnreadCount();
   observeUnreadChaRows();
   insertUnreadDivider();
+  // If user is already on the Chat tab, immediately mark visible assistant rows as read
+  markVisibleAssistantRowsRead();
 }
 
 async function loadOlderHistory() {
@@ -1504,8 +1506,25 @@ function removeTypingIndicator() {
 }
 
 function setChatStatus(text) {
+  // #chatStatus is hidden from normal UI — kept for debug only.
+  // Visible typing state is shown via setChatTitleState().
   const el = document.getElementById("chatStatus");
   if (el) el.textContent = text;
+}
+
+/** Switch the top-bar title between idle and typing states.
+ *  idle:   shows the default title ("Cha" or static h1 text)
+ *  typing: shows "正在输入…" in place of the title
+ */
+const _defaultChatTitle = (() => {
+  const h1 = document.querySelector(".chat-shell .top-bar h1");
+  return h1 ? h1.textContent : "Cha";
+})();
+
+function setChatTitleState(mode) {
+  const h1 = document.querySelector(".chat-shell .top-bar h1");
+  if (!h1) return;
+  h1.textContent = mode === "typing" ? "正在输入…" : _defaultChatTitle;
 }
 
 // ── Princess Status Bar ────────────────────────────────────────────────────────
@@ -1764,6 +1783,19 @@ async function requestStreamingReply(replyMode = "auto") {
   const replyIdStr = replyId != null ? String(replyId) : null;
   chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null });
   lastMessageTime = new Date(replyTime).getTime();
+
+  // If the user is already on the Chat tab, pre-mark this reply as read by user
+  // so it never gets stuck as "unread" after the stream finishes.
+  const _isOnChatNow = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+  if (_isOnChatNow && replyIdStr && supabaseClient) {
+    const readNow = new Date().toISOString();
+    const entry = chatMessages.find(m => m.id === replyIdStr);
+    if (entry) entry.read_by_user_at = readNow;
+    supabaseClient.from("messages")
+      .update({ read_by_user_at: readNow })
+      .eq("id", Number(replyIdStr))
+      .then(({ error }) => { if (error) console.warn("pre-mark read_by_user_at failed:", error); });
+  }
 
   // Fire-and-forget vault extraction — never blocks UI
   {
@@ -2037,6 +2069,35 @@ const _chaReadObserver = new IntersectionObserver((entries) => {
 function observeUnreadChaRows() {
   document.querySelectorAll(".msg-row.assistant[data-unread-cha]").forEach(row => {
     _chaReadObserver.observe(row);
+  });
+}
+
+/**
+ * Immediately mark any unread assistant rows that are currently visible in the
+ * viewport (intersectionRatio ≥ 0.5) while the user is on the Chat tab.
+ * Call this after switching to Chat, after reloadHistory, and after a new
+ * assistant reply finishes rendering so visible messages are never left as unread.
+ */
+function markVisibleAssistantRowsRead() {
+  const isOnChat = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+  if (!isOnChat) return;
+  const unreadRows = Array.from(document.querySelectorAll(".msg-row.assistant[data-unread-cha]"));
+  if (!unreadRows.length) return;
+  const listRect = messageList.getBoundingClientRect();
+  unreadRows.forEach(row => {
+    const rowRect = row.getBoundingClientRect();
+    // Check if at least half the row is within the messageList viewport
+    const overlap = Math.min(rowRect.bottom, listRect.bottom) - Math.max(rowRect.top, listRect.top);
+    const visible = overlap / rowRect.height >= 0.5;
+    if (visible) {
+      setTimeout(() => {
+        if (!document.contains(row)) return;
+        const stillOnChat = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+        if (!stillOnChat) return;
+        markReadByUser(row);
+        _chaReadObserver.unobserve(row);
+      }, 500);
+    }
   });
 }
 
@@ -3273,12 +3334,11 @@ const sendButton = document.getElementById("sendButton");
 
 function setReplyingState(replying) {
   isReplying = replying;
-  // messageInput intentionally NOT disabled — user can draft while assistant replies
+  // Only sendButton and forceReplyBtn are disabled during reply.
+  // composerMenuBtn, imageAttachBtn, and messageInput remain usable so the user
+  // can prepare attachments / draft text while Cha is typing.
   forceReplyBtn.disabled = replying;
   sendButton.disabled = replying;
-  const composerMenuBtn = document.getElementById("composerMenuBtn");
-  if (composerMenuBtn) composerMenuBtn.disabled = replying;
-  if (imageAttachBtn) imageAttachBtn.disabled = replying;
 }
 
 function updateAutoReplyToggle() {
@@ -3302,7 +3362,9 @@ function getAutoReplyDelay(lastUserMessage = "") {
 function cancelAutoReplyTimer() {
   clearTimeout(idleTimer); idleTimer = null;
   clearTimeout(statusTimer); statusTimer = null;
-  setChatStatus("");
+  // Clear any lingering status text
+  const el = document.getElementById("chatStatus");
+  if (el) el.textContent = "";
 }
 
 function scheduleAutoReply(lastUserMessage = "") {
@@ -3313,12 +3375,7 @@ function scheduleAutoReply(lastUserMessage = "") {
     triggerReply("auto");
     return;
   }
-  // 普通句/短句：2s 后才显示 status，避免短时间内输入时闪烁
-  statusTimer = setTimeout(() => {
-    statusTimer = null;
-    if (!idleTimer) return; // idleTimer 已被取消，不再显示
-    setChatStatus("公主在听…");
-  }, 2000);
+  // 普通句/短句：内部计时，不显示给用户
   idleTimer = setTimeout(() => {
     idleTimer = null;
     if (messageInput.value.trim() || isComposing) { cancelAutoReplyTimer(); return; }
@@ -3472,9 +3529,29 @@ async function triggerReply(replyMode) {
   if (isReplying) { cancelAutoReplyTimer(); return; }
   if (replyMode === "auto" && (messageInput.value.trim() || isComposing)) { cancelAutoReplyTimer(); return; }
   cancelAutoReplyTimer();
-  // Mark all unread user messages as read by Cha — Cha is now processing them
-  markReadByCha();
-  setChatStatus("正在输入…");
+  // Mark only the unread user messages that will actually enter Cha's context this request.
+  // For "forced" mode, no real user message is added (synthetic poke), so leave read state alone.
+  // For "auto" and default mode, mark the trailing unread user messages (those after the last
+  // assistant message, or all of them if there is no assistant message yet).
+  if (replyMode !== "forced") {
+    // Find the index of the last assistant message in chatMessages
+    let lastAsstIdx = -1;
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].role === "assistant") { lastAsstIdx = i; break; }
+    }
+    // Collect unread user messages that appear after the last assistant reply
+    const unreadIds = chatMessages
+      .slice(lastAsstIdx + 1)
+      .filter(m => m.role === "user" && !m.read_by_cha_at && m.id)
+      .map(m => m.id);
+    if (unreadIds.length) {
+      unreadIds.forEach(id => markReadByCha(id));
+    } else {
+      // Fallback: mark all trailing unread user messages (e.g. conversation has no assistant yet)
+      markReadByCha();
+    }
+  }
+  setChatTitleState("typing");
   showTypingIndicator();
   setReplyingState(true);
   try {
@@ -3483,13 +3560,15 @@ async function triggerReply(replyMode) {
     removeTypingIndicator();
     addMessage(`回复失败：${error.message}`, "assistant");
   } finally {
-    setChatStatus("");
+    setChatTitleState("idle");
     setReplyingState(false);
     messageInput.focus();
     scrollChatToLatest();
     // Observe any new unread assistant rows and update badge
     syncChaUnreadCount();
     observeUnreadChaRows();
+    // If user is already on the Chat tab, mark any newly rendered assistant rows as read
+    markVisibleAssistantRowsRead();
   }
 }
 
@@ -3713,7 +3792,11 @@ messageList.addEventListener("click", (e) => {
 async function handleSubmit() {
   const text = messageInput.value.trim();
   if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading) return;
-  if (isReplying) return;
+  if (isReplying) {
+    setChatStatus("Cha 正在回复，等他说完再发～");
+    setTimeout(() => setChatStatus(""), 2000);
+    return;
+  }
 
   messageInput.value = "";
   autoResizeTextarea(messageInput);
@@ -3929,6 +4012,7 @@ function initV2Shell() {
         messageInput?.focus({ preventScroll: true });
         // Trigger visibility check for unread Cha messages
         observeUnreadChaRows();
+        markVisibleAssistantRowsRead();
       });
     }
   }
@@ -3938,6 +4022,23 @@ function initV2Shell() {
   document.querySelectorAll("[data-placeholder-route]").forEach((entry) => {
     entry.addEventListener("click", () => {
       const route = entry.dataset.placeholderRoute;
+
+      // ── Settings routes with real implementations ─────────────────────────
+      if (route === "/settings/memory") {
+        // Open legacy memory overlay (view / edit / add / delete)
+        toggleMemoryButton.click();
+        return;
+      }
+      if (route === "/settings/api") {
+        const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
+        showDialog({
+          title: "API 设置 · 模型档位",
+          body: `当前档位：${tierLabel}\n\n切换档位：聊天页底部的 Instant / General / Advanced 按钮（桌面），或聊天页 + 菜单上方的档位选择器（移动端）。`,
+          confirmLabel: "知道了",
+        });
+        return;
+      }
+
       showDialog({
         title: "入口已预留",
         body: `${route} 将在二级页接入，本轮先保留入口和路由命名。`,

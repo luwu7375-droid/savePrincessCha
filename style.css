@@ -377,10 +377,8 @@ body {
 }
 
 .chat-status {
-  font-size: 12px;
-  color: var(--text-muted);
-  flex: 1;
-  white-space: nowrap;
+  /* Repurposed to debug-only — not shown in normal UI */
+  display: none;
 }
 
 .top-avatar {
@@ -482,6 +480,7 @@ body {
   flex: 1;
   padding: 20px 16px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 8px;
