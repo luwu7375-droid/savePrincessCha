@@ -313,6 +313,8 @@
     _emojiPanelOpen = true;
     _emojiPanelMode = "browse";
 
+    // Enforce mutual exclusion via state machine
+    if (typeof window.setChatInputMode === "function") window.setChatInputMode("emoji");
     if (typeof window.closeV2PlusPanel === "function") window.closeV2PlusPanel();
 
     const panel = document.createElement("div");
@@ -398,6 +400,7 @@
     function enterSearchMode() {
       if (_emojiPanelMode === "search") return;
       _emojiPanelMode = "search";
+      if (typeof window.setChatInputMode === "function") window.setChatInputMode("emojiSearch");
       panel.classList.add("emoji-panel--search");
       tabBar.classList.add("emoji-tab-bar--hidden");
       browseArea.hidden = true;
@@ -411,6 +414,7 @@
       if (clearInput === undefined) clearInput = true;
       if (_emojiPanelMode === "browse") return;
       _emojiPanelMode = "browse";
+      if (typeof window.setChatInputMode === "function") window.setChatInputMode("emoji");
       panel.classList.remove("emoji-panel--search");
       tabBar.classList.remove("emoji-tab-bar--hidden");
       browseArea.hidden = false;
@@ -470,7 +474,16 @@
       setTimeout(() => panel.remove(), 350);
     }
     document.getElementById("emojiButton")?.classList.remove("active");
-    scrollChatToLatest();
+    // Reset state machine only if we own the current mode
+    if (typeof window._chatInputMode !== "undefined" &&
+        (window._chatInputMode === "emoji" || window._chatInputMode === "emojiSearch")) {
+      window._chatInputMode = "plain";
+    }
+    if (typeof window.maintainBottomAnchor === "function") {
+      window.maintainBottomAnchor("close-panel");
+    } else if (typeof scrollChatToLatest === "function") {
+      scrollChatToLatest();
+    }
   }
 
   // ── Namespace export ──────────────────────────────────────────────────────
