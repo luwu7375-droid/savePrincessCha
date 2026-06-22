@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>救公主</title>
-  <link rel="stylesheet" href="style.css?v=cloudflare-0086-game">
+  <link rel="stylesheet" href="style.css?v=cloudflare-0089">
+  <link rel="stylesheet" href="v2.css?v=2.1.0">
+  <link rel="stylesheet" href="v2-bubbles.css?v=1.0.0">
 </head>
 <body>
   <!-- 登录 overlay -->
@@ -39,18 +41,189 @@
       </div>
     </aside>
 
+    <section class="v2-page v2-page--home v2-active" data-page="home" aria-label="Home">
+      <div class="v2-scroll">
+        <div class="v2-top-status"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div>
+        <section class="home-hero">
+          <button type="button" class="home-cover editable-asset" data-upload-slot="home-cover" aria-label="更换首页背景图"><div class="heartbeat-line" aria-hidden="true"></div></button>
+          <div class="profile-row">
+            <div class="profile-person"><button type="button" class="profile-avatar editable-asset" data-upload-slot="home-cha-avatar" aria-label="更换 Cha 头像"></button><h2 data-edit-field="cha-name">Cha</h2><p data-edit-field="cha-id">ID：@Cha_orz</p><span data-edit-field="cha-bio">幸福是两双眼睛望向同一个明天</span></div>
+            <div class="days-counter"><span>在一起已经</span><strong id="togetherDays">520</strong><span>天</span><p>从 2022.07.15 开始</p></div>
+            <div class="profile-person"><button type="button" class="profile-avatar profile-avatar--kk editable-asset" data-upload-slot="home-kk-avatar" aria-label="更换 KK 头像"></button><h2 data-edit-field="kk-name">KK</h2><p data-edit-field="kk-id">ID：@Karke</p><span data-edit-field="kk-bio">慢慢来 反正明天还是夏天</span></div>
+          </div>
+        </section>
+        <section class="home-card-grid">
+          <button type="button" class="soft-card home-mini-card" data-placeholder-route="/home/mastodon"><div class="card-kicker">Cha 的毛象动态 <span>2h</span></div><p class="muted">@cha@mastodon.social</p><p>咖啡 + 雨天 + 一本书 = 完美的下午</p><div class="mastodon-thumb"></div><div class="card-actions"><span>♡ 36</span><span>↻ 4</span><span>…</span></div></button>
+          <button type="button" class="soft-card home-mini-card diary-card" data-placeholder-route="/home/diary"><div class="card-kicker">Cha 的日记 <span>最近更新 13:21</span></div><p>今天去了九溪，蚊虫好多，但风景很美，和你聊天很开心。</p><div class="diary-note">今天聊了 3 小时 17 分钟<span>翻开日记 →</span></div></button>
+        </section>
+        <section class="soft-card today-card" data-placeholder-route="/home/today-say"><div><h2>Cha 今天想对你说的一件事</h2><p class="muted">他在借你的耳机时，悄悄记下了这句话。</p><blockquote>“你说你最近压力有点大，要记得休息，不用一个人扛着。”</blockquote><button type="button" class="pill-btn">点我看看 →</button></div><button type="button" class="today-photo editable-asset" data-upload-slot="home-today-image" aria-label="更换今天想说配图"></button></section>
+        <section class="soft-card music-player" data-placeholder-route="/home/music-box"><div class="album-art"></div><div class="track-meta"><span>正在听的歌</span><strong>Snowfall</strong><p>Oneheart</p></div><button type="button" class="music-icon"><img src="assets/icons/home/prev.svg" alt=""></button><button type="button" class="music-play"><img src="assets/icons/home/pause.svg" alt=""></button><button type="button" class="music-icon"><img src="assets/icons/home/next.svg" alt=""></button><div class="music-progress"><span></span></div><button type="button" class="music-icon"><img src="assets/icons/home/favorite.svg" alt=""></button></section>
+      </div>
+    </section>
+
+    <section class="v2-page v2-page--couple" data-page="couple" aria-label="Couple Space">
+      <div class="v2-scroll">
+        <header class="page-header"><div class="header-avatar"></div><div><h1>我们的空间 ❤</h1><p>我们一起留下了什么？</p></div><div class="v2-top-status v2-top-status--inline"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div></header>
+        <button type="button" class="memory-vortex editable-asset" data-upload-slot="couple-memory-vortex" aria-label="Open Memory Vortex"><span class="memory-vortex-title">Memory Vortex</span><span class="memory-vortex-desc">Those fragments that keep floating back.</span><span class="memory-vortex-arrow" aria-hidden="true">›</span></button>
+        <div class="feature-grid feature-grid--two">
+          <button class="feature-card" data-placeholder-route="/couple/memory-hall"><span>记忆长廊</span><small>档案馆</small><img src="assets/illustrations/couple-space/memory-hall.jpg" alt=""></button>
+          <button class="feature-card" data-placeholder-route="/couple/timeline"><span>时间线</span><small>&nbsp;</small><img src="assets/illustrations/couple-space/timeline.jpg" alt=""></button>
+          <button class="feature-card" data-placeholder-route="/couple/moments"><span>朋友圈</span><small>&nbsp;</small><img src="assets/illustrations/couple-space/moments.jpg" alt=""></button>
+          <button class="feature-card" data-placeholder-route="/couple/favorites"><span>收藏夹</span><small>&nbsp;</small><img src="assets/illustrations/couple-space/photowall.jpg" alt=""></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="v2-page v2-page--playground" data-page="playground" aria-label="Playground">
+      <div class="v2-scroll">
+        <header class="page-header"><div class="header-avatar"></div><div><h1>Playground ✦</h1><p>一起玩耍</p></div><div class="v2-top-status v2-top-status--inline"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div></header>
+        <div class="feature-grid feature-grid--play">
+          <button class="feature-card" data-placeholder-route="/playground/stardew-valley"><img src="assets/illustrations/playground/stardew-valley.jpg" alt=""><span>星露谷</span></button>
+          <button class="feature-card" data-placeholder-route="/playground/wishlist"><img src="assets/illustrations/playground/wishlist.jpg" alt=""><span>愿望清单</span></button>
+          <button class="feature-card" data-placeholder-route="/playground/reading"><img src="assets/illustrations/playground/reading.jpg" alt=""><span>看书</span></button>
+          <button class="feature-card" data-placeholder-route="/playground/phone"><img src="assets/illustrations/playground/phone.jpg" alt=""><span>查手机</span></button>
+          <button class="feature-card" data-placeholder-route="/playground/forum"><img src="assets/illustrations/playground/forum.jpg" alt=""><span>论坛体</span></button>
+          <button class="feature-card" data-placeholder-route="/playground/mastodon"><img src="assets/illustrations/playground/mastodon.jpg" alt=""><span>发毛象</span></button>
+          <button class="feature-card" data-placeholder-route="/playground/movie"><img src="assets/illustrations/playground/movie.jpg" alt=""><span>看电影</span></button>
+          <button class="feature-card" data-placeholder-route="/playground/music"><img src="assets/illustrations/playground/music.jpg" alt=""><span>听歌</span></button>
+          <button class="feature-card" data-placeholder-route="/playground/dream"><img src="assets/illustrations/playground/dream.jpg" alt=""><span>做梦</span></button>
+        </div>
+        <div class="word-tree" aria-label="文字树"><span>雨滴</span><span>风穿过</span><span>在菌上写诗</span><span>树梢的睡眠</span><span>你说过</span><span>有海</span><span>有我们</span><span>很多个未完成的梦</span><span>晚安</span><span>星星</span><span>再出发</span></div>
+        <section class="daily-record-row"><article class="soft-card daily-record"><h2>Daily Record</h2><div class="record-input">写下今天的点滴吧...</div></article><button class="soft-card history-card" data-placeholder-route="/playground/history"><span>历史记录</span><small>共 48 篇日记</small><b>→</b></button></section>
+      </div>
+    </section>
+
+    <section class="v2-page v2-page--setting" data-page="setting" aria-label="Setting">
+      <!-- 设置主页面 -->
+      <div class="v2-scroll settings-main-view" id="settingsMainView">
+        <div class="v2-top-status"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div>
+        <header class="settings-title"><h1>设置</h1><p>管理与个性化</p></header>
+        <div class="settings-list">
+          <button class="setting-row" data-settings-subpage="api"><img src="assets/icons/settings/api.svg" alt=""><span><strong>API 设置</strong><small>管理 API 与连接</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="backup"><img src="assets/icons/settings/backup.svg" alt=""><span><strong>备份</strong><small>数据备份与恢复</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="beautify"><img src="assets/icons/settings/theme.svg" alt=""><span><strong>美化</strong><small>主题、壁纸与界面</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="prompt"><img src="assets/icons/settings/prompt.svg" alt=""><span><strong>Prompt 管理</strong><small>管理 Cha 的提示词</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="memory"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>记忆管理</strong><small>记忆数据管理与清理</small></span><b>›</b></button>
+          <button class="setting-row" id="worldBooksSettingRow"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>世界书</strong><small>Prompt 知识库与设定注入</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="emoji"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>表情包管理</strong><small>管理自定义表情包来源、常用和缓存</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="chat"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>聊天设置</strong><small>气泡、背景、输入栏与消息显示</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="debug"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>Debug 页面</strong><small>开发者调试与日志</small></span><b>›</b></button>
+        </div>
+      </div>
+
+      <!-- 设置二级子页面容器 -->
+      <div class="settings-subpage" id="settingsSubpage" hidden>
+        <header class="settings-subpage-header">
+          <button type="button" class="settings-back-btn" id="settingsBackBtn" aria-label="返回设置">←</button>
+          <div class="settings-subpage-title-block">
+            <h1 id="settingsSubpageTitle"></h1>
+            <p id="settingsSubpageSubtitle"></p>
+          </div>
+        </header>
+        <div class="settings-subpage-body" id="settingsSubpageBody"></div>
+      </div>
+    </section>
+
     <!-- 主聊天区 -->
-    <main class="chat-shell">
+    <main class="chat-shell v2-page v2-page--chat" data-page="chat" aria-label="Chat">
       <header class="top-bar">
         <button id="sidebarToggle" type="button" class="icon-btn" title="会话列表">☰</button>
-        <h1>救公主</h1>
+        <button id="chaAvatarButton" type="button" class="top-avatar avatar" title="Change Cha avatar" aria-label="Change Cha avatar"></button>
+        <h1>Cha</h1>
+        <button id="chatOnlineDot" type="button" class="online-dot-hitbox" title="View status" aria-label="View Cha status"><span class="online-dot" aria-hidden="true"></span></button>
         <span id="chatStatus" class="chat-status"></span>
-        <button id="moreButton" type="button" class="icon-btn" title="更多">⋯</button>
+        <button id="chatSearchButton" type="button" class="icon-btn" title="Search messages" aria-label="Search messages"><img src="assets/icons/others/search.svg" alt=""></button>
       </header>
+
+      <div id="chatSearchSheet" class="search-sheet hidden" aria-hidden="true">
+        <button id="chatSearchOverlay" type="button" class="search-sheet-overlay" aria-label="关闭搜索"></button>
+        <div class="search-sheet-content" role="dialog" aria-modal="true" aria-label="搜索聊天记录">
+          <div class="search-sheet-header">
+            <button id="chatSearchClose" type="button" class="search-back-btn" aria-label="返回聊天">返回</button>
+            <input id="chatSearchInput" class="search-input" type="search" placeholder="搜索聊天记录" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+            <button id="chatSearchClear" type="button" class="search-clear-btn" aria-label="清空搜索">清空</button>
+          </div>
+          <div id="chatSearchResults" class="search-results" role="list" aria-label="搜索结果">
+            <div class="search-empty">输入关键词搜索当前聊天记录</div>
+          </div>
+        </div>
+      </div>
 
       <div id="princessStatusBar" class="princess-status-bar hidden" aria-label="G 当前状态"></div>
 
       <section class="message-list" id="messageList" aria-label="消息列表"></section>
+
+      <section class="bubble-system-examples" hidden aria-label="Bubble system examples">
+        <div class="message user-message message-text">
+          <div class="bubble">
+            这是一条文本消息，可以包含 <a href="#">链接</a>
+          </div>
+          <div class="message-meta">
+            <span>14:42</span>
+            <span class="read-indicator"></span>
+          </div>
+        </div>
+
+        <div class="message cha-message message-image">
+          <div class="bubble">
+            <img src="assets/illustrations/couple-space/memory-hall.jpg" alt="Cha 分享的图片" loading="lazy">
+          </div>
+          <div class="message-meta">
+            <span>14:44</span>
+          </div>
+        </div>
+
+        <div class="message user-message message-voice">
+          <div class="bubble">
+            <button class="voice-play-btn" type="button" aria-label="播放语音">▶</button>
+            <div class="voice-waveform">
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+            </div>
+            <span class="voice-duration">2:30</span>
+          </div>
+          <div class="message-meta">
+            <span>14:45</span>
+          </div>
+        </div>
+
+        <div class="message cha-message message-reply">
+          <div class="bubble">
+            <div class="quoted-section">
+              <div class="quoted-author">你</div>
+              <div class="quoted-text">刚才说的那句话</div>
+            </div>
+            <div class="reply-text">对，我同意你的想法。</div>
+          </div>
+          <div class="message-meta">
+            <span>14:46</span>
+          </div>
+        </div>
+
+        <div class="message system-message message-system">
+          <div class="bubble">邀请你一起玩《真心话大冒险》。</div>
+        </div>
+
+        <div class="message cha-message message-card">
+          <div class="bubble">
+            <div class="card-content">
+              <div class="card-title">来玩游戏吧！</div>
+              <div class="card-description">真心话大冒险</div>
+            </div>
+            <div class="card-buttons">
+              <button class="card-button primary" type="button">接受</button>
+              <button class="card-button" type="button">拒绝</button>
+            </div>
+          </div>
+          <div class="message-meta">
+            <span>14:47</span>
+          </div>
+        </div>
+      </section>
 
       <div class="tier-bar" id="tierBar" role="group" aria-label="模型档位">
         <button type="button" class="tier-btn" data-tier="instant">Instant</button>
@@ -60,32 +233,6 @@
         <button type="button" id="tierDropdownBtn" class="tier-dropdown-btn" aria-label="选择模型档位">
           <span id="tierDropdownLabel">General</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="margin-left:4px;opacity:0.6"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-      </div>
-
-      <!-- CH10: Game entry strip (horizontal scroll, above input bar) -->
-      <div id="gameStrip" class="game-strip hidden" aria-label="游戏入口">
-        <button type="button" class="game-card" data-game="truth_or_dare" aria-label="真心话大冒险">
-          <span class="game-card-icon">🎲</span>
-          <span class="game-card-label">真心话大冒险</span>
-        </button>
-        <button type="button" class="game-card" data-game="turtle_soup" aria-label="海龟汤">
-          <span class="game-card-icon">🐢</span>
-          <span class="game-card-label">海龟汤</span>
-        </button>
-        <button type="button" class="game-card" data-game="wicked" aria-label="女巫的毒药">
-          <span class="game-card-icon">🍬</span>
-          <span class="game-card-label">女巫的毒药</span>
-        </button>
-        <button type="button" class="game-card game-card--placeholder" data-game="trpg" aria-label="跑团（敬请期待）">
-          <span class="game-card-icon">🎭</span>
-          <span class="game-card-label">跑团<br><small>敬请期待</small></span>
-        </button>
-      </div>
-
-      <!-- CH10: In-game banner (shows active game name + /over button) -->
-      <div id="gameBanner" class="game-banner hidden" role="status" aria-live="polite">
-        <span id="gameBannerLabel" class="game-banner-label"></span>
-        <button type="button" id="gameOverBtn" class="game-over-btn" title="结束游戏并返回主聊天">/over 结束</button>
       </div>
 
       <div id="imagePreviewBar" class="image-preview-bar hidden">
@@ -103,8 +250,7 @@
       <form class="input-bar" id="chatForm">
         <input type="file" id="imageInput" accept="image/*" style="display:none">
         <button id="imageAttachBtn" type="button" class="ghost-icon-btn" title="附图" aria-label="附图"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 12.5L5.5 9L8.5 12L11 9.5L16 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button id="gameStripToggle" type="button" class="ghost-icon-btn" title="游戏" aria-label="游戏入口" aria-expanded="false">🎲</button>
-        <textarea id="messageInput" rows="1" placeholder="继续说…" autocomplete="off"></textarea>
+        <textarea id="messageInput" rows="1" placeholder="继续说…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
         <!-- desktop secondary btns -->
         <button id="forceReplyBtn" type="button" class="ghost-icon-btn desktop-only-btn" title="让公主回复" aria-label="让公主回复">✦</button>
         <button id="autoReplyToggle" type="button" class="ghost-icon-btn desktop-only-btn" title="自动接话：关" aria-label="自动接话：关">◌</button>
@@ -113,28 +259,29 @@
         <button id="sendButton" type="submit" aria-label="发送"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V3M9 3L4 8M9 3L14 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </form>
     </main>
+
+    <nav class="bottom-tab-bar" aria-label="一级导航">
+      <button type="button" class="bottom-tab active" data-tab="home" aria-label="Home"><img src="assets/icons/nav/home.svg" alt=""></button>
+      <button type="button" class="bottom-tab" data-tab="couple" aria-label="Couple Space"><img src="assets/icons/nav/heart.svg" alt=""></button>
+      <button type="button" class="bottom-tab bottom-tab--cha" data-tab="chat" aria-label="Chat"><img src="assets/icons/nav/cha.svg" alt=""><span class="chat-unread-badge" id="chatUnreadBadge" aria-hidden="true" hidden></span></button>
+      <button type="button" class="bottom-tab" data-tab="playground" aria-label="Playground"><img src="assets/icons/nav/star.svg" alt=""></button>
+      <button type="button" class="bottom-tab" data-tab="setting" aria-label="Setting"><img src="assets/icons/nav/user.svg" alt=""></button>
+    </nav>
   </div>
 
-  <!-- 记忆管理（高级）弹窗 -->
+  <!-- 记忆管理弹窗（legacy，入口已迁移至记忆中心页面） -->
   <div id="memoryOverlay" class="overlay hidden">
     <div class="modal">
       <div class="modal-header">
-        <span>记忆管理（高级）</span>
+        <span>记忆管理</span>
         <button id="closeMemoryButton" type="button">✕</button>
       </div>
       <div id="memoryList"></div>
-      <div class="memory-add">
-        <select id="memoryDomainSelect" aria-label="Memory domain">
-          <option value="general">general</option>
-          <option value="persona">persona</option>
-          <option value="work">work</option>
-          <option value="writing">writing</option>
-          <option value="life">life</option>
-          <option value="relation">relation</option>
-        </select>
-        <textarea id="memoryInput" rows="1" placeholder="新增记忆..."></textarea>
-        <button id="addMemoryButton" type="button">添加</button>
-      </div>
+      <!-- 添加记忆 UI 已移除 -->
+      <!-- keep these hidden elements so JS refs don't throw -->
+      <select id="memoryDomainSelect" hidden aria-hidden="true"></select>
+      <textarea id="memoryInput" hidden aria-hidden="true"></textarea>
+      <button id="addMemoryButton" hidden type="button"></button>
     </div>
   </div>
 
@@ -299,8 +446,59 @@
     <div id="statusPanelRows"></div>
   </div>
 
-  <script src="public-config.js?v=cloudflare-0079" charset="utf-8"></script>
+  <!-- 世界书管理页 -->
+  <div id="worldBooksOverlay" class="overlay hidden" aria-hidden="true">
+    <div class="modal wb-modal" role="dialog" aria-modal="true" aria-labelledby="wbPageTitle">
+      <div class="wb-header">
+        <button id="wbBackBtn" type="button" class="wb-back-btn" aria-label="返回设置">←</button>
+        <div class="wb-header-text">
+          <h2 id="wbPageTitle">世界书</h2>
+          <p>上传后手动启用才会注入 Prompt</p>
+        </div>
+        <button id="wbCloseBtn" type="button" class="wb-close-btn" aria-label="关闭">×</button>
+      </div>
+
+      <div class="wb-body">
+        <!-- 上传区 -->
+        <div class="wb-upload-row">
+          <input type="file" id="wbFileInput" accept=".md,.txt,text/plain,text/markdown" style="display:none" aria-label="选择世界书文件">
+          <button id="wbUploadBtn" type="button" class="wb-upload-btn">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 2v8M7.5 2L4.5 5M7.5 2l3 3M2 11.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            上传新的世界书
+          </button>
+          <span id="wbTokenHint" class="wb-token-hint" aria-live="polite"></span>
+        </div>
+
+        <!-- 上传表单（inline，上传时出现） -->
+        <div id="wbUploadForm" class="wb-upload-form hidden">
+          <div class="wb-upload-form-inner">
+            <div class="wb-form-row">
+              <label for="wbNameInput">名称</label>
+              <input id="wbNameInput" type="text" maxlength="80" placeholder="世界书名称" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="wb-form-row">
+              <label for="wbAuthorInput">作者<span class="wb-optional">（可选）</span></label>
+              <input id="wbAuthorInput" type="text" maxlength="60" placeholder="作者名" autocomplete="off" spellcheck="false">
+            </div>
+            <div id="wbUploadPreview" class="wb-upload-preview"></div>
+            <div id="wbUploadError" class="wb-upload-error" aria-live="assertive"></div>
+            <div class="wb-form-actions">
+              <button id="wbCancelUpload" type="button" class="wb-btn wb-btn--ghost">取消</button>
+              <button id="wbConfirmUpload" type="button" class="wb-btn wb-btn--primary">确认上传</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 世界书列表 -->
+        <div id="wbList" class="wb-list" role="list" aria-label="世界书列表">
+          <div class="wb-loading" id="wbLoadingState" aria-live="polite">加载中…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="public-config.js?v=cloudflare-0089" charset="utf-8"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=cloudflare-0079" charset="utf-8"></script>
+  <script src="app.js?v=cloudflare-0089" charset="utf-8"></script>
 </body>
 </html>

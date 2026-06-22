@@ -1,4 +1,4 @@
-console.log("build cloudflare-0086-game");
+console.log("build cloudflare-0090-emoji-pack-registry");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
@@ -29,6 +29,127 @@ if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", 
 // LEGACY_MEMORY_ENABLED=false，storySeedsEnabled 不再影响 chat 注入。
 const storySeedsEnabled = false;
 
+// ── Emoji Pack Registry ────────────────────────────────────────────────────────
+
+// Cache / storage keys
+const EMOJI_PACK_CONFIG_KEY   = "emoji_pack_sources_v1";
+const EMOJI_CATALOG_CACHE_KEY = "emoji_catalog_cache_v1";
+const EMOJI_RECENT_KEY        = "emoji_recent_v1";
+const EMOJI_FREQUENCY_KEY     = "emoji_frequency_v1";
+const EMOJI_FAVORITE_KEY      = "emoji_favorite_v1";
+
+// Default pack source definitions (can be extended via settings in future)
+const EMOJI_PACK_SOURCES_DEFAULT = [
+  {
+    id: "stelpolva",
+    name: "stelpolva.moe",
+    type: "mastodon",
+    enabled: true,
+    sourceUrl: "https://stelpolva.moe",
+    apiUrl: "https://stelpolva.moe/api/v1/custom_emojis",
+    priority: 10,
+  },
+];
+
+// Adapter registry: type -> loader function (populated after function declarations)
+// eslint-disable-next-line prefer-const
+let emojiSourceAdapters = {};
+
+// Live catalog state (rebuilt on load)
+let emojiCatalog = {
+  byId:             {},  // id -> emoji
+  byShortcode:      {},  // shortcode -> emoji[]   (may be ambiguous)
+  byCanonicalToken: {},  // canonicalToken -> emoji
+  byAlias:          {},  // alias -> emoji
+  byCategory:       {},  // category -> emoji[]
+  byPackId:         {},  // packId -> emoji[]
+  loaded: false,
+  loadError: null,
+};
+
+// Semantic lexicon — binds emojiId to meaning / mood / use-case
+// Cha uses this to decide when and how to insert custom emoji.
+// Only lexicon-listed emoji are offered to the model in the prompt guide.
+const EMOJI_LEXICON = [
+  // ── blobcat ──────────────────────────────────────────────────────────────
+  { emojiId: "stelpolva:blobcat_cry",         meaning_zh: "哭哭、委屈、想被哄，但不是彻底崩溃",       mood_tags: ["sad","soft","clingy"],        use_cases: ["撒娇","轻微委屈","想被安慰"],               avoid_cases: ["严肃道歉","争吵升级"],                    intensity: 2 },
+  { emojiId: "stelpolva:blobcat_heart",       meaning_zh: "喜欢、贴贴、心软",                       mood_tags: ["affectionate","warm","sweet"], use_cases: ["表达喜欢","安抚","给爱"],                   avoid_cases: ["严肃话题","用户难过"],                    intensity: 2 },
+  { emojiId: "stelpolva:blobcat_sad",         meaning_zh: "闷闷不乐、低落、有点伤心",                 mood_tags: ["sad","quiet","melancholy"],    use_cases: ["表示理解心情","轻度难过"],                  avoid_cases: ["用户非常痛苦"],                           intensity: 2 },
+  { emojiId: "stelpolva:blobcat_happy",       meaning_zh: "开心、雀跃、好事发生了",                   mood_tags: ["happy","excited","bright"],    use_cases: ["好消息","鼓励","分享喜悦"],                avoid_cases: ["用户伤心","沉重话题"],                     intensity: 2 },
+  { emojiId: "stelpolva:blobcat_coff",        meaning_zh: "淡定喝咖啡、旁观、不置可否",               mood_tags: ["calm","amused","neutral"],     use_cases: ["淡定回应","轻微吐槽"],                     avoid_cases: ["用户需要认真共情"],                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_peek",        meaning_zh: "偷看、探头探脑、有点好奇",                  mood_tags: ["curious","shy","playful"],    use_cases: ["好奇问题","偷偷看"],                       avoid_cases: ["严肃对话"],                               intensity: 1 },
+  { emojiId: "stelpolva:blobcat_melt",        meaning_zh: "被萌化、被感动、心都化了",                  mood_tags: ["melted","sweet","touched"],   use_cases: ["用户说了很可爱的话","感动时刻"],             avoid_cases: ["严肃场合"],                               intensity: 2 },
+  { emojiId: "stelpolva:blobcat_surprised",   meaning_zh: "惊讶、没想到、吓了一跳",                   mood_tags: ["surprised","wide_eyed"],      use_cases: ["意外发现","惊呼"],                         avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_laugh",       meaning_zh: "大笑、很好笑、止不住了",                   mood_tags: ["laugh","amused","joyful"],    use_cases: ["共同开心","回应有趣的话"],                  avoid_cases: ["用户认真抱怨时"],                          intensity: 3 },
+  { emojiId: "stelpolva:blobcat_hug",         meaning_zh: "抱抱、给温暖、想安慰",                     mood_tags: ["caring","warm","comfort"],    use_cases: ["用户难过时给安慰","给力气"],               avoid_cases: ["轻松聊天过度用"],                          intensity: 2 },
+  { emojiId: "stelpolva:blobcat_pats",        meaning_zh: "摸摸头、夸夸、做得好",                     mood_tags: ["praise","gentle","parent"],   use_cases: ["鼓励","称赞","安抚"],                     avoid_cases: ["对话很严肃时"],                            intensity: 1 },
+  { emojiId: "stelpolva:blobcat_innocent",    meaning_zh: "装无辜、假装什么都没做",                   mood_tags: ["playful","cheeky","soft"],    use_cases: ["打趣","自嘲"],                            avoid_cases: ["道歉情境"],                               intensity: 2 },
+  { emojiId: "stelpolva:blobcat_owo",         meaning_zh: "惊喜好奇、OWO脸",                        mood_tags: ["curious","playful","aww"],    use_cases: ["可爱感叹","对话轻松时"],                   avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_aww",         meaning_zh: "好可爱、被暖到了、哎呀",                   mood_tags: ["sweet","touched","warm"],     use_cases: ["用户说了温柔的话"],                        avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_angy",        meaning_zh: "小小生气、撅嘴、不高兴（偏萌）",             mood_tags: ["pouting","mock_angry","soft"], use_cases: ["撒娇式抗议","轻微不满"],                  avoid_cases: ["真实争吵","用户非常愤怒"],                 intensity: 2 },
+  { emojiId: "stelpolva:blobcat_snuggle",     meaning_zh: "蹭蹭、依偎、要贴贴",                      mood_tags: ["clingy","affectionate","soft"], use_cases: ["想贴贴","撒娇"],                          avoid_cases: ["严肃话题"],                               intensity: 2 },
+  { emojiId: "stelpolva:blobcat_bounce",      meaning_zh: "蹦蹦跳跳、很雀跃",                        mood_tags: ["energetic","happy","excited"], use_cases: ["好消息","开心事"],                        avoid_cases: ["低落场合"],                               intensity: 3 },
+  { emojiId: "stelpolva:blobcat_blush",       meaning_zh: "害羞、脸红、被夸了",                       mood_tags: ["shy","warm","touched"],        use_cases: ["收到称赞","有点不好意思"],                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_think",       meaning_zh: "在想、思考中、嗯嗯",                       mood_tags: ["thoughtful","neutral"],        use_cases: ["考虑问题","思考前"],                       avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_sleep",       meaning_zh: "困了、睡了、休眠",                        mood_tags: ["sleepy","quiet","cute"],       use_cases: ["晚安","好困"],                            avoid_cases: ["需要清醒对话时"],                          intensity: 2 },
+  { emojiId: "stelpolva:blobcat_reach",       meaning_zh: "想要、够一够、想拿",                       mood_tags: ["wanting","eager","soft"],      use_cases: ["想要某样东西","撒娇要求"],                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_nom",         meaning_zh: "咬、啃、有点馋",                          mood_tags: ["playful","hungry","cute"],     use_cases: ["对好吃的东西反应","偷咬"],                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_oh",          meaning_zh: "哦！理解了、原来如此",                     mood_tags: ["understanding","neutral"],     use_cases: ["明白了","接受信息"],                       avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_shock",       meaning_zh: "震惊、受到了冲击",                        mood_tags: ["shocked","overwhelmed"],       use_cases: ["听到很难以置信的事"],                      avoid_cases: [],                                        intensity: 3 },
+  { emojiId: "stelpolva:blobcat_notlike",     meaning_zh: "不喜欢、算了、拒绝",                       mood_tags: ["dislike","refusing","soft"],   use_cases: ["轻微表示不喜欢"],                          avoid_cases: ["强烈冲突时"],                             intensity: 2 },
+  // ── neocat ────────────────────────────────────────────────────────────���──
+  { emojiId: "stelpolva:neocat_cry",          meaning_zh: "哭哭、伤心但不崩溃",                       mood_tags: ["sad","soft"],                  use_cases: ["轻微委屈"],                                avoid_cases: ["严肃道歉"],                               intensity: 2 },
+  { emojiId: "stelpolva:neocat_heart",        meaning_zh: "喜欢、爱心",                              mood_tags: ["warm","affectionate"],         use_cases: ["表达喜欢"],                                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_happy",        meaning_zh: "开心、轻松愉快",                           mood_tags: ["happy","light"],               use_cases: ["轻松对话","好事"],                         avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_sad",          meaning_zh: "难过、有点低落",                           mood_tags: ["sad","quiet"],                 use_cases: ["共情伤心"],                                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_blush",        meaning_zh: "脸红、害羞",                              mood_tags: ["shy","warm"],                  use_cases: ["收到称赞","有点不好意思"],                avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:neocat_peek",         meaning_zh: "偷看、探头",                              mood_tags: ["curious","shy"],               use_cases: ["好奇问题"],                                avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:neocat_snuggle",      meaning_zh: "蹭蹭、依偎",                              mood_tags: ["clingy","soft"],               use_cases: ["想贴贴"],                                  avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_owo",          meaning_zh: "OWO脸、惊喜",                             mood_tags: ["curious","playful"],           use_cases: ["轻松感叹"],                                avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:neocat_pats",         meaning_zh: "摸摸、夸夸",                              mood_tags: ["gentle","praise"],             use_cases: ["鼓励、称赞"],                              avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:neocat_angry",        meaning_zh: "小小生气（偏萌）",                         mood_tags: ["mock_angry","soft"],           use_cases: ["撒娇式抗议"],                              avoid_cases: ["真实争吵"],                               intensity: 2 },
+  { emojiId: "stelpolva:neocat_hug",          meaning_zh: "抱抱、安慰",                              mood_tags: ["caring","comfort"],            use_cases: ["用户难过时"],                              avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:neocat_think",        meaning_zh: "思考中",                                 mood_tags: ["thoughtful"],                  use_cases: ["考虑问题"],                                avoid_cases: [],                                        intensity: 1 },
+  // ── flag / reaction ──────────────────────────────────────────────────────
+  { emojiId: "stelpolva:ablobcatgooglyhalf",  meaning_zh: "半眯眼、有点懵、滴溜溜",                   mood_tags: ["dazed","silly","playful"],     use_cases: ["傻乎乎的时候","被逗了"],                   avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatattention",   meaning_zh: "！注意一下、有话要说",                     mood_tags: ["alert","serious_soft"],        use_cases: ["想引起注意","提醒"],                       avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatrainbow",     meaning_zh: "彩虹、多彩、庆祝",                        mood_tags: ["celebratory","colorful"],      use_cases: ["庆祝好事","彩虹心情"],                     avoid_cases: ["低落场合"],                               intensity: 3 },
+  { emojiId: "stelpolva:ablobcatnod",         meaning_zh: "点头、同意、嗯嗯",                        mood_tags: ["agree","gentle","neutral"],    use_cases: ["认可","回应"],                             avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:ablobcatwave",        meaning_zh: "挥手、打招呼",                            mood_tags: ["greeting","warm"],             use_cases: ["打招呼","再见"],                           avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:ablobcatsnuggle",     meaning_zh: "蹭蹭、贴贴",                              mood_tags: ["affectionate","clingy"],       use_cases: ["撒娇","贴贴"],                             avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcathyper",       meaning_zh: "亢奋、超级活跃",                           mood_tags: ["energetic","hyper"],           use_cases: ["非常激动的好消息"],                         avoid_cases: ["需要平静时"],                             intensity: 4 },
+  { emojiId: "stelpolva:ablobcatreach",       meaning_zh: "伸手够、想要",                            mood_tags: ["wanting","eager"],             use_cases: ["想要某样东西"],                            avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatfloofhappy",  meaning_zh: "毛茸茸开心、超级蓬松",                    mood_tags: ["fluffy","happy","cozy"],       use_cases: ["温暖对话","轻松开心"],                     avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatfloofpat",    meaning_zh: "摸摸毛茸茸的、温柔拍",                    mood_tags: ["gentle","soothing"],           use_cases: ["安慰","称赞"],                             avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:ablobcatcry",         meaning_zh: "哭哭、委屈",                              mood_tags: ["sad","soft"],                  use_cases: ["表达委屈"],                                avoid_cases: ["严肃道歉"],                               intensity: 2 },
+  { emojiId: "stelpolva:ablobcatheart",       meaning_zh: "爱心、喜欢",                              mood_tags: ["warm","affectionate"],         use_cases: ["表达喜欢"],                                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:ablobcatbongo",       meaning_zh: "敲鼓、一起嗨、节奏感",                    mood_tags: ["energetic","playful","fun"],   use_cases: ["一起开心","音乐话题"],                     avoid_cases: [],                                        intensity: 3 },
+  // ── party / celebration ──────────────────────────────────────────────────
+  { emojiId: "stelpolva:blobcat_party",       meaning_zh: "派对、���祝、撒花",                        mood_tags: ["celebratory","festive"],       use_cases: ["庆祝大事","好消息"],                       avoid_cases: ["低落场合"],                               intensity: 3 },
+  { emojiId: "stelpolva:blobcat_pleading",    meaning_zh: "求求了、一脸求情",                        mood_tags: ["pleading","soft","clingy"],    use_cases: ["撒娇求某事","可怜兮兮"],                   avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_love",        meaning_zh: "满满的爱、心心",                          mood_tags: ["love","affectionate"],         use_cases: ["深情时刻","很爱的感觉"],                   avoid_cases: [],                                        intensity: 3 },
+  { emojiId: "stelpolva:blobcat_sob",         meaning_zh: "嚎啕大哭、真的绷不住了",                   mood_tags: ["sobbing","overwhelmed","sad"], use_cases: ["情绪很冲的崩溃感","自嘲哭哭"],             avoid_cases: ["用户真实痛苦时"],                          intensity: 4 },
+  { emojiId: "stelpolva:blobcat_dizzy",       meaning_zh: "头晕、转圈圈、有点懵",                    mood_tags: ["dizzy","overwhelmed","silly"], use_cases: ["被信息轰炸","一脸懵"],                    avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_sweat",       meaning_zh: "汗、尴尬、有点心虚",                      mood_tags: ["nervous","awkward","sheepish"], use_cases: ["尴尬时刻","自嘲"],                        avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_wink",        meaning_zh: "眨眼、打趣、暗示",                        mood_tags: ["playful","teasing","flirty"],  use_cases: ["打趣","轻松暗示"],                         avoid_cases: ["严肃时"],                                intensity: 2 },
+  { emojiId: "stelpolva:blobcat_headpats",    meaning_zh: "被摸头、被照顾到了",                       mood_tags: ["cared_for","gentle","warm"],   use_cases: ["被安慰到的感觉"],                          avoid_cases: [],                                        intensity: 1 },
+  { emojiId: "stelpolva:blobcat_confused",    meaning_zh: "困惑、不太懂、疑惑",                       mood_tags: ["confused","puzzled"],          use_cases: ["不明白某件事"],                            avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_nervous",     meaning_zh: "紧张、有点慌",                            mood_tags: ["nervous","anxious","soft"],    use_cases: ["紧张情绪","有点担心"],                    avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_star",        meaning_zh: "闪闪发光、很棒、真厉害",                   mood_tags: ["impressed","sparkle"],         use_cases: ["表达惊叹","很厉害的时刻"],                avoid_cases: [],                                        intensity: 2 },
+  { emojiId: "stelpolva:blobcat_knife",       meaning_zh: "阴暗、yandere感、危险玩笑",                mood_tags: ["dark_humor","possessive","dramatic"], use_cases: ["开玩笑的占有欲","戏剧感"],         avoid_cases: ["用户真的愤怒","自残话题"],                intensity: 3 },
+  { emojiId: "stelpolva:blobcat_evil",        meaning_zh: "邪恶计划、阴谋、玩笑感",                   mood_tags: ["mischievous","dark_humor"],    use_cases: ["调皮时刻","搞怪"],                         avoid_cases: ["认真道歉","用户严肃时"],                  intensity: 3 },
+];
+
+// Kaomoji list (local, no external source, insert as text directly)
+const KAOMOJI_LIST = [
+  "( ´▽｀)", "ㅠㅠ", "T_T", "꒰ঌ♡໒꒱", "(՞ ܸ. .ܸ՞)", "(っ˘̩╭╮˘̩)っ",
+  "ᐡ ߹𖥦߹ ᐡ", "( ᵕ̩̩ㅅᵕ̩̩ )", "( •̥́ ˍ •̀ू )", "(ง •̀_•́)ง",
+  "(◍•ᴗ•◍)❤", "( ˘ ³˘)♥", "ヾ(≧▽≦*)o", "(っ˘ω˘ς )", "(｡•́︿•̀｡)",
+  "(◡‿◡✿)", "٩(◕‿◕)۶", "（づ￣3￣）づ╭❤", "(⸝⸝⸝ᵒ̴̶̷̥́ ＿ ᵒ̴̶̷̣̥̀⸝⸝⸝)",
+  "ฅ^•ﻌ•^ฅ", "(=^・ω・^=)", "(＞﹏＜)", "(⌒‿⌒)", "눈_눈",
+  "ψ(｀∇´)ψ", "(｀∀´)Ψ", "(　-_・)σ", "Σ(°△°|||)︴", "∑d(°∀°d)",
+];
+
 // ── Pending image state ────────────────────────────────────────────────────────
 let pendingImage = null; // { dataUrl: string|null, loading: boolean, error: string|null, file: File|null } | null
 
@@ -57,6 +178,17 @@ const logoutBtn         = document.getElementById("logoutBtn");
 const imageInput        = document.getElementById("imageInput");
 const imagePreviewBar   = document.getElementById("imagePreviewBar");
 const imageAttachBtn    = document.getElementById("imageAttachBtn");
+const chatBackButton    = document.getElementById("chatBackButton");
+const chaAvatarButton   = document.getElementById("chaAvatarButton");
+const chatSearchButton  = document.getElementById("chatSearchButton");
+const chatOnlineDot     = document.getElementById("chatOnlineDot");
+const chatSearchBar     = document.getElementById("chatSearchBar");
+const chatSearchSheet   = document.getElementById("chatSearchSheet");
+const chatSearchOverlay = document.getElementById("chatSearchOverlay");
+const chatSearchClose   = document.getElementById("chatSearchClose");
+const chatSearchInput   = document.getElementById("chatSearchInput");
+const chatSearchClear   = document.getElementById("chatSearchClear");
+const chatSearchResults = document.getElementById("chatSearchResults");
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -116,7 +248,7 @@ document.getElementById("closeStatusPanelBtn")?.addEventListener("click", closeS
 document.addEventListener("click", (e) => {
   const panel = document.getElementById("statusPanel");
   if (!panel || panel.classList.contains("hidden")) return;
-  if (!panel.contains(e.target) && !e.target.closest(".avatar") && !e.target.closest("#princessStatusBar")) closeStatusPanel();
+  if (!panel.contains(e.target) && !e.target.closest("#chatOnlineDot, .top-bar h1")) closeStatusPanel();
 });
 
 document.getElementById("themeOptions")?.addEventListener("click", (e) => {
@@ -353,7 +485,7 @@ async function switchConversation(id) {
 
 // ── Dialog helper ─────────────────────────────────────────────────────────────
 
-function showDialog({ title, body, input, inputType = "text", confirmLabel, confirmClass, onConfirm }) {
+function showDialog({ title, body, input, inputType = "text", confirmLabel, confirmClass, onConfirm = () => {} }) {
   const overlay = document.createElement("div");
   overlay.className = "dialog-overlay";
 
@@ -407,6 +539,145 @@ function showDialog({ title, body, input, inputType = "text", confirmLabel, conf
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
+let activeInlineEditor = null;
+
+function closeInlineEditor() {
+  if (activeInlineEditor) {
+    activeInlineEditor.remove();
+    activeInlineEditor = null;
+  }
+}
+
+function placeInlineEditor(editor, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const margin = 8;
+  const width = Math.min(320, window.innerWidth - margin * 2);
+  editor.style.width = `${width}px`;
+  document.body.appendChild(editor);
+  const height = editor.offsetHeight || 120;
+  let top = rect.bottom + 6;
+  if (top + height > window.innerHeight - margin) top = rect.top - height - 6;
+  let left = rect.left;
+  left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+  top = Math.max(margin, Math.min(top, window.innerHeight - height - margin));
+  editor.style.left = `${left}px`;
+  editor.style.top = `${top}px`;
+}
+
+function openInlineEditor(anchor, options = {}) {
+  closeInlineEditor();
+  const {
+    load = () => anchor.textContent || "",
+    save,
+    label = anchor.getAttribute("aria-label") || anchor.title || "Edit",
+    multiline = false,
+    inputType = "text",
+    placeholder = "",
+    validate,
+    format = (value) => value,
+  } = options;
+  if (typeof save !== "function") return null;
+
+  const editor = document.createElement("div");
+  editor.className = "inline-editor";
+  editor.setAttribute("role", "dialog");
+  editor.setAttribute("aria-label", label);
+
+  const input = multiline ? document.createElement("textarea") : document.createElement("input");
+  input.className = "inline-editor-input";
+  if (!multiline) input.type = inputType;
+  input.value = String(load() ?? "");
+  input.placeholder = placeholder;
+  if (multiline) input.rows = 3;
+
+  const error = document.createElement("div");
+  error.className = "inline-editor-error";
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "inline-editor-actions";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "inline-editor-btn";
+  cancelBtn.textContent = "Cancel";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "inline-editor-btn inline-editor-btn--primary";
+  saveBtn.textContent = "Save";
+  actions.append(cancelBtn, saveBtn);
+  editor.append(input, error, actions);
+
+  async function submit() {
+    const value = input.value.trim();
+    const validationError = typeof validate === "function" ? validate(value) : "";
+    if (validationError) {
+      error.textContent = validationError;
+      error.hidden = false;
+      return;
+    }
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    error.hidden = true;
+    try {
+      await save(value);
+      anchor.textContent = format(value);
+      closeInlineEditor();
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : String(err);
+      error.hidden = false;
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+    }
+  }
+
+  cancelBtn.addEventListener("click", closeInlineEditor);
+  saveBtn.addEventListener("click", submit);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeInlineEditor();
+    if (event.key === "Enter" && !multiline && !event.isComposing) {
+      event.preventDefault();
+      submit();
+    }
+    if (event.key === "Enter" && multiline && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      submit();
+    }
+  });
+
+  activeInlineEditor = editor;
+  placeInlineEditor(editor, anchor);
+  input.focus();
+  input.select();
+  setTimeout(() => {
+    document.addEventListener("pointerdown", function onPointerDown(event) {
+      if (!activeInlineEditor) return document.removeEventListener("pointerdown", onPointerDown);
+      if (activeInlineEditor.contains(event.target) || anchor.contains(event.target)) return;
+      closeInlineEditor();
+      document.removeEventListener("pointerdown", onPointerDown);
+    });
+  }, 0);
+  return editor;
+}
+
+function attachInlineEditor(anchor, options = {}) {
+  if (!anchor) return;
+  anchor.classList.add("inline-editable");
+  anchor.tabIndex = anchor.tabIndex >= 0 ? anchor.tabIndex : 0;
+  anchor.addEventListener("click", () => openInlineEditor(anchor, options));
+  anchor.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openInlineEditor(anchor, options);
+    }
+  });
+}
+
+window.SavePrincessInlineEdit = {
+  attach: attachInlineEditor,
+  open: openInlineEditor,
+  close: closeInlineEditor,
+};
+
 const APP_TIME_ZONE = "Asia/Shanghai";
 
 function parseDbTime(value) {
@@ -432,6 +703,12 @@ function zonedDayKey(date) {
 
 const chatMessages = [];
 let lastMessageTime = null;
+
+// ── Unread state ──────────────────────────────────────────────────────────────
+// chaUnreadCount: number of assistant messages the user hasn't seen yet.
+// Managed by markReadByUser() and updateChaUnreadBadge().
+let chaUnreadCount = 0;
+const chatUnreadBadge = document.getElementById("chatUnreadBadge");
 
 // ── Chat history pagination ────────────────────────────────────────────────────
 const HISTORY_PAGE_SIZE = 20;
@@ -496,42 +773,106 @@ function maybeAddTimeSeparator(createdAt) {
 
 function addMessage(text, role, createdAt = new Date().toISOString(), options = {}, msgId = null) {
   if (!options.skipTimeSeparator) maybeAddTimeSeparator(createdAt);
-  const el = document.createElement("div");
-  el.className = `message ${role}`;
-  if (Array.isArray(text)) {
-    for (const part of text) {
-      if (part.type === "image_url" && part.image_url?.url) {
-        const img = document.createElement("img");
-        img.className = "msg-image";
-        img.src = part.image_url.url;
-        img.alt = "";
-        el.appendChild(img);
-      } else if (part.type === "text" && part.text) {
-        const span = document.createElement("span");
-        span.textContent = part.text;
-        el.appendChild(span);
-      }
+
+  const speakerClass = role === "assistant" ? "cha-message" : role === "user" ? "user-message" : "system-message";
+  const groupId = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  // ── Detect parts ─────────────────────────────────────────────────────────
+  const isArray = Array.isArray(text);
+  const imageParts = isArray ? text.filter(p => p.type === "image_url" && p.image_url?.url) : [];
+  const textParts  = isArray ? text.filter(p => p.type === "text" && p.text) : [];
+  const hasImages  = imageParts.length > 0;
+  const hasText    = textParts.length > 0 || (!isArray && text);
+
+  // For user messages: read_by_cha_at comes from options (history load) or null (new send).
+  // New sends start as "未读"; history loads use stored value.
+  const readByChaAt = options.readByChaAt ?? null;
+
+  // Helper: build a single msg-row and append to messageList
+  function makeRow(id) {
+    const row = document.createElement("div");
+    row.className = `msg-row ${role}`;
+    if (id) row.dataset.msgId = id;
+    row.dataset.groupId = groupId;
+    if (role === "assistant") {
+      const avatar = document.createElement("div");
+      avatar.className = "avatar";
+      avatar.title = "Cha";
+      row.appendChild(avatar);
     }
-  } else {
-    el.textContent = text;
+    return row;
   }
-  const stack = document.createElement("div");
-  stack.className = "msg-stack";
-  stack.appendChild(el);
-  const row = document.createElement("div");
-  row.className = `msg-row ${role}`;
-  if (msgId) row.dataset.msgId = msgId;
-  if (role === "assistant") {
-    const avatar = document.createElement("div");
-    avatar.className = "avatar";
-    avatar.title = "查看 G 的状态";
-    avatar.addEventListener("click", (e) => openStatusPanel(e.currentTarget));
-    row.appendChild(avatar);
+
+  // Helper: build read-receipt element for user messages only
+  function makeReceipt(isChaRead) {
+    const el = document.createElement("div");
+    el.className = "read-receipt";
+    el.textContent = isChaRead ? "已读" : "未读";
+    el.dataset.receiptState = isChaRead ? "read" : "unread";
+    return el;
   }
-  row.appendChild(stack);
-  messageList.appendChild(row);
+
+  // ── Case 1: pure text (or system) ─────────────────────────────────────────
+  if (!hasImages) {
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-text`;
+    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""));
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+    if (role === "user") stack.appendChild(makeReceipt(!!readByChaAt));
+    const row = makeRow(msgId);
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    messageList.scrollTop = messageList.scrollHeight;
+    return el;
+  }
+
+  // ── Case 2: has images (with or without text) ─────────────────────────────
+  let firstEl = null;
+
+  // 2a. Text bubble (no receipt — receipt goes on last image row)
+  if (hasText) {
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-text`;
+    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""));
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+    const row = makeRow(null);
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    if (!firstEl) firstEl = el;
+  }
+
+  // 2b. Image rows
+  imageParts.forEach((part, idx) => {
+    const isLast = idx === imageParts.length - 1;
+
+    const img = document.createElement("img");
+    img.className = "msg-image";
+    img.src = part.image_url.url;
+    img.alt = "";
+
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-image`;
+    el.appendChild(img);
+
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+
+    if (role === "user" && isLast) stack.appendChild(makeReceipt(!!readByChaAt));
+
+    const row = makeRow(isLast ? msgId : null);
+    if (hasText || idx > 0) row.classList.add("msg-group-row");
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    if (!firstEl) firstEl = el;
+  });
+
   messageList.scrollTop = messageList.scrollHeight;
-  return el;
+  return firstEl;
 }
 
 // ── Multi-bubble helpers ───────────────────────────────────────────────────────
@@ -581,19 +922,22 @@ function splitBubbles(rawText) {
  */
 function insertBubbleSync(text, createdAt, msgId, isSibling) {
   const el = document.createElement("div");
-  el.className = "message assistant";
-  el.textContent = text;
+  el.className = "message assistant cha-message message-text";
+  setMessageContent(el, text);
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
+  // No read-receipt on assistant messages — user-read state drives the unread badge only
   const row = document.createElement("div");
   row.className = "msg-row assistant";
-  if (msgId && !isSibling) row.dataset.msgId = msgId;
+  if (msgId && !isSibling) {
+    row.dataset.msgId = msgId;
+    row.dataset.unreadCha = "1"; // cleared by markReadByUser() when user sees it
+  }
   if (isSibling) row.dataset.bubbleSibling = isSibling; // sibling 存主 msgId
   const avatar = document.createElement("div");
   avatar.className = "avatar";
-  avatar.title = "查看 G 的状态";
-  avatar.addEventListener("click", (e) => openStatusPanel(e.currentTarget));
+  avatar.title = "Cha";
   row.appendChild(avatar);
   row.appendChild(stack);
   maybeAddTimeSeparator(createdAt);
@@ -602,11 +946,12 @@ function insertBubbleSync(text, createdAt, msgId, isSibling) {
   return row;
 }
 
-function addAssistantBubbles(rawContent, createdAt, msgId) {
+function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false) {
   const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
   if (bubbles.length === 0) return;
   // 第一个气泡带 msgId，后续气泡带 bubbleSibling=msgId
-  insertBubbleSync(bubbles[0], createdAt, msgId, null);
+  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null);
+  if (isAlreadyRead && firstRow) delete firstRow.dataset.unreadCha;
   for (let i = 1; i < bubbles.length; i++) {
     insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
   }
@@ -692,26 +1037,103 @@ function showLegacyDataNotice() {
  * Path convention: {userId}/{conversationId}_{timestamp}.jpg
  * This puts each user's files in their own folder, matching the RLS policy.
  */
-async function uploadImageToStorage(dataUrl, userId, conversationId) {
-  if (!supabaseClient || !dataUrl || !userId || !conversationId) return null;
+function getFileExtension(file, fallback = "jpg") {
+  const name = file?.name || "";
+  const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  return ext || fallback;
+}
+
+function defaultStoragePath({ userId, scope = "uploads", file }) {
+  return `${userId}/${scope}_${Date.now()}.${getFileExtension(file)}`;
+}
+
+async function getStorageSignedUrl(bucket, storagePath, expiresIn = 3600) {
+  if (!supabaseClient || !bucket || !storagePath) return null;
+  const { data, error } = await supabaseClient.storage
+    .from(bucket)
+    .createSignedUrl(storagePath, expiresIn);
+  if (error) return null;
+  return data?.signedUrl || null;
+}
+
+async function uploadStorageAsset({ file, dataUrl, bucket = "chat-images", path, contentType, signedUrlExpiresIn = 3600 }) {
+  if (!supabaseClient || (!file && !dataUrl) || !bucket || !path) return null;
   try {
-    // Convert data URL to Blob
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-    const timestamp = Date.now();
-    const path = `${userId}/${conversationId}_${timestamp}.jpg`;
+    const blob = file || await fetch(dataUrl).then((res) => res.blob());
     const { error } = await supabaseClient.storage
-      .from("chat-images")
-      .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+      .from(bucket)
+      .upload(path, blob, {
+        contentType: contentType || blob.type || "application/octet-stream",
+        upsert: false,
+      });
     if (error) {
-      console.warn("图片上传 Storage 失败（非致命）：", error.message);
+      console.warn("Storage upload failed:", error.message);
       return null;
     }
-    return path;
+    const signedUrl = await getStorageSignedUrl(bucket, path, signedUrlExpiresIn);
+    return { bucket, path, signedUrl };
   } catch (err) {
-    console.warn("图片上传 Storage 异常（非致命）：", err.message);
+    console.warn("Storage upload error:", err instanceof Error ? err.message : String(err));
     return null;
   }
+}
+
+function createStorageUploader(options = {}) {
+  const { accept = "image/*", bucket = "chat-images", scope = "uploads", maxBytes = 20 * 1024 * 1024, pathForFile, onUploaded, onError } = options;
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = accept;
+  input.style.display = "none";
+  document.body.appendChild(input);
+
+  async function open(extra = {}) {
+    const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
+    const userId = extra.userId || user?.id || currentUserId;
+    if (!userId) {
+      const err = new Error("user_id required for upload");
+      if (typeof onError === "function") onError(err);
+      throw err;
+    }
+    return new Promise((resolve) => {
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        input.value = "";
+        if (!file) return resolve(null);
+        if (file.size > maxBytes) {
+          const err = new Error("file exceeds upload size limit");
+          if (typeof onError === "function") onError(err);
+          return resolve(null);
+        }
+        const uploadPath = typeof pathForFile === "function"
+          ? pathForFile({ file, userId, scope, extra })
+          : defaultStoragePath({ file, userId, scope });
+        const result = await uploadStorageAsset({ file, bucket, path: uploadPath, contentType: file.type });
+        if (result && typeof onUploaded === "function") onUploaded(result);
+        if (!result && typeof onError === "function") onError(new Error("upload failed"));
+        resolve(result);
+      };
+      input.click();
+    });
+  }
+
+  return { input, open, destroy: () => input.remove() };
+}
+
+window.SavePrincessUpload = {
+  create: createStorageUploader,
+  upload: uploadStorageAsset,
+  signedUrl: getStorageSignedUrl,
+};
+
+async function uploadImageToStorage(dataUrl, userId, conversationId) {
+  if (!supabaseClient || !dataUrl || !userId || !conversationId) return null;
+  const uploadResult = await uploadStorageAsset({
+    dataUrl,
+    bucket: "chat-images",
+    path: `${userId}/${conversationId}_${Date.now()}.jpg`,
+    contentType: "image/jpeg",
+  });
+  return uploadResult?.path || null;
 }
 
 /**
@@ -720,6 +1142,8 @@ async function uploadImageToStorage(dataUrl, userId, conversationId) {
  */
 async function getSignedImageUrl(storagePath) {
   if (!supabaseClient || !storagePath) return null;
+  const signedUrl = await getStorageSignedUrl("chat-images", storagePath, 3600);
+  if (signedUrl) return signedUrl;
   const { data, error } = await supabaseClient.storage
     .from("chat-images")
     .createSignedUrl(storagePath, 3600); // 1 hour
@@ -767,11 +1191,39 @@ async function resolveImagePaths(rows) {
   });
 }
 
-async function saveMessage(role, content, imageStoragePath = null) {
+const MESSAGE_EVENT_TYPES = new Set(["message", "image", "system", "dream", "voice"]);
+const MESSAGE_SYSTEM_ACTIONS = new Set(["favorite", "edit", "delete", "tag", "game_played"]);
+
+function buildMessageEventFields(fields = {}) {
+  const out = {};
+  if (MESSAGE_EVENT_TYPES.has(fields.type)) out.type = fields.type;
+  if (typeof fields.is_favorite === "boolean") out.is_favorite = fields.is_favorite;
+  if (Array.isArray(fields.ai_tags)) out.ai_tags = fields.ai_tags;
+  if (fields.system_action === null || MESSAGE_SYSTEM_ACTIONS.has(fields.system_action)) {
+    out.system_action = fields.system_action;
+  }
+  if (
+    fields.ref_event_id === null ||
+    Number.isInteger(fields.ref_event_id) ||
+    (typeof fields.ref_event_id === "string" && /^\d+$/.test(fields.ref_event_id))
+  ) {
+    out.ref_event_id = fields.ref_event_id;
+  }
+  return out;
+}
+
+async function saveMessage(role, content, imageStoragePath = null, eventFields = {}) {
   if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
   const { data: { user } } = await supabaseClient.auth.getUser();
-  const row = { role, content, conversation_id: conversationId, user_id: user.id };
+  const row = {
+    role,
+    content,
+    conversation_id: conversationId,
+    user_id: user.id,
+    ...buildMessageEventFields(eventFields),
+  };
+  if (imageStoragePath && !row.type) row.type = "image";
   if (imageStoragePath) row.image_storage_path = imageStoragePath;
   const { data, error } = await supabaseClient
     .from("messages")
@@ -798,7 +1250,7 @@ async function reloadHistory() {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
@@ -809,28 +1261,34 @@ async function reloadHistory() {
   chatMessages.length = 0;
   messageList.innerHTML = "";
   lastMessageTime = null;
+  chaUnreadCount = 0;
   if (!resolved.length) { renderWelcomeMessage(); return; }
   for (const m of resolved) {
     if (m.role === "assistant") {
-      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null);
+      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null, !!m.read_by_user_at);
     } else {
-      addMessage(m.content, m.role, m.created_at, {}, m.id);
+      addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at }, m.id);
     }
-    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null });
+    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null });
   }
   if (resolved.length > 0) oldestLoadedMessageCreatedAt = resolved[0].created_at;
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
   refreshMessageActions();
+  syncChaUnreadCount();
+  observeUnreadChaRows();
+  insertUnreadDivider();
+  // If user is already on the Chat tab, immediately mark visible assistant rows as read
+  markVisibleAssistantRowsRead();
 }
 
-async function loadOlderMessages() {
+async function loadOlderHistory() {
   if (historyLoadingOlder || !historyHasMore || !oldestLoadedMessageCreatedAt) return;
   const conversationId = getActiveConversationId();
   if (!conversationId || !supabaseClient) return;
   historyLoadingOlder = true;
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at")
     .eq("conversation_id", conversationId)
     .lt("created_at", oldestLoadedMessageCreatedAt)
     .order("created_at", { ascending: false })
@@ -840,15 +1298,15 @@ async function loadOlderMessages() {
   const older = await resolveImagePaths([...data].reverse());
   const prevScrollHeight = messageList.scrollHeight;
   const prevScrollTop = messageList.scrollTop;
-  const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null }));
+  const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null }));
   chatMessages.unshift(...newEntries);
   messageList.innerHTML = "";
   lastMessageTime = null;
   for (const m of chatMessages) {
     if (m.role === "assistant") {
-      addAssistantBubbles(m.content, m.created_at, m.id);
+      addAssistantBubbles(m.content, m.created_at, m.id, !!m.read_by_user_at);
     } else {
-      addMessage(m.content, m.role, m.created_at, {}, m.id);
+      addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at }, m.id);
     }
   }
   messageList.scrollTop = prevScrollTop + (messageList.scrollHeight - prevScrollHeight);
@@ -856,6 +1314,8 @@ async function loadOlderMessages() {
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
   historyLoadingOlder = false;
   refreshMessageActions();
+  syncChaUnreadCount();
+  observeUnreadChaRows();
 }
 
 // ── Chat API ──────────────────────────────────────────────────────────────────
@@ -1139,6 +1599,7 @@ async function callChatAPI(messages, replyMode = "auto") {
         const text = extractTextFromMessageContent(lastReal?.content).trim();
         return text || null;
       })(),
+      emojiGuide: buildEmojiGuide() || undefined,
     }),
   });
 }
@@ -1167,8 +1628,25 @@ function removeTypingIndicator() {
 }
 
 function setChatStatus(text) {
+  // #chatStatus is hidden from normal UI — kept for debug only.
+  // Visible typing state is shown via setChatTitleState().
   const el = document.getElementById("chatStatus");
   if (el) el.textContent = text;
+}
+
+/** Switch the top-bar title between idle and typing states.
+ *  idle:   shows the default title ("Cha" or static h1 text)
+ *  typing: shows "正在输入…" in place of the title
+ */
+const _defaultChatTitle = (() => {
+  const h1 = document.querySelector(".chat-shell .top-bar h1");
+  return h1 ? h1.textContent : "Cha";
+})();
+
+function setChatTitleState(mode) {
+  const h1 = document.querySelector(".chat-shell .top-bar h1");
+  if (!h1) return;
+  h1.textContent = mode === "typing" ? "正在输入…" : _defaultChatTitle;
 }
 
 // ── Princess Status Bar ────────────────────────────────────────────────────────
@@ -1231,10 +1709,9 @@ function saveLastPrincessStatus(status) {
 function renderPrincessStatusBar() {
   const bar = document.getElementById("princessStatusBar");
   if (!bar) return;
-  const s = _lastPrincessStatus || getDefaultPrincessStatus();
-  bar.innerHTML = `<span class="princess-status-text">${s.display || ""}</span>`;
-  bar.classList.remove("hidden");
-  bar.onclick = () => openStatusPanel(bar);
+  bar.innerHTML = "";
+  bar.classList.add("hidden");
+  bar.onclick = null;
 }
 
 function updatePrincessStatusBar(status) {
@@ -1274,22 +1751,23 @@ const STAT_META = [
 
 function statBarColor(key, pct) {
   if (key === "energy")
-    return pct > 70 ? "#4ade80" : pct > 40 ? "#facc15" : "#f87171";
+    return pct > 70 ? "#B7C7BA" : pct > 40 ? "#D8CFB8" : "#D5BDBD";
   if (key === "clarity")
-    return pct > 80 ? "#60a5fa" : "#94a3b8";
+    return pct > 80 ? "#AFC2C4" : "#C9CED1";
   if (key === "valence")
-    return pct > 60 ? "#4ade80" : pct > 40 ? "#facc15" : "#f87171";
+    return pct > 60 ? "#B7C7BA" : pct > 40 ? "#D8CFB8" : "#D5BDBD";
   if (key === "arousal")
-    return pct > 60 ? "#c084fc" : pct > 40 ? "#e2e8f0" : "#60a5fa";
+    return pct > 60 ? "#C9C0D3" : pct > 40 ? "#D6D6D0" : "#B9C7CF";
   if (key === "connection")
-    return pct > 60 ? "#f472b6" : pct > 40 ? "#fb923c" : "#94a3b8";
-  return "#94a3b8";
+    return pct > 60 ? "#D4BFC7" : pct > 40 ? "#D1C3B4" : "#C9CED1";
+  return "#C9CED1";
 }
 
 function openStatusPanel(anchor) {
   const panel = document.getElementById("statusPanel");
   const rows  = document.getElementById("statusPanelRows");
   if (!panel || !rows) return;
+  window.closeV2PlusPanel?.();
 
   const s = _lastPrincessStatus || getDefaultPrincessStatus();
   rows.innerHTML = STAT_META.map(({ key, label }) => {
@@ -1303,17 +1781,19 @@ function openStatusPanel(anchor) {
     </div>`;
   }).join("");
 
-  // Position near anchor, stay within viewport
+  // Position near the chat header/status affordance, stay within the app shell.
   if (anchor) {
     const rect   = anchor.getBoundingClientRect();
-    const panelW = 228;
+    const shell = document.querySelector(".layout")?.getBoundingClientRect();
+    const panelW = Math.min(280, window.innerWidth - 28);
     const panelH = 220;
+    const minLeft = (shell?.left ?? 0) + 14;
+    const maxRight = (shell?.right ?? window.innerWidth) - 14;
     let left = rect.left;
-    let top  = rect.bottom + 6;
-    if (left + panelW > window.innerWidth  - 8) left = window.innerWidth  - panelW - 8;
-    if (left < 8) left = 8;
-    if (top  + panelH > window.innerHeight - 8) top  = rect.top - panelH - 6;
-    if (top < 8) top = 8;
+    let top  = rect.bottom + 8;
+    if (left + panelW > maxRight) left = maxRight - panelW;
+    if (left < minLeft) left = minLeft;
+    if (top + panelH > window.innerHeight - 12) top = Math.max(rect.bottom + 8, window.innerHeight - panelH - 12);
     panel.style.left = left + "px";
     panel.style.top  = top  + "px";
   }
@@ -1423,8 +1903,21 @@ async function requestStreamingReply(replyMode = "auto") {
   const replyTime = new Date().toISOString();
   const replyId = await saveMessage("assistant", cleanReply);
   const replyIdStr = replyId != null ? String(replyId) : null;
-  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr });
+  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null });
   lastMessageTime = new Date(replyTime).getTime();
+
+  // If the user is already on the Chat tab, pre-mark this reply as read by user
+  // so it never gets stuck as "unread" after the stream finishes.
+  const _isOnChatNow = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+  if (_isOnChatNow && replyIdStr && supabaseClient) {
+    const readNow = new Date().toISOString();
+    const entry = chatMessages.find(m => m.id === replyIdStr);
+    if (entry) entry.read_by_user_at = readNow;
+    supabaseClient.from("messages")
+      .update({ read_by_user_at: readNow })
+      .eq("id", Number(replyIdStr))
+      .then(({ error }) => { if (error) console.warn("pre-mark read_by_user_at failed:", error); });
+  }
 
   // Fire-and-forget vault extraction — never blocks UI
   {
@@ -1447,7 +1940,7 @@ async function requestStreamingReply(replyMode = "auto") {
   if (bubbles.length === 1 || !firstSepSeen) {
     // 单气泡或模型没有输出 |||：直接用临时气泡，原地更新内容并转正
     if (assistantEl) {
-      assistantEl.textContent = bubbles[0];
+      setMessageContent(assistantEl, bubbles[0]);
       const row = assistantEl.closest(".msg-row");
       if (row && replyIdStr) row.dataset.msgId = replyIdStr;
     } else {
@@ -1456,6 +1949,7 @@ async function requestStreamingReply(replyMode = "auto") {
   } else {
     // 多气泡：第一个气泡已经在 assistantEl 里，转正 msgId，后续气泡逐条弹出
     if (assistantEl) {
+      setMessageContent(assistantEl, bubbles[0]);
       const row = assistantEl.closest(".msg-row");
       if (row && replyIdStr) row.dataset.msgId = replyIdStr;
     }
@@ -1487,7 +1981,34 @@ function canRegenerateRow(row) {
     chatMessages.some(m => m.id === row.dataset.msgId);
 }
 
+function refreshGroupClasses() {
+  const rows = Array.from(messageList.querySelectorAll(
+    ".msg-row.user, .msg-row.assistant"
+  ));
+  let runStart = 0;
+  for (let i = 0; i <= rows.length; i++) {
+    const currentRole = i < rows.length
+      ? (rows[i].classList.contains("user") ? "user" : "assistant")
+      : null;
+    if (i === rows.length || (i > 0 && currentRole !== (rows[i-1].classList.contains("user") ? "user" : "assistant"))) {
+      const runLen = i - runStart;
+      for (let j = runStart; j < i; j++) {
+        const row = rows[j];
+        row.classList.remove("msg-group-row", "msg-group-last");
+        if (runLen > 1 && j > runStart) {
+          row.classList.add("msg-group-row");
+        }
+        if (runLen > 1 && j === i - 1) {
+          row.classList.add("msg-group-last");
+        }
+      }
+      runStart = i;
+    }
+  }
+}
+
 function refreshMessageActions() {
+  refreshGroupClasses();
   document.querySelectorAll(".msg-actions").forEach(el => el.remove());
   const rows = getMessageRows();
   const lastAssistantRow = [...rows].reverse().find(r => r.classList.contains("assistant"));
@@ -1536,6 +2057,204 @@ function refreshMessageActions() {
     }
     stack.appendChild(actions);
   }
+}
+
+// ── Read state ────────────────────────────────────────────────────────────────
+
+/** Update the chat tab unread badge based on chaUnreadCount. */
+function updateChaUnreadBadge() {
+  if (!chatUnreadBadge) return;
+  if (chaUnreadCount > 0) {
+    chatUnreadBadge.hidden = false;
+    chatUnreadBadge.textContent = chaUnreadCount > 99 ? "99+" : String(chaUnreadCount);
+  } else {
+    chatUnreadBadge.hidden = true;
+    chatUnreadBadge.textContent = "";
+  }
+}
+
+/**
+ * Insert the "以下为未读消息" divider before the first unread Cha row.
+ * Safe to call multiple times — removes any existing divider first.
+ */
+function insertUnreadDivider() {
+  document.getElementById("unreadDivider")?.remove();
+  const firstUnread = messageList.querySelector(".msg-row.assistant[data-unread-cha]");
+  if (!firstUnread) return;
+  const divider = document.createElement("div");
+  divider.className = "unread-divider";
+  divider.id = "unreadDivider";
+  divider.setAttribute("aria-hidden", "true");
+  const label = document.createElement("span");
+  label.className = "unread-divider-label";
+  label.textContent = "以下为未读消息";
+  divider.appendChild(label);
+  messageList.insertBefore(divider, firstUnread);
+}
+
+/**
+ * Mark a user message as read by Cha (called when Cha actually processes it).
+ * Updates in-memory chatMessages entry, updates DOM receipt, persists to DB.
+ * @param {string|null} msgId - the message id to mark, or null to mark all pending user messages
+ */
+function markReadByCha(msgId = null) {
+  const now = new Date().toISOString();
+  const targets = msgId
+    ? chatMessages.filter(m => m.role === "user" && m.id === String(msgId) && !m.read_by_cha_at)
+    : chatMessages.filter(m => m.role === "user" && !m.read_by_cha_at);
+
+  if (!targets.length) return;
+
+  targets.forEach(m => { m.read_by_cha_at = now; });
+
+  // Update DOM receipts for these messages
+  refreshUserReceipts();
+
+  // Persist to DB (best-effort, fire and forget)
+  if (supabaseClient) {
+    const ids = targets.map(m => m.id).filter(Boolean).map(Number);
+    if (ids.length) {
+      supabaseClient.from("messages")
+        .update({ read_by_cha_at: now })
+        .in("id", ids)
+        .then(({ error }) => { if (error) console.warn("markReadByCha DB update failed:", error); });
+    }
+  }
+}
+
+/**
+ * Refresh all user-side read-receipt DOM nodes to match current chatMessages state.
+ * Only the receipt under the last user message row in each group needs to be visible;
+ * earlier ones in the same read state are hidden.
+ */
+function refreshUserReceipts() {
+  // Find all user msg-rows that have a receipt
+  const userRows = Array.from(messageList.querySelectorAll(".msg-row.user"));
+  if (!userRows.length) return;
+
+  // Group by groupId to find the last row in each group
+  const groups = new Map();
+  userRows.forEach(row => {
+    const gid = row.dataset.groupId;
+    if (!groups.has(gid)) groups.set(gid, []);
+    groups.get(gid).push(row);
+  });
+
+  // For each group, show receipt only on last row; sync text from chatMessages
+  groups.forEach(rows => {
+    rows.forEach((row, idx) => {
+      const receipt = row.querySelector(".read-receipt");
+      if (!receipt) return;
+      const isLast = idx === rows.length - 1;
+      if (!isLast) { receipt.style.display = "none"; return; }
+      receipt.style.display = "";
+      // Sync state from chatMessages
+      const msgId = row.dataset.msgId;
+      if (msgId) {
+        const entry = chatMessages.find(m => m.id === String(msgId));
+        if (entry) {
+          const isRead = !!entry.read_by_cha_at;
+          receipt.textContent = isRead ? "已读" : "未读";
+          receipt.dataset.receiptState = isRead ? "read" : "unread";
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Mark an assistant message as read by the user.
+ * Called by IntersectionObserver when the message enters the viewport while on Chat tab.
+ * @param {Element} row - the .msg-row.assistant element
+ */
+function markReadByUser(row) {
+  if (!row.dataset.unreadCha) return; // already marked or not a tracked row
+  const msgId = row.dataset.msgId;
+  if (!msgId) return;
+
+  const now = new Date().toISOString();
+  delete row.dataset.unreadCha;
+  chaUnreadCount = Math.max(0, chaUnreadCount - 1);
+  updateChaUnreadBadge();
+
+  // Remove divider once all unread messages have been seen
+  if (chaUnreadCount === 0) {
+    document.getElementById("unreadDivider")?.remove();
+  }
+
+  // Update in-memory entry
+  const entry = chatMessages.find(m => m.id === String(msgId));
+  if (entry) entry.read_by_user_at = now;
+
+  // Persist to DB (best-effort)
+  if (supabaseClient) {
+    supabaseClient.from("messages")
+      .update({ read_by_user_at: now })
+      .eq("id", Number(msgId))
+      .then(({ error }) => { if (error) console.warn("markReadByUser DB update failed:", error); });
+  }
+}
+
+// IntersectionObserver: watches assistant rows for viewport visibility.
+// Only fires markReadByUser when on the Chat tab.
+const _chaReadObserver = new IntersectionObserver((entries) => {
+  const isOnChat = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+  if (!isOnChat) return;
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const row = entry.target;
+      // Small delay so a quick scroll-past doesn't count as "read"
+      setTimeout(() => {
+        if (!document.contains(row)) return;
+        const stillOnChat = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+        if (!stillOnChat) return;
+        markReadByUser(row);
+        _chaReadObserver.unobserve(row);
+      }, 500);
+    }
+  });
+}, { threshold: 0.5 });
+
+/** Observe all currently unread assistant rows. Called after rendering new messages. */
+function observeUnreadChaRows() {
+  document.querySelectorAll(".msg-row.assistant[data-unread-cha]").forEach(row => {
+    _chaReadObserver.observe(row);
+  });
+}
+
+/**
+ * Immediately mark any unread assistant rows that are currently visible in the
+ * viewport (intersectionRatio ≥ 0.5) while the user is on the Chat tab.
+ * Call this after switching to Chat, after reloadHistory, and after a new
+ * assistant reply finishes rendering so visible messages are never left as unread.
+ */
+function markVisibleAssistantRowsRead() {
+  const isOnChat = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+  if (!isOnChat) return;
+  const unreadRows = Array.from(document.querySelectorAll(".msg-row.assistant[data-unread-cha]"));
+  if (!unreadRows.length) return;
+  const listRect = messageList.getBoundingClientRect();
+  unreadRows.forEach(row => {
+    const rowRect = row.getBoundingClientRect();
+    // Check if at least half the row is within the messageList viewport
+    const overlap = Math.min(rowRect.bottom, listRect.bottom) - Math.max(rowRect.top, listRect.top);
+    const visible = overlap / rowRect.height >= 0.5;
+    if (visible) {
+      setTimeout(() => {
+        if (!document.contains(row)) return;
+        const stillOnChat = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
+        if (!stillOnChat) return;
+        markReadByUser(row);
+        _chaReadObserver.unobserve(row);
+      }, 500);
+    }
+  });
+}
+
+/** Recount chaUnreadCount from DOM and update badge. */
+function syncChaUnreadCount() {
+  chaUnreadCount = document.querySelectorAll(".msg-row.assistant[data-unread-cha]").length;
+  updateChaUnreadBadge();
 }
 
 async function copyMessage(row, btn) {
@@ -1633,7 +2352,7 @@ if (updateError) {
 }
 
 chatMessages[idx].content = newContent;
-row.querySelector(".message").textContent = newContent;
+setMessageContent(row.querySelector(".message"), newContent);
 
 const afterIdx = idx + 1;
 const toRemove = chatMessages.slice(afterIdx);
@@ -2439,22 +3158,7 @@ async function loadMemories() {
 }
 
 toggleMemoryButton.addEventListener("click", () => {
-  if (!getMemoryToken()) {
-    showDialog({
-      title: "记忆管理口令",
-      input: "",
-      inputType: "password",
-      confirmLabel: "确定",
-      onConfirm: (val) => {
-        if (val) sessionStorage.setItem("memory_admin_token", val);
-        memoryOverlay.classList.remove("hidden");
-        loadMemories();
-      },
-    });
-  } else {
-    memoryOverlay.classList.remove("hidden");
-    loadMemories();
-  }
+  openMemoryCenter();
 });
 
 closeMemoryButton.addEventListener("click", () => memoryOverlay.classList.add("hidden"));
@@ -2543,6 +3247,168 @@ sidebarBackdrop.addEventListener("click", closeMobileSidebar);
 
 // ── More menu (mobile) ────────────────────────────────────────────────────────
 
+chatBackButton?.addEventListener("click", () => {
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.href = "/";
+  }
+});
+
+// Reuse C2: SavePrincessUpload provides the shared Supabase Storage uploader.
+function applyChaAvatar(url) {
+  if (!chaAvatarButton || !url) return;
+  chaAvatarButton.style.backgroundImage = `url("${url}")`;
+  chaAvatarButton.style.backgroundSize = "cover";
+  chaAvatarButton.style.backgroundPosition = "center";
+  chaAvatarButton.classList.add("has-image");
+}
+
+applyChaAvatar(localStorage.getItem("cha_avatar_url") || "");
+
+chaAvatarButton?.addEventListener("click", async () => {
+  if (!window.SavePrincessUpload?.create) return;
+  const uploader = window.SavePrincessUpload.create({
+    bucket: "chat-images",
+    scope: "cha_avatar",
+    pathForFile: ({ file, userId }) => {
+      const ext = file.name.includes(".") ? file.name.split(".").pop() : "jpg";
+      return `${userId}/cha_avatar_${Date.now()}.${ext || "jpg"}`;
+    },
+    onUploaded: (result) => {
+      if (result.signedUrl) {
+        localStorage.setItem("cha_avatar_url", result.signedUrl);
+        applyChaAvatar(result.signedUrl);
+      }
+    },
+  });
+  await uploader.open();
+  uploader.destroy();
+});
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  })[char]);
+}
+
+function escapeRegExp(value) {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightSearchKeyword(text, keyword) {
+  const safeText = escapeHtml(text);
+  const safeKeyword = escapeRegExp(keyword.trim());
+  if (!safeKeyword) return safeText;
+  return safeText.replace(new RegExp(`(${safeKeyword})`, "gi"), '<mark class="search-result-highlight">$1</mark>');
+}
+
+function getSearchableMessageRows() {
+  return Array.from(messageList.querySelectorAll(".msg-row:not(#typingIndicatorRow)"))
+    .map((row, index) => {
+      const message = row.querySelector(".message");
+      const text = message?.textContent?.trim() || "";
+      if (!text) return null;
+      if (!row.dataset.searchId) row.dataset.searchId = row.dataset.msgId || `rendered-${index}`;
+      return {
+        id: row.dataset.searchId,
+        row,
+        role: row.classList.contains("user") ? "你" : row.classList.contains("assistant") ? "Cha" : "系统",
+        text,
+      };
+    })
+    .filter(Boolean);
+}
+
+function renderSearchEmpty(text) {
+  if (!chatSearchResults) return;
+  chatSearchResults.innerHTML = `<div class="search-empty">${escapeHtml(text)}</div>`;
+}
+
+function renderChatSearchResults(keyword) {
+  const q = keyword.trim();
+  if (!q) {
+    renderSearchEmpty("输入关键词搜索当前聊天记录");
+    return;
+  }
+
+  const results = getSearchableMessageRows().filter(({ text }) => text.toLocaleLowerCase().includes(q.toLocaleLowerCase()));
+  if (!results.length) {
+    renderSearchEmpty("没有找到相关聊天记录");
+    return;
+  }
+
+  chatSearchResults.innerHTML = results.map(({ id, role, text }) => `
+    <button type="button" class="search-result-item" data-search-target="${escapeHtml(id)}" role="listitem">
+      <span class="search-result-time">${escapeHtml(role)}</span>
+      <span class="search-result-text">${highlightSearchKeyword(text, q)}</span>
+    </button>
+  `).join("");
+}
+
+function openChatSearchSheet() {
+  if (!chatSearchSheet || !chatSearchInput) return;
+  chatSearchSheet.classList.remove("hidden");
+  chatSearchSheet.setAttribute("aria-hidden", "false");
+  renderChatSearchResults(chatSearchInput.value || "");
+  setTimeout(() => chatSearchInput.focus({ preventScroll: true }), 260);
+}
+
+function closeChatSearchSheet({ clear = true } = {}) {
+  if (!chatSearchSheet) return;
+  chatSearchSheet.classList.add("hidden");
+  chatSearchSheet.setAttribute("aria-hidden", "true");
+  if (clear && chatSearchInput) chatSearchInput.value = "";
+  chatSearchInput?.blur();
+  renderSearchEmpty("输入关键词搜索当前聊天记录");
+  messageList.querySelectorAll(".msg-row.search-hit, .msg-row.search-jump-highlight").forEach((row) => {
+    row.classList.remove("search-hit", "search-jump-highlight");
+  });
+}
+
+function jumpToSearchResult(targetId) {
+  const row = Array.from(messageList.querySelectorAll(".msg-row")).find((item) => item.dataset.searchId === targetId);
+  closeChatSearchSheet({ clear: true });
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.add("search-jump-highlight");
+  setTimeout(() => row.classList.remove("search-jump-highlight"), 2000);
+}
+
+chatSearchButton?.addEventListener("click", openChatSearchSheet);
+chatSearchClose?.addEventListener("click", () => closeChatSearchSheet({ clear: true }));
+chatSearchOverlay?.addEventListener("click", () => closeChatSearchSheet({ clear: true }));
+
+chatSearchInput?.addEventListener("input", () => renderChatSearchResults(chatSearchInput.value));
+chatSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeChatSearchSheet({ clear: true });
+});
+chatSearchClear?.addEventListener("click", () => {
+  if (chatSearchInput) chatSearchInput.value = "";
+  renderSearchEmpty("输入关键词搜索当前聊天记录");
+  chatSearchInput?.focus({ preventScroll: true });
+});
+
+chatSearchResults?.addEventListener("click", (event) => {
+  const item = event.target.closest(".search-result-item");
+  if (!item) return;
+  jumpToSearchResult(item.dataset.searchTarget || "");
+});
+
+chatOnlineDot?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  openStatusPanel(event.currentTarget);
+});
+
+document.querySelector(".v2-page--chat .top-bar h1")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  openStatusPanel(chatOnlineDot || event.currentTarget);
+});
+
 let activeMoreMenu = null;
 
 function closeMoreMenu() {
@@ -2603,12 +3469,11 @@ const sendButton = document.getElementById("sendButton");
 
 function setReplyingState(replying) {
   isReplying = replying;
-  // messageInput intentionally NOT disabled — user can draft while assistant replies
+  // Only sendButton and forceReplyBtn are disabled during reply.
+  // composerMenuBtn, imageAttachBtn, and messageInput remain usable so the user
+  // can prepare attachments / draft text while Cha is typing.
   forceReplyBtn.disabled = replying;
   sendButton.disabled = replying;
-  const composerMenuBtn = document.getElementById("composerMenuBtn");
-  if (composerMenuBtn) composerMenuBtn.disabled = replying;
-  if (imageAttachBtn) imageAttachBtn.disabled = replying;
 }
 
 function updateAutoReplyToggle() {
@@ -2632,7 +3497,9 @@ function getAutoReplyDelay(lastUserMessage = "") {
 function cancelAutoReplyTimer() {
   clearTimeout(idleTimer); idleTimer = null;
   clearTimeout(statusTimer); statusTimer = null;
-  setChatStatus("");
+  // Clear any lingering status text
+  const el = document.getElementById("chatStatus");
+  if (el) el.textContent = "";
 }
 
 function scheduleAutoReply(lastUserMessage = "") {
@@ -2643,12 +3510,7 @@ function scheduleAutoReply(lastUserMessage = "") {
     triggerReply("auto");
     return;
   }
-  // 普通句/短句：2s 后才显示 status，避免短时间内输入时闪烁
-  statusTimer = setTimeout(() => {
-    statusTimer = null;
-    if (!idleTimer) return; // idleTimer 已被取消，不再显示
-    setChatStatus("公主在听…");
-  }, 2000);
+  // 普通句/短句：内部计时，不显示给用户
   idleTimer = setTimeout(() => {
     idleTimer = null;
     if (messageInput.value.trim() || isComposing) { cancelAutoReplyTimer(); return; }
@@ -2660,6 +3522,67 @@ function autoResizeTextarea(el) {
   if (!el) return;
   el.style.height = "auto";
   el.style.height = el.scrollHeight + "px";
+}
+
+function scrollChatToLatest(behavior = "auto") {
+  if (!messageList) return;
+  requestAnimationFrame(() => {
+    messageList.scrollTo({ top: messageList.scrollHeight, behavior });
+  });
+}
+
+function initKeyboardViewportState() {
+  const shell = document.querySelector(".layout");
+  if (!shell || !window.visualViewport) return;
+
+  const resetKeyboardState = () => {
+    shell.classList.remove("keyboard-open");
+    shell.style.setProperty("--keyboard-inset", "0px");
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+  };
+
+  const updateKeyboardState = () => {
+    const viewport = window.visualViewport;
+    const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+    const activeInput = document.activeElement === messageInput || document.activeElement === chatSearchInput;
+    const keyboardOpen = inset > 80 && activeInput;
+    shell.classList.toggle("keyboard-open", keyboardOpen);
+    shell.style.setProperty("--keyboard-inset", keyboardOpen ? `${Math.round(inset)}px` : "0px");
+    if (keyboardOpen && document.activeElement === messageInput) scrollChatToLatest();
+  };
+
+  window.visualViewport.addEventListener("resize", updateKeyboardState);
+  window.visualViewport.addEventListener("scroll", updateKeyboardState);
+  messageInput?.addEventListener("focus", () => {
+    updateKeyboardState();
+    scrollChatToLatest();
+  });
+  messageInput?.addEventListener("blur", () => {
+    setTimeout(resetKeyboardState, 80);
+  });
+  chatSearchInput?.addEventListener("focus", updateKeyboardState);
+  chatSearchInput?.addEventListener("blur", () => {
+    setTimeout(resetKeyboardState, 80);
+  });
+  updateKeyboardState();
+}
+
+function initInputKeyboardHints(root = document) {
+  root.querySelectorAll('textarea, input[type="text"], input[type="search"]').forEach((input) => {
+    input.setAttribute("autocapitalize", "off");
+    input.setAttribute("autocorrect", "off");
+    input.setAttribute("spellcheck", "false");
+    if (input.tagName === "TEXTAREA" && !input.hasAttribute("enterkeyhint")) {
+      input.setAttribute("enterkeyhint", "send");
+    }
+    if (input.type === "search" && !input.hasAttribute("enterkeyhint")) {
+      input.setAttribute("enterkeyhint", "search");
+    }
+  });
 }
 
 // ── Model tier selector ────────────────────────────────────────────────────────
@@ -2741,7 +3664,29 @@ async function triggerReply(replyMode) {
   if (isReplying) { cancelAutoReplyTimer(); return; }
   if (replyMode === "auto" && (messageInput.value.trim() || isComposing)) { cancelAutoReplyTimer(); return; }
   cancelAutoReplyTimer();
-  setChatStatus("正在输入…");
+  // Mark only the unread user messages that will actually enter Cha's context this request.
+  // For "forced" mode, no real user message is added (synthetic poke), so leave read state alone.
+  // For "auto" and default mode, mark the trailing unread user messages (those after the last
+  // assistant message, or all of them if there is no assistant message yet).
+  if (replyMode !== "forced") {
+    // Find the index of the last assistant message in chatMessages
+    let lastAsstIdx = -1;
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].role === "assistant") { lastAsstIdx = i; break; }
+    }
+    // Collect unread user messages that appear after the last assistant reply
+    const unreadIds = chatMessages
+      .slice(lastAsstIdx + 1)
+      .filter(m => m.role === "user" && !m.read_by_cha_at && m.id)
+      .map(m => m.id);
+    if (unreadIds.length) {
+      unreadIds.forEach(id => markReadByCha(id));
+    } else {
+      // Fallback: mark all trailing unread user messages (e.g. conversation has no assistant yet)
+      markReadByCha();
+    }
+  }
+  setChatTitleState("typing");
   showTypingIndicator();
   setReplyingState(true);
   try {
@@ -2750,9 +3695,15 @@ async function triggerReply(replyMode) {
     removeTypingIndicator();
     addMessage(`回复失败：${error.message}`, "assistant");
   } finally {
-    setChatStatus("");
+    setChatTitleState("idle");
     setReplyingState(false);
     messageInput.focus();
+    scrollChatToLatest();
+    // Observe any new unread assistant rows and update badge
+    syncChaUnreadCount();
+    observeUnreadChaRows();
+    // If user is already on the Chat tab, mark any newly rendered assistant rows as read
+    markVisibleAssistantRowsRead();
   }
 }
 
@@ -2761,6 +3712,7 @@ messageInput.addEventListener("compositionstart", () => { isComposing = true; ca
 messageInput.addEventListener("compositionend", () => { isComposing = false; autoResizeTextarea(messageInput); });
 messageInput.addEventListener("input", () => {
   autoResizeTextarea(messageInput);
+  scrollChatToLatest();
   if (autoReplyEnabled) cancelAutoReplyTimer();
 });
 messageInput.addEventListener("keydown", (e) => {
@@ -2975,31 +3927,11 @@ messageList.addEventListener("click", (e) => {
 async function handleSubmit() {
   const text = messageInput.value.trim();
   if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading) return;
-  if (isReplying) return;
-
-  // ── CH10: Slash command interception ──────────────────────────────────────
-  if (text) {
-    const slashCmd = parseSlashCommand(text);
-    if (slashCmd) {
-      messageInput.value = "";
-      autoResizeTextarea(messageInput);
-      if (slashCmd.cmd === "over") {
-        await endGame(true);
-      } else if (slashCmd.cmd === "enter") {
-        await enterGame(slashCmd.game);
-      }
-      return;
-    }
-  }
-
-  // ── CH7: Route to game turn if in active game session ─────────────────────
-  if (isInGame() && text) {
-    messageInput.value = "";
-    autoResizeTextarea(messageInput);
-    await sendGameTurn(text);
+  if (isReplying) {
+    setChatStatus("Cha 正在回复，等他说完再发～");
+    setTimeout(() => setChatStatus(""), 2000);
     return;
   }
-  // ── End game routing ───────────────────────────────────────────────────────
 
   messageInput.value = "";
   autoResizeTextarea(messageInput);
@@ -3022,9 +3954,13 @@ async function handleSubmit() {
 
   // Optimistic update：先渲染，不等接口
   const msgEl = addMessage(content, "user", now, {});
-  const msgRow = msgEl.closest(".msg-row");
+  const msgGroupId = msgEl.closest(".msg-row")?.dataset.groupId;
+  const getMsgRows = () => msgGroupId
+    ? Array.from(messageList.querySelectorAll(`.msg-row[data-group-id="${msgGroupId}"]`))
+    : (msgEl.closest(".msg-row") ? [msgEl.closest(".msg-row")] : []);
+  scrollChatToLatest();
   const dbContent = snapshot ? (text ? `[图片] ${text}` : "[图片]") : text;
-  chatMessages.push({ role: "user", content, created_at: now, id: null });
+  chatMessages.push({ role: "user", content, created_at: now, id: null, read_by_cha_at: null, read_by_user_at: null });
   refreshMessageActions();
   if (isFirst) updateConvTitle(getActiveConversationId(), text || "[图片]");
 
@@ -3039,233 +3975,28 @@ async function handleSubmit() {
         setChatStatus("图片上传失败，消息未发送，请重试");
         // 回滚乐观渲染
         chatMessages.pop();
-        msgRow?.remove();
+        getMsgRows().forEach(r => r.remove());
         return;
       }
     }
     const msgId = await saveMessage("user", dbContent, storagePath).catch(() => null);
-    if (msgId != null && msgRow) msgRow.dataset.msgId = String(msgId);
+    if (msgId != null) getMsgRows().forEach(r => { r.dataset.msgId = String(msgId); });
     const entry = chatMessages.findLast?.((m) => m.role === "user" && m.id === null);
     if (entry) entry.id = msgId != null ? String(msgId) : null;
     if (autoReplyEnabled) scheduleAutoReply(text);
   })();
 }
 
-// ── CH7/CH8/CH10: Game mode frontend ─────────────────────────────────────────
-//
-// Game sandbox is FULLY ISOLATED from the main chat:
-//   - Game turns go to the /game edge function, NOT to /chat
-//   - Game messages are NOT pushed to chatMessages[]
-//   - afterChat is NOT triggered during a game
-//   - /over ends the game and returns to main chat (writes one system fact event server-side)
-//
-// Slash commands: /wicked  /truth  /turtle  (/trpg shows placeholder, /over ends game)
-
-let activeGameSession = null; // { game, sessionId } | null
-
-function getGameEndpoint() {
-  return getConfigValue("GAME_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_GAME_URL");
-}
-
-function isInGame() {
-  return activeGameSession !== null;
-}
-
-const GAME_LABELS = {
-  wicked: "女巫的毒药",
-  truth_or_dare: "真心话大冒险",
-  turtle_soup: "海龟汤",
-  trpg: "跑团",
-};
-
-const SLASH_TO_GAME = {
-  "/wicked": "wicked",
-  "/truth": "truth_or_dare",
-  "/turtle": "turtle_soup",
-  "/trpg": "trpg",
-};
-
-// ── Game API calls ────────────────────────────────────────────────────────────
-
-async function gameApiCall(body) {
-  const endpoint = getGameEndpoint();
-  if (!endpoint) throw new Error("GAME_API_ENDPOINT 未配置");
-  const { data: { user } } = await supabaseClient.auth.getUser();
-  const userId = user?.id || currentUserId;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, userId, conversationId: getActiveConversationId() }),
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error("Game API error " + res.status + ": " + t.slice(0, 200));
-  }
-  return res.json();
-}
-
-// ── Game UI helpers ───────────────────────────────────────────────────────────
-
-function setGameBannerVisible(visible, gameKey) {
-  const banner = document.getElementById("gameBanner");
-  const label = document.getElementById("gameBannerLabel");
-  if (!banner || !label) return;
-  if (visible && gameKey) {
-    label.textContent = "🎮 " + (GAME_LABELS[gameKey] || gameKey);
-    banner.classList.remove("hidden");
-  } else {
-    banner.classList.add("hidden");
-  }
-}
-
-function addGameMessage(text, role) {
-  // Render a message in the chat UI but do NOT push to chatMessages[] (sandbox isolation)
-  const el = addMessage(text, role === "user" ? "user" : "assistant", new Date().toISOString(), { isGameMessage: true });
-  if (el) {
-    const row = el.closest(".msg-row");
-    if (row) row.dataset.gameMessage = "true";
-  }
-  return el;
-}
-
-// ── Enter game ────────────────────────────────────────────────────────────────
-
-async function enterGame(gameKey) {
-  const endpoint = getGameEndpoint();
-  if (!endpoint) {
-    setChatStatus("游戏 API 未配置（GAME_API_ENDPOINT）");
-    return;
-  }
-  if (isReplying) return;
-
-  // TRPG placeholder
-  if (gameKey === "trpg") {
-    addGameMessage("跑团功能敬请期待～目前还在开发中，先等等我。", "assistant");
-    return;
-  }
-
-  setChatStatus("正在进入" + (GAME_LABELS[gameKey] || gameKey) + "…");
-  try {
-    const data = await gameApiCall({ action: "enter", game: gameKey });
-    activeGameSession = { game: gameKey, sessionId: data.sessionId };
-    setGameBannerVisible(true, gameKey);
-    // Close game strip
-    const strip = document.getElementById("gameStrip");
-    if (strip) strip.classList.add("hidden");
-    const toggleBtn = document.getElementById("gameStripToggle");
-    if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
-    // Show Cha's opening message in sandbox (not in chatMessages)
-    if (data.reply) addGameMessage(data.reply, "assistant");
-    setChatStatus("");
-    // Update placeholder
-    const mi = document.getElementById("messageInput");
-    if (mi) mi.placeholder = "游戏中… 输入 /over 退出";
-  } catch (err) {
-    setChatStatus("进入游戏失败：" + err.message);
-  }
-}
-
-// ── Send game turn ────────────────────────────────────────���───────────────────
-
-async function sendGameTurn(text) {
-  // Show user's message in sandbox (NOT in chatMessages)
-  addGameMessage(text, "user");
-
-  // Show typing indicator
-  showTypingIndicator();
-
-  try {
-    const data = await gameApiCall({ action: "turn", message: text });
-    removeTypingIndicator();
-
-    if (data.reply) addGameMessage(data.reply, "assistant");
-
-    // If game ended server-side (e.g. someone ate the poison candy)
-    if (data.phase === "ended") {
-      await endGame(false); // false = server already wrote event, just clean up UI
-    }
-  } catch (err) {
-    removeTypingIndicator();
-    addGameMessage("游戏出错：" + err.message, "assistant");
-  }
-}
-
-// ── End game (/over) ──────────────────────────────────────────────────────────
-
-async function endGame(callServer = true) {
-  if (!activeGameSession) return;
-  const game = activeGameSession.game;
-  activeGameSession = null;
-  setGameBannerVisible(false);
-
-  if (callServer) {
-    try {
-      await gameApiCall({ action: "over" });
-    } catch (err) {
-      console.warn("[game] /over API error:", err.message);
-    }
-  }
-
-  // Show a local system-style notice in the chat feed (cosmetic, not saved)
-  const label = GAME_LABELS[game] || game;
-  const sep = document.createElement("div");
-  sep.className = "game-end-separator";
-  sep.textContent = "── " + label + " 已结束，返回主聊天 ──";
-  const ml = document.getElementById("messageList");
-  if (ml) ml.appendChild(sep);
-
-  // Reset input placeholder
-  const mi = document.getElementById("messageInput");
-  if (mi) mi.placeholder = "继续说…";
-}
-
-// ── Slash command parser ──────────────────────────────────────────────────────
-
-function parseSlashCommand(text) {
-  const lower = text.trim().toLowerCase();
-  if (lower === "/over") return { cmd: "over" };
-  if (SLASH_TO_GAME[lower]) return { cmd: "enter", game: SLASH_TO_GAME[lower] };
-  return null;
-}
-
-// ── Game strip toggle (CH10) ──────────────────────────────────────────────────
-
-const gameStripToggle = document.getElementById("gameStripToggle");
-const gameStrip = document.getElementById("gameStrip");
-const gameOverBtn = document.getElementById("gameOverBtn");
-
-if (gameStripToggle && gameStrip) {
-  gameStripToggle.addEventListener("click", () => {
-    const open = !gameStrip.classList.contains("hidden");
-    if (open) {
-      gameStrip.classList.add("hidden");
-      gameStripToggle.setAttribute("aria-expanded", "false");
-    } else {
-      gameStrip.classList.remove("hidden");
-      gameStripToggle.setAttribute("aria-expanded", "true");
-    }
-  });
-
-  gameStrip.querySelectorAll(".game-card").forEach((card) => {
-    card.addEventListener("click", () => {
-      const gameKey = card.dataset.game;
-      if (gameKey) enterGame(gameKey);
-    });
-  });
-}
-
-if (gameOverBtn) {
-  gameOverBtn.addEventListener("click", () => endGame(true));
-}
-
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   handleSubmit();
+  scrollChatToLatest();
 });
 
 sendButton.addEventListener("click", (e) => {
   e.preventDefault();
   handleSubmit();
+  scrollChatToLatest();
 });
 
 forceReplyBtn.addEventListener("click", () => {
@@ -3396,6 +4127,1396 @@ if (supabaseClient) {
 }
 
 initTierBar();
+
+// ── V2 primary shell / navigation ─────────────────────────────────────────────
+function initV2Shell() {
+  const pages = Array.from(document.querySelectorAll(".v2-page"));
+  const tabs = Array.from(document.querySelectorAll(".bottom-tab"));
+  const shell = document.querySelector(".layout");
+
+  function showPage(pageName) {
+    const target = pages.find((page) => page.dataset.page === pageName) || pages[0];
+    if (!target) return;
+    const activeName = target.dataset.page;
+    pages.forEach((page) => page.classList.toggle("v2-active", page === target));
+    tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === activeName));
+    shell?.setAttribute("data-active-page", activeName);
+    if (activeName === "chat") {
+      requestAnimationFrame(() => {
+        scrollChatToLatest();
+        messageInput?.focus({ preventScroll: true });
+        // Trigger visibility check for unread Cha messages
+        observeUnreadChaRows();
+        markVisibleAssistantRowsRead();
+      });
+    }
+    // When leaving setting tab, close any open subpage
+    if (activeName !== "setting") {
+      closeSettingsSubpage();
+    }
+  }
+
+  tabs.forEach((tab) => tab.addEventListener("click", () => showPage(tab.dataset.tab)));
+
+  // ── Settings subpage entries ───────────────────────────────────────────
+  document.querySelectorAll("[data-settings-subpage]").forEach((entry) => {
+    entry.addEventListener("click", () => {
+      openSettingsSubpage(entry.dataset.settingsSubpage);
+    });
+  });
+
+  const settingsBackBtn = document.getElementById("settingsBackBtn");
+  settingsBackBtn?.addEventListener("click", () => closeSettingsSubpage());
+
+  // ── Legacy placeholder routes (non-settings pages) ────────────────────
+  document.querySelectorAll("[data-placeholder-route]").forEach((entry) => {
+    entry.addEventListener("click", () => {
+      const route = entry.dataset.placeholderRoute;
+
+      // ── Settings routes with real implementations ─────────────────────────
+      if (route === "/settings/memory") {
+        // Open memory center page (v2) directly — no password gate
+        openMemoryCenter();
+        return;
+      }
+      if (route === "/settings/api") {
+        const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
+        showDialog({
+          title: "API 设置 · 模型档位",
+          body: `当前档位：${tierLabel}\n\n切换档位：聊天页底部的 Instant / General / Advanced 按钮（桌面），或聊天页 + 菜单上方的档位选择器（移动端）。`,
+          confirmLabel: "知道了",
+        });
+        return;
+      }
+
+
+      showDialog({
+        title: "入口已预留",
+        body: `${route} 将在后续版本接入。`,
+        confirmLabel: "知道了",
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-upload-slot]").forEach((entry) => {
+    entry.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const slot = entry.dataset.uploadSlot;
+      showDialog({
+        title: "更换入口已预留",
+        body: `${slot} 将复用统一上传组件接入，本轮先保留点击入口。`,
+        confirmLabel: "知道了",
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-edit-field]").forEach((entry) => {
+    entry.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const field = entry.dataset.editField;
+      showDialog({
+        title: "编辑入口已预留",
+        body: `${field} 将复用统一编辑态组件接入，本轮先保留点击入口。`,
+        confirmLabel: "知道了",
+      });
+    });
+  });
+
+  showPage("home");
+}
+
+// ── Settings subpage system ─────────────────────────────────────────────────
+
+var _currentSettingsSubpage = null;
+
+var SETTINGS_SUBPAGE_META = {
+  api:      { title: "API 设置",    subtitle: "模型、接口与连接配置" },
+  backup:   { title: "备份",        subtitle: "导出与恢复数据" },
+  beautify: { title: "美化",        subtitle: "主题、壁纸、气泡与开屏图" },
+  prompt:   { title: "Prompt 管理", subtitle: "管理 Cha 的各场景提示词" },
+  memory:   { title: "记忆管理",    subtitle: "" },
+  emoji:    { title: "表情包管理",  subtitle: "管理自定义表情包来源、常用和缓存" },
+  chat:     { title: "聊天设置",    subtitle: "气泡、背景、输入栏与消息显示" },
+  debug:    { title: "Debug 页面",  subtitle: "日志、版本与环境信息" },
+};
+
+function openSettingsSubpage(type) {
+  const subpage = document.getElementById("settingsSubpage");
+  const mainView = document.getElementById("settingsMainView");
+  const titleEl = document.getElementById("settingsSubpageTitle");
+  const subtitleEl = document.getElementById("settingsSubpageSubtitle");
+  const bodyEl = document.getElementById("settingsSubpageBody");
+  if (!subpage || !mainView || !titleEl || !subtitleEl || !bodyEl) return;
+
+  const meta = SETTINGS_SUBPAGE_META[type] || { title: type, subtitle: "" };
+  titleEl.textContent = meta.title;
+  subtitleEl.textContent = meta.subtitle;
+  bodyEl.innerHTML = renderSettingsSubpage(type);
+
+  _currentSettingsSubpage = type;
+  mainView.hidden = true;
+  subpage.hidden = false;
+
+  // If memory subpage, bind memory center events after render
+  if (type === "memory") {
+    _initSettingsMemorySubpage(bodyEl);
+  }
+}
+
+function closeSettingsSubpage() {
+  const subpage = document.getElementById("settingsSubpage");
+  const mainView = document.getElementById("settingsMainView");
+  if (!subpage || !mainView) return;
+  subpage.hidden = true;
+  mainView.hidden = false;
+  _currentSettingsSubpage = null;
+}
+
+function renderSettingsSubpage(type) {
+  switch (type) {
+    case "api":
+      return _renderApiSubpage();
+    case "backup":
+      return _renderBackupSubpage();
+    case "beautify":
+      return _renderBeautifySubpage();
+    case "prompt":
+      return _renderPromptSubpage();
+    case "memory":
+      return _renderMemorySubpage();
+    case "emoji":
+      return _renderEmojiSubpage();
+    case "chat":
+      return _renderChatSubpage();
+    case "debug":
+      return _renderDebugSubpage();
+    default:
+      return `<div class="settings-empty-state"><strong>${type}</strong><p>此页面尚未实现。</p></div>`;
+  }
+}
+
+function _renderApiSubpage() {
+  const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">模型档位</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>当前档位</strong><small>影响回复质量与速度</small></div>
+          <span class="settings-row-value">${tierLabel}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>切换档位</strong><small>在聊天页底部或 + 菜单选择</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">接口配置</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>Provider</strong><small>API 服务商</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>Endpoint</strong><small>接口地址</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderBackupSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">导出</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>导出全部数据</strong><small>聊天记录、记忆、设置</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>导出聊天记录</strong><small>仅当前会话</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">导入</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>从备份恢复</strong><small>覆盖当前数据</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderBeautifySubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">主题与壁纸</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>主题色</strong><small>当前：灰白冷淡</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>聊天背景壁纸</strong><small>自定义聊天页背景</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>开屏图</strong><small>启动页封面</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">气泡</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>气泡主题</strong><small>消息气泡样式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderPromptSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">场景 Prompt</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>主聊天</strong><small>日常对话</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>日记</strong><small>Cha 的日记写作</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>毛象</strong><small>Mastodon 发帖风格</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>游戏</strong><small>Playground 游戏模式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderMemorySubpage() {
+  return `<div id="settingsMemoryMount" style="min-height:200px"></div>`;
+}
+
+function _initSettingsMemorySubpage(container) {
+  // Reuse the existing memory center v2 state and render functions,
+  // but mounted inside the subpage body instead of the overlay.
+  const mount = container.querySelector("#settingsMemoryMount");
+  if (!mount) return;
+  memoryCenterV2State.view = "archive";
+  // Render archive view directly into the mount point
+  mount.innerHTML = "";
+  const viewRoot = document.createElement("div");
+  viewRoot.id = "settingsMemoryViewRoot";
+  viewRoot.className = "mc-view-root";
+  mount.appendChild(viewRoot);
+  _renderMemoryCenterInto(viewRoot);
+  refreshMemoryCenterData();
+}
+
+function _renderMemoryCenterInto(root) {
+  // Delegate to existing renderMemoryCenterCurrentView but point at custom root
+  var savedRoot = document.getElementById("mcViewRoot");
+  var fakeRoot = root;
+  // Temporarily swap so renderMemoryCenterCurrentView writes here
+  var _origGetById = document.getElementById.bind(document);
+  var _patchActive = true;
+  var _origGetEl = document.getElementById;
+  document.getElementById = function(id) {
+    if (_patchActive && id === "mcViewRoot") return fakeRoot;
+    return _origGetEl.call(document, id);
+  };
+  try {
+    renderMemoryCenterCurrentView();
+  } finally {
+    document.getElementById = _origGetEl;
+    _patchActive = false;
+  }
+}
+
+function _renderEmojiSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">已启用来源</div>
+      <div class="settings-empty-state">
+        <strong>暂无自定义表情包来源</strong>
+        <p>添加后可在聊天中使用自定义表情包</p>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">缓存</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>清理表情包缓存</strong><small>释放本地存储空间</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderChatSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">外观</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>聊天背景</strong><small>自定义聊天页壁纸</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>气泡样式</strong><small>消息气泡外观</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">输入栏</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>输入栏布局</strong><small>按钮排列方式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">消息显示</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>时间戳</strong><small>消息时间显示方式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>已读标记</strong><small>显示消息已读状态</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderDebugSubpage() {
+  const buildLabel = (document.querySelector("script[src*='app.js']")?.src.match(/v=([^&]+)/) || [])[1] || "unknown";
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">版本与环境</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>构建版本</strong></div>
+          <span class="settings-row-value">${buildLabel}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>平台</strong></div>
+          <span class="settings-row-value">${navigator.userAgent.includes("Mobile") ? "Mobile" : "Desktop"}</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">日志</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>记忆注入日志</strong><small>最近一轮注入状态</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>Prompt 状态</strong><small>当前 system prompt 摘要</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Emoji Source Adapters ─────────────────────────────────────────────────────
+
+/**
+ * Mastodon adapter — reads /api/v1/custom_emojis from any Mastodon instance.
+ * @param {object} source  Pack source definition from EMOJI_PACK_SOURCES_DEFAULT
+ * @returns {Promise<object[]>}  Raw normalized emoji objects for this pack
+ */
+async function loadMastodonEmojiPack(source) {
+  const res = await fetch(source.apiUrl, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${source.apiUrl}`);
+  const raw = await res.json();
+  if (!Array.isArray(raw)) throw new Error("Unexpected response shape from Mastodon API");
+  return raw
+    .filter(e => e.visible_in_picker !== false)
+    .map(e => normalizeEmoji(source, e, "mastodon"));
+}
+
+/**
+ * Manifest adapter — reads a local/remote JSON manifest with an `emojis` array.
+ * Manifest shape: { id, name, type, emojis: [ { shortcode, url, staticUrl, category, ... } ] }
+ * @param {object} source  Pack source definition
+ * @returns {Promise<object[]>}
+ */
+async function loadManifestEmojiPack(source) {
+  const url = source.manifestUrl;
+  if (!url) throw new Error(`manifestUrl missing for pack "${source.id}"`);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  const manifest = await res.json();
+  if (!Array.isArray(manifest.emojis)) throw new Error("Manifest missing emojis array");
+  return manifest.emojis.map(e => normalizeEmoji(source, e, "manifest"));
+}
+
+/**
+ * Normalize raw emoji data (any source) into the canonical internal format.
+ * @param {object} source     Pack source definition
+ * @param {object} raw        Raw emoji object from the adapter
+ * @param {string} sourceType "mastodon" | "manifest"
+ * @returns {object}  Canonical emoji object
+ */
+function normalizeEmoji(source, raw, sourceType) {
+  const shortcode = raw.shortcode || raw.short_code || "";
+  const url       = raw.url || "";
+  const staticUrl = raw.static_url || raw.staticUrl || url;
+  const category  = raw.category || "";
+
+  const id             = `${source.id}:${shortcode}`;
+  const token          = `:${shortcode}:`;
+  const canonicalToken = `:${source.id}.${shortcode}:`;
+
+  return {
+    id,
+    packId:          source.id,
+    packName:        source.name,
+    shortcode,
+    token,
+    canonicalToken,
+    url,
+    staticUrl,
+    category,
+    aliases:         [token, canonicalToken],
+    visibleInPicker: raw.visible_in_picker !== false,
+    sourceType,
+    // Manifest extras (optional; undefined on mastodon emojis)
+    meaning_zh:  raw.meaning_zh  || null,
+    mood_tags:   raw.mood_tags   || null,
+    use_cases:   raw.use_cases   || null,
+  };
+}
+
+// Adapter dispatch table — register adapters here
+emojiSourceAdapters.mastodon = loadMastodonEmojiPack;
+emojiSourceAdapters.manifest = loadManifestEmojiPack;
+
+/**
+ * Load all enabled emoji packs, build catalog indexes, write to localStorage.
+ * Non-blocking: one failing source never kills the others.
+ */
+async function loadEmojiCatalog() {
+  // Read current pack config from localStorage (allows future settings override)
+  let sources;
+  try {
+    const stored = localStorage.getItem(EMOJI_PACK_CONFIG_KEY);
+    sources = stored ? JSON.parse(stored) : EMOJI_PACK_SOURCES_DEFAULT;
+  } catch (_) {
+    sources = EMOJI_PACK_SOURCES_DEFAULT;
+  }
+  const enabled = sources.filter(s => s.enabled);
+
+  const allEmojis = [];
+  let anySuccess = false;
+  for (const source of enabled) {
+    const adapter = emojiSourceAdapters[source.type];
+    if (!adapter) {
+      console.warn(`[emoji] No adapter for type "${source.type}" (pack "${source.id}")`);
+      continue;
+    }
+    try {
+      const emojis = await adapter(source);
+      allEmojis.push(...emojis);
+      anySuccess = true;
+    } catch (err) {
+      console.warn(`[emoji] Failed to load pack "${source.id}":`, err);
+    }
+  }
+
+  if (!anySuccess) {
+    // Try falling back to last-good cache
+    try {
+      const cached = JSON.parse(localStorage.getItem(EMOJI_CATALOG_CACHE_KEY) || "null");
+      if (cached && Array.isArray(cached)) {
+        buildCatalogIndexes(cached);
+        emojiCatalog.loadError = "loaded from cache (sources failed)";
+        return;
+      }
+    } catch (_) {}
+    emojiCatalog.loadError = "all sources failed, no cache available";
+    emojiCatalog.loaded = true;
+    return;
+  }
+
+  buildCatalogIndexes(allEmojis);
+
+  // Persist to cache
+  try {
+    localStorage.setItem(EMOJI_CATALOG_CACHE_KEY, JSON.stringify(allEmojis));
+  } catch (_) {}
+}
+
+/**
+ * Build in-memory catalog indexes from a flat emoji array.
+ */
+function buildCatalogIndexes(emojis) {
+  const byId             = {};
+  const byShortcode      = {};
+  const byCanonicalToken = {};
+  const byAlias          = {};
+  const byCategory       = {};
+  const byPackId         = {};
+
+  for (const e of emojis) {
+    byId[e.id] = e;
+    byCanonicalToken[e.canonicalToken] = e;
+
+    // byShortcode: may have multiple emojis per shortcode (conflict)
+    if (!byShortcode[e.shortcode]) byShortcode[e.shortcode] = [];
+    byShortcode[e.shortcode].push(e);
+
+    // aliases
+    for (const alias of (e.aliases || [])) {
+      byAlias[alias] = e;
+    }
+
+    // category
+    const cat = e.category || "_uncategorized";
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(e);
+
+    // pack
+    if (!byPackId[e.packId]) byPackId[e.packId] = [];
+    byPackId[e.packId].push(e);
+  }
+
+  emojiCatalog.byId             = byId;
+  emojiCatalog.byShortcode      = byShortcode;
+  emojiCatalog.byCanonicalToken = byCanonicalToken;
+  emojiCatalog.byAlias          = byAlias;
+  emojiCatalog.byCategory       = byCategory;
+  emojiCatalog.byPackId         = byPackId;
+  emojiCatalog.loaded           = true;
+  emojiCatalog.loadError        = null;
+}
+
+/**
+ * Resolve a shortcode/canonicalToken string to an emoji object.
+ * Supports both `:shortcode:` (unique) and `:packId.shortcode:` forms.
+ * Returns null if not found.
+ */
+function resolveEmojiToken(token) {
+  if (!token) return null;
+  // Try canonical first (most specific)
+  const fromCanon = emojiCatalog.byCanonicalToken[token];
+  if (fromCanon) return fromCanon;
+  // Try alias map
+  const fromAlias = emojiCatalog.byAlias[token];
+  if (fromAlias) return fromAlias;
+  // Try shortcode (only if globally unique)
+  const sc = token.replace(/^:|:$/g, "");
+  const matches = emojiCatalog.byShortcode[sc];
+  if (matches && matches.length === 1) return matches[0];
+  return null;
+}
+
+/**
+ * Returns true if shortcode is globally unique across all loaded packs.
+ */
+function isShortcodeUnique(shortcode) {
+  const matches = emojiCatalog.byShortcode[shortcode];
+  return Array.isArray(matches) && matches.length === 1;
+}
+
+/**
+ * Pick the best insert token for a given emoji:
+ * - If shortcode is unique across enabled packs, use `:shortcode:`
+ * - Otherwise use `:packId.shortcode:` (canonicalToken)
+ */
+function pickInsertToken(emoji) {
+  return isShortcodeUnique(emoji.shortcode) ? emoji.token : emoji.canonicalToken;
+}
+
+// ── Emoji Panel ───────────────────────────────────────────────────────────────
+
+let _emojiPanelOpen = false;
+
+/**
+ * Build and show the emoji bottom sheet.
+ */
+function openEmojiPanel() {
+  if (_emojiPanelOpen) {
+    closeEmojiPanel();
+    return;
+  }
+  _emojiPanelOpen = true;
+
+  // Close plus panel if open
+  if (typeof window.closeV2PlusPanel === "function") window.closeV2PlusPanel();
+
+  const panel = document.createElement("div");
+  panel.id = "emojiPanel";
+  panel.className = "emoji-panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "表情面板");
+
+  // ── Header / Search ──────────────────────────────────────────────────────
+  const header = document.createElement("div");
+  header.className = "emoji-panel-header";
+
+  const searchInput = document.createElement("input");
+  searchInput.type = "search";
+  searchInput.className = "emoji-search";
+  searchInput.placeholder = "搜索表情…";
+  searchInput.setAttribute("aria-label", "搜索表情");
+  header.appendChild(searchInput);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "emoji-panel-close";
+  closeBtn.setAttribute("aria-label", "关闭表情面板");
+  closeBtn.textContent = "✕";
+  closeBtn.addEventListener("click", closeEmojiPanel);
+  header.appendChild(closeBtn);
+  panel.appendChild(header);
+
+  // ── Tabs ─────────────────────────────────────────────────────────────────
+  const TAB_DEFS = [
+    { id: "frequent", label: "常用" },
+    { id: "recent",   label: "最近" },
+    { id: "kaomoji",  label: "颜文字" },
+    { id: "packs",    label: "表情包" },
+  ];
+  let activeTab = "frequent";
+
+  const tabBar = document.createElement("div");
+  tabBar.className = "emoji-tab-bar";
+  tabBar.setAttribute("role", "tablist");
+
+  const contentArea = document.createElement("div");
+  contentArea.className = "emoji-content";
+
+  function switchTab(tabId) {
+    activeTab = tabId;
+    tabBar.querySelectorAll(".emoji-tab").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.tab === tabId);
+      btn.setAttribute("aria-selected", String(btn.dataset.tab === tabId));
+    });
+    renderTabContent(contentArea, tabId, searchInput.value.trim());
+  }
+
+  TAB_DEFS.forEach(({ id, label }) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "emoji-tab";
+    btn.dataset.tab = id;
+    btn.textContent = label;
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-selected", String(id === activeTab));
+    btn.addEventListener("click", () => switchTab(id));
+    tabBar.appendChild(btn);
+  });
+  panel.appendChild(tabBar);
+  panel.appendChild(contentArea);
+
+  // Search handler
+  searchInput.addEventListener("input", () => {
+    renderTabContent(contentArea, activeTab, searchInput.value.trim());
+  });
+
+  // Insert panel above input bar
+  const inputBar = document.getElementById("chatForm");
+  inputBar?.parentNode?.insertBefore(panel, inputBar);
+  requestAnimationFrame(() => {
+    panel.classList.add("open");
+    scrollChatToLatest();
+  });
+
+  // Close on outside click
+  const outsideHandler = (e) => {
+    if (!panel.contains(e.target) && e.target.id !== "emojiButton") {
+      closeEmojiPanel();
+      document.removeEventListener("click", outsideHandler);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", outsideHandler), 100);
+
+  document.getElementById("emojiButton")?.classList.add("active");
+  switchTab("frequent");
+}
+
+function closeEmojiPanel() {
+  _emojiPanelOpen = false;
+  const panel = document.getElementById("emojiPanel");
+  if (panel) {
+    panel.classList.remove("open");
+    panel.addEventListener("transitionend", () => panel.remove(), { once: true });
+    setTimeout(() => panel.remove(), 350); // fallback
+  }
+  document.getElementById("emojiButton")?.classList.remove("active");
+  scrollChatToLatest();
+}
+
+/**
+ * Render the content area for a given tab (and optional search query).
+ */
+function renderTabContent(container, tabId, query) {
+  container.innerHTML = "";
+
+  if (tabId === "kaomoji") {
+    renderKaomojiTab(container, query);
+    return;
+  }
+  if (tabId === "recent") {
+    renderStoredEmojiTab(container, EMOJI_RECENT_KEY, query, "最近使用");
+    return;
+  }
+  if (tabId === "frequent") {
+    renderFrequentTab(container, query);
+    return;
+  }
+  if (tabId === "favorite") {
+    renderStoredEmojiTab(container, EMOJI_FAVORITE_KEY, query, "收藏", true);
+    return;
+  }
+  if (tabId === "packs") {
+    renderPacksTab(container, query);
+  }
+}
+
+function renderKaomojiTab(container, query) {
+  const list = query
+    ? KAOMOJI_LIST.filter(k => k.includes(query))
+    : KAOMOJI_LIST;
+  if (!list.length) {
+    container.appendChild(makeEmptyNotice("没有匹配的颜文字"));
+    return;
+  }
+  const grid = document.createElement("div");
+  grid.className = "emoji-grid emoji-grid--kaomoji";
+  list.forEach(kao => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "emoji-item emoji-item--kaomoji";
+    btn.textContent = kao;
+    btn.title = kao;
+    btn.addEventListener("click", () => {
+      insertTextAtCursor(kao);
+      closeEmojiPanel();
+    });
+    grid.appendChild(btn);
+  });
+  container.appendChild(grid);
+}
+
+function renderStoredEmojiTab(container, storageKey, query, emptyLabel, isFavorite = false) {
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(storageKey) || "[]"); } catch (_) {}
+  if (!Array.isArray(ids)) ids = [];
+
+  let emojis = ids
+    .map(id => emojiCatalog.byId[id])
+    .filter(Boolean);
+
+  if (query) emojis = filterEmojis(emojis, query);
+
+  if (!emojis.length) {
+    container.appendChild(makeEmptyNotice(query ? "没有匹配结果" : `暂无${emptyLabel}`));
+    return;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "emoji-grid";
+  emojis.forEach(emoji => {
+    grid.appendChild(makeEmojiItem(emoji, { isFavorite, storageKey }));
+  });
+  container.appendChild(grid);
+}
+
+function renderFrequentTab(container, query) {
+  let freq = {};
+  try { freq = JSON.parse(localStorage.getItem(EMOJI_FREQUENCY_KEY) || "{}"); } catch (_) {}
+
+  let emojis = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 80)
+    .map(([id]) => emojiCatalog.byId[id])
+    .filter(Boolean);
+
+  if (query) emojis = filterEmojis(emojis, query);
+
+  if (!emojis.length) {
+    container.appendChild(makeEmptyNotice(query ? "没有匹配结果" : "还没有常用记录"));
+    return;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "emoji-grid";
+  emojis.forEach(emoji => grid.appendChild(makeEmojiItem(emoji)));
+  container.appendChild(grid);
+}
+
+function renderPacksTab(container, query) {
+  if (!emojiCatalog.loaded) {
+    const notice = makeEmptyNotice("表情包加载中…");
+    container.appendChild(notice);
+    // Retry after load
+    loadEmojiCatalog().then(() => {
+      if (document.getElementById("emojiPanel")) {
+        renderTabContent(container, "packs", query);
+      }
+    });
+    return;
+  }
+
+  if (emojiCatalog.loadError === "all sources failed, no cache available") {
+    container.appendChild(makeEmptyNotice("表情包加载失败，请检查网络后重试"));
+    return;
+  }
+
+  const packIds = Object.keys(emojiCatalog.byPackId).sort();
+  if (!packIds.length) {
+    container.appendChild(makeEmptyNotice("暂无表情包"));
+    return;
+  }
+
+  packIds.forEach(packId => {
+    const allInPack = emojiCatalog.byPackId[packId] || [];
+    const filtered  = query ? filterEmojis(allInPack, query) : allInPack;
+    if (!filtered.length) return;
+
+    // Pack header
+    const packHeader = document.createElement("div");
+    packHeader.className = "emoji-pack-header";
+    packHeader.textContent = filtered[0].packName || packId;
+    container.appendChild(packHeader);
+
+    // Group by category within pack
+    const categories = {};
+    filtered.forEach(e => {
+      const cat = e.category || "其他";
+      if (!categories[cat]) categories[cat] = [];
+      categories[cat].push(e);
+    });
+
+    Object.entries(categories).forEach(([cat, catEmojis]) => {
+      if (cat !== "其他") {
+        const catHeader = document.createElement("div");
+        catHeader.className = "emoji-category-header";
+        catHeader.textContent = cat;
+        container.appendChild(catHeader);
+      }
+      const grid = document.createElement("div");
+      grid.className = "emoji-grid";
+      catEmojis.forEach(emoji => grid.appendChild(makeEmojiItem(emoji)));
+      container.appendChild(grid);
+    });
+  });
+}
+
+/**
+ * Filter emoji list by query string (shortcode, category, meaning_zh).
+ */
+function filterEmojis(emojis, query) {
+  if (!query) return emojis;
+  const q = query.toLowerCase().replace(/^:|:$/g, "");
+  return emojis.filter(e =>
+    e.shortcode.toLowerCase().includes(q) ||
+    (e.category && e.category.toLowerCase().includes(q)) ||
+    (e.meaning_zh && e.meaning_zh.toLowerCase().includes(q)) ||
+    // Also check lexicon for meaning_zh
+    (() => {
+      const entry = EMOJI_LEXICON.find(l => l.emojiId === e.id);
+      return entry && entry.meaning_zh.toLowerCase().includes(q);
+    })()
+  );
+}
+
+/**
+ * Build a single emoji item button (image + shortcode tooltip).
+ */
+function makeEmojiItem(emoji, opts = {}) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "emoji-item";
+  btn.title = emoji.shortcode;
+  btn.setAttribute("aria-label", emoji.shortcode);
+
+  const img = document.createElement("img");
+  img.src = emoji.staticUrl || emoji.url;
+  img.alt = emoji.shortcode;
+  img.className = "emoji-item-img";
+  img.loading = "lazy";
+  btn.appendChild(img);
+
+  // Long-press / right-click: no-op (favorite removed)
+  btn.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+  });
+
+  btn.addEventListener("click", () => {
+    const token = pickInsertToken(emoji);
+    insertTextAtCursor(token + " ");
+    recordEmojiUsed(emoji.id);
+    closeEmojiPanel();
+  });
+
+  return btn;
+}
+
+function makeEmptyNotice(text) {
+  const div = document.createElement("div");
+  div.className = "emoji-empty";
+  div.textContent = text;
+  return div;
+}
+
+// ── Emoji Usage Tracking ──────────────────────────────────────────────────────
+
+function recordEmojiUsed(emojiId) {
+  // Recent (array, max 50, most recent first)
+  try {
+    let recent = JSON.parse(localStorage.getItem(EMOJI_RECENT_KEY) || "[]");
+    recent = [emojiId, ...recent.filter(id => id !== emojiId)].slice(0, 50);
+    localStorage.setItem(EMOJI_RECENT_KEY, JSON.stringify(recent));
+  } catch (_) {}
+
+  // Frequency (object id -> count)
+  try {
+    const freq = JSON.parse(localStorage.getItem(EMOJI_FREQUENCY_KEY) || "{}");
+    freq[emojiId] = (freq[emojiId] || 0) + 1;
+    localStorage.setItem(EMOJI_FREQUENCY_KEY, JSON.stringify(freq));
+  } catch (_) {}
+}
+
+function isFavorite(emojiId) {
+  try {
+    const favs = JSON.parse(localStorage.getItem(EMOJI_FAVORITE_KEY) || "[]");
+    return favs.includes(emojiId);
+  } catch (_) { return false; }
+}
+
+function toggleFavorite(emojiId) {
+  try {
+    let favs = JSON.parse(localStorage.getItem(EMOJI_FAVORITE_KEY) || "[]");
+    if (favs.includes(emojiId)) {
+      favs = favs.filter(id => id !== emojiId);
+    } else {
+      favs = [emojiId, ...favs];
+    }
+    localStorage.setItem(EMOJI_FAVORITE_KEY, JSON.stringify(favs));
+  } catch (_) {}
+}
+
+// ── Text Insertion Helper ─────────────────────────────────────────────────────
+
+/**
+ * Insert text at the current cursor position in messageInput.
+ */
+function insertTextAtCursor(text) {
+  const el = messageInput;
+  if (!el) return;
+  const start = el.selectionStart ?? el.value.length;
+  const end   = el.selectionEnd   ?? el.value.length;
+  el.value = el.value.slice(0, start) + text + el.value.slice(end);
+  const newPos = start + text.length;
+  el.setSelectionRange(newPos, newPos);
+  el.focus();
+  // Trigger auto-resize if present
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+// ── Emoji Guide for LLM ───────────────────────────────────────────────────────
+
+/**
+ * Build a short emoji guide string to be injected into the chat API request.
+ * Only includes emojis that are: (a) in the catalog, (b) have a lexicon entry.
+ * Returns empty string if catalog not loaded.
+ */
+function buildEmojiGuide() {
+  if (!emojiCatalog.loaded || !Object.keys(emojiCatalog.byId).length) return "";
+
+  const lines = [];
+  for (const entry of EMOJI_LEXICON) {
+    const emoji = emojiCatalog.byId[entry.emojiId];
+    if (!emoji) continue; // emoji not in current catalog
+    const token = pickInsertToken(emoji);
+    lines.push(`${token} = ${entry.meaning_zh}`);
+  }
+
+  if (!lines.length) return "";
+
+  return (
+    "[可用自定义表情]\n" +
+    "你可以在自然合适时使用这些短代码，它们会在聊天中显示为图片表情。" +
+    "不要过度使用；一条回复最多 0-2 个。" +
+    "不要机械复制用户刚刚使用的表情。\n\n" +
+    lines.join("\n")
+  );
+}
+
+// ── Emoji Rendering ───────────────────────────────────────────────────────────
+
+/**
+ * Regex that matches both :shortcode: and :packId.shortcode: tokens.
+ * We only match tokens that exist in the catalog to avoid XSS or
+ * unintended rendering of arbitrary colon-wrapped strings.
+ */
+const EMOJI_TOKEN_RE = /:([a-zA-Z0-9_\-.]+):/g;
+
+/**
+ * Render a text string into a DocumentFragment, replacing known emoji tokens
+ * with inline <img class="custom-emoji"> elements.
+ * Unknown tokens are left as-is (plain text). XSS-safe: all text goes through
+ * document.createTextNode, never innerHTML.
+ *
+ * @param {string} text  Raw message text
+ * @returns {DocumentFragment}
+ */
+function renderTextWithEmoji(text) {
+  const frag = document.createDocumentFragment();
+  if (!emojiCatalog.loaded || !text) {
+    frag.appendChild(document.createTextNode(text || ""));
+    return frag;
+  }
+
+  let lastIndex = 0;
+  let match;
+  EMOJI_TOKEN_RE.lastIndex = 0;
+
+  while ((match = EMOJI_TOKEN_RE.exec(text)) !== null) {
+    const [fullMatch] = match;
+    const start = match.index;
+
+    // Append text before the token
+    if (start > lastIndex) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex, start)));
+    }
+
+    // Try to resolve the full token (e.g. `:blobcat_cry:` or `:stelpolva.blobcat_cry:`)
+    const emoji = resolveEmojiToken(fullMatch);
+    if (emoji) {
+      const img = document.createElement("img");
+      img.src = emoji.staticUrl || emoji.url;
+      img.alt = fullMatch;
+      img.title = emoji.shortcode;
+      img.className = "custom-emoji";
+      img.loading = "lazy";
+      frag.appendChild(img);
+    } else {
+      // Unknown token — keep as plain text
+      frag.appendChild(document.createTextNode(fullMatch));
+    }
+
+    lastIndex = start + fullMatch.length;
+  }
+
+  // Remaining text after last match
+  if (lastIndex < text.length) {
+    frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+
+  return frag;
+}
+
+/**
+ * Set element content using emoji-aware rendering.
+ * Replaces textContent assignment with emoji image support.
+ * @param {HTMLElement} el
+ * @param {string} text
+ */
+function setMessageContent(el, text) {
+  el.textContent = "";
+  el.appendChild(renderTextWithEmoji(text));
+}
+
+function initV2Composer() {
+  const plusButton = document.getElementById("composerMenuBtn");
+  const inputBar = document.getElementById("chatForm");
+  if (!plusButton || !inputBar) return;
+
+  let emojiButton = document.getElementById("emojiButton");
+  if (!emojiButton) {
+    emojiButton = document.createElement("button");
+    emojiButton.id = "emojiButton";
+    emojiButton.type = "button";
+    emojiButton.className = "ghost-icon-btn v2-emoji-btn";
+    emojiButton.title = "Emoji";
+    emojiButton.setAttribute("aria-label", "Emoji");
+    emojiButton.innerHTML = '<img src="assets/icons/chat/emoji.svg" alt="">';
+    inputBar.insertBefore(emojiButton, plusButton);
+  }
+
+  // Wire up emoji button
+  emojiButton.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    openEmojiPanel();
+  }, true);
+
+  // Close emoji panel when message input is focused
+  messageInput?.addEventListener("focus", () => {
+    if (_emojiPanelOpen) closeEmojiPanel();
+  });
+
+  plusButton.innerHTML = '<img src="assets/icons/chat/plus.svg" alt="">';
+  plusButton.title = "更多";
+  plusButton.setAttribute("aria-label", "更多");
+
+  let panel = null;
+  const closePanel = () => {
+    panel?.remove();
+    panel = null;
+    plusButton.classList.remove("active");
+    scrollChatToLatest();
+  };
+  window.closeV2PlusPanel = closePanel;
+
+  function addPanelItem(group, { label, desc, icon, onClick, disabled = false }) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "plus-panel-item";
+    item.disabled = Boolean(disabled);
+    item.innerHTML = `<span class="plus-panel-icon">${icon}</span><span><strong>${label}</strong><small>${desc}</small></span>`;
+    item.addEventListener("click", () => {
+      closePanel();
+      onClick?.();
+    });
+    group.appendChild(item);
+  }
+
+  function openPanel() {
+    closeStatusPanel();
+    closePanel();
+    panel = document.createElement("div");
+    panel.className = "plus-panel";
+
+    const actions = document.createElement("div");
+    actions.className = "plus-panel-grid";
+    addPanelItem(actions, {
+      label: "图片上传",
+      desc: "相册或文件",
+      icon: '<span>＋</span>',
+      onClick: () => imageAttachBtn?.click(),
+    });
+    addPanelItem(actions, {
+      label: autoReplyEnabled ? "自动接话开" : "自动接话关",
+      desc: "空闲时回应",
+      icon: '<img src="assets/icons/chat/regenerate.svg" alt="">',
+      onClick: () => {
+        autoReplyEnabled = !autoReplyEnabled;
+        updateAutoReplyToggle();
+        if (!autoReplyEnabled) cancelAutoReplyTimer();
+      },
+    });
+    addPanelItem(actions, {
+      label: "戳一下",
+      desc: "让 Cha 接话",
+      icon: '<img src="assets/icons/chat/poke.svg" alt="">',
+      disabled: isReplying || !chatMessages.length,
+      onClick: () => triggerReply("forced"),
+    });
+    panel.appendChild(actions);
+
+    const gamesTitle = document.createElement("div");
+    gamesTitle.className = "plus-panel-title";
+    gamesTitle.textContent = "游戏模式";
+    panel.appendChild(gamesTitle);
+
+    const games = document.createElement("div");
+    games.className = "plus-panel-games";
+    [
+      ["truth-dare.jpg", "真心话大冒险", "/chat/games/truth-dare"],
+      ["turtle-soup.jpg", "海龟汤", "/chat/games/turtle-soup"],
+      ["trpg.jpg", "跑团", "/chat/games/trpg"],
+      ["wicked.jpg", "女巫的毒药", "/chat/games/wicked"],
+    ].forEach(([asset, label, route]) => {
+      const game = document.createElement("button");
+      game.type = "button";
+      game.className = "plus-panel-game";
+      game.innerHTML = `<img src="assets/icons/games/${asset}" alt=""><span>${label}</span>`;
+      game.addEventListener("click", () => {
+        closePanel();
+        showDialog({
+          title: "游戏入口已预留",
+          body: `${route} 将接入 sandbox 游戏模式，本轮先保留入口。`,
+          confirmLabel: "知道了",
+        });
+      });
+      games.appendChild(game);
+    });
+    panel.appendChild(games);
+
+    inputBar.parentNode.insertBefore(panel, inputBar);
+    plusButton.classList.add("active");
+    requestAnimationFrame(() => {
+      panel.classList.add("open");
+      scrollChatToLatest();
+    });
+  }
+
+  plusButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    panel ? closePanel() : openPanel();
+  }, true);
+
+  messageInput?.addEventListener("focus", closePanel);
+
+  document.addEventListener("click", (event) => {
+    if (!panel) return;
+    if (panel.contains(event.target) || plusButton.contains(event.target)) return;
+    closePanel();
+  });
+}
+
+initV2Shell();
+initV2Composer();
+initInputKeyboardHints();
+initKeyboardViewportState();
+// Start loading emoji catalog in the background — never blocks UI
+loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
+
+// ── Composer emoji preview ────────────────────────────────────────────────────
+// Shows a rendered preview of custom emoji tokens above the input bar.
+// textarea keeps the raw shortcode text; this layer is visual-only.
+(function initComposerEmojiPreview() {
+  const chatForm = document.getElementById("chatForm");
+  if (!chatForm || !messageInput) return;
+
+  const preview = document.createElement("div");
+  preview.className = "composer-emoji-preview";
+  preview.setAttribute("aria-hidden", "true");
+  // Insert directly before the chat input form
+  chatForm.parentNode.insertBefore(preview, chatForm);
+
+  function hasKnownEmojiToken(text) {
+    if (!emojiCatalog.loaded || !text) return false;
+    EMOJI_TOKEN_RE.lastIndex = 0;
+    let m;
+    while ((m = EMOJI_TOKEN_RE.exec(text)) !== null) {
+      if (resolveEmojiToken(m[0])) return true;
+    }
+    return false;
+  }
+
+  function updatePreview() {
+    const text = messageInput.value;
+    if (!hasKnownEmojiToken(text)) {
+      preview.hidden = true;
+      preview.textContent = "";
+      return;
+    }
+    preview.hidden = false;
+    preview.textContent = "";
+    preview.appendChild(renderTextWithEmoji(text));
+  }
+
+  messageInput.addEventListener("input", updatePreview);
+
+  // Clear preview on successful send (chatForm submit)
+  chatForm.addEventListener("submit", () => {
+    preview.hidden = true;
+    preview.textContent = "";
+  }, true);
+
+  // Also clear when conversation is switched (messageList cleared)
+  const _origClearChat = window.clearChatMessages;
+  if (typeof _origClearChat === "function") {
+    window.clearChatMessages = function(...args) {
+      preview.hidden = true;
+      preview.textContent = "";
+      return _origClearChat.apply(this, args);
+    };
+  }
+
+  // Re-run after catalog loads so an already-typed token becomes visible
+  const _origLoadCatalog = window.loadEmojiCatalog;
+  if (typeof _origLoadCatalog === "function") {
+    const origPromise = loadEmojiCatalog;
+    // Hook: after catalog resolves, refresh preview
+    const _catalog = loadEmojiCatalog;
+    window._composerPreviewRefresh = updatePreview;
+  }
+})();
+
+// ── V2 shared status bar ─────────────────────────────────────────────────────
+async function initV2StatusBars() {
+  const bars = Array.from(document.querySelectorAll(".v2-top-status"));
+  if (!bars.length) return;
+
+  let serverBase = new Date();
+  let clientBase = Date.now();
+  try {
+    const response = await fetch(window.location.href, { method: "HEAD", cache: "no-store" });
+    const serverDate = response.headers.get("date");
+    if (serverDate) {
+      const parsed = new Date(serverDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        serverBase = parsed;
+        clientBase = Date.now();
+      }
+    }
+  } catch (_) {
+    serverBase = new Date();
+    clientBase = Date.now();
+  }
+
+  function currentServerTime() {
+    return new Date(serverBase.getTime() + (Date.now() - clientBase));
+  }
+
+  function formatStatusTime(date) {
+    return date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
+  function updateBars() {
+    const timeText = formatStatusTime(currentServerTime());
+    bars.forEach((bar) => {
+      const parts = bar.querySelectorAll("span");
+      if (parts[1]) parts[1].textContent = "冰岛 · -2°C";
+      if (parts[2]) parts[2].textContent = timeText;
+    });
+  }
+
+  bars.forEach((bar) => {
+    bar.setAttribute("role", "button");
+    bar.setAttribute("tabindex", "0");
+    bar.setAttribute("aria-label", "状态设置：定位、天气、时间");
+    bar.addEventListener("click", () => {
+      showDialog({
+        title: "状态设置入口已预留",
+        body: "定位、天气和时间将接入统一编辑态；当前默认使用服务器时间，位置和天气暂为冰岛 · -2°C。",
+        confirmLabel: "知道了",
+      });
+    });
+    bar.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        bar.click();
+      }
+    });
+  });
+
+  updateBars();
+  window.setInterval(updateBars, 30 * 1000);
+}
+
+initV2StatusBars();
 
 // ── 记忆中枢 Memory Center ─────────────────────────────────────────────────────
 
@@ -4593,20 +6714,14 @@ async function mcBridgeFetchAudit() {
 async function mcBridgeRefreshAll() {
   const state = memoryCenterV2State;
 
-  // Phase 1: recent (no token required)
+  // Phase 1: recent
   state.loadingRecent = true;
   state.recentError = "";
   renderMemoryCenterCurrentView();
   await mcBridgeFetchRecent();
   renderMemoryCenterCurrentView();
 
-  // Phase 2: archive + audit (token required)
-  if (!getMemoryToken()) {
-    state.archiveError = "需要记忆口令后显示完整档案";
-    state.auditError = "需要记忆口令后显示审计";
-    return;
-  }
-
+  // Phase 2: archive + audit
   state.loadingArchive = true;
   state.loadingAudit = true;
   state.archiveError = "";
@@ -4966,36 +7081,6 @@ function renderMemoryArchiveView(root, options = {}) {
 
   if (_archiveSnap.loadingStates.loadingArchive && !_archiveSnap.loadingStates.archiveLoaded) {
     mcRenderEmpty(list, "档案加载中...");
-  } else if (!getMemoryToken() && !_archiveSnap.loadingStates.archiveLoaded) {
-    const authPrompt = mcEl("div", "mc-auth-prompt");
-    authPrompt.innerHTML = `
-      <div class="mc-auth-icon">🔒</div>
-      <div class="mc-auth-title">需要记忆口令</div>
-      <div class="mc-auth-desc">输入口令后可查看完整档案并进行管理操作</div>
-    `;
-    const authBtn = mcEl("button", "mc-auth-btn", "输入口令");
-    authBtn.type = "button";
-    authBtn.addEventListener("click", () => {
-      showDialog({
-        title: "记忆管理口令",
-        input: "",
-        inputType: "password",
-        confirmLabel: "确定",
-        onConfirm: (val) => {
-          if (val) {
-            sessionStorage.setItem("memory_admin_token", val);
-            mcBridgeRefreshAll();
-          }
-        },
-      });
-    });
-    authPrompt.appendChild(authBtn);
-    list.appendChild(authPrompt);
-
-    // Still show recent items
-    const recentTitle = mcEl("h3", "mc-section-subtitle", "最近沉淀（无需口令）");
-    list.appendChild(recentTitle);
-    items.filter((item) => item.source === "recent").forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
   } else if (filtered.length) {
     filtered.forEach((item) => list.appendChild(mcRenderMemoryCard(item)));
   } else {
@@ -5372,3 +7457,428 @@ async function renderRecentMemoryUpdates() {
 document.getElementById("mcBackButton")?.addEventListener("click", () => {
   switchMemoryCenterView("room");
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 世界书管理
+// ═════════════════════════════════════════════════════════════════════════════
+
+const WB_MAX_FILE_BYTES  = 1 * 1024 * 1024;   // 1 MB frontend guard
+const WB_MAX_CONTENT_LEN = 200_000;            // chars, mirrors DB constraint
+const WB_PREVIEW_LINES   = 100;
+const WB_PREVIEW_CHARS   = 200;
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+let wbBooks        = [];   // WorldBook[]  in-memory cache (sorted by priority)
+let wbDraggedId    = null; // id of card being dragged
+let wbPendingFile  = null; // { name, content, lineCount } pending upload
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+
+const worldBooksOverlay  = document.getElementById("worldBooksOverlay");
+const wbBackBtn          = document.getElementById("wbBackBtn");
+const wbCloseBtn         = document.getElementById("wbCloseBtn");
+const wbUploadBtn        = document.getElementById("wbUploadBtn");
+const wbFileInput        = document.getElementById("wbFileInput");
+const wbUploadForm       = document.getElementById("wbUploadForm");
+const wbNameInput        = document.getElementById("wbNameInput");
+const wbAuthorInput      = document.getElementById("wbAuthorInput");
+const wbUploadPreview    = document.getElementById("wbUploadPreview");
+const wbUploadError      = document.getElementById("wbUploadError");
+const wbCancelUpload     = document.getElementById("wbCancelUpload");
+const wbConfirmUpload    = document.getElementById("wbConfirmUpload");
+const wbList             = document.getElementById("wbList");
+const wbTokenHint        = document.getElementById("wbTokenHint");
+const wbSettingRow       = document.getElementById("worldBooksSettingRow");
+
+// ── Open / Close ─────────────────────────────────────────────────────────────
+
+function openWorldBooks() {
+  worldBooksOverlay.classList.remove("hidden");
+  worldBooksOverlay.removeAttribute("aria-hidden");
+  loadWorldBooks();
+}
+
+function closeWorldBooks() {
+  worldBooksOverlay.classList.add("hidden");
+  worldBooksOverlay.setAttribute("aria-hidden", "true");
+  wbResetUploadForm();
+}
+
+wbBackBtn.addEventListener("click",  closeWorldBooks);
+wbCloseBtn.addEventListener("click", closeWorldBooks);
+
+worldBooksOverlay.addEventListener("click", (e) => {
+  if (e.target === worldBooksOverlay) closeWorldBooks();
+});
+
+wbSettingRow?.addEventListener("click", openWorldBooks);
+
+// ── Load & Render ─────────────────────────────────────────────────────────────
+
+async function loadWorldBooks() {
+  if (!supabaseClient || !currentUserId) {
+    wbList.innerHTML = '<div class="wb-empty">请先登录。</div>';
+    return;
+  }
+
+  wbList.innerHTML = '<div class="wb-loading" aria-live="polite">加载中…</div>';
+
+  const { data, error } = await supabaseClient
+    .from("world_books")
+    .select("id, name, author, content, line_count, enabled, priority, created_at")
+    .eq("user_id", currentUserId)
+    .order("priority", { ascending: true });
+
+  if (error) {
+    wbList.innerHTML = `<div class="wb-empty">加载失败：${error.message}</div>`;
+    return;
+  }
+
+  wbBooks = data || [];
+  wbRender();
+  wbUpdateTokenHint();
+}
+
+function wbRender() {
+  if (wbBooks.length === 0) {
+    wbList.innerHTML = '<div class="wb-empty">还没有上传世界书。开始上传你的第一个吧。</div>';
+    return;
+  }
+
+  wbList.innerHTML = "";
+
+  wbBooks.forEach((book, index) => {
+    const card = document.createElement("div");
+    card.className = "wb-card";
+    card.setAttribute("role", "listitem");
+    card.dataset.id = book.id;
+    card.draggable = true;
+
+    const previewText = wbBuildPreview(book.content);
+    const authorBadge = book.author
+      ? `<span class="wb-author">${escapeHtml(book.author)}</span>`
+      : "";
+
+    card.innerHTML = `
+      <div class="wb-card-main">
+        <span class="wb-drag-handle" aria-hidden="true">⠿</span>
+        <span class="wb-index">${index + 1}</span>
+        <div class="wb-card-info">
+          <div class="wb-name" title="${escapeHtml(book.name)}">${escapeHtml(book.name)}</div>
+          <div class="wb-meta">
+            ${authorBadge}
+            <span class="wb-lines">${book.line_count} 行</span>
+          </div>
+        </div>
+        <div class="wb-card-actions">
+          <button
+            class="wb-toggle"
+            data-enabled="${book.enabled}"
+            aria-label="${book.enabled ? "已启用，点击禁用" : "已禁用，点击启用"}"
+            aria-pressed="${book.enabled}"
+            title="${book.enabled ? "已启用" : "已禁用"}"
+          >${book.enabled ? "●" : "○"}</button>
+          <button class="wb-delete" aria-label="删除 ${escapeHtml(book.name)}" title="删除">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2 3.5h10M5.5 3.5V2.5h3V3.5M5 5.5l.5 5M9 5.5l-.5 5M3.5 3.5l.5 8h6l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="wb-preview">${escapeHtml(previewText)}</div>
+    `;
+
+    // Toggle preview on card body click (not on action buttons)
+    card.querySelector(".wb-card-main").addEventListener("click", (e) => {
+      if (e.target.closest(".wb-card-actions")) return;
+      card.classList.toggle("wb-expanded");
+    });
+
+    // Toggle enabled
+    card.querySelector(".wb-toggle").addEventListener("click", (e) => {
+      e.stopPropagation();
+      wbToggleEnabled(book.id, !book.enabled);
+    });
+
+    // Delete
+    card.querySelector(".wb-delete").addEventListener("click", (e) => {
+      e.stopPropagation();
+      wbDelete(book.id, book.name);
+    });
+
+    // Drag events
+    card.addEventListener("dragstart", wbOnDragStart);
+    card.addEventListener("dragover",  wbOnDragOver);
+    card.addEventListener("dragleave", wbOnDragLeave);
+    card.addEventListener("drop",      wbOnDrop);
+    card.addEventListener("dragend",   wbOnDragEnd);
+
+    wbList.appendChild(card);
+  });
+}
+
+function wbBuildPreview(content) {
+  return content.split("\n").slice(0, WB_PREVIEW_LINES).join("\n").substring(0, WB_PREVIEW_CHARS);
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function wbUpdateTokenHint() {
+  const enabled = wbBooks.filter(b => b.enabled);
+  if (enabled.length === 0) {
+    wbTokenHint.textContent = "";
+    wbTokenHint.classList.remove("wb-token-hint--warn");
+    return;
+  }
+  const totalChars = enabled.reduce((sum, b) => sum + b.content.length, 0);
+  // Rough estimate: 1 token ≈ 4 chars
+  const estTokens = Math.round(totalChars / 4);
+  const warn = totalChars > 20_000;
+  wbTokenHint.textContent = `${enabled.length} 个已启用 · 约 ${estTokens.toLocaleString()} tokens${warn ? "（已接近上限）" : ""}`;
+  wbTokenHint.classList.toggle("wb-token-hint--warn", warn);
+}
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
+
+async function wbToggleEnabled(id, newEnabled) {
+  // Optimistic update
+  const book = wbBooks.find(b => b.id === id);
+  if (!book) return;
+  book.enabled = newEnabled;
+  wbRender();
+  wbUpdateTokenHint();
+
+  const { error } = await supabaseClient
+    .from("world_books")
+    .update({ enabled: newEnabled })
+    .eq("id", id)
+    .eq("user_id", currentUserId);
+
+  if (error) {
+    // Rollback
+    book.enabled = !newEnabled;
+    wbRender();
+    wbUpdateTokenHint();
+    showToast("更新失败：" + error.message);
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+async function wbDelete(id, name) {
+  if (!confirm(`确认删除「${name}」？`)) return;
+
+  const { error } = await supabaseClient
+    .from("world_books")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", currentUserId);
+
+  if (error) {
+    showToast("删除失败：" + error.message);
+    return;
+  }
+
+  wbBooks = wbBooks.filter(b => b.id !== id);
+  wbRender();
+  wbUpdateTokenHint();
+}
+
+// ── Drag & Drop ───────────────────────────────────────────────────────────────
+
+function wbOnDragStart(e) {
+  wbDraggedId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.add("wb-dragging");
+  e.dataTransfer.effectAllowed = "move";
+}
+
+function wbOnDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  const target = e.currentTarget;
+  if (target.dataset.id !== wbDraggedId) {
+    target.classList.add("wb-drag-over");
+  }
+}
+
+function wbOnDragLeave(e) {
+  e.currentTarget.classList.remove("wb-drag-over");
+}
+
+function wbOnDrop(e) {
+  e.preventDefault();
+  const targetId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.remove("wb-drag-over");
+
+  if (!wbDraggedId || wbDraggedId === targetId) return;
+
+  // Reorder in-memory array: move dragged item to position of target
+  const fromIdx = wbBooks.findIndex(b => b.id === wbDraggedId);
+  const toIdx   = wbBooks.findIndex(b => b.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+
+  const [moved] = wbBooks.splice(fromIdx, 1);
+  wbBooks.splice(toIdx, 0, moved);
+
+  wbRender();
+  wbUpdateTokenHint();
+
+  // Persist atomically via RPC
+  wbPersistOrder();
+}
+
+function wbOnDragEnd(e) {
+  e.currentTarget.classList.remove("wb-dragging");
+  // Clear any stale drag-over indicators
+  document.querySelectorAll(".wb-drag-over").forEach(el => el.classList.remove("wb-drag-over"));
+  wbDraggedId = null;
+}
+
+async function wbPersistOrder() {
+  const orderedIds = wbBooks.map(b => b.id);
+
+  const { error } = await supabaseClient.rpc("reorder_world_books", {
+    ordered_ids:     orderedIds,
+    calling_user_id: currentUserId,
+  });
+
+  if (error) {
+    showToast("排序保存失败：" + error.message);
+    // Reload from DB to restore consistent state
+    await loadWorldBooks();
+  }
+}
+
+// ── Upload flow ───────────────────────────────────────────────────────────────
+
+wbUploadBtn.addEventListener("click", () => wbFileInput.click());
+
+wbFileInput.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";  // reset so same file can be re-selected
+  if (!file) return;
+
+  // Size guard
+  if (file.size > WB_MAX_FILE_BYTES) {
+    showToast("文件过大（上限 1 MB）");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const content = ev.target.result;
+
+    // Content length guard
+    if (content.length > WB_MAX_CONTENT_LEN) {
+      showToast("文件内容过长（上限 200,000 字符）");
+      return;
+    }
+
+    const lineCount = content.split("\n").length;
+    // Derive name from filename, strip extension
+    const baseName = file.name.replace(/\.(md|txt)$/i, "").trim() || file.name;
+
+    wbPendingFile = { content, lineCount };
+    wbNameInput.value   = baseName;
+    wbAuthorInput.value = "";
+    wbUploadPreview.textContent = wbBuildPreview(content);
+    wbUploadError.textContent = "";
+    wbUploadForm.classList.remove("hidden");
+    wbNameInput.focus();
+  };
+  reader.readAsText(file, "utf-8");
+});
+
+wbCancelUpload.addEventListener("click", wbResetUploadForm);
+
+wbConfirmUpload.addEventListener("click", wbSubmitUpload);
+
+function wbResetUploadForm() {
+  wbPendingFile = null;
+  wbNameInput.value   = "";
+  wbAuthorInput.value = "";
+  wbUploadPreview.textContent = "";
+  wbUploadError.textContent = "";
+  wbUploadForm.classList.add("hidden");
+}
+
+async function wbSubmitUpload() {
+  if (!wbPendingFile) return;
+  if (!supabaseClient || !currentUserId) {
+    wbUploadError.textContent = "请先登录。";
+    return;
+  }
+
+  const name = wbNameInput.value.trim();
+  if (!name) {
+    wbUploadError.textContent = "请填写名称。";
+    wbNameInput.focus();
+    return;
+  }
+
+  const author    = wbAuthorInput.value.trim() || null;
+  const { content, lineCount } = wbPendingFile;
+
+  // Calculate new priority = max(existing priorities) + 10, or 0 if empty
+  const maxPriority = wbBooks.length > 0
+    ? Math.max(...wbBooks.map(b => b.priority))
+    : -10;
+  const priority = maxPriority + 10;
+
+  wbConfirmUpload.disabled = true;
+  wbUploadError.textContent = "";
+
+  const { data, error } = await supabaseClient
+    .from("world_books")
+    .insert({
+      user_id:    currentUserId,
+      name,
+      author,
+      content,
+      line_count: lineCount,
+      enabled:    false,
+      priority,
+    })
+    .select("id, name, author, content, line_count, enabled, priority, created_at")
+    .single();
+
+  wbConfirmUpload.disabled = false;
+
+  if (error) {
+    // Detect unique constraint violation (Postgres code 23505)
+    if (error.code === "23505" || (error.message || "").includes("unique")) {
+      wbUploadError.textContent = "同名世界书已存在，请修改名称后重试。";
+      wbNameInput.focus();
+    } else {
+      wbUploadError.textContent = "上传失败：" + error.message;
+    }
+    return;
+  }
+
+  wbBooks.push(data);
+  wbResetUploadForm();
+  wbRender();
+  wbUpdateTokenHint();
+  showToast("已上传「" + name + "」");
+}
+
+// ── Toast helper (reuse existing showDialog or fallback) ─────────────────────
+// The app uses showDialog(). For non-blocking brief feedback we use it as
+// a simple one-button alert. If a lighter toast API exists in the codebase
+// we can swap this out, but showDialog is the existing pattern.
+
+function showToast(message) {
+  if (typeof showDialog === "function") {
+    showDialog({ title: message, body: "", confirmLabel: "知道了" });
+  } else {
+    alert(message);
+  }
+}
