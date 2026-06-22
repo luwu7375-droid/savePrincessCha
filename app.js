@@ -4618,6 +4618,7 @@ var _currentSettingsSubpage = null;
 var SETTINGS_SUBPAGE_META = {
   "appearance-resources": { title: "外观与资源",       subtitle: "头像、壁纸、开屏图与表情包来源" },
   "prompt-worldbook":     { title: "Prompt 与世界书",  subtitle: "提示词、世界书与注入规则" },
+  worldbook:              { title: "世界书管理",        subtitle: "上传后手动启用才会注入 Prompt" },
   memory:                 { title: "记忆管理",          subtitle: "查看、禁用与清理记忆" },
   api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
   backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
@@ -4637,6 +4638,18 @@ function openSettingsSubpage(type) {
   const bodyEl = document.getElementById("settingsSubpageBody");
   if (!subpage || !mainView || !titleEl || !subtitleEl || !bodyEl) return;
 
+  // If leaving worldbook subpage, move content back to the hidden store first
+  if (_currentSettingsSubpage === "worldbook") {
+    const mount = document.getElementById("wbSubpageMount");
+    const store = document.getElementById("wbContentStore");
+    if (mount && store) {
+      while (mount.firstChild) {
+        store.appendChild(mount.firstChild);
+      }
+    }
+    wbResetUploadForm();
+  }
+
   const meta = SETTINGS_SUBPAGE_META[type] || { title: type, subtitle: "" };
   titleEl.textContent = meta.title;
   subtitleEl.textContent = meta.subtitle;
@@ -4654,6 +4667,19 @@ function closeSettingsSubpage() {
   const subpage = document.getElementById("settingsSubpage");
   const mainView = document.getElementById("settingsMainView");
   if (!subpage || !mainView) return;
+
+  // If leaving worldbook subpage, move content back to the hidden store
+  if (_currentSettingsSubpage === "worldbook") {
+    const mount = document.getElementById("wbSubpageMount");
+    const store = document.getElementById("wbContentStore");
+    if (mount && store) {
+      while (mount.firstChild) {
+        store.appendChild(mount.firstChild);
+      }
+    }
+    wbResetUploadForm();
+  }
+
   subpage.hidden = true;
   mainView.hidden = false;
   _currentSettingsSubpage = null;
@@ -4668,6 +4694,8 @@ function renderSettingsSubpage(type) {
     case "prompt-worldbook":
     case "prompt":
       return _renderPromptWorldbookSubpage();
+    case "worldbook":
+      return _renderWorldbookSubpage();
     case "memory":
       return _renderMemorySubpage();
     case "api":
@@ -4872,15 +4900,12 @@ function _initSettingsSubpageEvents(container, type) {
   if (type === "prompt-worldbook" || type === "prompt") {
     const wbRow = container.querySelector("#promptWbOpenRow");
     if (wbRow) wbRow.addEventListener("click", () => {
-      closeSettingsSubpage();
-      const wbOverlay = document.getElementById("worldBooksOverlay");
-      if (wbOverlay) {
-        wbOverlay.classList.remove("hidden");
-        wbOverlay.removeAttribute("aria-hidden");
-        const closeBtn = document.getElementById("wbBackBtn");
-        if (closeBtn) closeBtn.focus();
-      }
+      openSettingsSubpage("worldbook");
     });
+    return;
+  }
+  if (type === "worldbook") {
+    _initSettingsWorldbookSubpage(container);
     return;
   }
   if (type === "chat") {
@@ -4897,6 +4922,26 @@ function _initSettingsSubpageEvents(container, type) {
 // Legacy stubs (kept so any other code referencing the old names keeps working)
 function _renderBeautifySubpage()  { return _renderAppearanceResourcesSubpage(); }
 function _renderPromptSubpage()    { return _renderPromptWorldbookSubpage(); }
+
+function _renderWorldbookSubpage() {
+  return `<div id="wbSubpageMount" class="wb-subpage-mount"></div>`;
+}
+
+function _initSettingsWorldbookSubpage(container) {
+  const mount = container.querySelector("#wbSubpageMount");
+  if (!mount) return;
+
+  const store = document.getElementById("wbContentStore");
+  if (!store) return;
+
+  // Move all child nodes from the hidden store into the subpage mount
+  while (store.firstChild) {
+    mount.appendChild(store.firstChild);
+  }
+
+  // Load world books into the now-visible list
+  loadWorldBooks();
+}
 
 function _renderMemorySubpage() {
   return `<div id="settingsMemoryMount" style="min-height:200px"></div>`;
@@ -7199,10 +7244,9 @@ let wbDraggedId    = null; // id of card being dragged
 let wbPendingFile  = null; // { name, content, lineCount } pending upload
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
+// Note: these elements live in #wbContentStore (a hidden DOM store) and are
+// moved into the settings subpage body when the worldbook subpage is opened.
 
-const worldBooksOverlay  = document.getElementById("worldBooksOverlay");
-const wbBackBtn          = document.getElementById("wbBackBtn");
-const wbCloseBtn         = document.getElementById("wbCloseBtn");
 const wbUploadBtn        = document.getElementById("wbUploadBtn");
 const wbFileInput        = document.getElementById("wbFileInput");
 const wbUploadForm       = document.getElementById("wbUploadForm");
@@ -7214,30 +7258,18 @@ const wbCancelUpload     = document.getElementById("wbCancelUpload");
 const wbConfirmUpload    = document.getElementById("wbConfirmUpload");
 const wbList             = document.getElementById("wbList");
 const wbTokenHint        = document.getElementById("wbTokenHint");
-const wbSettingRow       = document.getElementById("worldBooksSettingRow");
 
-// ── Open / Close ─────────────────────────────────────────────────────────────
+// ── Open / Close (legacy stubs — worldbook is now a settings subpage) ─────────
 
 function openWorldBooks() {
-  worldBooksOverlay.classList.remove("hidden");
-  worldBooksOverlay.removeAttribute("aria-hidden");
-  loadWorldBooks();
+  openSettingsSubpage("worldbook");
 }
 
 function closeWorldBooks() {
-  worldBooksOverlay.classList.add("hidden");
-  worldBooksOverlay.setAttribute("aria-hidden", "true");
-  wbResetUploadForm();
+  // Navigate back to prompt-worldbook subpage (the parent)
+  openSettingsSubpage("prompt-worldbook");
 }
 
-wbBackBtn.addEventListener("click",  closeWorldBooks);
-wbCloseBtn.addEventListener("click", closeWorldBooks);
-
-worldBooksOverlay.addEventListener("click", (e) => {
-  if (e.target === worldBooksOverlay) closeWorldBooks();
-});
-
-wbSettingRow?.addEventListener("click", openWorldBooks);
 
 // ── Load & Render ─────────────────────────────────────────────────────────────
 
