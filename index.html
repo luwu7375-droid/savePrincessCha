@@ -514,54 +514,41 @@
     <div id="statusPanelRows"></div>
   </div>
 
-  <!-- 世界书管理页 -->
-  <div id="worldBooksOverlay" class="overlay hidden" aria-hidden="true">
-    <div class="modal wb-modal" role="dialog" aria-modal="true" aria-labelledby="wbPageTitle">
-      <div class="wb-header">
-        <button id="wbBackBtn" type="button" class="wb-back-btn" aria-label="返回设置">←</button>
-        <div class="wb-header-text">
-          <h2 id="wbPageTitle">世界书</h2>
-          <p>上传后手动启用才会注入 Prompt</p>
-        </div>
-        <button id="wbCloseBtn" type="button" class="wb-close-btn" aria-label="关闭">×</button>
-      </div>
+  <!-- 世界书管理内容（由 JS 注入到 settings-subpage-body，此处仅作 DOM 仓库） -->
+  <div id="wbContentStore" hidden>
+    <!-- 上传区 -->
+    <div class="wb-upload-row">
+      <input type="file" id="wbFileInput" accept=".md,.txt,text/plain,text/markdown" style="display:none" aria-label="选择世界书文件">
+      <button id="wbUploadBtn" type="button" class="wb-upload-btn">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 2v8M7.5 2L4.5 5M7.5 2l3 3M2 11.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        上传新的世界书
+      </button>
+      <span id="wbTokenHint" class="wb-token-hint" aria-live="polite"></span>
+    </div>
 
-      <div class="wb-body">
-        <!-- 上传区 -->
-        <div class="wb-upload-row">
-          <input type="file" id="wbFileInput" accept=".md,.txt,text/plain,text/markdown" style="display:none" aria-label="选择世界书文件">
-          <button id="wbUploadBtn" type="button" class="wb-upload-btn">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 2v8M7.5 2L4.5 5M7.5 2l3 3M2 11.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            上传新的世界书
-          </button>
-          <span id="wbTokenHint" class="wb-token-hint" aria-live="polite"></span>
+    <!-- 上传表单（inline，上传时出现） -->
+    <div id="wbUploadForm" class="wb-upload-form hidden">
+      <div class="wb-upload-form-inner">
+        <div class="wb-form-row">
+          <label for="wbNameInput">名称</label>
+          <input id="wbNameInput" type="text" maxlength="80" placeholder="世界书名称" autocomplete="off" spellcheck="false">
         </div>
-
-        <!-- 上传表单（inline，上传时出现） -->
-        <div id="wbUploadForm" class="wb-upload-form hidden">
-          <div class="wb-upload-form-inner">
-            <div class="wb-form-row">
-              <label for="wbNameInput">名称</label>
-              <input id="wbNameInput" type="text" maxlength="80" placeholder="世界书名称" autocomplete="off" spellcheck="false">
-            </div>
-            <div class="wb-form-row">
-              <label for="wbAuthorInput">作者<span class="wb-optional">（可选）</span></label>
-              <input id="wbAuthorInput" type="text" maxlength="60" placeholder="作者名" autocomplete="off" spellcheck="false">
-            </div>
-            <div id="wbUploadPreview" class="wb-upload-preview"></div>
-            <div id="wbUploadError" class="wb-upload-error" aria-live="assertive"></div>
-            <div class="wb-form-actions">
-              <button id="wbCancelUpload" type="button" class="wb-btn wb-btn--ghost">取消</button>
-              <button id="wbConfirmUpload" type="button" class="wb-btn wb-btn--primary">确认上传</button>
-            </div>
-          </div>
+        <div class="wb-form-row">
+          <label for="wbAuthorInput">作者<span class="wb-optional">（可选）</span></label>
+          <input id="wbAuthorInput" type="text" maxlength="60" placeholder="作者名" autocomplete="off" spellcheck="false">
         </div>
-
-        <!-- 世界书列表 -->
-        <div id="wbList" class="wb-list" role="list" aria-label="世界书列表">
-          <div class="wb-loading" id="wbLoadingState" aria-live="polite">加载中…</div>
+        <div id="wbUploadPreview" class="wb-upload-preview"></div>
+        <div id="wbUploadError" class="wb-upload-error" aria-live="assertive"></div>
+        <div class="wb-form-actions">
+          <button id="wbCancelUpload" type="button" class="wb-btn wb-btn--ghost">取消</button>
+          <button id="wbConfirmUpload" type="button" class="wb-btn wb-btn--primary">确认上传</button>
         </div>
       </div>
+    </div>
+
+    <!-- 世界书列表 -->
+    <div id="wbList" class="wb-list" role="list" aria-label="世界书列表">
+      <div class="wb-loading" id="wbLoadingState" aria-live="polite">加载中…</div>
     </div>
   </div>
 
