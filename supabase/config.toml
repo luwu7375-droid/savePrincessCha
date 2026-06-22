@@ -4,5 +4,5 @@ verify_jwt = false
 [functions.memories]
 verify_jwt = false
 
-[functions.scheduler]
+[functions.game]
 verify_jwt = false

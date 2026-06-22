@@ -480,11 +480,6 @@ type RequestLog = {
   conversation_history_filtered_by_route: boolean;
   conversation_history_suppressed_count: number;
   conversation_history_allowed_count: number;
-  running_summary_attempted: boolean;
-  running_summary_injected: boolean;
-  running_summary_message_count: number;
-  running_summary_kept_recent_count: number;
-  running_summary_error: string | null;
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
@@ -1538,130 +1533,6 @@ async function callModelWithFallback(
   };
 }
 
-// ── Running summary (transient) ───────────────────────────────────────────────
-const RUNNING_SUMMARY_TRIGGER_MESSAGES = 30;
-const RUNNING_SUMMARY_KEEP_RECENT_MESSAGES = 20;
-
-type RunningSummaryResult = {
-  summary: string;
-  originalMessageCount: number;
-  keptRecentCount: number;
-};
-
-function messageRoleForSummary(message: unknown): string {
-  if (!message || typeof message !== "object") return "unknown";
-  const role = (message as { role?: unknown }).role;
-  return typeof role === "string" ? role : "unknown";
-}
-
-function messageTextForSummary(message: unknown): string {
-  if (!message || typeof message !== "object") return String(message ?? "");
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object") {
-          const text = (part as { text?: unknown }).text;
-          if (typeof text === "string") return text;
-          const type = (part as { type?: unknown }).type;
-          return typeof type === "string" ? `[${type}]` : "[content]";
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join(" ");
-  }
-  try {
-    return JSON.stringify(content);
-  } catch {
-    return "[unserializable content]";
-  }
-}
-
-async function callModelText(
-  provider: ProviderConfig,
-  messages: unknown[],
-  maxTokens: number,
-): Promise<string> {
-  const timeoutMs = getTimeoutMs(provider.tier);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(provider.baseUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        messages,
-        stream: false,
-        max_tokens: maxTokens,
-      }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`summary_model_${res.status}: ${text.slice(0, 160)}`);
-    }
-    const data = await res.json();
-    const text =
-      data?.choices?.[0]?.message?.content ??
-      data?.choices?.[0]?.text ??
-      "";
-    return typeof text === "string" ? text.trim() : "";
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function buildRunningSummary(
-  tierProviders: TierProviders,
-  payloadMessages: unknown[],
-): Promise<RunningSummaryResult | null> {
-  if (payloadMessages.length <= RUNNING_SUMMARY_TRIGGER_MESSAGES) return null;
-
-  const olderMessages = payloadMessages.slice(0, -RUNNING_SUMMARY_KEEP_RECENT_MESSAGES);
-  if (olderMessages.length === 0) return null;
-
-  const transcript = olderMessages
-    .map((message, index) => {
-      const role = messageRoleForSummary(message);
-      const text = messageTextForSummary(message).replace(/\s+/g, " ").trim();
-      return `${index + 1}. ${role}: ${text.slice(0, 800)}`;
-    })
-    .join("\n");
-
-  const summaryMessages = [
-    {
-      role: "system",
-      content:
-        "Summarize the older part of this chat for continuing the same conversation. " +
-        "Keep concrete facts, user preferences, commitments, emotional state, unresolved questions, " +
-        "and anything Cha should remember for the immediate reply. Do not invent details.",
-    },
-    {
-      role: "user",
-      content:
-        "Return a concise running summary in English or Chinese matching the transcript language. " +
-        "This summary is transient and must not mention that summarization happened.\n\n" +
-        transcript,
-    },
-  ];
-
-  const summary = await callModelText(tierProviders.primary, summaryMessages, 420);
-  if (!summary) return null;
-
-  return {
-    summary,
-    originalMessageCount: payloadMessages.length,
-    keptRecentCount: RUNNING_SUMMARY_KEEP_RECENT_MESSAGES,
-  };
-}
-
 
 // ── Handler ───────────────────────────────────────────────────────────────────
 
@@ -1806,11 +1677,6 @@ Deno.serve(async (request) => {
     conversation_history_filtered_by_route: false,
     conversation_history_suppressed_count: 0,
     conversation_history_allowed_count: 0,
-    running_summary_attempted: false,
-    running_summary_injected: false,
-    running_summary_message_count: 0,
-    running_summary_kept_recent_count: 0,
-    running_summary_error: null,
     memory_context_tokens_estimated: 0,
     model_call_ms: 0,
     total_ms: 0,
@@ -2158,76 +2024,6 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
   }
   }
 
-  // ── 世界书注入 ──────────────────────────────────────────────────────────────
-  // Only runs when a userId is available. Injects enabled books in priority
-  // order (ascending). Total content is capped at 20,000 chars; books beyond
-  // the limit are skipped and a note is appended.
-  if (supabaseUrl && serviceRoleKey) {
-    const wbUserId = typeof payload.userId === "string" && payload.userId
-      ? payload.userId
-      : null;
-
-    if (wbUserId) {
-      try {
-        const wbHeaders = {
-          apikey:        serviceRoleKey,
-          Authorization: `Bearer ${serviceRoleKey}`,
-        };
-        const wbUrl =
-          `${supabaseUrl}/rest/v1/world_books` +
-          `?user_id=eq.${encodeURIComponent(wbUserId)}` +
-          `&enabled=eq.true` +
-          `&select=name,content,priority` +
-          `&order=priority.asc`;
-
-        const wbRes = await fetch(wbUrl, { headers: wbHeaders });
-
-        if (wbRes.ok) {
-          const worldBooks: { name: string; content: string; priority: number }[] =
-            await wbRes.json();
-
-          if (Array.isArray(worldBooks) && worldBooks.length > 0) {
-            const WB_CHAR_LIMIT = 20_000;
-            let charCount = 0;
-            const injected: typeof worldBooks = [];
-            let skippedCount = 0;
-
-            for (const book of worldBooks) {
-              if (charCount + book.content.length > WB_CHAR_LIMIT) {
-                skippedCount++;
-              } else {
-                injected.push(book);
-                charCount += book.content.length;
-              }
-            }
-
-            if (injected.length > 0) {
-              const parts = injected.map(
-                (b) => `<!-- From: ${b.name} (priority: ${b.priority}) -->\n${b.content}`
-              );
-              let worldBooksBlock = `\n\n<world_books>\n${parts.join("\n\n---\n\n")}\n`;
-              if (skippedCount > 0) {
-                worldBooksBlock += `\n<!-- 已达 token 上限，后续 ${skippedCount} 个世界书未注入 -->`;
-              }
-              worldBooksBlock += `\n</world_books>`;
-              systemContent += worldBooksBlock;
-            }
-
-            logRecord.world_books_count    = worldBooks.length;
-            logRecord.world_books_injected = injected.length;
-            logRecord.world_books_skipped  = skippedCount;
-            logRecord.world_books_chars    = charCount;
-          }
-        }
-      } catch (wbErr) {
-        // Non-fatal: world books failing should not break chat
-        logRecord.world_books_error = wbErr instanceof Error
-          ? wbErr.message.slice(0, 200)
-          : String(wbErr).slice(0, 200);
-      }
-    }
-  }
-
   if (payload.replyMode === "auto") {
     systemContent +=
       "\n\n【回复决策】如果用户明显还在连续补充、只是碎片化记录、或没有期待回复，可以不回复。若不回复，只输出：<NO_REPLY>。不要解释。";
@@ -2238,32 +2034,9 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     systemContent += "\n\n【回复决策】正常回复用户消息。";
   }
 
-  const payloadMessages = payload.messages as unknown[];
-  let modelPayloadMessages = payloadMessages;
-  logRecord.running_summary_message_count = payloadMessages.length;
-
-  if (payloadMessages.length > RUNNING_SUMMARY_TRIGGER_MESSAGES) {
-    logRecord.running_summary_attempted = true;
-    try {
-      const runningSummary = await buildRunningSummary(tierProviders, payloadMessages);
-      if (runningSummary) {
-        systemContent +=
-          "\n\n[Transient running summary]\n" +
-          "Use this temporary summary as context for older messages. It is not persisted memory.\n" +
-          runningSummary.summary;
-        modelPayloadMessages = payloadMessages.slice(-runningSummary.keptRecentCount);
-        logRecord.running_summary_injected = true;
-        logRecord.running_summary_kept_recent_count = runningSummary.keptRecentCount;
-      }
-    } catch (err) {
-      logRecord.running_summary_error = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
-      modelPayloadMessages = payloadMessages;
-    }
-  }
-
   const messages = [
     { role: "system", content: systemContent },
-    ...modelPayloadMessages,
+    ...(payload.messages as unknown[]),
   ];
 
   try {
@@ -2345,11 +2118,6 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
       model: logRecord.model,
       fallback_used: logRecord.fallback_used,
       fallback_reason: logRecord.fallback_reason,
-      running_summary_attempted: logRecord.running_summary_attempted,
-      running_summary_injected: logRecord.running_summary_injected,
-      running_summary_message_count: logRecord.running_summary_message_count,
-      running_summary_kept_recent_count: logRecord.running_summary_kept_recent_count,
-      running_summary_error: logRecord.running_summary_error,
     };
     const memoryDebugHeader = base64EncodeUtf8(memoryDebugPayload);
     const chatStatusHeader = base64EncodeUtf8(chatStatus);

@@ -3,36 +3,11 @@ create table if not exists public.messages (
   role text not null check (role in ('user', 'assistant')),
   content text not null,
   created_at timestamp default now(),
-  conversation_id text not null default 'default',
-  type text not null default 'message',
-  is_favorite boolean not null default false,
-  ai_tags jsonb not null default '[]'::jsonb,
-  system_action text default null,
-  ref_event_id bigint default null references public.messages(id) on delete set null
+  conversation_id text not null default 'default'
 );
 
 -- Add conversation_id to existing table if missing
 alter table public.messages add column if not exists conversation_id text not null default 'default';
-alter table public.messages add column if not exists type text not null default 'message';
-alter table public.messages add column if not exists is_favorite boolean not null default false;
-alter table public.messages add column if not exists ai_tags jsonb not null default '[]'::jsonb;
-alter table public.messages add column if not exists system_action text default null;
-alter table public.messages add column if not exists ref_event_id bigint default null references public.messages(id) on delete set null;
-
-alter table public.messages drop constraint if exists messages_type_check;
-alter table public.messages
-  add constraint messages_type_check
-  check (type in ('message', 'image', 'system', 'dream', 'voice'));
-
-alter table public.messages drop constraint if exists messages_ai_tags_array_check;
-alter table public.messages
-  add constraint messages_ai_tags_array_check
-  check (jsonb_typeof(ai_tags) = 'array');
-
-alter table public.messages drop constraint if exists messages_system_action_check;
-alter table public.messages
-  add constraint messages_system_action_check
-  check (system_action is null or system_action in ('favorite', 'edit', 'delete', 'tag', 'game_played'));
 
 alter table public.messages enable row level security;
 
