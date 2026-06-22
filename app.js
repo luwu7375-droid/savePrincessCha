@@ -5188,11 +5188,14 @@ function openEmojiPanel() {
     renderTabContent(contentArea, activeTab, searchInput.value.trim());
   });
 
-  // Insert panel above input bar
+  // Insert panel into chat-shell (absolute positioned, so doesn't affect flex flow)
+  const chatShell = document.querySelector(".chat-shell");
   const inputBar = document.getElementById("chatForm");
-  inputBar?.parentNode?.insertBefore(panel, inputBar);
+  const insertTarget = chatShell || inputBar?.parentNode;
+  insertTarget?.appendChild(panel);
   requestAnimationFrame(() => {
     panel.classList.add("open");
+    chatShell?.classList.add("emoji-panel-open");
     scrollChatToLatest();
   });
 
@@ -5212,6 +5215,8 @@ function openEmojiPanel() {
 function closeEmojiPanel() {
   _emojiPanelOpen = false;
   const panel = document.getElementById("emojiPanel");
+  const chatShell = document.querySelector(".chat-shell");
+  chatShell?.classList.remove("emoji-panel-open");
   if (panel) {
     panel.classList.remove("open");
     panel.addEventListener("transitionend", () => panel.remove(), { once: true });
@@ -5267,6 +5272,7 @@ function renderKaomojiTab(container, query) {
     btn.addEventListener("click", () => {
       insertTextAtCursor(kao);
       closeEmojiPanel();
+      scrollChatToLatest();
     });
     grid.appendChild(btn);
   });
@@ -5423,6 +5429,7 @@ function makeEmojiItem(emoji, opts = {}) {
     insertTextAtCursor(token + " ");
     recordEmojiUsed(emoji.id);
     closeEmojiPanel();
+    scrollChatToLatest();
   });
 
   return btn;
@@ -5741,68 +5748,9 @@ initKeyboardViewportState();
 // Start loading emoji catalog in the background — never blocks UI
 loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
 
-// ── Composer emoji preview ────────────────────────────────────────────────────
-// Shows a rendered preview of custom emoji tokens above the input bar.
-// textarea keeps the raw shortcode text; this layer is visual-only.
-(function initComposerEmojiPreview() {
-  const chatForm = document.getElementById("chatForm");
-  if (!chatForm || !messageInput) return;
-
-  const preview = document.createElement("div");
-  preview.className = "composer-emoji-preview";
-  preview.setAttribute("aria-hidden", "true");
-  // Insert directly before the chat input form
-  chatForm.parentNode.insertBefore(preview, chatForm);
-
-  function hasKnownEmojiToken(text) {
-    if (!emojiCatalog.loaded || !text) return false;
-    EMOJI_TOKEN_RE.lastIndex = 0;
-    let m;
-    while ((m = EMOJI_TOKEN_RE.exec(text)) !== null) {
-      if (resolveEmojiToken(m[0])) return true;
-    }
-    return false;
-  }
-
-  function updatePreview() {
-    const text = messageInput.value;
-    if (!hasKnownEmojiToken(text)) {
-      preview.hidden = true;
-      preview.textContent = "";
-      return;
-    }
-    preview.hidden = false;
-    preview.textContent = "";
-    preview.appendChild(renderTextWithEmoji(text));
-  }
-
-  messageInput.addEventListener("input", updatePreview);
-
-  // Clear preview on successful send (chatForm submit)
-  chatForm.addEventListener("submit", () => {
-    preview.hidden = true;
-    preview.textContent = "";
-  }, true);
-
-  // Also clear when conversation is switched (messageList cleared)
-  const _origClearChat = window.clearChatMessages;
-  if (typeof _origClearChat === "function") {
-    window.clearChatMessages = function(...args) {
-      preview.hidden = true;
-      preview.textContent = "";
-      return _origClearChat.apply(this, args);
-    };
-  }
-
-  // Re-run after catalog loads so an already-typed token becomes visible
-  const _origLoadCatalog = window.loadEmojiCatalog;
-  if (typeof _origLoadCatalog === "function") {
-    const origPromise = loadEmojiCatalog;
-    // Hook: after catalog resolves, refresh preview
-    const _catalog = loadEmojiCatalog;
-    window._composerPreviewRefresh = updatePreview;
-  }
-})();
+// Composer emoji preview removed: per UX spec, no separate preview bar above
+// the input. The textarea stores raw shortcodes; emoji render in the message
+// bubble after send.
 
 // ── V2 shared status bar ─────────────────────────────────────────────────────
 async function initV2StatusBars() {
