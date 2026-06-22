@@ -3626,25 +3626,6 @@ function initKeyboardViewportState() {
   updateKeyboardState();
 }
 
-// ── Visual viewport height tracker ────────────────────────────────────────────
-// Keeps --visual-vh in sync with the actual visible area so the emoji search
-// overlay can fill the screen correctly even when the keyboard is up on iOS.
-function initVisualVh() {
-  function update() {
-    const vh = window.visualViewport
-      ? `${window.visualViewport.height}px`
-      : `${window.innerHeight}px`;
-    document.documentElement.style.setProperty("--visual-vh", vh);
-  }
-  update();
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", update);
-    window.visualViewport.addEventListener("scroll", update);
-  } else {
-    window.addEventListener("resize", update);
-  }
-}
-
 function initInputKeyboardHints(root = document) {
   root.querySelectorAll('textarea, input[type="text"], input[type="search"]').forEach((input) => {
     input.setAttribute("autocapitalize", "off");
@@ -5349,8 +5330,6 @@ function openEmojiPanel() {
     browseArea.hidden = true;
     searchArea.hidden = false;
     cancelBtn.classList.add("emoji-search-cancel--visible");
-    // Mark chat-shell so composer is hidden (exclusive overlay)
-    chatShell?.classList.add("emoji-panel-search");
     renderSearchResults(searchArea, searchInput.value.trim());
   }
 
@@ -5363,8 +5342,6 @@ function openEmojiPanel() {
     searchArea.hidden = true;
     searchArea.innerHTML = "";
     cancelBtn.classList.remove("emoji-search-cancel--visible");
-    // Restore composer visibility
-    chatShell?.classList.remove("emoji-panel-search");
     if (clearInput) {
       searchInput.value = "";
       searchInput.blur();
@@ -5415,7 +5392,6 @@ function closeEmojiPanel() {
   const panel = document.getElementById("emojiPanel");
   const chatShell = document.querySelector(".chat-shell");
   chatShell?.classList.remove("emoji-panel-open");
-  chatShell?.classList.remove("emoji-panel-search");
   if (panel) {
     panel.classList.remove("open");
     panel.addEventListener("transitionend", () => panel.remove(), { once: true });
@@ -6068,7 +6044,6 @@ initV2Shell();
 initV2Composer();
 initInputKeyboardHints();
 initKeyboardViewportState();
-initVisualVh();
 // Start loading emoji catalog in the background — never blocks UI
 loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
 

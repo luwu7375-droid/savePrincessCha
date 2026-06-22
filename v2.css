@@ -1856,37 +1856,6 @@ body {
   scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(100dvh - 220px)));
 }
 
-/* ── Search mode: exclusive overlay ─────────────────────────────────────────
-   When the emoji panel enters search mode it becomes a fixed full-height sheet
-   that sits above the composer and bottom nav. The composer is visually hidden
-   so the user never sees a "half-blocked input bar" underneath the panel.
-   ────────────────────────────────────────────────────────────────────────── */
-
-/* Hide the chat composer while emoji search overlay is active */
-.chat-shell.emoji-panel-search .input-bar {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-}
-
-/* Search overlay: fixed, spans the full visualViewport height from bottom */
-.emoji-panel.open.emoji-panel--search {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  top: auto;
-  /* --visual-vh is set by JS via visualViewport; fallback to 100dvh */
-  height: var(--visual-vh, 100dvh);
-  border-radius: 20px 20px 0 0;
-  /* above composer, bottom-nav, suggestion bar; below global dialogs */
-  z-index: 50;
-  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.12);
-  transform: translateY(0);
-  opacity: 1;
-  pointer-events: auto;
-}
-
 /* ── Header ─────────────────────────────────────────────────────────────── */
 
 .emoji-panel-header {
