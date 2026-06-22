@@ -1850,14 +1850,14 @@ body {
   bottom: calc(max(10px, var(--keyboard-inset)) + env(safe-area-inset-bottom) + 54px);
 }
 
-/* Message list extra bottom padding when emoji panel is open, so the last
-   message isn't hidden behind the panel */
+/* Message list extra bottom padding when emoji panel is open */
 .chat-shell.emoji-panel-open .message-list {
   padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(100dvh - 220px)));
   scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(100dvh - 220px)));
 }
 
-/* Header */
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
 .emoji-panel-header {
   display: flex;
   align-items: center;
@@ -1866,8 +1866,14 @@ body {
   flex-shrink: 0;
 }
 
-.emoji-search {
+/* Search input wrapper grows to fill available header space */
+.emoji-search-wrap {
   flex: 1;
+  min-width: 0;
+}
+
+.emoji-search {
+  width: 100%;
   background: var(--surface-soft);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-input);
@@ -1876,10 +1882,30 @@ body {
   color: var(--text-main);
   outline: none;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .emoji-search::placeholder {
   color: var(--text-faint);
+}
+
+/* Cancel button — hidden by default, shown in search mode */
+.emoji-search-cancel {
+  background: none;
+  border: none;
+  color: var(--active, #4f8cff);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 2px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  /* Hidden until search mode */
+  display: none;
+}
+
+.emoji-search-cancel--visible {
+  display: block;
 }
 
 .emoji-panel-close {
@@ -1898,7 +1924,8 @@ body {
   background: var(--border-soft);
 }
 
-/* Tab bar */
+/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+
 .emoji-tab-bar {
   display: flex;
   overflow-x: auto;
@@ -1907,9 +1934,20 @@ body {
   padding: 0 10px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border-soft);
+  transition: opacity 0.15s, max-height 0.15s;
+  max-height: 48px;
+  overflow-y: hidden;
 }
 
 .emoji-tab-bar::-webkit-scrollbar { display: none; }
+
+/* In search mode, collapse the tab bar */
+.emoji-tab-bar--hidden {
+  max-height: 0;
+  opacity: 0;
+  border-bottom-color: transparent;
+  pointer-events: none;
+}
 
 .emoji-tab {
   background: none;
@@ -1930,30 +1968,31 @@ body {
   font-weight: 500;
 }
 
-/* Content area */
+/* ── Content areas ──────────────────────────────────────────────────────── */
+
 .emoji-content {
   flex: 1;
   overflow-y: auto;
   padding: 8px 10px 10px;
   overscroll-behavior: contain;
+  /* Ensure results area scrolls independently above keyboard */
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Emoji grid */
+/* ── Browse emoji grid ──────────────────────────────────────────────────── */
+
 .emoji-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
 
+/* Kaomoji uses flex-wrap chip layout — NOT a fixed grid */
 .emoji-grid--kaomoji {
-  gap: 6px;
-  /* Wrap on wide screens; scroll horizontally on narrow if needed */
+  display: flex;
   flex-wrap: wrap;
+  gap: 10px;
   align-items: flex-start;
-  /* Ensure kaomoji buttons at their natural width push the flex row but
-     don't get clipped by the content area */
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
 .emoji-item {
@@ -1969,6 +2008,7 @@ body {
   padding: 4px;
   transition: background 0.12s;
   position: relative;
+  flex-shrink: 0;
 }
 
 .emoji-item:hover,
@@ -1976,21 +2016,22 @@ body {
   background: var(--border-soft);
 }
 
-/* favorite star removed */
-
 .emoji-item-img {
+  max-width: 100%;
+  max-height: 100%;
   width: 30px;
   height: 30px;
   object-fit: contain;
+  display: block;
 }
 
+/* Kaomoji chip: pill style, width adapts to content */
 .emoji-item--kaomoji {
   width: auto;
-  min-width: 44px;
-  /* no max-width: let long kaomoji render at natural width */
+  min-width: max-content;
   height: auto;
   min-height: 36px;
-  padding: 6px 10px;
+  padding: 10px 14px;
   font-size: 15px;
   border-radius: 18px;
   background: var(--surface-soft);
@@ -1998,13 +2039,58 @@ body {
   white-space: nowrap;
   overflow: visible;
   line-height: 1.4;
+  flex-shrink: 0;
 }
 
 .emoji-item--kaomoji:hover {
   background: var(--border-soft);
 }
 
-/* Pack / category headers */
+/* ── Search results grid ────────────────────────────────────────────────── */
+
+/* 3–4 columns auto-fill, images complete and not cropped */
+.emoji-search-results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 14px;
+  padding: 4px 0;
+}
+
+.emoji-search-result-item {
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  transition: background 0.12s;
+}
+
+.emoji-search-result-item:hover,
+.emoji-search-result-item:focus-visible {
+  background: var(--border-soft);
+}
+
+.emoji-search-result-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Section label between emoji grid and kaomoji in search results */
+.emoji-search-section-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 10px 2px 4px;
+  font-weight: 500;
+}
+
+/* ── Pack / category headers ─────────────────────────────────────────────── */
+
 .emoji-pack-header {
   font-size: 12px;
   font-weight: 600;
@@ -2019,7 +2105,8 @@ body {
   padding: 6px 2px 2px;
 }
 
-/* Empty / error state */
+/* ── Empty / error state ─────────────────────────────────────────────────── */
+
 .emoji-empty {
   display: flex;
   align-items: center;
@@ -2031,10 +2118,10 @@ body {
   padding: 16px;
 }
 
-/* Mobile: 390px and 430px */
+/* ── Mobile breakpoints ──────────────────────────────────────────────────── */
+
 @media (max-width: 430px) {
   .emoji-panel {
-    /* height is already fluid via min(); just tighten border-radius */
     border-radius: 14px 14px 0 0;
   }
 
@@ -2047,13 +2134,14 @@ body {
     width: 27px;
     height: 27px;
   }
+
+  .emoji-search-results-grid {
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    gap: 10px;
+  }
 }
 
 @media (max-width: 390px) {
-  .emoji-panel {
-    /* height via min() already handles 390px; just override border-radius */
-  }
-
   .emoji-tab {
     padding: 7px 9px;
     font-size: 12px;
@@ -2063,10 +2151,19 @@ body {
     width: 38px;
     height: 38px;
   }
+
+  .emoji-search-results-grid {
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    gap: 8px;
+  }
+
+  .emoji-item--kaomoji {
+    padding: 8px 11px;
+    font-size: 14px;
+  }
 }
 
-/* Composer emoji preview removed; styles kept as no-op in case any legacy
-   markup still has the class — display:none ensures nothing renders. */
+/* Composer emoji preview removed */
 .composer-emoji-preview {
   display: none !important;
 }
