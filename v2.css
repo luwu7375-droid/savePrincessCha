@@ -2263,7 +2263,8 @@ body {
   border: 1px solid var(--border-soft);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
-  overflow: hidden;
+  /* Do NOT set overflow:hidden here — it would clip the track's horizontal scroll. */
+  overflow: visible;
   /* Animate in */
   animation: suggestion-bar-in 0.16s ease both;
   z-index: 12;
@@ -2282,11 +2283,18 @@ body {
 .emoji-suggestion-track {
   display: flex;
   flex-direction: row;
+  flex-wrap: nowrap;
   gap: 4px;
   padding: 6px 8px;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
   scrollbar-width: none;
+  /* Clip track content to the bar's rounded corners without blocking scroll. */
+  border-radius: 14px;
 }
 
 .emoji-suggestion-track::-webkit-scrollbar {
@@ -2294,7 +2302,7 @@ body {
 }
 
 .emoji-suggestion-item {
-  flex-shrink: 0;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2307,6 +2315,7 @@ body {
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
   -webkit-tap-highlight-color: transparent;
+  scroll-snap-align: start;
 }
 
 .emoji-suggestion-item:hover {
