@@ -5879,11 +5879,6 @@ function initV2Composer() {
     openEmojiPanel();
   }, true);
 
-  // Close emoji panel when message input is focused
-  messageInput?.addEventListener("focus", () => {
-    if (_emojiPanelOpen) closeEmojiPanel();
-  });
-
   plusButton.innerHTML = '<img src="assets/icons/chat/plus.svg" alt="">';
   plusButton.title = "更多";
   plusButton.setAttribute("aria-label", "更多");
