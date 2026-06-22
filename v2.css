@@ -22,12 +22,20 @@
   --composer-bottom-gap: 18px;
   --keyboard-inset: 0px;
   --chat-bottom-space: calc(var(--chat-input-height) + var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 32px);
+  /* Set by JS via visualViewport; fallback to 100dvh */
+  --app-vh: 100dvh;
+  --visual-vh: 100dvh;
+  /* Height of the panel area (emoji/more) when open — set by JS */
+  --panel-area-height: 0px;
 }
 
 html,
 body {
   background: #ededeb;
   color: var(--text-main);
+  /* Prevent the document from scrolling when panels open inside .layout */
+  overflow: hidden;
+  height: 100%;
 }
 
 body {
@@ -39,7 +47,8 @@ body {
 .layout {
   position: relative;
   width: min(100vw, 430px);
-  height: min(100dvh, 932px);
+  /* Use --app-vh so iOS Safari / PWA never reads raw 100dvh at the wrong moment */
+  height: min(var(--app-vh, 100dvh), 932px);
   overflow: hidden;
   display: block;
   background: var(--app-bg);
@@ -917,16 +926,21 @@ body {
 }
 
 .chat-shell {
+  /* Fixed chat skeleton: top-bar / message-list / composer — nothing shifts the whole page */
   width: 100%;
   height: 100%;
   background: var(--app-bg);
   color: var(--text-main);
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .top-bar {
   position: relative;
   z-index: 40;
+  flex-shrink: 0;
   height: 82px;
   padding: calc(env(safe-area-inset-top) + 10px) 18px 8px;
   border: 0;
@@ -1248,10 +1262,13 @@ body {
 }
 
 .message-list {
+  /* Only scrollable region in the chat skeleton */
   flex: 1;
+  min-height: 0;
   padding: 18px 20px calc(var(--chat-bottom-space) + var(--keyboard-inset));
   background: transparent;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset));
 }
 
@@ -1304,6 +1321,7 @@ body {
 }
 
 .image-preview-bar {
+  flex-shrink: 0;
   margin: 0 20px 10px;
   border-radius: 18px;
   background: var(--surface);
@@ -1311,8 +1329,10 @@ body {
 }
 
 .input-bar {
+  /* Anchored composer — never moves when panels open */
   position: relative;
   z-index: 11;
+  flex-shrink: 0;
   margin: 0 20px calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 18px);
   padding: 6px 10px 6px 18px;
   min-height: 54px;
@@ -1367,6 +1387,7 @@ body {
 .plus-panel {
   position: relative;
   z-index: 10;
+  flex-shrink: 0;
   margin: 0 20px 14px;
   padding: 12px;
   border-radius: var(--radius-card);
@@ -1685,7 +1706,7 @@ body {
 
   .layout {
     width: 100vw;
-    height: 100dvh;
+    height: var(--app-vh, 100dvh);
     border: 0;
     border-radius: 0;
     box-shadow: none;
@@ -1787,7 +1808,7 @@ body {
 
 @media (min-width: 431px) {
   .layout.keyboard-open {
-    height: min(100dvh, 932px);
+    height: min(var(--app-vh, 100dvh), 932px);
   }
 }
 
@@ -1818,11 +1839,12 @@ body {
 /* ── Emoji Panel (bottom sheet) ───────────────────────────────────────────── */
 
 .emoji-panel {
-  /* Absolute so it floats above the input-bar without pushing it down */
+  /* Absolute so it floats above the input-bar without pushing it down.
+     translateY animates in/out — the chat skeleton never rescales. */
   position: absolute;
   left: 0;
   right: 0;
-  /* Bottom edge = input-bar bottom margin + bottom-nav + safe-area */
+  /* Bottom edge = composer bottom margin + bottom-nav height + safe-area */
   bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 18px + 54px);
   z-index: 20;
   background: var(--surface);
@@ -1831,8 +1853,8 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* Use dvh-based max so it never exceeds visible area */
-  height: min(320px, calc(100dvh - 220px));
+  /* Use --app-vh so iOS Safari never jumps when the address bar hides */
+  height: min(320px, calc(var(--app-vh, 100dvh) - 220px));
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.2s ease, transform 0.22s ease;
@@ -1845,22 +1867,23 @@ body {
   pointer-events: auto;
 }
 
-/* When keyboard is open the bottom-tab-bar is hidden, so adjust panel position */
+/* When keyboard is open the bottom-tab-bar is hidden — composer sits lower */
 .layout.keyboard-open .emoji-panel {
   bottom: calc(max(10px, var(--keyboard-inset)) + env(safe-area-inset-bottom) + 54px);
 }
 
-/* Message list extra bottom padding when emoji panel is open */
+/* When emoji panel is open: give message-list enough bottom padding so the
+   last message is visible above the panel. No page-level rescale. */
 .chat-shell.emoji-panel-open .message-list {
-  padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(100dvh - 220px)));
-  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(100dvh - 220px)));
+  padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
+  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
 }
 
-/* ── Search mode: exclusive overlay ─────────────────────────────────────────
-   When the emoji panel enters search mode it becomes a fixed full-height sheet
-   that sits above the composer and bottom nav. The composer is visually hidden
-   so the user never sees a "half-blocked input bar" underneath the panel.
-   ────────────────────────────────────────────────────────────────────────── */
+/* ── Emoji search: exclusive overlay ─────────────────────────────────────────
+   Search mode makes the panel become a full-height fixed overlay.
+   The composer is hidden so users never see a half-blocked input bar.
+   Only the panel changes — the rest of the chat shell does not rescale.
+   ───────────────────────────────────────────────────────────────────────��── */
 
 /* Hide the chat composer while emoji search overlay is active */
 .chat-shell.emoji-panel-search .input-bar {
@@ -1869,15 +1892,14 @@ body {
   transition: opacity 0.15s ease;
 }
 
-/* Search overlay: fixed, spans the full visualViewport height from bottom */
+/* Search overlay: absolute inside .chat-shell, covers it fully from bottom */
 .emoji-panel.open.emoji-panel--search {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  top: auto;
-  /* --visual-vh is set by JS via visualViewport; fallback to 100dvh */
-  height: var(--visual-vh, 100dvh);
+  top: 0;
+  height: auto;
   border-radius: 20px 20px 0 0;
   /* above composer, bottom-nav, suggestion bar; below global dialogs */
   z-index: 50;

@@ -3581,6 +3581,23 @@ function scrollChatToLatest(behavior = "auto") {
   });
 }
 
+// Returns true when the user is close enough to the bottom that auto-scroll
+// should run (≤ 80px above the bottom edge).
+function isNearBottom() {
+  if (!messageList) return true;
+  return messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight <= 80;
+}
+
+// Only scroll to bottom when the user is already near the bottom, or when
+// explicitly forced (e.g. after sending a message).
+function maintainBottomAnchor(reason) {
+  if (!messageList) return;
+  const force = reason === "send" || reason === "open-panel" || reason === "keyboard";
+  if (force || isNearBottom()) {
+    scrollChatToLatest();
+  }
+}
+
 function initKeyboardViewportState() {
   const shell = document.querySelector(".layout");
   if (!shell || !window.visualViewport) return;
@@ -3588,6 +3605,7 @@ function initKeyboardViewportState() {
   const resetKeyboardState = () => {
     shell.classList.remove("keyboard-open");
     shell.style.setProperty("--keyboard-inset", "0px");
+    if (_chatInputMode === "keyboard") _chatInputMode = "plain";
     requestAnimationFrame(() => {
       window.scrollTo(0, 0);
       document.documentElement.scrollTop = 0;
@@ -3595,21 +3613,32 @@ function initKeyboardViewportState() {
     });
   };
 
+  let _kbRafPending = false;
   const updateKeyboardState = () => {
-    const viewport = window.visualViewport;
-    const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
-    const activeInput = document.activeElement === messageInput || document.activeElement === chatSearchInput;
-    const keyboardOpen = inset > 80 && activeInput;
-    shell.classList.toggle("keyboard-open", keyboardOpen);
-    shell.style.setProperty("--keyboard-inset", keyboardOpen ? `${Math.round(inset)}px` : "0px");
-    if (keyboardOpen && document.activeElement === messageInput) scrollChatToLatest();
+    if (_kbRafPending) return;
+    _kbRafPending = true;
+    requestAnimationFrame(() => {
+      _kbRafPending = false;
+      const viewport = window.visualViewport;
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      const activeInput = document.activeElement === messageInput || document.activeElement === chatSearchInput;
+      const keyboardOpen = inset > 80 && activeInput;
+      shell.classList.toggle("keyboard-open", keyboardOpen);
+      shell.style.setProperty("--keyboard-inset", keyboardOpen ? `${Math.round(inset)}px` : "0px");
+      if (keyboardOpen) {
+        if (document.activeElement === messageInput) {
+          if (_chatInputMode !== "emojiSearch") setChatInputMode("keyboard");
+          maintainBottomAnchor("keyboard");
+        }
+      }
+    });
   };
 
   window.visualViewport.addEventListener("resize", updateKeyboardState);
   window.visualViewport.addEventListener("scroll", updateKeyboardState);
   messageInput?.addEventListener("focus", () => {
     updateKeyboardState();
-    scrollChatToLatest();
+    maintainBottomAnchor("keyboard");
   });
   messageInput?.addEventListener("blur", () => {
     setTimeout(resetKeyboardState, 80);
@@ -3622,21 +3651,35 @@ function initKeyboardViewportState() {
 }
 
 // ── Visual viewport height tracker ────────────────────────────────────────────
-// Keeps --visual-vh in sync with the actual visible area so the emoji search
-// overlay can fill the screen correctly even when the keyboard is up on iOS.
+// Keeps --app-vh and --visual-vh in sync with the actual visible area.
+// --app-vh drives the .layout height so iOS Safari / PWA never reads a stale
+// 100dvh at the wrong moment (e.g. while the keyboard or browser UI animates).
+// RAF-gated so we never trigger layout thrash on every scroll pixel.
 function initVisualVh() {
+  let rafPending = false;
   function update() {
-    const vh = window.visualViewport
-      ? `${window.visualViewport.height}px`
-      : `${window.innerHeight}px`;
-    document.documentElement.style.setProperty("--visual-vh", vh);
+    rafPending = false;
+    const height = window.visualViewport
+      ? window.visualViewport.height
+      : window.innerHeight;
+    const px = `${height}px`;
+    document.documentElement.style.setProperty("--app-vh", px);
+    document.documentElement.style.setProperty("--visual-vh", px);
   }
-  update();
+  function scheduleUpdate() {
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(update);
+    }
+  }
+  update(); // immediate on init
   if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", update);
-    window.visualViewport.addEventListener("scroll", update);
+    window.visualViewport.addEventListener("resize", scheduleUpdate);
+    // scroll: only update --visual-vh for search overlay positioning,
+    // avoid layout-thrash on every scroll pixel
+    window.visualViewport.addEventListener("scroll", scheduleUpdate);
   } else {
-    window.addEventListener("resize", update);
+    window.addEventListener("resize", scheduleUpdate);
   }
 }
 
@@ -3767,7 +3810,7 @@ async function triggerReply(replyMode) {
     setChatTitleState("idle");
     setReplyingState(false);
     messageInput.focus();
-    scrollChatToLatest();
+    maintainBottomAnchor("send");
     // Observe any new unread assistant rows and update badge
     syncChaUnreadCount();
     observeUnreadChaRows();
@@ -3781,7 +3824,7 @@ messageInput.addEventListener("compositionstart", () => { isComposing = true; ca
 messageInput.addEventListener("compositionend", () => { isComposing = false; autoResizeTextarea(messageInput); });
 messageInput.addEventListener("input", () => {
   autoResizeTextarea(messageInput);
-  scrollChatToLatest();
+  // Don't scroll on every keystroke — composer resize handles itself via flex
   if (autoReplyEnabled) cancelAutoReplyTimer();
 });
 messageInput.addEventListener("keydown", (e) => {
@@ -4077,7 +4120,7 @@ async function handleSubmit() {
   const getMsgRows = () => msgGroupId
     ? Array.from(messageList.querySelectorAll(`.msg-row[data-group-id="${msgGroupId}"]`))
     : (msgEl.closest(".msg-row") ? [msgEl.closest(".msg-row")] : []);
-  scrollChatToLatest();
+  maintainBottomAnchor("send");
   const dbContent = snapshot ? (text ? `[图片] ${text}` : "[图片]") : text;
   chatMessages.push({ role: "user", content, created_at: now, id: null, read_by_cha_at: null, read_by_user_at: null });
   refreshMessageActions();
@@ -4116,13 +4159,13 @@ async function handleSubmit() {
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   handleSubmit();
-  scrollChatToLatest();
+  maintainBottomAnchor("send");
 });
 
 sendButton.addEventListener("click", (e) => {
   e.preventDefault();
   handleSubmit();
-  scrollChatToLatest();
+  maintainBottomAnchor("send");
 });
 
 forceReplyBtn.addEventListener("click", () => {
@@ -4203,6 +4246,41 @@ var AUTO_FREQ_DELAY  = { off: 0, low: 18000, normal: 9000, high: 4000 }; // ms, 
 var _chatMoreSheetOpen    = false;
 var _chatMoreSubsheetOpen = null; // id string or null
 
+// ── Chat input mode state machine ─────────────────────────────────────────────
+// Exactly one mode is active at a time. Transitions enforce mutual exclusion
+// so panels never fight over layout.
+// Allowed values: "plain" | "keyboard" | "emoji" | "emojiSearch" | "more" | "edit"
+var _chatInputMode = "plain";
+
+function setChatInputMode(mode) {
+  if (_chatInputMode === mode) return;
+  const prev = _chatInputMode;
+  _chatInputMode = mode;
+
+  // Close panels that are no longer active
+  if (prev === "emoji" || prev === "emojiSearch") {
+    if (mode !== "emoji" && mode !== "emojiSearch") {
+      window.SPEmojiPanel?.closeEmojiPanel();
+    }
+  }
+  if (prev === "more") {
+    if (mode !== "more") {
+      closeChatMoreSheet();
+    }
+  }
+  if (prev !== "plain" && mode === "plain") {
+    window.closeV2PlusPanel?.();
+  }
+}
+
+// Close every chat overlay/panel and return to plain mode
+function closeAllChatPanels() {
+  window.SPEmojiPanel?.closeEmojiPanel();
+  window.closeV2PlusPanel?.();
+  closeChatMoreSheet?.();
+  _chatInputMode = "plain";
+}
+
 function getChatReplyStyle()  { return localStorage.getItem(CHAT_REPLY_STYLE_KEY)  || "balanced"; }
 function getChatAutoFreq()    { return localStorage.getItem(CHAT_AUTO_FREQ_KEY)    || "off"; }
 function getChatQuietMode()   { return localStorage.getItem(CHAT_QUIET_MODE_KEY)   === "on"; }
@@ -4243,6 +4321,7 @@ function applyChatQuietMode(on) {
 function openChatMoreSheet() {
   const sheet = document.getElementById("chatMoreSheet");
   if (!sheet) return;
+  setChatInputMode("more");
   _chatMoreSheetOpen = true;
   _chatMoreSubsheetOpen = null;
   _showChatMoreMain(true);
@@ -4254,6 +4333,7 @@ function openChatMoreSheet() {
 function closeChatMoreSheet() {
   const sheet = document.getElementById("chatMoreSheet");
   if (!sheet) return;
+  if (_chatInputMode === "more") _chatInputMode = "plain";
   _chatMoreSheetOpen = false;
   _chatMoreSubsheetOpen = null;
   sheet.classList.add("hidden");
@@ -4514,9 +4594,14 @@ function initV2Shell() {
     pages.forEach((page) => page.classList.toggle("v2-active", page === target));
     tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === activeName));
     shell?.setAttribute("data-active-page", activeName);
+
+    // Whenever the user switches tabs, close every chat overlay so panels
+    // never stay open behind another page
+    closeAllChatPanels();
+
     if (activeName === "chat") {
       requestAnimationFrame(() => {
-        scrollChatToLatest();
+        maintainBottomAnchor("send");
         messageInput?.focus({ preventScroll: true });
         // Trigger visibility check for unread Cha messages
         observeUnreadChaRows();
@@ -5058,10 +5143,17 @@ function initV2Composer() {
 
   let panel = null;
   const closePanel = () => {
-    panel?.remove();
-    panel = null;
-    plusButton.classList.remove("active");
-    scrollChatToLatest();
+    if (panel) {
+      panel.remove();
+      panel = null;
+      plusButton.classList.remove("active");
+      if (_chatInputMode === "plain") {
+        // already plain, no-op
+      } else {
+        _chatInputMode = "plain";
+      }
+      maintainBottomAnchor("close-panel");
+    }
   };
   window.closeV2PlusPanel = closePanel;
 
@@ -5142,9 +5234,10 @@ function initV2Composer() {
 
     inputBar.parentNode.insertBefore(panel, inputBar);
     plusButton.classList.add("active");
+    setChatInputMode("plain"); // plus-panel is not a keyboard-replacement state
     requestAnimationFrame(() => {
       panel.classList.add("open");
-      scrollChatToLatest();
+      maintainBottomAnchor("open-panel");
     });
   }
 
