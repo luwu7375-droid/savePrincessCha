@@ -2158,6 +2158,76 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
   }
   }
 
+  // ── 世界书注入 ──────────────────────────────────────────────────────────────
+  // Only runs when a userId is available. Injects enabled books in priority
+  // order (ascending). Total content is capped at 20,000 chars; books beyond
+  // the limit are skipped and a note is appended.
+  if (supabaseUrl && serviceRoleKey) {
+    const wbUserId = typeof payload.userId === "string" && payload.userId
+      ? payload.userId
+      : null;
+
+    if (wbUserId) {
+      try {
+        const wbHeaders = {
+          apikey:        serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        };
+        const wbUrl =
+          `${supabaseUrl}/rest/v1/world_books` +
+          `?user_id=eq.${encodeURIComponent(wbUserId)}` +
+          `&enabled=eq.true` +
+          `&select=name,content,priority` +
+          `&order=priority.asc`;
+
+        const wbRes = await fetch(wbUrl, { headers: wbHeaders });
+
+        if (wbRes.ok) {
+          const worldBooks: { name: string; content: string; priority: number }[] =
+            await wbRes.json();
+
+          if (Array.isArray(worldBooks) && worldBooks.length > 0) {
+            const WB_CHAR_LIMIT = 20_000;
+            let charCount = 0;
+            const injected: typeof worldBooks = [];
+            let skippedCount = 0;
+
+            for (const book of worldBooks) {
+              if (charCount + book.content.length > WB_CHAR_LIMIT) {
+                skippedCount++;
+              } else {
+                injected.push(book);
+                charCount += book.content.length;
+              }
+            }
+
+            if (injected.length > 0) {
+              const parts = injected.map(
+                (b) => `<!-- From: ${b.name} (priority: ${b.priority}) -->\n${b.content}`
+              );
+              let worldBooksBlock = `\n\n<world_books>\n${parts.join("\n\n---\n\n")}\n`;
+              if (skippedCount > 0) {
+                worldBooksBlock += `\n<!-- 已达 token 上限，后续 ${skippedCount} 个世界书未注入 -->`;
+              }
+              worldBooksBlock += `\n</world_books>`;
+              systemContent += worldBooksBlock;
+            }
+
+            logRecord.world_books_count    = worldBooks.length;
+            logRecord.world_books_injected = injected.length;
+            logRecord.world_books_skipped  = skippedCount;
+            logRecord.world_books_chars    = charCount;
+          }
+        }
+      } catch (wbErr) {
+        // Non-fatal: world books failing should not break chat
+        logRecord.world_books_error = wbErr instanceof Error
+          ? wbErr.message.slice(0, 200)
+          : String(wbErr).slice(0, 200);
+      }
+    }
+  }
+
   if (payload.replyMode === "auto") {
     systemContent +=
       "\n\n【回复决策】如果用户明显还在连续补充、只是碎片化记录、或没有期待回复，可以不回复。若不回复，只输出：<NO_REPLY>。不要解释。";
