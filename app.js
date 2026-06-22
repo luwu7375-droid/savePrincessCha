@@ -6572,7 +6572,13 @@ function initEmojiSuggestionBar() {
   let _activeSuggestions = [];
   let _highlightIndex = 0;
   let _activeQuery = null; // { query, rawToken, start, end }
-  let _selectingItem = false; // true during pointerdown→commitSuggestion to block blur-close
+
+  // Minimum pointer travel (px) to treat a gesture as a drag instead of a tap.
+  const SUGGESTION_DRAG_THRESHOLD = 8;
+  // True while a pointer is down on the suggestion bar (tap or drag in progress).
+  let isInteractingWithSuggestion = false;
+  // Tracks the active pointer gesture: { emoji, startX, startY, dragging }
+  let _suggestionPointerState = null;
 
   function hideSuggestions() {
     bar.hidden = true;
@@ -6614,12 +6620,45 @@ function initEmojiSuggestionBar() {
         : emoji.shortcode;
       item.appendChild(label);
 
+      // Tap-vs-drag: record start position on pointerdown, commit only on clean tap (pointerup
+      // with movement below threshold). This lets the track scroll horizontally without
+      // accidentally selecting an item.
       item.addEventListener("pointerdown", (e) => {
-        // Prevent textarea blur before selection fires (blur fires before click/pointerup)
-        e.preventDefault();
-        e.stopPropagation();
-        _selectingItem = true;
-        commitSuggestion(emoji);
+        isInteractingWithSuggestion = true;
+        _suggestionPointerState = {
+          emoji,
+          startX: e.clientX,
+          startY: e.clientY,
+          dragging: false,
+        };
+      });
+      item.addEventListener("pointermove", (e) => {
+        if (!_suggestionPointerState) return;
+        const dx = Math.abs(e.clientX - _suggestionPointerState.startX);
+        const dy = Math.abs(e.clientY - _suggestionPointerState.startY);
+        if (dx > SUGGESTION_DRAG_THRESHOLD || dy > SUGGESTION_DRAG_THRESHOLD) {
+          _suggestionPointerState.dragging = true;
+        }
+      });
+      item.addEventListener("pointerup", (e) => {
+        if (!_suggestionPointerState) return;
+        const { emoji: tappedEmoji, dragging } = _suggestionPointerState;
+        _suggestionPointerState = null;
+        if (!dragging) {
+          // Clean tap — select the item.
+          e.preventDefault();
+          e.stopPropagation();
+          commitSuggestion(tappedEmoji);
+        }
+        setTimeout(() => {
+          isInteractingWithSuggestion = false;
+        }, 120);
+      });
+      item.addEventListener("pointercancel", () => {
+        _suggestionPointerState = null;
+        setTimeout(() => {
+          isInteractingWithSuggestion = false;
+        }, 120);
       });
       track.appendChild(item);
     });
@@ -6645,7 +6684,6 @@ function initEmojiSuggestionBar() {
 
   function commitSuggestion(emoji) {
     if (!_activeQuery) return;
-    _selectingItem = false;
     const token = pickInsertToken(emoji);
     const { newText, newCursor } = replaceTokenInText(
       inputEl.value,
@@ -6708,16 +6746,17 @@ function initEmojiSuggestionBar() {
     }
   });
 
-  // Hide when input loses focus (but allow clicks on suggestion items via pointerdown)
+  // Hide when input loses focus, but not while the user is interacting with the
+  // suggestion bar (scrolling or mid-tap). The isInteractingWithSuggestion flag
+  // is set on pointerdown and cleared 120 ms after pointerup/cancel, which is
+  // safely longer than a blur event that fires synchronously on focus loss.
   inputEl.addEventListener("blur", () => {
-    // Use flag + delay: pointerdown sets _selectingItem=true before blur fires,
-    // so we skip the close. On real blur-away, flag is false and we close.
     setTimeout(() => {
-      if (_selectingItem) { _selectingItem = false; return; }
+      if (isInteractingWithSuggestion) return;
       if (!bar.contains(document.activeElement)) {
         hideSuggestions();
       }
-    }, 200);
+    }, 160);
   });
 
   // Hide on outside click
