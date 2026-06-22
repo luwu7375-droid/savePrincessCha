@@ -2152,6 +2152,28 @@ body {
   line-height: 1.2;
 }
 
+/* ── Inline edit-message composer ─────────────────────────────────────────── */
+
+/* Highlight the input-bar border when in edit mode */
+#chatForm:has(#cancelEditBtn) {
+  border-color: var(--accent, #a78bfa);
+}
+
+/* Cancel edit button — sits just before the send button inside the form */
+.cancel-edit-btn {
+  color: var(--text-muted);
+  transition: color 0.12s;
+}
+
+.cancel-edit-btn:hover {
+  color: var(--text-main);
+}
+
+/* Send button in edit mode: tint to accent color */
+#sendButton.edit-mode {
+  background: var(--accent, #a78bfa);
+}
+
 /* ── Chat more button ──────────────────────────────────────────────────────── */
 
 #chatMoreBtn {
