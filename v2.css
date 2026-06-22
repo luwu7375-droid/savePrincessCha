@@ -734,17 +734,17 @@ body {
 }
 
 .settings-title {
-  margin: 4px 0 18px;
+  margin: 4px 0 12px;
 }
 
 .settings-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .setting-row {
-  min-height: 66px;
+  min-height: 58px;
   border-radius: 16px;
   display: grid;
   grid-template-columns: 36px 1fr 24px;
@@ -934,7 +934,7 @@ body {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   display: grid;
-  grid-template-columns: 48px max-content 44px 1fr 44px;
+  grid-template-columns: 48px max-content 44px 1fr 44px 44px;
   gap: 4px;
   align-items: center;
 }
@@ -1818,22 +1818,43 @@ body {
 /* ── Emoji Panel (bottom sheet) ───────────────────────────────────────────── */
 
 .emoji-panel {
-  position: relative;
+  /* Absolute so it floats above the input-bar without pushing it down */
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Bottom edge = input-bar bottom margin + bottom-nav + safe-area */
+  bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 18px + 54px);
+  z-index: 20;
   background: var(--surface);
   border-radius: 18px 18px 0 0;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  height: 340px;
+  /* Use dvh-based max so it never exceeds visible area */
+  height: min(320px, calc(100dvh - 220px));
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.2s ease, transform 0.22s ease;
+  pointer-events: none;
 }
 
 .emoji-panel.open {
   opacity: 1;
   transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* When keyboard is open the bottom-tab-bar is hidden, so adjust panel position */
+.layout.keyboard-open .emoji-panel {
+  bottom: calc(max(10px, var(--keyboard-inset)) + env(safe-area-inset-bottom) + 54px);
+}
+
+/* Message list extra bottom padding when emoji panel is open, so the last
+   message isn't hidden behind the panel */
+.chat-shell.emoji-panel-open .message-list {
+  padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(100dvh - 220px)));
+  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(100dvh - 220px)));
 }
 
 /* Header */
@@ -1926,8 +1947,13 @@ body {
 
 .emoji-grid--kaomoji {
   gap: 6px;
+  /* Wrap on wide screens; scroll horizontally on narrow if needed */
   flex-wrap: wrap;
   align-items: flex-start;
+  /* Ensure kaomoji buttons at their natural width push the flex row but
+     don't get clipped by the content area */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .emoji-item {
@@ -1961,7 +1987,7 @@ body {
 .emoji-item--kaomoji {
   width: auto;
   min-width: 44px;
-  max-width: 100%;
+  /* no max-width: let long kaomoji render at natural width */
   height: auto;
   min-height: 36px;
   padding: 6px 10px;
@@ -2008,7 +2034,7 @@ body {
 /* Mobile: 390px and 430px */
 @media (max-width: 430px) {
   .emoji-panel {
-    height: 320px;
+    /* height is already fluid via min(); just tighten border-radius */
     border-radius: 14px 14px 0 0;
   }
 
@@ -2025,7 +2051,7 @@ body {
 
 @media (max-width: 390px) {
   .emoji-panel {
-    height: 300px;
+    /* height via min() already handles 390px; just override border-radius */
   }
 
   .emoji-tab {
@@ -2039,60 +2065,297 @@ body {
   }
 }
 
-/* ── Composer emoji preview ─────────────────────────────────────────────────── */
+/* Composer emoji preview removed; styles kept as no-op in case any legacy
+   markup still has the class — display:none ensures nothing renders. */
 .composer-emoji-preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 4px;
-  padding: 6px 14px;
-  background: var(--surface-soft, rgba(0,0,0,0.04));
-  border-top: 1px solid var(--border-soft, rgba(0,0,0,0.08));
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--text-main);
-  pointer-events: none;   /* never steals clicks or focus */
-  user-select: none;
-  min-height: 36px;
-  word-break: break-word;
+  display: none !important;
 }
 
-.composer-emoji-preview[hidden] {
+/* ── Chat more button ──────────────────────────────────────────────────────── */
+
+#chatMoreBtn {
+  width: 44px;
+  height: 44px;
+}
+
+/* ── Chat more bottom sheet ────────────────────────────────────────────────── */
+
+.chat-more-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 85;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.chat-more-sheet.hidden {
   display: none;
 }
 
-.composer-emoji-preview .custom-emoji {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-  vertical-align: middle;
-  margin: 0 1px;
+.chat-more-overlay {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.26);
+  cursor: pointer;
 }
 
-/* ── Composer emoji preview ─────────────────────────────────────────────────── */
-.composer-emoji-preview {
+.chat-more-content {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  border-radius: 22px 22px 0 0;
+  border: 1px solid var(--border-soft);
+  border-bottom: 0;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
+  overflow: hidden;
+  animation: chat-more-sheet-in 0.24s cubic-bezier(0.32, 0, 0.24, 1) both;
+}
+
+@keyframes chat-more-sheet-in {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.chat-more-handle {
+  width: 36px;
+  height: 4px;
+  background: rgba(30, 30, 30, 0.14);
+  border-radius: 999px;
+  margin: 12px auto 4px;
+}
+
+.chat-more-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 8px;
+}
+
+.chat-more-item {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
-  padding: 6px 12px 4px;
-  min-height: 0;
-  pointer-events: none;
-  user-select: none;
-  font-size: 15px;
-  line-height: 1.5;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 20px;
+  background: none;
+  border: 0;
   color: var(--text-main);
-  word-break: break-word;
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.composer-emoji-preview[hidden] {
+.chat-more-item:active {
+  background: rgba(30, 30, 30, 0.05);
+}
+
+.chat-more-item:focus-visible {
+  outline: 2px solid rgba(32, 32, 32, 0.18);
+  outline-offset: -2px;
+}
+
+.chat-more-item svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.chat-more-item > span:first-of-type,
+.chat-more-item > span:nth-child(2) {
+  flex: 1;
+}
+
+.chat-more-item-value {
+  flex: 0 !important;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.chat-more-item-arrow {
+  flex-shrink: 0 !important;
+  color: var(--text-faint);
+  font-size: 18px;
+  margin-left: 4px;
+  line-height: 1;
+}
+
+.chat-more-item--muted {
+  color: var(--text-muted);
+}
+
+.chat-more-item--toggle {
+  gap: 12px;
+  cursor: default;
+}
+
+.chat-more-item--status {
+  cursor: default;
+  min-height: 44px;
+}
+
+/* Sub-sheets */
+.chat-more-subsheet {
+  padding: 0;
+}
+
+.chat-more-subsheet.hidden {
   display: none;
 }
 
-.composer-emoji-preview .custom-emoji {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-  vertical-align: middle;
-  margin: 0 1px;
+.cms-subsheet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 0;
+  border-bottom: 1px solid var(--border-soft);
+  min-height: 48px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.cms-subsheet-back {
+  min-width: 60px;
+  height: 40px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 8px;
+  border-radius: 10px;
+  transition: background 0.12s;
+}
+
+.cms-subsheet-back:active {
+  background: rgba(30, 30, 30, 0.06);
+}
+
+.cms-section-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 10px 20px 4px;
+  margin: 0;
+}
+
+/* Radio dot */
+.cms-radio-item {
+  gap: 14px;
+}
+
+.cms-radio-dot {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(30, 30, 30, 0.22);
+  background: transparent;
+  transition: border-color 0.14s, background 0.14s;
+}
+
+.cms-radio-dot--on {
+  border-color: var(--text-main);
+  background: var(--text-main);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+
+.cms-radio-hint {
+  flex: 1 !important;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* Toggle switch */
+.cms-toggle {
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(30, 30, 30, 0.14);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.18s;
+}
+
+.cms-toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: transform 0.18s;
+}
+
+.cms-toggle--on {
+  background: #3d7de0;
+}
+
+.cms-toggle--on::after {
+  transform: translateX(18px);
+}
+
+.cms-toggle--disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Status / info badges */
+.cms-status-badge {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.cms-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.cms-badge--info {
+  background: rgba(30, 30, 30, 0.06);
+  color: var(--text-muted);
+}
+
+/* Settings subpage action button */
+.settings-row-action-btn {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(30, 30, 30, 0.18);
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+
+.settings-row-action-btn:active {
+  background: rgba(30, 30, 30, 0.06);
+}
+
+.settings-row-action-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

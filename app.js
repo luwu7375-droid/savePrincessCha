@@ -4083,6 +4083,253 @@ document.getElementById("composerMenuBtn")?.addEventListener("click", (e) => {
   buildComposerMenu(e.currentTarget);
 });
 
+// ── Chat more sheet ──────────────────────────────────────────────────────────
+
+var CHAT_REPLY_STYLE_KEY = "chat_reply_style_v1";    // "stable" | "balanced" | "creative"
+var CHAT_AUTO_FREQ_KEY   = "chat_auto_reply_frequency_v1"; // "off" | "low" | "normal" | "high"
+var CHAT_KEEPALIVE_KEY   = "chat_keepalive_preference_v1"; // "on" | "off"
+var CHAT_QUIET_MODE_KEY  = "chat_quiet_mode_v1";     // "on" | "off"
+var CHAT_BLOCK_CHA_KEY   = "chat_block_cha_v1";      // "on" | "off"
+
+var REPLY_STYLE_TEMP = { stable: 0.4, balanced: 0.7, creative: 1.0 };
+var AUTO_FREQ_DELAY  = { off: 0, low: 18000, normal: 9000, high: 4000 }; // ms, 0 = disabled
+
+var _chatMoreSheetOpen    = false;
+var _chatMoreSubsheetOpen = null; // id string or null
+
+function getChatReplyStyle()  { return localStorage.getItem(CHAT_REPLY_STYLE_KEY)  || "balanced"; }
+function getChatAutoFreq()    { return localStorage.getItem(CHAT_AUTO_FREQ_KEY)    || "off"; }
+function getChatQuietMode()   { return localStorage.getItem(CHAT_QUIET_MODE_KEY)   === "on"; }
+function getChatBlockCha()    { return localStorage.getItem(CHAT_BLOCK_CHA_KEY)    === "on"; }
+function getChatKeepAlive()   { return localStorage.getItem(CHAT_KEEPALIVE_KEY)    !== "off"; }
+
+// Exposed for API call site: returns temperature number
+function getChatReplyTemperature() {
+  return REPLY_STYLE_TEMP[getChatReplyStyle()] ?? 0.7;
+}
+
+var _FREQ_LABEL = { off: "关", low: "偶尔", normal: "正常", high: "积极" };
+var _STYLE_LABEL = { stable: "稳定", balanced: "均衡", creative: "发散" };
+
+function applyChatAutoFreq(freq) {
+  localStorage.setItem(CHAT_AUTO_FREQ_KEY, freq);
+  // "off" turns off auto-reply; anything else turns it on
+  const shouldEnable = (freq !== "off") && !getChatQuietMode() && !getChatBlockCha();
+  if (autoReplyEnabled !== shouldEnable) {
+    autoReplyEnabled = shouldEnable;
+    updateAutoReplyToggle();
+    if (!autoReplyEnabled) cancelAutoReplyTimer();
+  }
+}
+
+function applyChatQuietMode(on) {
+  localStorage.setItem(CHAT_QUIET_MODE_KEY, on ? "on" : "off");
+  if (on) {
+    autoReplyEnabled = false;
+    updateAutoReplyToggle();
+    cancelAutoReplyTimer();
+  } else {
+    // restore auto-freq if not blocked
+    if (!getChatBlockCha()) applyChatAutoFreq(getChatAutoFreq());
+  }
+}
+
+function openChatMoreSheet() {
+  const sheet = document.getElementById("chatMoreSheet");
+  if (!sheet) return;
+  _chatMoreSheetOpen = true;
+  _chatMoreSubsheetOpen = null;
+  _showChatMoreMain(true);
+  sheet.classList.remove("hidden");
+  sheet.removeAttribute("aria-hidden");
+  document.getElementById("cmsSearchBtn")?.focus();
+}
+
+function closeChatMoreSheet() {
+  const sheet = document.getElementById("chatMoreSheet");
+  if (!sheet) return;
+  _chatMoreSheetOpen = false;
+  _chatMoreSubsheetOpen = null;
+  sheet.classList.add("hidden");
+  sheet.setAttribute("aria-hidden", "true");
+  // close any sub-sheets
+  document.querySelectorAll(".chat-more-subsheet").forEach(s => s.classList.add("hidden"));
+  document.getElementById("chatMoreMain")?.classList.remove("hidden");
+}
+
+function openChatMoreSubsheet(id) {
+  _showChatMoreMain(false);
+  _chatMoreSubsheetOpen = id;
+  document.querySelectorAll(".chat-more-subsheet").forEach(s => s.classList.add("hidden"));
+  const sub = document.getElementById(id);
+  if (sub) { sub.classList.remove("hidden"); sub.querySelector("button")?.focus(); }
+  _syncChatMoreSubsheet(id);
+}
+
+function closeChatMoreSubsheet() {
+  if (!_chatMoreSubsheetOpen) return;
+  document.querySelectorAll(".chat-more-subsheet").forEach(s => s.classList.add("hidden"));
+  _chatMoreSubsheetOpen = null;
+  _showChatMoreMain(true);
+}
+
+function _showChatMoreMain(show) {
+  const main = document.getElementById("chatMoreMain");
+  if (main) main.classList.toggle("hidden", !show);
+}
+
+function _updateChatMoreSheetValues() {
+  const styleEl = document.getElementById("cmsReplyStyleVal");
+  if (styleEl) styleEl.textContent = _STYLE_LABEL[getChatReplyStyle()] || "均衡";
+  const freqEl = document.getElementById("cmsAutoFreqVal");
+  if (freqEl) freqEl.textContent = _FREQ_LABEL[getChatAutoFreq()] || "关";
+  const quietEl = document.getElementById("cmsQuietModeStatus");
+  if (quietEl) quietEl.textContent = getChatQuietMode() ? "开" : "关";
+}
+
+function _syncChatMoreSubsheet(id) {
+  if (id === "cmsReplyStyleSheet") {
+    const cur = getChatReplyStyle();
+    document.querySelectorAll("#cmsReplyStyleSheet .cms-radio-item").forEach(btn => {
+      const selected = btn.dataset.style === cur;
+      btn.setAttribute("aria-checked", selected ? "true" : "false");
+      btn.querySelector(".cms-radio-dot")?.classList.toggle("cms-radio-dot--on", selected);
+    });
+  } else if (id === "cmsAutoReplyFreqSheet") {
+    const cur = getChatAutoFreq();
+    document.querySelectorAll("#cmsAutoReplyFreqSheet .cms-radio-item").forEach(btn => {
+      const selected = btn.dataset.freq === cur;
+      btn.setAttribute("aria-checked", selected ? "true" : "false");
+      btn.querySelector(".cms-radio-dot")?.classList.toggle("cms-radio-dot--on", selected);
+    });
+  } else if (id === "cmsKeepAliveSheet") {
+    const on = getChatKeepAlive();
+    const toggle = document.getElementById("cmsKeepAliveToggle");
+    if (toggle) {
+      toggle.setAttribute("aria-checked", on ? "true" : "false");
+      toggle.classList.toggle("cms-toggle--on", on);
+    }
+    const status = document.getElementById("cmsKeepAliveStatus");
+    if (status) status.textContent = on ? "已开启" : "已关闭";
+  } else if (id === "cmsAppearanceSheet") {
+    const bgVal = localStorage.getItem("ui_custom_chat_background") ? "已自定义" : "默认";
+    const bubbleVal = localStorage.getItem("ui_chat_bubble_theme") || "默认";
+    const bgEl = document.getElementById("cmsChatBgVal");
+    if (bgEl) bgEl.textContent = bgVal;
+    const bubbleEl = document.getElementById("cmsBubbleThemeVal");
+    if (bubbleEl) bubbleEl.textContent = bubbleVal;
+  }
+}
+
+// ── Chat more sheet event listeners ──────────────────────────
+
+(function initChatMoreSheetListeners() {
+  // Open button
+  document.getElementById("chatMoreBtn")?.addEventListener("click", () => {
+    _updateChatMoreSheetValues();
+    openChatMoreSheet();
+  });
+
+  // Overlay (backdrop) closes sheet
+  document.getElementById("chatMoreOverlay")?.addEventListener("click", closeChatMoreSheet);
+
+  // Main list items
+  document.getElementById("cmsSearchBtn")?.addEventListener("click", () => {
+    closeChatMoreSheet();
+    // reuse existing search sheet open
+    const searchBtn = document.getElementById("chatSearchButton");
+    if (searchBtn) searchBtn.click();
+  });
+
+  document.getElementById("cmsAppearanceBtn")?.addEventListener("click", () => {
+    openChatMoreSubsheet("cmsAppearanceSheet");
+  });
+  document.getElementById("cmsReplyStyleBtn")?.addEventListener("click", () => {
+    openChatMoreSubsheet("cmsReplyStyleSheet");
+  });
+  document.getElementById("cmsAutoFreqBtn")?.addEventListener("click", () => {
+    openChatMoreSubsheet("cmsAutoReplyFreqSheet");
+  });
+  document.getElementById("cmsKeepAliveBtn")?.addEventListener("click", () => {
+    openChatMoreSubsheet("cmsKeepAliveSheet");
+  });
+  document.getElementById("cmsQuietModeBtn")?.addEventListener("click", () => {
+    const next = !getChatQuietMode();
+    applyChatQuietMode(next);
+    _updateChatMoreSheetValues();
+    const label = document.getElementById("cmsQuietModeLabel");
+    if (label) label.textContent = next ? "安静模式（开）" : "安静模式";
+  });
+
+  // Sub-sheet back buttons
+  document.getElementById("cmsAppearanceBack")?.addEventListener("click", closeChatMoreSubsheet);
+  document.getElementById("cmsReplyStyleBack")?.addEventListener("click", closeChatMoreSubsheet);
+  document.getElementById("cmsAutoFreqBack")?.addEventListener("click", closeChatMoreSubsheet);
+  document.getElementById("cmsKeepAliveBack")?.addEventListener("click", closeChatMoreSubsheet);
+
+  // Appearance sub-sheet
+  document.getElementById("cmsChatBgBtn")?.addEventListener("click", () => {
+    closeChatMoreSheet();
+    openSettingsSubpage("appearance-resources");
+  });
+  document.getElementById("cmsBubbleThemeBtn")?.addEventListener("click", () => {
+    closeChatMoreSheet();
+    openSettingsSubpage("appearance-resources");
+  });
+  document.getElementById("cmsChatBgResetBtn")?.addEventListener("click", () => {
+    localStorage.removeItem("ui_custom_chat_background");
+    localStorage.removeItem("ui_chat_bubble_theme");
+    _syncChatMoreSubsheet("cmsAppearanceSheet");
+  });
+
+  // Reply style radios
+  document.querySelectorAll("#cmsReplyStyleSheet .cms-radio-item").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const style = btn.dataset.style;
+      if (!style) return;
+      localStorage.setItem(CHAT_REPLY_STYLE_KEY, style);
+      _syncChatMoreSubsheet("cmsReplyStyleSheet");
+      _updateChatMoreSheetValues();
+    });
+  });
+
+  // Auto freq radios
+  document.querySelectorAll("#cmsAutoReplyFreqSheet .cms-radio-item").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const freq = btn.dataset.freq;
+      if (!freq) return;
+      applyChatAutoFreq(freq);
+      _syncChatMoreSubsheet("cmsAutoReplyFreqSheet");
+      _updateChatMoreSheetValues();
+    });
+  });
+
+  // Keep alive toggle
+  document.getElementById("cmsKeepAliveToggle")?.addEventListener("click", () => {
+    const next = !getChatKeepAlive();
+    localStorage.setItem(CHAT_KEEPALIVE_KEY, next ? "on" : "off");
+    _syncChatMoreSubsheet("cmsKeepAliveSheet");
+  });
+
+  // Esc key closes sheet
+  document.addEventListener("keydown", (e) => {
+    if (!_chatMoreSheetOpen) return;
+    if (e.key === "Escape") {
+      if (_chatMoreSubsheetOpen) { closeChatMoreSubsheet(); }
+      else { closeChatMoreSheet(); }
+    }
+  });
+
+  // Tab switch closes sheet
+  document.querySelectorAll(".bottom-tab").forEach(tab => {
+    tab.addEventListener("click", () => { if (_chatMoreSheetOpen) closeChatMoreSheet(); });
+  });
+
+  // Apply saved auto-freq pref on load
+  const savedFreq = localStorage.getItem(CHAT_AUTO_FREQ_KEY);
+  if (savedFreq && savedFreq !== "off") applyChatAutoFreq(savedFreq);
+})();
+
 // ── Auth (password only, no magic link) ───────────────────────────────────────
 
 async function signIn() {
@@ -4250,14 +4497,17 @@ function initV2Shell() {
 var _currentSettingsSubpage = null;
 
 var SETTINGS_SUBPAGE_META = {
-  api:      { title: "API 设置",    subtitle: "模型、接口与连接配置" },
-  backup:   { title: "备份",        subtitle: "导出与恢复数据" },
-  beautify: { title: "美化",        subtitle: "主题、壁纸、气泡与开屏图" },
-  prompt:   { title: "Prompt 管理", subtitle: "管理 Cha 的各场景提示词" },
-  memory:   { title: "记忆管理",    subtitle: "" },
-  emoji:    { title: "表情包管理",  subtitle: "管理自定义表情包来源、常用和缓存" },
-  chat:     { title: "聊天设置",    subtitle: "气泡、背景、输入栏与消息显示" },
-  debug:    { title: "Debug 页面",  subtitle: "日志、版本与环境信息" },
+  "appearance-resources": { title: "外观与资源",       subtitle: "头像、壁纸、开屏图与表情包来源" },
+  "prompt-worldbook":     { title: "Prompt 与世界书",  subtitle: "提示词、世界书与注入规则" },
+  memory:                 { title: "记忆管理",          subtitle: "查看、禁用与清理记忆" },
+  api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
+  backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
+  debug:                  { title: "Debug",             subtitle: "日志、版本与诊断工具" },
+  // legacy aliases — keep so any existing deep-links don't break
+  beautify: { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
+  prompt:   { title: "Prompt 与世界书", subtitle: "提示词、世界书与注入规则" },
+  emoji:    { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
+  chat:     { title: "聊天外观",        subtitle: "背景与气泡主题" },
 };
 
 function openSettingsSubpage(type) {
@@ -4277,10 +4527,8 @@ function openSettingsSubpage(type) {
   mainView.hidden = true;
   subpage.hidden = false;
 
-  // If memory subpage, bind memory center events after render
-  if (type === "memory") {
-    _initSettingsMemorySubpage(bodyEl);
-  }
+  // Bind subpage-specific events after render
+  _initSettingsSubpageEvents(bodyEl, type);
 }
 
 function closeSettingsSubpage() {
@@ -4294,22 +4542,23 @@ function closeSettingsSubpage() {
 
 function renderSettingsSubpage(type) {
   switch (type) {
+    case "appearance-resources":
+    case "beautify":
+    case "emoji":
+      return _renderAppearanceResourcesSubpage();
+    case "prompt-worldbook":
+    case "prompt":
+      return _renderPromptWorldbookSubpage();
+    case "memory":
+      return _renderMemorySubpage();
     case "api":
       return _renderApiSubpage();
     case "backup":
       return _renderBackupSubpage();
-    case "beautify":
-      return _renderBeautifySubpage();
-    case "prompt":
-      return _renderPromptSubpage();
-    case "memory":
-      return _renderMemorySubpage();
-    case "emoji":
-      return _renderEmojiSubpage();
-    case "chat":
-      return _renderChatSubpage();
     case "debug":
       return _renderDebugSubpage();
+    case "chat":
+      return _renderChatAppearanceSubpage();
     default:
       return `<div class="settings-empty-state"><strong>${type}</strong><p>此页面尚未实现。</p></div>`;
   }
@@ -4372,60 +4621,165 @@ function _renderBackupSubpage() {
     </div>`;
 }
 
-function _renderBeautifySubpage() {
+function _renderAppearanceResourcesSubpage() {
   return `
     <div class="settings-section">
-      <div class="settings-section-label">主题与壁纸</div>
+      <div class="settings-section-label">头像与封面</div>
       <div class="settings-card">
         <div class="settings-card-row">
-          <div><strong>主题色</strong><small>当前：灰白冷淡</small></div>
-          <span class="settings-row-value">占位</span>
+          <div><strong>Cha 头像</strong><small>聊天页与首页头像</small></div>
+          <button type="button" class="settings-row-action-btn" id="srChaAvatarBtn">更换</button>
         </div>
         <div class="settings-card-row">
-          <div><strong>聊天背景壁纸</strong><small>自定义聊天页背景</small></div>
-          <span class="settings-row-value">占位</span>
-        </div>
-        <div class="settings-card-row">
-          <div><strong>开屏图</strong><small>启动页封面</small></div>
-          <span class="settings-row-value">占位</span>
+          <div><strong>开屏封面</strong><small>首页顶部横幅图</small></div>
+          <button type="button" class="settings-row-action-btn" id="srCoverBtn">更换</button>
         </div>
       </div>
     </div>
     <div class="settings-section">
-      <div class="settings-section-label">气泡</div>
+      <div class="settings-section-label">壁纸与气泡</div>
       <div class="settings-card">
         <div class="settings-card-row">
+          <div><strong>聊天背景</strong><small>自定义聊天页壁纸</small></div>
+          <span class="settings-row-value" id="srChatBgVal">默认</span>
+        </div>
+        <div class="settings-card-row">
           <div><strong>气泡主题</strong><small>消息气泡样式</small></div>
-          <span class="settings-row-value">占位</span>
+          <span class="settings-row-value" id="srBubbleVal">默认</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">表情包来源</div>
+      <div class="settings-card">
+        <div class="settings-card-row" id="srEmojiPackRow">
+          <div><strong>自定义来源</strong><small>管理表情包注册表</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>清理缓存</strong><small>释放表情包本地存储</small></div>
+          <button type="button" class="settings-row-action-btn" id="srEmojiCacheBtn">清理</button>
         </div>
       </div>
     </div>`;
 }
 
-function _renderPromptSubpage() {
+function _renderPromptWorldbookSubpage() {
   return `
     <div class="settings-section">
       <div class="settings-section-label">场景 Prompt</div>
       <div class="settings-card">
         <div class="settings-card-row">
-          <div><strong>主聊天</strong><small>日常对话</small></div>
-          <span class="settings-row-value">占位</span>
+          <div><strong>主聊天</strong><small>日常对话提示词</small></div>
+          <span class="settings-row-value">›</span>
         </div>
         <div class="settings-card-row">
-          <div><strong>日记</strong><small>Cha 的日记写作</small></div>
-          <span class="settings-row-value">占位</span>
+          <div><strong>日记</strong><small>Cha 的日记写作提示词</small></div>
+          <span class="settings-row-value">›</span>
         </div>
         <div class="settings-card-row">
-          <div><strong>毛象</strong><small>Mastodon 发帖风格</small></div>
-          <span class="settings-row-value">占位</span>
+          <div><strong>毛象</strong><small>Mastodon 发帖风格提示词</small></div>
+          <span class="settings-row-value">›</span>
         </div>
         <div class="settings-card-row">
-          <div><strong>游戏</strong><small>Playground 游戏模式</small></div>
-          <span class="settings-row-value">占位</span>
+          <div><strong>游戏</strong><small>Playground 游戏模式提示词</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">世界书</div>
+      <div class="settings-card">
+        <div class="settings-card-row" id="promptWbOpenRow" style="cursor:pointer">
+          <div><strong>世界书管理</strong><small>上传并启用知识库与设定注入</small></div>
+          <span class="settings-row-value">›</span>
         </div>
       </div>
     </div>`;
 }
+
+function _renderChatAppearanceSubpage() {
+  const bgVal = localStorage.getItem("ui_custom_chat_background") ? "已自定义" : "默认";
+  const bubbleVal = localStorage.getItem("ui_chat_bubble_theme") || "默认";
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">背景与气泡</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>聊天背景</strong><small>自定义聊天页壁纸</small></div>
+          <span class="settings-row-value">${bgVal}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>气泡主题</strong><small>消息气泡外观</small></div>
+          <span class="settings-row-value">${bubbleVal}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>恢复默认</strong><small>清除所有外观自定义</small></div>
+          <button type="button" class="settings-row-action-btn" id="srChatAppearanceResetBtn">恢复</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _initSettingsSubpageEvents(container, type) {
+  if (type === "memory") {
+    _initSettingsMemorySubpage(container);
+    return;
+  }
+  if (type === "appearance-resources" || type === "beautify" || type === "emoji") {
+    const wbRow = container.querySelector("#srEmojiPackRow");
+    if (wbRow) wbRow.style.cursor = "pointer";
+    const chaAvatarBtn = container.querySelector("#srChaAvatarBtn");
+    if (chaAvatarBtn) chaAvatarBtn.addEventListener("click", () => {
+      const btn = document.querySelector(".profile-avatar:not(.profile-avatar--kk)");
+      if (btn) btn.click();
+      closeSettingsSubpage();
+    });
+    const coverBtn = container.querySelector("#srCoverBtn");
+    if (coverBtn) coverBtn.addEventListener("click", () => {
+      const btn = document.querySelector(".home-cover");
+      if (btn) btn.click();
+      closeSettingsSubpage();
+    });
+    const emojiCacheBtn = container.querySelector("#srEmojiCacheBtn");
+    if (emojiCacheBtn) emojiCacheBtn.addEventListener("click", () => {
+      const keys = Object.keys(localStorage).filter(k => k.startsWith("emoji_catalog_cache"));
+      keys.forEach(k => localStorage.removeItem(k));
+      emojiCacheBtn.textContent = "已清理";
+      emojiCacheBtn.disabled = true;
+    });
+    return;
+  }
+  if (type === "prompt-worldbook" || type === "prompt") {
+    const wbRow = container.querySelector("#promptWbOpenRow");
+    if (wbRow) wbRow.addEventListener("click", () => {
+      closeSettingsSubpage();
+      const wbOverlay = document.getElementById("worldBooksOverlay");
+      if (wbOverlay) {
+        wbOverlay.classList.remove("hidden");
+        wbOverlay.removeAttribute("aria-hidden");
+        const closeBtn = document.getElementById("wbBackBtn");
+        if (closeBtn) closeBtn.focus();
+      }
+    });
+    return;
+  }
+  if (type === "chat") {
+    const resetBtn = container.querySelector("#srChatAppearanceResetBtn");
+    if (resetBtn) resetBtn.addEventListener("click", () => {
+      localStorage.removeItem("ui_custom_chat_background");
+      localStorage.removeItem("ui_chat_bubble_theme");
+      resetBtn.textContent = "已恢复";
+      resetBtn.disabled = true;
+    });
+  }
+}
+
+// Legacy stubs (kept so any other code referencing the old names keeps working)
+function _renderBeautifySubpage()  { return _renderAppearanceResourcesSubpage(); }
+function _renderPromptSubpage()    { return _renderPromptWorldbookSubpage(); }
+function _renderEmojiSubpage()     { return _renderAppearanceResourcesSubpage(); }
+function _renderChatSubpage()      { return _renderChatAppearanceSubpage(); }
 
 function _renderMemorySubpage() {
   return `<div id="settingsMemoryMount" style="min-height:200px"></div>`;
@@ -4854,11 +5208,14 @@ function openEmojiPanel() {
     renderTabContent(contentArea, activeTab, searchInput.value.trim());
   });
 
-  // Insert panel above input bar
+  // Insert panel into chat-shell (absolute positioned, so doesn't affect flex flow)
+  const chatShell = document.querySelector(".chat-shell");
   const inputBar = document.getElementById("chatForm");
-  inputBar?.parentNode?.insertBefore(panel, inputBar);
+  const insertTarget = chatShell || inputBar?.parentNode;
+  insertTarget?.appendChild(panel);
   requestAnimationFrame(() => {
     panel.classList.add("open");
+    chatShell?.classList.add("emoji-panel-open");
     scrollChatToLatest();
   });
 
@@ -4878,6 +5235,8 @@ function openEmojiPanel() {
 function closeEmojiPanel() {
   _emojiPanelOpen = false;
   const panel = document.getElementById("emojiPanel");
+  const chatShell = document.querySelector(".chat-shell");
+  chatShell?.classList.remove("emoji-panel-open");
   if (panel) {
     panel.classList.remove("open");
     panel.addEventListener("transitionend", () => panel.remove(), { once: true });
@@ -4933,6 +5292,7 @@ function renderKaomojiTab(container, query) {
     btn.addEventListener("click", () => {
       insertTextAtCursor(kao);
       closeEmojiPanel();
+      scrollChatToLatest();
     });
     grid.appendChild(btn);
   });
@@ -5089,6 +5449,7 @@ function makeEmojiItem(emoji, opts = {}) {
     insertTextAtCursor(token + " ");
     recordEmojiUsed(emoji.id);
     closeEmojiPanel();
+    scrollChatToLatest();
   });
 
   return btn;
@@ -5407,68 +5768,9 @@ initKeyboardViewportState();
 // Start loading emoji catalog in the background — never blocks UI
 loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
 
-// ── Composer emoji preview ────────────────────────────────────────────────────
-// Shows a rendered preview of custom emoji tokens above the input bar.
-// textarea keeps the raw shortcode text; this layer is visual-only.
-(function initComposerEmojiPreview() {
-  const chatForm = document.getElementById("chatForm");
-  if (!chatForm || !messageInput) return;
-
-  const preview = document.createElement("div");
-  preview.className = "composer-emoji-preview";
-  preview.setAttribute("aria-hidden", "true");
-  // Insert directly before the chat input form
-  chatForm.parentNode.insertBefore(preview, chatForm);
-
-  function hasKnownEmojiToken(text) {
-    if (!emojiCatalog.loaded || !text) return false;
-    EMOJI_TOKEN_RE.lastIndex = 0;
-    let m;
-    while ((m = EMOJI_TOKEN_RE.exec(text)) !== null) {
-      if (resolveEmojiToken(m[0])) return true;
-    }
-    return false;
-  }
-
-  function updatePreview() {
-    const text = messageInput.value;
-    if (!hasKnownEmojiToken(text)) {
-      preview.hidden = true;
-      preview.textContent = "";
-      return;
-    }
-    preview.hidden = false;
-    preview.textContent = "";
-    preview.appendChild(renderTextWithEmoji(text));
-  }
-
-  messageInput.addEventListener("input", updatePreview);
-
-  // Clear preview on successful send (chatForm submit)
-  chatForm.addEventListener("submit", () => {
-    preview.hidden = true;
-    preview.textContent = "";
-  }, true);
-
-  // Also clear when conversation is switched (messageList cleared)
-  const _origClearChat = window.clearChatMessages;
-  if (typeof _origClearChat === "function") {
-    window.clearChatMessages = function(...args) {
-      preview.hidden = true;
-      preview.textContent = "";
-      return _origClearChat.apply(this, args);
-    };
-  }
-
-  // Re-run after catalog loads so an already-typed token becomes visible
-  const _origLoadCatalog = window.loadEmojiCatalog;
-  if (typeof _origLoadCatalog === "function") {
-    const origPromise = loadEmojiCatalog;
-    // Hook: after catalog resolves, refresh preview
-    const _catalog = loadEmojiCatalog;
-    window._composerPreviewRefresh = updatePreview;
-  }
-})();
+// Composer emoji preview removed: per UX spec, no separate preview bar above
+// the input. The textarea stores raw shortcodes; emoji render in the message
+// bubble after send.
 
 // ── V2 shared status bar ─────────────────────────────────────────────────────
 async function initV2StatusBars() {

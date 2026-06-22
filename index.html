@@ -99,15 +99,12 @@
         <div class="v2-top-status"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div>
         <header class="settings-title"><h1>设置</h1><p>管理与个性化</p></header>
         <div class="settings-list">
-          <button class="setting-row" data-settings-subpage="api"><img src="assets/icons/settings/api.svg" alt=""><span><strong>API 设置</strong><small>管理 API 与连接</small></span><b>›</b></button>
-          <button class="setting-row" data-settings-subpage="backup"><img src="assets/icons/settings/backup.svg" alt=""><span><strong>备份</strong><small>数据备份与恢复</small></span><b>›</b></button>
-          <button class="setting-row" data-settings-subpage="beautify"><img src="assets/icons/settings/theme.svg" alt=""><span><strong>美化</strong><small>主题、壁纸与界面</small></span><b>›</b></button>
-          <button class="setting-row" data-settings-subpage="prompt"><img src="assets/icons/settings/prompt.svg" alt=""><span><strong>Prompt 管理</strong><small>管理 Cha 的提示词</small></span><b>›</b></button>
-          <button class="setting-row" data-settings-subpage="memory"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>记忆管理</strong><small>记忆数据管理与清理</small></span><b>›</b></button>
-          <button class="setting-row" id="worldBooksSettingRow"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>世界书</strong><small>Prompt 知识库与设定注入</small></span><b>›</b></button>
-          <button class="setting-row" data-settings-subpage="emoji"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>表情包管理</strong><small>管理自定义表情包来源、常用和缓存</small></span><b>›</b></button>
-          <button class="setting-row" data-settings-subpage="chat"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>聊天设置</strong><small>气泡、背景、输入栏与消息显示</small></span><b>›</b></button>
-          <button class="setting-row" data-settings-subpage="debug"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>Debug 页面</strong><small>开发者调试与日志</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="appearance-resources"><img src="assets/icons/settings/theme.svg" alt=""><span><strong>外观与资源</strong><small>头像、壁纸、开屏图与表情包</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="prompt-worldbook"><img src="assets/icons/settings/prompt.svg" alt=""><span><strong>Prompt 与世界书</strong><small>提示词、世界书与注入规则</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="memory"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>记忆管理</strong><small>查看、禁用与清理记忆</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="api"><img src="assets/icons/settings/api.svg" alt=""><span><strong>API 设置</strong><small>模型、接口与连接状态</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="backup"><img src="assets/icons/settings/backup.svg" alt=""><span><strong>备份与导入</strong><small>导出、恢复与记忆书上传</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="debug"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>Debug</strong><small>日志、版本与诊断工具</small></span><b>›</b></button>
         </div>
       </div>
 
@@ -133,6 +130,7 @@
         <button id="chatOnlineDot" type="button" class="online-dot-hitbox" title="View status" aria-label="View Cha status"><span class="online-dot" aria-hidden="true"></span></button>
         <span id="chatStatus" class="chat-status"></span>
         <button id="chatSearchButton" type="button" class="icon-btn" title="Search messages" aria-label="Search messages"><img src="assets/icons/others/search.svg" alt=""></button>
+        <button id="chatMoreBtn" type="button" class="icon-btn" title="更多" aria-label="更多选项"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="4" r="1.5" fill="currentColor"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/><circle cx="9" cy="14" r="1.5" fill="currentColor"/></svg></button>
       </header>
 
       <div id="chatSearchSheet" class="search-sheet hidden" aria-hidden="true">
@@ -145,6 +143,69 @@
           </div>
           <div id="chatSearchResults" class="search-results" role="list" aria-label="搜索结果">
             <div class="search-empty">输入关键词搜索当前聊天记录</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 聊天更多 bottom sheet -->
+      <div id="chatMoreSheet" class="chat-more-sheet hidden" aria-hidden="true" role="dialog" aria-modal="true" aria-label="更多选项">
+        <button id="chatMoreOverlay" type="button" class="chat-more-overlay" aria-label="关闭"></button>
+        <div class="chat-more-content">
+          <div class="chat-more-handle" aria-hidden="true"></div>
+          <!-- 主列表 -->
+          <div id="chatMoreMain" class="chat-more-main">
+            <ul class="chat-more-list" role="list">
+              <li><button type="button" class="chat-more-item" id="cmsSearchBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="7.5" cy="7.5" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11.5 11.5L15 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>搜索聊天记录</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsAppearanceBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="2" y="2" width="13" height="13" rx="3" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 6L13 8.5L9.5 11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>聊天外观</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsReplyStyleBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M3 5h11M3 8.5h7M3 12h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>回复风格</span><span id="cmsReplyStyleVal" class="chat-more-item-value">均衡</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsAutoFreqBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="8.5" cy="8.5" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 5.5v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>主动回复频率</span><span id="cmsAutoFreqVal" class="chat-more-item-value">关</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsKeepAliveBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.5 2.5C5.19 2.5 2.5 5.19 2.5 8.5s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6z" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5l2 2 3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>后台与通知</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--muted" id="cmsQuietModeBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M3 3l11 11M10.5 7A4 4 0 0 0 6 7v3.5M4.5 10.5A4 4 0 0 0 12.5 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span id="cmsQuietModeLabel">安静模式</span><span id="cmsQuietModeStatus" class="chat-more-item-value">关</span></button></li>
+            </ul>
+          </div>
+          <!-- 聊天外观子面板 -->
+          <div id="cmsAppearanceSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsAppearanceBack">← 返回</button><span>聊天外观</span></div>
+            <ul class="chat-more-list" role="list">
+              <li><button type="button" class="chat-more-item" id="cmsChatBgBtn"><span>聊天背景</span><span id="cmsChatBgVal" class="chat-more-item-value">默认</span></button></li>
+              <li><button type="button" class="chat-more-item" id="cmsBubbleThemeBtn"><span>气泡主题</span><span id="cmsBubbleThemeVal" class="chat-more-item-value">默认</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--muted" id="cmsChatBgResetBtn"><span>恢复默认</span></button></li>
+            </ul>
+          </div>
+          <!-- 回复风格子面板 -->
+          <div id="cmsReplyStyleSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsReplyStyleBack">← 返回</button><span>回复风格</span></div>
+            <p class="cms-section-hint">影响 Cha 回复的稳定性与创意度</p>
+            <ul class="chat-more-list" role="radiogroup" aria-label="回复风格">
+              <li><button type="button" class="chat-more-item cms-radio-item" data-style="stable" role="radio"><span class="cms-radio-dot"></span><span>稳定</span><span class="chat-more-item-value cms-radio-hint">更可预测、少跑偏</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-style="balanced" role="radio"><span class="cms-radio-dot"></span><span>均衡</span><span class="chat-more-item-value cms-radio-hint">默认，平衡发挥</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-style="creative" role="radio"><span class="cms-radio-dot"></span><span>发散</span><span class="chat-more-item-value cms-radio-hint">更天马行空、有惊喜</span></button></li>
+            </ul>
+          </div>
+          <!-- 主动回复频率子面板 -->
+          <div id="cmsAutoReplyFreqSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsAutoFreqBack">← 返回</button><span>主动回复频率</span></div>
+            <p class="cms-section-hint">Cha 在你停止输入后主动接话的频率</p>
+            <ul class="chat-more-list" role="radiogroup" aria-label="主动回复频率">
+              <li><button type="button" class="chat-more-item cms-radio-item" data-freq="off" role="radio"><span class="cms-radio-dot"></span><span>关闭</span><span class="chat-more-item-value cms-radio-hint">只在你发送时回复</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-freq="low" role="radio"><span class="cms-radio-dot"></span><span>偶尔</span><span class="chat-more-item-value cms-radio-hint">较少主动开口</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-freq="normal" role="radio"><span class="cms-radio-dot"></span><span>正常</span><span class="chat-more-item-value cms-radio-hint">默认频率</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-freq="high" role="radio"><span class="cms-radio-dot"></span><span>积极</span><span class="chat-more-item-value cms-radio-hint">更频繁主动接话</span></button></li>
+            </ul>
+          </div>
+          <!-- 后台与通知子面板 -->
+          <div id="cmsKeepAliveSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsKeepAliveBack">← 返回</button><span>后台与通知</span></div>
+            <ul class="chat-more-list" role="list">
+              <li>
+                <div class="chat-more-item chat-more-item--toggle">
+                  <span>保持连接</span>
+                  <span id="cmsKeepAliveStatus" class="cms-status-badge">检测中…</span>
+                  <button type="button" class="cms-toggle" id="cmsKeepAliveToggle" role="switch" aria-checked="false" aria-label="保持连接"></button>
+                </div>
+              </li>
+              <li><div class="chat-more-item chat-more-item--status"><span>通知</span><span class="cms-badge cms-badge--info">系统通知，无法保证实时</span></div></li>
+            </ul>
           </div>
         </div>
       </div>
