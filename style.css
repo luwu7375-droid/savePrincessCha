@@ -3258,6 +3258,8 @@ img.msg-image {
 }
 
 .v2-page--chat .top-bar h1 {
+  font-size: 17px;
+  font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -3342,6 +3344,13 @@ img.msg-image {
   .v2-page--chat .top-bar {
     grid-template-columns: 48px max-content 44px 1fr 44px !important;
     gap: 4px !important;
+  }
+
+  /* Mobile: chat topbar nickname reads as a name, not a page title */
+  .v2-page--chat .top-bar h1 {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
   }
 }
 

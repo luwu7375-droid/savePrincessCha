@@ -78,6 +78,7 @@ type ChatRequest = {
   conversation_state?: ConversationState;
   userMessageId?: number | null; // messages.id of the triggering user message
   rawUserMessage?: string | null; // original user input before any frontend wrapping
+  emojiGuide?: string | null; // client-built guide of usable custom emoji shortcodes
 };
 
 // ── Model tier ────────────────────────────────────────────────────────────────
@@ -2226,6 +2227,13 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
           : String(wbErr).slice(0, 200);
       }
     }
+  }
+
+  // ── Emoji guide injection ──────────────────────────────────────────────────
+  // The client builds a compact guide of allowed custom emoji shortcodes from
+  // its local catalog+lexicon. Inject it here so the model can actually use them.
+  if (typeof payload.emojiGuide === "string" && payload.emojiGuide.trim()) {
+    systemContent += `\n\n${payload.emojiGuide}`;
   }
 
   if (payload.replyMode === "auto") {
