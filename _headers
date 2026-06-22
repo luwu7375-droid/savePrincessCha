@@ -13,5 +13,16 @@
 /*.css
   Content-Type: text/css; charset=utf-8
   Cache-Control: no-store
+
 /version.json
   Cache-Control: no-store
+
+# PWA — sw.js must not be cached by the browser (SW has its own update check)
+/sw.js
+  Content-Type: application/javascript; charset=utf-8
+  Cache-Control: no-store
+
+# Manifest: short cache so updates propagate within a day
+/manifest.webmanifest
+  Content-Type: application/manifest+json; charset=utf-8
+  Cache-Control: max-age=86400
