@@ -3602,15 +3602,36 @@ function initKeyboardViewportState() {
   const shell = document.querySelector(".layout");
   if (!shell || !window.visualViewport) return;
 
+  const clampViewportToOrigin = () => {
+    if (window.visualViewport) {
+      const ol = window.visualViewport.offsetLeft;
+      if (ol !== 0) console.debug("[kb] visualViewport.offsetLeft =", ol);
+    }
+    window.scrollTo({ left: 0, top: 0, behavior: "auto" });
+    document.documentElement.scrollLeft = 0;
+    document.documentElement.scrollTop  = 0;
+    document.body.scrollLeft = 0;
+    document.body.scrollTop  = 0;
+    if (document.scrollingElement) {
+      document.scrollingElement.scrollLeft = 0;
+    }
+  };
+
   const resetKeyboardState = () => {
     shell.classList.remove("keyboard-open");
     shell.style.setProperty("--keyboard-inset", "0px");
     if (_chatInputMode === "keyboard") _chatInputMode = "plain";
-    requestAnimationFrame(() => {
-      window.scrollTo(0, 0);
-      document.documentElement.scrollTop = 0;
-      document.body.scrollTop = 0;
-    });
+    requestAnimationFrame(clampViewportToOrigin);
+  };
+
+  const deferredReset = () => {
+    setTimeout(() => {
+      resetKeyboardState();
+      setTimeout(() => {
+        resetKeyboardState();
+        requestAnimationFrame(clampViewportToOrigin);
+      }, 180);
+    }, 80);
   };
 
   let _kbRafPending = false;
@@ -3640,13 +3661,9 @@ function initKeyboardViewportState() {
     updateKeyboardState();
     maintainBottomAnchor("keyboard");
   });
-  messageInput?.addEventListener("blur", () => {
-    setTimeout(resetKeyboardState, 80);
-  });
+  messageInput?.addEventListener("blur", deferredReset);
   chatSearchInput?.addEventListener("focus", updateKeyboardState);
-  chatSearchInput?.addEventListener("blur", () => {
-    setTimeout(resetKeyboardState, 80);
-  });
+  chatSearchInput?.addEventListener("blur", deferredReset);
   updateKeyboardState();
 }
 
