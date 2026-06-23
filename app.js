@@ -3259,11 +3259,18 @@ chatBackButton?.addEventListener("click", () => {
 
 // Reuse C2: SavePrincessUpload provides the shared Supabase Storage uploader.
 function applyChaAvatar(url) {
-  if (!chaAvatarButton || !url) return;
-  chaAvatarButton.style.backgroundImage = `url("${url}")`;
-  chaAvatarButton.style.backgroundSize = "cover";
-  chaAvatarButton.style.backgroundPosition = "center";
-  chaAvatarButton.classList.add("has-image");
+  if (!url) return;
+  if (chaAvatarButton) {
+    chaAvatarButton.style.backgroundImage = `url("${url}")`;
+    chaAvatarButton.style.backgroundSize = "cover";
+    chaAvatarButton.style.backgroundPosition = "center";
+    chaAvatarButton.classList.add("has-image");
+  }
+  document.querySelectorAll('[data-avatar-role="cha"]').forEach(el => {
+    el.style.backgroundImage = `url("${url}")`;
+    el.style.backgroundSize = "cover";
+    el.style.backgroundPosition = "center";
+  });
 }
 
 applyChaAvatar(localStorage.getItem("cha_avatar_url") || "");
