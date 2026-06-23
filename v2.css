@@ -1771,6 +1771,7 @@ body {
     padding-right: 16px;
   }
 
+  .v2-page--couple .page-header,
   .v2-page--playground .page-header,
   .v2-page--setting .settings-title {
     margin-left: -16px;
@@ -2909,4 +2910,54 @@ body {
 .v2-page.v2-active {
   display: flex !important;
   pointer-events: auto;
+}
+
+/* ── One-Screen Compact Pass (≤430px mobile) ────────────────────────────────
+   Home / Couple / Playground / Settings main pages must fit without scrolling.
+   Chat page is intentionally excluded.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 430px) {
+  /* Lock main pages — no scroll */
+  .v2-page--home .v2-scroll,
+  .v2-page--couple .v2-scroll,
+  .v2-page--playground .v2-scroll,
+  .v2-page--setting .settings-main-view {
+    overflow: hidden;
+    padding-bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 8px);
+  }
+
+  /* ── Home ── */
+  .home-cover               { height: 64px; }
+  .profile-avatar           { width: 56px; height: 56px; border-radius: 999px; }
+  .days-counter             { padding-top: 24px; }
+  .days-counter strong      { font-size: 26px; }
+  .home-card-grid           { margin-top: 10px; gap: 10px; }
+  .home-mini-card           { min-height: 118px; padding: 12px; }
+  .mastodon-thumb           { height: 34px; margin-top: 6px; }
+  .today-card               { margin-top: 6px; grid-template-columns: 1.45fr 0.55fr; padding: 10px; }
+  .today-photo              { min-height: 76px; }
+
+  /* ── Couple ── */
+  .v2-page--couple .page-header,
+  .v2-page--playground .page-header { min-height: 62px; gap: 10px; margin-bottom: 8px; }
+  .memory-vortex            { min-height: 102px; padding: 14px 18px; margin-bottom: 10px; }
+  .feature-grid             { gap: 10px; }
+  .feature-grid--two .feature-card { min-height: 120px; }
+  .music-player             { margin-top: 10px; padding: 10px 12px; gap: 10px; }
+  .album-art                { width: 42px; height: 42px; }
+  .music-play               { width: 40px; height: 40px; }
+
+  /* ── Playground ── */
+  .feature-grid--play       { gap: 9px; }
+  .feature-grid--play .feature-card     { min-height: 100px; }
+  .feature-grid--play .feature-card img { height: 54px; }
+  .daily-record-row         { margin-top: 10px; gap: 10px; }
+  .record-input             { height: 40px; margin-top: 10px; }
+  .history-card small       { margin: 4px 0 10px; }
+
+  /* ── Settings ── */
+  .settings-list            { gap: 6px; }
+  .setting-row              { min-height: 52px; }
+  .settings-footer          { padding-top: 12px; }
 }
