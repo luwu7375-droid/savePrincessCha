@@ -4592,14 +4592,78 @@ function initV2Shell() {
   window.SPV2Shell.initV2Shell();
 }
 
-// ── Settings subpage system — delegated to modules/v2-shell.js ──────────────
+// ── Settings subpage system ─────────────────────────────────────────────────
+
+var _currentSettingsSubpage = null;
+
+var SETTINGS_SUBPAGE_META = {
+  "appearance-resources": { title: "外观与资源",       subtitle: "头像、壁纸、开屏图与表情包来源" },
+  "prompt-worldbook":     { title: "Prompt 与世界书",  subtitle: "提示词、世界书与注入规则" },
+  worldbook:              { title: "世界书管理",        subtitle: "上传后手动启用才会注入 Prompt" },
+  memory:                 { title: "记忆管理",          subtitle: "查看、禁用与清理记忆" },
+  api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
+  backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
+  debug:                  { title: "Debug",             subtitle: "日志、版本与诊断工具" },
+  // legacy aliases — keep so any existing deep-links don't break
+  beautify: { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
+  prompt:   { title: "Prompt 与世界书", subtitle: "提示词、世界书与注入规则" },
+  emoji:    { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
+  chat:     { title: "聊天外观",        subtitle: "背景与气泡主题" },
+};
 
 function openSettingsSubpage(type) {
-  window.SPV2Shell.openSettingsSubpage(type);
+  const subpage = document.getElementById("settingsSubpage");
+  const mainView = document.getElementById("settingsMainView");
+  const titleEl = document.getElementById("settingsSubpageTitle");
+  const subtitleEl = document.getElementById("settingsSubpageSubtitle");
+  const bodyEl = document.getElementById("settingsSubpageBody");
+  if (!subpage || !mainView || !titleEl || !subtitleEl || !bodyEl) return;
+
+  // If leaving worldbook subpage, move content back to the hidden store first
+  if (_currentSettingsSubpage === "worldbook") {
+    const mount = document.getElementById("wbSubpageMount");
+    const store = document.getElementById("wbContentStore");
+    if (mount && store) {
+      while (mount.firstChild) {
+        store.appendChild(mount.firstChild);
+      }
+    }
+    wbResetUploadForm();
+  }
+
+  const meta = SETTINGS_SUBPAGE_META[type] || { title: type, subtitle: "" };
+  titleEl.textContent = meta.title;
+  subtitleEl.textContent = meta.subtitle;
+  bodyEl.innerHTML = renderSettingsSubpage(type);
+
+  _currentSettingsSubpage = type;
+  mainView.hidden = true;
+  subpage.hidden = false;
+
+  // Bind subpage-specific events after render
+  _initSettingsSubpageEvents(bodyEl, type);
 }
 
 function closeSettingsSubpage() {
-  window.SPV2Shell.closeSettingsSubpage();
+  const subpage = document.getElementById("settingsSubpage");
+  const mainView = document.getElementById("settingsMainView");
+  if (!subpage || !mainView) return;
+
+  // If leaving worldbook subpage, move content back to the hidden store
+  if (_currentSettingsSubpage === "worldbook") {
+    const mount = document.getElementById("wbSubpageMount");
+    const store = document.getElementById("wbContentStore");
+    if (mount && store) {
+      while (mount.firstChild) {
+        store.appendChild(mount.firstChild);
+      }
+    }
+    wbResetUploadForm();
+  }
+
+  subpage.hidden = true;
+  mainView.hidden = false;
+  _currentSettingsSubpage = null;
 }
 
 function renderSettingsSubpage(type) {
