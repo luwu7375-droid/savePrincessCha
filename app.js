@@ -1,4 +1,4 @@
-console.log("build cloudflare-0090-emoji-pack-registry");
+console.log("build", window.SAVE_PRINCESS_BUILD || "dev");
 
 // ── Config / Supabase ─────────────────────────────────────────────────────────
 
