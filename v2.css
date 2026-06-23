@@ -25,6 +25,9 @@
   /* Set by JS via visualViewport; fallback to 100dvh */
   --app-vh: 100dvh;
   --visual-vh: 100dvh;
+  /* Stable shell height — only updated outside keyboard open state,
+     on orientationchange, and on non-keyboard resize. Drives .layout height. */
+  --app-shell-h: 100dvh;
   /* Height of the panel area (emoji/more) when open — set by JS */
   --panel-area-height: 0px;
 }
@@ -47,8 +50,8 @@ body {
 .layout {
   position: relative;
   width: min(100vw, 430px);
-  /* Use --app-vh so iOS Safari / PWA never reads raw 100dvh at the wrong moment */
-  height: min(var(--app-vh, 100dvh), 932px);
+  /* Use --app-shell-h so the shell never shrinks when the keyboard opens */
+  height: min(var(--app-shell-h, 100dvh), 932px);
   overflow: hidden;
   display: block;
   background: var(--app-bg);
@@ -1706,7 +1709,7 @@ body {
 
   .layout {
     width: 100vw;
-    height: var(--app-vh, 100dvh);
+    height: var(--app-shell-h, 100dvh);
     border: 0;
     border-radius: 0;
     box-shadow: none;
@@ -1808,7 +1811,8 @@ body {
 
 @media (min-width: 431px) {
   .layout.keyboard-open {
-    height: min(var(--app-vh, 100dvh), 932px);
+    /* shell height must NOT change when keyboard opens — it stays at --app-shell-h */
+    height: min(var(--app-shell-h, 100dvh), 932px);
   }
 }
 

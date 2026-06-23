@@ -3650,10 +3650,36 @@ function initKeyboardViewportState() {
   updateKeyboardState();
 }
 
-// ── Visual viewport height tracker ────────────────────────────────────────────
-// Keeps --app-vh and --visual-vh in sync with the actual visible area.
-// --app-vh drives the .layout height so iOS Safari / PWA never reads a stale
-// 100dvh at the wrong moment (e.g. while the keyboard or browser UI animates).
+// ── Stable shell height ────────────────────────────────────────────────────────
+// --app-shell-h drives .layout height. It is captured from window.innerHeight
+// (pre-keyboard value) and is only refreshed on orientationchange or a resize
+// that happens while the keyboard is NOT open. This prevents the layout from
+// shrinking when the soft keyboard appears and visualViewport.height drops.
+function initStableShellHeight() {
+  function capture() {
+    const h = window.innerHeight;
+    document.documentElement.style.setProperty("--app-shell-h", `${h}px`);
+  }
+  capture(); // immediate on init
+
+  // orientationchange always means a real layout change — update unconditionally.
+  window.addEventListener("orientationchange", () => {
+    // Wait for the browser to settle after rotation before capturing.
+    setTimeout(capture, 300);
+  });
+
+  // On resize: only update when the keyboard is NOT open, so a keyboard-driven
+  // visualViewport shrink never propagates into --app-shell-h.
+  window.addEventListener("resize", () => {
+    const shell = document.querySelector(".layout");
+    if (shell && shell.classList.contains("keyboard-open")) return;
+    capture();
+  });
+}
+
+// ── Visual viewport vars ───────────────────────────────────────────────────────
+// --visual-vh tracks the real visible height (shrinks with keyboard).
+// --app-vh kept in sync for legacy callers; does NOT drive .layout height.
 // RAF-gated so we never trigger layout thrash on every scroll pixel.
 function initVisualVh() {
   let rafPending = false;
@@ -3663,8 +3689,8 @@ function initVisualVh() {
       ? window.visualViewport.height
       : window.innerHeight;
     const px = `${height}px`;
-    document.documentElement.style.setProperty("--app-vh", px);
     document.documentElement.style.setProperty("--visual-vh", px);
+    document.documentElement.style.setProperty("--app-vh", px); // legacy compat
   }
   function scheduleUpdate() {
     if (!rafPending) {
@@ -3675,8 +3701,7 @@ function initVisualVh() {
   update(); // immediate on init
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", scheduleUpdate);
-    // scroll: only update --visual-vh for search overlay positioning,
-    // avoid layout-thrash on every scroll pixel
+    // scroll: update overlay/panel positioning vars, not the shell height
     window.visualViewport.addEventListener("scroll", scheduleUpdate);
   } else {
     window.addEventListener("resize", scheduleUpdate);
@@ -3809,7 +3834,8 @@ async function triggerReply(replyMode) {
   } finally {
     setChatTitleState("idle");
     setReplyingState(false);
-    messageInput.focus();
+    // Desktop only: re-focus after reply. Mobile must not re-trigger soft keyboard.
+    if (!isMobileLayout()) messageInput.focus();
     maintainBottomAnchor("send");
     // Observe any new unread assistant rows and update badge
     syncChaUnreadCount();
@@ -4556,7 +4582,8 @@ async function hideLoginAndInit(session) {
   await initConversations();
   await reloadHistory();
   setLoading(false);
-  messageInput.focus();
+  // Desktop only: auto-focus on init. Mobile must not trigger soft keyboard.
+  if (!isMobileLayout()) messageInput.focus();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -5305,6 +5332,7 @@ initV2Shell();
 initV2Composer();
 initInputKeyboardHints();
 initKeyboardViewportState();
+initStableShellHeight();
 initVisualVh();
 // Start loading emoji catalog in the background — never blocks UI
 window.SPEmoji.loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
