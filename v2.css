@@ -316,6 +316,11 @@ body {
 
 .profile-person span {
   color: var(--text-muted);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-overflow: unset;
 }
 
 .days-counter {
@@ -445,8 +450,8 @@ body {
 }
 
 .today-card blockquote {
-  margin: 10px 0;
-  font-size: 14px;
+  margin: 6px 0;
+  font-size: 15px;
   line-height: 1.55;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -555,6 +560,9 @@ body {
   padding: 20px 22px;
   text-align: left;
 }
+
+.v2-page--couple .memory-vortex { margin-top: 14px; }
+.v2-page--playground .feature-grid--play { margin-top: 10px; }
 
 .memory-vortex-title,
 .memory-vortex-desc,
@@ -828,7 +836,7 @@ body {
 }
 
 .settings-footer {
-  display: flex;
+  display: none;
   justify-content: space-between;
   padding: 20px 4px 4px;
   color: var(--text-faint);
@@ -2941,6 +2949,7 @@ body {
   /* ── Couple ── */
   .v2-page--couple .page-header,
   .v2-page--playground .page-header { min-height: 62px; gap: 10px; margin-bottom: 8px; }
+  .v2-page--couple .memory-vortex   { margin-top: 8px; }
   .memory-vortex            { min-height: 102px; padding: 14px 18px; margin-bottom: 10px; }
   .feature-grid             { gap: 10px; }
   .feature-grid--two .feature-card { min-height: 120px; }
@@ -2949,6 +2958,7 @@ body {
   .music-play               { width: 40px; height: 40px; }
 
   /* ── Playground ── */
+  .v2-page--playground .feature-grid--play { margin-top: 8px; }
   .feature-grid--play       { gap: 9px; }
   .feature-grid--play .feature-card     { min-height: 100px; }
   .feature-grid--play .feature-card img { height: 54px; }
@@ -2959,5 +2969,4 @@ body {
   /* ── Settings ── */
   .settings-list            { gap: 6px; }
   .setting-row              { min-height: 52px; }
-  .settings-footer          { padding-top: 12px; }
 }
