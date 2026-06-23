@@ -217,8 +217,8 @@
 
     showPage("home");
 
-    // Expose for debug console
-    window.SPV2Shell = { showPage: showPage };
+    // Expose showPage for debug console (extend, don't replace)
+    window.SPV2Shell.showPage = showPage;
   }
 
   // ── Public API ───────────────────────────────────────────────────────────────
