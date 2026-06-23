@@ -780,7 +780,111 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: `unknown action: ${action}` }, 400);
   }
 
-  // ── Helper: verify user auth and get userId ──────────────────────────────────
+  // ── candidates_list: fetch candidate pool for review ─────────────────────────
+  // POST ?type=candidates_list
+  // Body: { userId, limit? }
+  // Requires x-memory-admin-token. Returns candidates excluding status=rejected.
+  if (type === "candidates_list" && req.method === "POST") {
+    const clAdminToken = Deno.env.get("MEMORY_ADMIN_TOKEN");
+    if (!clAdminToken || req.headers.get("x-memory-admin-token") !== clAdminToken) {
+      return json({ ok: false, error: "unauthorized" }, 401);
+    }
+    if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "DB not configured" }, 500);
+
+    let clBody: { userId?: string; limit?: number };
+    try { clBody = await req.json(); } catch { return json({ ok: false, error: "invalid JSON body" }, 400); }
+
+    const clUserId = clBody.userId;
+    if (!clUserId || typeof clUserId !== "string" || !clUserId.trim()) {
+      return json({ ok: false, error: "userId required" }, 400);
+    }
+    const rawClLimit = typeof clBody.limit === "number" ? clBody.limit : 200;
+    const clLimit = Math.max(1, Math.min(500, rawClLimit));
+
+    const clHeaders = {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    };
+
+    const candRes = await fetch(
+      `${supabaseUrl}/rest/v1/auto_memory_candidates` +
+        `?user_id=eq.${encodeURIComponent(clUserId)}` +
+        `&status=neq.rejected` +
+        `&select=id,candidate_type,title,summary,content,confidence,sensitivity,recommended_action,status,reason,source_msg_ids,created_at` +
+        `&order=created_at.desc` +
+        `&limit=${clLimit}`,
+      { headers: clHeaders }
+    );
+    if (!candRes.ok) {
+      const errBody = await candRes.json().catch(() => ({}));
+      return json({ ok: false, error: "fetch failed", detail: errBody }, 500);
+    }
+    const candidates = await candRes.json();
+    return json({ ok: true, candidates }, 200);
+  }
+
+  // ── candidate_patch: review action on a single candidate ─────────────────────
+  // POST ?type=candidate_patch
+  // Body: { userId, candidateId, patch: { recommended_action?, status? } }
+  // Requires x-memory-admin-token.
+  if (type === "candidate_patch" && req.method === "POST") {
+    const cpAdminToken = Deno.env.get("MEMORY_ADMIN_TOKEN");
+    if (!cpAdminToken || req.headers.get("x-memory-admin-token") !== cpAdminToken) {
+      return json({ ok: false, error: "unauthorized" }, 401);
+    }
+    if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "DB not configured" }, 500);
+
+    let cpBody: { userId?: string; candidateId?: string; patch?: Record<string, unknown> };
+    try { cpBody = await req.json(); } catch { return json({ ok: false, error: "invalid JSON body" }, 400); }
+
+    const cpUserId = cpBody.userId;
+    if (!cpUserId || typeof cpUserId !== "string" || !cpUserId.trim()) {
+      return json({ ok: false, error: "userId required" }, 400);
+    }
+    const cpCandidateId = cpBody.candidateId;
+    if (!cpCandidateId || typeof cpCandidateId !== "string" || !cpCandidateId.trim()) {
+      return json({ ok: false, error: "candidateId required" }, 400);
+    }
+    const cpPatch = cpBody.patch;
+    if (!cpPatch || typeof cpPatch !== "object" || Array.isArray(cpPatch)) {
+      return json({ ok: false, error: "patch object required" }, 400);
+    }
+
+    // Whitelist patchable fields
+    const allowedFields = new Set(["recommended_action", "status"]);
+    const validPatch: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(cpPatch)) {
+      if (allowedFields.has(k)) validPatch[k] = v;
+    }
+    if (Object.keys(validPatch).length === 0) {
+      return json({ ok: false, error: "no valid patch fields provided" }, 400);
+    }
+
+    const cpHeaders = {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    };
+
+    const patchRes = await fetch(
+      `${supabaseUrl}/rest/v1/auto_memory_candidates` +
+        `?id=eq.${encodeURIComponent(cpCandidateId)}` +
+        `&user_id=eq.${encodeURIComponent(cpUserId)}`,
+      {
+        method: "PATCH",
+        headers: { ...cpHeaders, Prefer: "return=minimal" },
+        body: JSON.stringify(validPatch),
+      }
+    );
+    if (!patchRes.ok) {
+      const errText = await patchRes.text().catch(() => "");
+      return json({ ok: false, error: "patch failed", detail: errText.slice(0, 200) }, 500);
+    }
+    return json({ ok: true }, 200);
+  }
+
+  // ── Helper: verify user auth and get userId ──────────────���───────────────────
   async function verifyUserAuth(req: Request): Promise<{ userId: string | null; error?: Response }> {
     const authHeader = req.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {

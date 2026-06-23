@@ -2741,6 +2741,169 @@ body {
   cursor: default;
 }
 
+/* ── Candidate Pool View (候选池) ────────────────────────────────────────── */
+
+.mc-cand-stats-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 0;
+}
+
+.mc-cand-stat {
+  flex: 1;
+  min-height: 64px;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: var(--shadow-card);
+}
+
+.mc-cand-stat strong {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-main);
+}
+
+.mc-cand-stat small {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mc-cand-stat--accept {
+  border-color: rgba(76, 175, 80, 0.3);
+  background: rgba(76, 175, 80, 0.04);
+}
+
+.mc-cand-stat--accept strong {
+  color: #388e3c;
+}
+
+.mc-cand-stat--pending {
+  border-color: rgba(255, 152, 0, 0.3);
+  background: rgba(255, 152, 0, 0.04);
+}
+
+.mc-cand-stat--pending strong {
+  color: #f57c00;
+}
+
+.mc-cand-stat--quarantine {
+  border-color: rgba(244, 67, 54, 0.3);
+  background: rgba(244, 67, 54, 0.04);
+}
+
+.mc-cand-stat--quarantine strong {
+  color: #d32f2f;
+}
+
+.mc-cand-filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mc-cand-filter-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.mc-cand-filter-btn {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.mc-cand-filter-btn:hover {
+  background: var(--surface);
+  border-color: rgba(30, 30, 30, 0.12);
+}
+
+.mc-cand-filter-btn--active {
+  background: var(--text-main);
+  border-color: var(--text-main);
+  color: var(--surface);
+  font-weight: 500;
+}
+
+.mc-memory-card.mc-cand-card {
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+}
+
+.mc-memory-card.mc-cand-card:hover {
+  background: var(--surface-soft);
+  border-color: rgba(30, 30, 30, 0.12);
+}
+
+.mc-memory-card.mc-cand-card:active {
+  transform: translateY(1px);
+}
+
+.mc-cand-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mc-cand-meta span {
+  white-space: nowrap;
+}
+
+.mc-memory-card--expanded .mc-memory-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.mc-action-btn--accept {
+  background: #4caf50;
+  border-color: #4caf50;
+  color: #fff;
+}
+
+.mc-action-btn--accept:hover {
+  background: #388e3c;
+  border-color: #388e3c;
+}
+
+.mc-action-btn--danger {
+  background: transparent;
+  border-color: rgba(244, 67, 54, 0.4);
+  color: #d32f2f;
+}
+
+.mc-action-btn--danger:hover {
+  background: rgba(244, 67, 54, 0.08);
+  border-color: #d32f2f;
+}
+
 /* ── Settings memory page: light v2 overrides ───────────────────────────────
    Override the dark oklch theme from style.css when rendered inside Settings.
    The .settings-memory-page wrapper is added by _renderMemorySubpage().

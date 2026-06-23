@@ -6167,6 +6167,12 @@ var memoryCenterV2State = {
   query: "",
   statusFilter: "all",
   categoryFilter: "all",
+  // candidates view state
+  candidates: [],
+  loadingCandidates: false,
+  candidatesLoaded: false,
+  candidatesError: "",
+  candidateTypeFilter: "all",
 };
 
 var MEMORY_CENTER_CATEGORY_CONFIG = {
@@ -6182,6 +6188,7 @@ var MEMORY_CENTER_CATEGORY_CONFIG = {
 var MEMORY_CENTER_VIEW_META = {
   room: { title: "cha 的房间", subtitle: "我们一起经历的，都好好收着" },
   archive: { title: "档案馆", subtitle: "我们所有的记忆，按类收着" },
+  candidates: { title: "候选池", subtitle: "待审核的记忆候选，接受后才会写入档案馆" },
   timeline: { title: "时间线", subtitle: "我们一起走过的日子，按时间倒着翻" },
   lab: { title: "实验室", subtitle: "记忆召回、注入与运行详情 · 仅供调试" },
 };
@@ -6454,23 +6461,297 @@ async function mcBridgeRefreshAll() {
   await mcBridgeFetchRecent();
   renderMemoryCenterCurrentView();
 
-  // Phase 2: archive + audit
+  // Phase 2: archive + audit + candidates (parallel)
   state.loadingArchive = true;
   state.loadingAudit = true;
+  state.loadingCandidates = true;
   state.archiveError = "";
   state.auditError = "";
+  state.candidatesError = "";
   renderMemoryCenterCurrentView();
 
   const [memOk, instOk, auditOk] = await Promise.all([
     mcBridgeFetchMemories(),
     mcBridgeFetchInstructions(),
     mcBridgeFetchAudit(),
+    mcBridgeFetchCandidates(),
   ]);
 
   state.archiveLoaded = memOk || instOk;
   state.loadingArchive = false;
   state.loadingAudit = false;
   renderMemoryCenterCurrentView();
+}
+
+// ── Candidates fetch ──────────────────────────────────────────────────────────
+
+async function mcBridgeFetchCandidates() {
+  const state = memoryCenterV2State;
+  const token = getMemoryToken();
+  if (!token) {
+    state.loadingCandidates = false;
+    state.candidatesError = "需要 admin token（在调试面板里设置）";
+    if (state.view === "candidates") renderMemoryCenterCurrentView();
+    return false;
+  }
+  try {
+    const endpoint = getMemoryEndpoint();
+    const userId = getCurrentUserId?.() || "";
+    if (!userId) throw new Error("未登录");
+    const res = await fetch(
+      `${endpoint}?type=backfill_cleanup`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-memory-admin-token": token,
+        },
+        body: JSON.stringify({ action: "report", userId }),
+      }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "unknown error");
+
+    // Flatten candidates from report for display — we need the raw rows too,
+    // so fetch them separately for the list view.
+    const listRes = await fetch(
+      `${endpoint}?type=candidates_list`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-memory-admin-token": token,
+        },
+        body: JSON.stringify({ userId, limit: 200 }),
+      }
+    );
+    let rows = [];
+    if (listRes.ok) {
+      const listData = await listRes.json();
+      if (listData.ok && Array.isArray(listData.candidates)) rows = listData.candidates;
+    }
+
+    state.candidates = rows;
+    state.candidatesLoaded = true;
+    state.loadingCandidates = false;
+    state.candidatesStats = {
+      total: data.total_candidates,
+      type_breakdown: data.type_breakdown,
+      action_breakdown: data.action_breakdown,
+    };
+    if (state.view === "candidates") renderMemoryCenterCurrentView();
+    return true;
+  } catch (err) {
+    state.loadingCandidates = false;
+    state.candidatesError = err.message;
+    if (state.view === "candidates") renderMemoryCenterCurrentView();
+    return false;
+  }
+}
+
+// ── Candidate Pool View ───────────────────────────────────────────────────────
+
+const CANDIDATE_TYPE_LABELS = {
+  project: "项目",
+  fact: "事实",
+  preference: "偏好",
+  relationship: "关系",
+  emotion: "情感",
+  event: "事件",
+};
+
+const CANDIDATE_ACTION_TONE = {
+  auto_accept: "status-enabled",
+  pending: "status-recent",
+  quarantine: "status-disabled",
+};
+
+function renderCandidatePoolView(root) {
+  const state = memoryCenterV2State;
+  const token = getMemoryToken();
+
+  if (!token) {
+    const warn = mcEl("div", "mc-empty");
+    warn.textContent = "需要 admin token 才能查看候选池。请在实验室 > 调试设置里输入 token。";
+    root.appendChild(warn);
+    return;
+  }
+
+  if (state.loadingCandidates) {
+    mcRenderEmpty(root, "加载候选池中...");
+    return;
+  }
+
+  if (state.candidatesError) {
+    mcRenderEmpty(root, `加载失败：${state.candidatesError}`);
+    const retryBtn = mcEl("button", "mc-action-btn", "重试");
+    retryBtn.type = "button";
+    retryBtn.style.marginTop = "12px";
+    retryBtn.addEventListener("click", () => {
+      state.loadingCandidates = true;
+      state.candidatesError = "";
+      renderMemoryCenterCurrentView();
+      mcBridgeFetchCandidates();
+    });
+    root.appendChild(retryBtn);
+    return;
+  }
+
+  // ── Stats bar ────────────────────────────────────────────────────────────────
+  if (state.candidatesStats) {
+    const stats = state.candidatesStats;
+    const bar = mcEl("div", "mc-cand-stats-bar");
+    const total = mcEl("span", "mc-cand-stat", `共 ${stats.total} 条`);
+    bar.appendChild(total);
+    if (stats.action_breakdown) {
+      const ab = stats.action_breakdown;
+      if (ab.auto_accept) bar.appendChild(mcEl("span", "mc-cand-stat mc-cand-stat--accept", `自动接受 ${ab.auto_accept}`));
+      if (ab.pending) bar.appendChild(mcEl("span", "mc-cand-stat mc-cand-stat--pending", `待审核 ${ab.pending}`));
+      if (ab.quarantine) bar.appendChild(mcEl("span", "mc-cand-stat mc-cand-stat--quarantine", `隔离 ${ab.quarantine}`));
+    }
+    root.appendChild(bar);
+  }
+
+  // ── Type filter tabs ─────────────────────────────────────────────────────────
+  const filterBar = mcEl("div", "mc-cand-filter-bar");
+  const types = ["all", "project", "fact", "preference", "relationship"];
+  types.forEach((t) => {
+    const btn = mcEl("button", "mc-cand-filter-btn" + (state.candidateTypeFilter === t ? " mc-cand-filter-btn--active" : ""), t === "all" ? "全部" : (CANDIDATE_TYPE_LABELS[t] || t));
+    btn.type = "button";
+    btn.dataset.type = t;
+    btn.addEventListener("click", () => {
+      state.candidateTypeFilter = t;
+      renderMemoryCenterCurrentView();
+    });
+    filterBar.appendChild(btn);
+  });
+  root.appendChild(filterBar);
+
+  // ── Candidate list ───────────────────────────────────────────────────────────
+  let items = state.candidates;
+  if (state.candidateTypeFilter !== "all") {
+    items = items.filter(c => c.candidate_type === state.candidateTypeFilter);
+  }
+
+  if (!items.length) {
+    mcRenderEmpty(root, state.candidatesLoaded ? "没有符合条件的候选。" : "还没有加载候选池。");
+    return;
+  }
+
+  const list = mcEl("div", "mc-card-list");
+
+  items.forEach((cand) => {
+    const card = mcEl("article", "mc-memory-card mc-cand-card");
+    const top = mcEl("div", "mc-memory-card-top");
+    const chips = mcEl("div", "mc-chip-row");
+    chips.appendChild(mcRenderBadge(CANDIDATE_TYPE_LABELS[cand.candidate_type] || cand.candidate_type, cand.candidate_type));
+    chips.appendChild(mcRenderBadge(cand.recommended_action === "auto_accept" ? "自动接受" : cand.recommended_action === "pending" ? "待审核" : "隔离", CANDIDATE_ACTION_TONE[cand.recommended_action] || "status"));
+    top.appendChild(chips);
+    top.appendChild(mcEl("span", "mc-memory-time", mcFormatDateTime(cand.created_at)));
+
+    const title = mcEl("h3", "mc-memory-title", cand.title || cand.content.slice(0, 28));
+    const summary = mcEl("p", "mc-memory-summary", cand.summary || cand.content.slice(0, 84));
+    card.append(top, title, summary);
+
+    if (cand.content) {
+      const full = mcEl("div", "mc-memory-full", cand.content);
+      card.appendChild(full);
+    }
+
+    if (cand.source_preview) {
+      card.appendChild(mcEl("div", "mc-memory-source", `来源：${cand.source_preview}`));
+    }
+
+    const confPct = Math.round((cand.confidence || 0) * 100);
+    const meta = mcEl("div", "mc-cand-meta", `置信度 ${confPct}%`);
+    card.appendChild(meta);
+
+    // ── Action buttons ────────────────────────────��───────────────────────────
+    const actions = mcEl("div", "mc-memory-actions");
+
+    // Expand
+    const expandBtn = mcEl("button", "mc-action-btn", "展开");
+    expandBtn.type = "button";
+    expandBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isExp = card.classList.toggle("mc-memory-card--expanded");
+      expandBtn.textContent = isExp ? "收起" : "展开";
+    });
+    actions.appendChild(expandBtn);
+
+    // Accept (pending → auto_accept)
+    if (cand.recommended_action === "pending" || cand.recommended_action === "quarantine") {
+      const acceptBtn = mcEl("button", "mc-action-btn mc-action-btn--accept", "接受");
+      acceptBtn.type = "button";
+      acceptBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        acceptBtn.disabled = true;
+        acceptBtn.textContent = "...";
+        const ok = await mcCandidatePatch(cand.id, { recommended_action: "auto_accept" });
+        if (ok) {
+          cand.recommended_action = "auto_accept";
+          renderMemoryCenterCurrentView();
+        } else {
+          acceptBtn.disabled = false;
+          acceptBtn.textContent = "接受";
+          showMcToast("操作失败", true);
+        }
+      });
+      actions.appendChild(acceptBtn);
+    }
+
+    // Reject
+    if (cand.recommended_action !== "rejected") {
+      const rejectBtn = mcEl("button", "mc-action-btn mc-action-btn--danger", "丢弃");
+      rejectBtn.type = "button";
+      rejectBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        rejectBtn.disabled = true;
+        rejectBtn.textContent = "...";
+        const ok = await mcCandidatePatch(cand.id, { recommended_action: "pending", status: "rejected" });
+        if (ok) {
+          state.candidates = state.candidates.filter(c => c.id !== cand.id);
+          renderMemoryCenterCurrentView();
+        } else {
+          rejectBtn.disabled = false;
+          rejectBtn.textContent = "丢弃";
+          showMcToast("操作失败", true);
+        }
+      });
+      actions.appendChild(rejectBtn);
+    }
+
+    card.appendChild(actions);
+    list.appendChild(card);
+  });
+
+  root.appendChild(list);
+}
+
+async function mcCandidatePatch(id, patch) {
+  const token = getMemoryToken();
+  const endpoint = getMemoryEndpoint();
+  const userId = getCurrentUserId?.() || "";
+  if (!token || !endpoint || !userId) return false;
+  try {
+    const res = await fetch(
+      `${endpoint}?type=candidate_patch`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-memory-admin-token": token,
+        },
+        body: JSON.stringify({ userId, candidateId: id, patch }),
+      }
+    );
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 // ── End Memory Center Bridge ──────────────────────────────────────────────────
@@ -6684,6 +6965,8 @@ function renderMemoryCenterCurrentView(options = {}) {
 
   if (memoryCenterV2State.view === "archive") {
     renderMemoryArchiveView(root, options);
+  } else if (memoryCenterV2State.view === "candidates") {
+    renderCandidatePoolView(root);
   } else if (memoryCenterV2State.view === "timeline") {
     renderMemoryTimelineView(root);
   } else if (memoryCenterV2State.view === "lab") {
