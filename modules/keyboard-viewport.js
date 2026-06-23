@@ -7,25 +7,47 @@
   "use strict";
 
   // ── Stable shell height ──────────────────────────────────────────────────────
-  // --app-shell-h drives .layout height. Captured from window.innerHeight
-  // (pre-keyboard value) and only refreshed on orientationchange or a resize
-  // that happens while the keyboard is NOT open.
+  // --app-shell-h drives .layout height. Uses visualViewport.height when
+  // available so iOS Safari browser-chrome is accounted for. Skips capture
+  // while keyboard is open to avoid the shell jumping.
   function initStableShellHeight() {
+    let rafPending = false;
+
     function capture() {
-      const h = window.innerHeight;
-      document.documentElement.style.setProperty("--app-shell-h", `${h}px`);
+      const vv = window.visualViewport;
+      // Skip if keyboard is open (text input focused and viewport shrunk)
+      const active = document.activeElement;
+      const isTextInput = active && (
+        active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.isContentEditable
+      );
+      const inset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+      if (isTextInput && inset > 80) return;
+
+      const h = vv ? vv.height : window.innerHeight;
+      document.documentElement.style.setProperty("--app-shell-h", `${Math.round(h)}px`);
     }
+
+    function scheduleCapture() {
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => { rafPending = false; capture(); });
+    }
+
     capture();
 
-    window.addEventListener("orientationchange", () => {
-      setTimeout(capture, 300);
-    });
-
+    window.addEventListener("orientationchange", () => setTimeout(capture, 300));
     window.addEventListener("resize", () => {
       const shell = document.querySelector(".layout");
       if (shell && shell.classList.contains("keyboard-open")) return;
-      capture();
+      scheduleCapture();
     });
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", scheduleCapture);
+      window.visualViewport.addEventListener("scroll", scheduleCapture);
+    }
   }
 
   // ── Visual viewport vars ─────────────────────────────────────────────────────
