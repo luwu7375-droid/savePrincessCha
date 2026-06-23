@@ -1616,6 +1616,12 @@ body {
   transform: scale(1.08);
 }
 
+/* Prevent img/span from stealing pointer events so closest(".bottom-tab") always resolves */
+.bottom-tab img,
+.bottom-tab span {
+  pointer-events: none;
+}
+
 /* ── Chat tab unread badge ── */
 .bottom-tab--cha {
   position: relative;
@@ -2849,4 +2855,17 @@ body {
 /* Empty state */
 .settings-memory-page .mc-empty {
   color: var(--text-muted);
+}
+
+/* ── Page visibility override ───────────────────────────────────────────────
+   .chat-shell has display:flex which overrides .v2-page { display:none }.
+   This rule sits last so specificity wins unconditionally.               */
+.v2-page:not(.v2-active) {
+  display: none !important;
+  pointer-events: none;
+}
+
+.v2-page.v2-active {
+  display: flex !important;
+  pointer-events: auto;
 }

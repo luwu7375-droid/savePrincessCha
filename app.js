@@ -3598,131 +3598,23 @@ function maintainBottomAnchor(reason) {
   }
 }
 
+// ── Keyboard / viewport init — delegated to modules/keyboard-viewport.js ──────
 function initKeyboardViewportState() {
-  const shell = document.querySelector(".layout");
-  if (!shell || !window.visualViewport) return;
-
-  const clampViewportToOrigin = () => {
-    if (window.visualViewport) {
-      const ol = window.visualViewport.offsetLeft;
-      if (ol !== 0) console.debug("[kb] visualViewport.offsetLeft =", ol);
-    }
-    window.scrollTo({ left: 0, top: 0, behavior: "auto" });
-    document.documentElement.scrollLeft = 0;
-    document.documentElement.scrollTop  = 0;
-    document.body.scrollLeft = 0;
-    document.body.scrollTop  = 0;
-    if (document.scrollingElement) {
-      document.scrollingElement.scrollLeft = 0;
-    }
-  };
-
-  const resetKeyboardState = () => {
-    shell.classList.remove("keyboard-open");
-    shell.style.setProperty("--keyboard-inset", "0px");
-    if (_chatInputMode === "keyboard") _chatInputMode = "plain";
-    requestAnimationFrame(clampViewportToOrigin);
-  };
-
-  const deferredReset = () => {
-    setTimeout(() => {
-      resetKeyboardState();
-      setTimeout(() => {
-        resetKeyboardState();
-        requestAnimationFrame(clampViewportToOrigin);
-      }, 180);
-    }, 80);
-  };
-
-  let _kbRafPending = false;
-  const updateKeyboardState = () => {
-    if (_kbRafPending) return;
-    _kbRafPending = true;
-    requestAnimationFrame(() => {
-      _kbRafPending = false;
-      const viewport = window.visualViewport;
-      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
-      const activeInput = document.activeElement === messageInput || document.activeElement === chatSearchInput;
-      const keyboardOpen = inset > 80 && activeInput;
-      shell.classList.toggle("keyboard-open", keyboardOpen);
-      shell.style.setProperty("--keyboard-inset", keyboardOpen ? `${Math.round(inset)}px` : "0px");
-      if (keyboardOpen) {
-        if (document.activeElement === messageInput) {
-          if (_chatInputMode !== "emojiSearch") setChatInputMode("keyboard");
-          maintainBottomAnchor("keyboard");
-        }
-      }
-    });
-  };
-
-  window.visualViewport.addEventListener("resize", updateKeyboardState);
-  window.visualViewport.addEventListener("scroll", updateKeyboardState);
-  messageInput?.addEventListener("focus", () => {
-    updateKeyboardState();
-    maintainBottomAnchor("keyboard");
+  window.SPKeyboardViewport.initKeyboardViewportState({
+    messageInput:       messageInput,
+    chatSearchInput:    chatSearchInput,
+    getChatInputMode:   () => _chatInputMode,
+    setChatInputMode:   setChatInputMode,
+    maintainBottomAnchor: maintainBottomAnchor,
   });
-  messageInput?.addEventListener("blur", deferredReset);
-  chatSearchInput?.addEventListener("focus", updateKeyboardState);
-  chatSearchInput?.addEventListener("blur", deferredReset);
-  updateKeyboardState();
 }
 
-// ── Stable shell height ────────────────────────────────────────────────────────
-// --app-shell-h drives .layout height. It is captured from window.innerHeight
-// (pre-keyboard value) and is only refreshed on orientationchange or a resize
-// that happens while the keyboard is NOT open. This prevents the layout from
-// shrinking when the soft keyboard appears and visualViewport.height drops.
 function initStableShellHeight() {
-  function capture() {
-    const h = window.innerHeight;
-    document.documentElement.style.setProperty("--app-shell-h", `${h}px`);
-  }
-  capture(); // immediate on init
-
-  // orientationchange always means a real layout change — update unconditionally.
-  window.addEventListener("orientationchange", () => {
-    // Wait for the browser to settle after rotation before capturing.
-    setTimeout(capture, 300);
-  });
-
-  // On resize: only update when the keyboard is NOT open, so a keyboard-driven
-  // visualViewport shrink never propagates into --app-shell-h.
-  window.addEventListener("resize", () => {
-    const shell = document.querySelector(".layout");
-    if (shell && shell.classList.contains("keyboard-open")) return;
-    capture();
-  });
+  window.SPKeyboardViewport.initStableShellHeight();
 }
 
-// ── Visual viewport vars ───────────────────────────────────────────────────────
-// --visual-vh tracks the real visible height (shrinks with keyboard).
-// --app-vh kept in sync for legacy callers; does NOT drive .layout height.
-// RAF-gated so we never trigger layout thrash on every scroll pixel.
 function initVisualVh() {
-  let rafPending = false;
-  function update() {
-    rafPending = false;
-    const height = window.visualViewport
-      ? window.visualViewport.height
-      : window.innerHeight;
-    const px = `${height}px`;
-    document.documentElement.style.setProperty("--visual-vh", px);
-    document.documentElement.style.setProperty("--app-vh", px); // legacy compat
-  }
-  function scheduleUpdate() {
-    if (!rafPending) {
-      rafPending = true;
-      requestAnimationFrame(update);
-    }
-  }
-  update(); // immediate on init
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", scheduleUpdate);
-    // scroll: update overlay/panel positioning vars, not the shell height
-    window.visualViewport.addEventListener("scroll", scheduleUpdate);
-  } else {
-    window.addEventListener("resize", scheduleUpdate);
-  }
+  window.SPKeyboardViewport.initVisualVh();
 }
 
 function initInputKeyboardHints(root = document) {
@@ -4626,192 +4518,19 @@ if (supabaseClient) {
 initTierBar();
 
 // ── V2 primary shell / navigation ─────────────────────────────────────────────
+// ── Shell navigation — delegated to modules/v2-shell.js ─────────────────────
 function initV2Shell() {
-  const pages = Array.from(document.querySelectorAll(".v2-page"));
-  const tabs = Array.from(document.querySelectorAll(".bottom-tab"));
-  const shell = document.querySelector(".layout");
-
-  function showPage(pageName) {
-    const target = pages.find((page) => page.dataset.page === pageName) || pages[0];
-    if (!target) return;
-    const activeName = target.dataset.page;
-    pages.forEach((page) => page.classList.toggle("v2-active", page === target));
-    tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === activeName));
-    shell?.setAttribute("data-active-page", activeName);
-
-    // Whenever the user switches tabs, close every chat overlay so panels
-    // never stay open behind another page
-    closeAllChatPanels();
-
-    if (activeName === "chat") {
-      requestAnimationFrame(() => {
-        maintainBottomAnchor("send");
-        messageInput?.focus({ preventScroll: true });
-        // Trigger visibility check for unread Cha messages
-        observeUnreadChaRows();
-        markVisibleAssistantRowsRead();
-      });
-      // Skip reload if already rendered for this conversation with same message count
-      const currentConvId = getActiveConversationId();
-      if (
-        chatRenderState.renderedConversationId === currentConvId &&
-        chatRenderState.renderedMessageCount === chatMessages.length &&
-        messageList.children.length > 0
-      ) {
-        return;
-      }
-      // Only reload if not already rendered or conversation changed
-      if (chatRenderState.renderedConversationId !== currentConvId) {
-        reloadHistory();
-      }
-    }
-    // When leaving setting tab, close any open subpage
-    if (activeName !== "setting") {
-      closeSettingsSubpage();
-    }
-  }
-
-  tabs.forEach((tab) => tab.addEventListener("click", () => showPage(tab.dataset.tab)));
-
-  // ── Settings subpage entries ───────────────────────────────────────────
-  document.querySelectorAll("[data-settings-subpage]").forEach((entry) => {
-    entry.addEventListener("click", () => {
-      openSettingsSubpage(entry.dataset.settingsSubpage);
-    });
-  });
-
-  const settingsBackBtn = document.getElementById("settingsBackBtn");
-  settingsBackBtn?.addEventListener("click", () => closeSettingsSubpage());
-
-  // ── Legacy placeholder routes (non-settings pages) ────────────────────
-  document.querySelectorAll("[data-placeholder-route]").forEach((entry) => {
-    entry.addEventListener("click", () => {
-      const route = entry.dataset.placeholderRoute;
-
-      // ── Settings routes with real implementations ─────────────────────────
-      if (route === "/settings/memory") {
-        // Open memory center page (v2) directly — no password gate
-        openMemoryCenter();
-        return;
-      }
-      if (route === "/settings/api") {
-        const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
-        showDialog({
-          title: "API 设置 · 模型档位",
-          body: `当前档位：${tierLabel}\n\n切换档位：聊天页底部的 Instant / General / Advanced 按钮（桌面），或聊天页 + 菜单上方的档位选择器（移动端）。`,
-          confirmLabel: "知道了",
-        });
-        return;
-      }
-
-
-      showDialog({
-        title: "入口已预留",
-        body: `${route} 将在后续版本接入。`,
-        confirmLabel: "知道了",
-      });
-    });
-  });
-
-  document.querySelectorAll("[data-upload-slot]").forEach((entry) => {
-    entry.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const slot = entry.dataset.uploadSlot;
-      showDialog({
-        title: "更换入口已预留",
-        body: `${slot} 将复用统一上传组件接入，本轮先保留点击入口。`,
-        confirmLabel: "知道了",
-      });
-    });
-  });
-
-  document.querySelectorAll("[data-edit-field]").forEach((entry) => {
-    entry.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const field = entry.dataset.editField;
-      showDialog({
-        title: "编辑入口已预留",
-        body: `${field} 将复用统一编辑态组件接入，本轮先保留点击入口。`,
-        confirmLabel: "知道了",
-      });
-    });
-  });
-
-  showPage("home");
+  window.SPV2Shell.initV2Shell();
 }
 
-// ── Settings subpage system ─────────────────────────────────────────────────
-
-var _currentSettingsSubpage = null;
-
-var SETTINGS_SUBPAGE_META = {
-  "appearance-resources": { title: "外观与资源",       subtitle: "头像、壁纸、开屏图与表情包来源" },
-  "prompt-worldbook":     { title: "Prompt 与世界书",  subtitle: "提示词、世界书与注入规则" },
-  worldbook:              { title: "世界书管理",        subtitle: "上传后手动启用才会注入 Prompt" },
-  memory:                 { title: "记忆管理",          subtitle: "查看、禁用与清理记忆" },
-  api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
-  backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
-  debug:                  { title: "Debug",             subtitle: "日志、版本与诊断工具" },
-  // legacy aliases — keep so any existing deep-links don't break
-  beautify: { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
-  prompt:   { title: "Prompt 与世界书", subtitle: "提示词、世界书与注入规则" },
-  emoji:    { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
-  chat:     { title: "聊天外观",        subtitle: "背景与气泡主题" },
-};
+// ── Settings subpage system — delegated to modules/v2-shell.js ──────────────
 
 function openSettingsSubpage(type) {
-  const subpage = document.getElementById("settingsSubpage");
-  const mainView = document.getElementById("settingsMainView");
-  const titleEl = document.getElementById("settingsSubpageTitle");
-  const subtitleEl = document.getElementById("settingsSubpageSubtitle");
-  const bodyEl = document.getElementById("settingsSubpageBody");
-  if (!subpage || !mainView || !titleEl || !subtitleEl || !bodyEl) return;
-
-  // If leaving worldbook subpage, move content back to the hidden store first
-  if (_currentSettingsSubpage === "worldbook") {
-    const mount = document.getElementById("wbSubpageMount");
-    const store = document.getElementById("wbContentStore");
-    if (mount && store) {
-      while (mount.firstChild) {
-        store.appendChild(mount.firstChild);
-      }
-    }
-    wbResetUploadForm();
-  }
-
-  const meta = SETTINGS_SUBPAGE_META[type] || { title: type, subtitle: "" };
-  titleEl.textContent = meta.title;
-  subtitleEl.textContent = meta.subtitle;
-  bodyEl.innerHTML = renderSettingsSubpage(type);
-
-  _currentSettingsSubpage = type;
-  mainView.hidden = true;
-  subpage.hidden = false;
-
-  // Bind subpage-specific events after render
-  _initSettingsSubpageEvents(bodyEl, type);
+  window.SPV2Shell.openSettingsSubpage(type);
 }
 
 function closeSettingsSubpage() {
-  const subpage = document.getElementById("settingsSubpage");
-  const mainView = document.getElementById("settingsMainView");
-  if (!subpage || !mainView) return;
-
-  // If leaving worldbook subpage, move content back to the hidden store
-  if (_currentSettingsSubpage === "worldbook") {
-    const mount = document.getElementById("wbSubpageMount");
-    const store = document.getElementById("wbContentStore");
-    if (mount && store) {
-      while (mount.firstChild) {
-        store.appendChild(mount.firstChild);
-      }
-    }
-    wbResetUploadForm();
-  }
-
-  subpage.hidden = true;
-  mainView.hidden = false;
-  _currentSettingsSubpage = null;
+  window.SPV2Shell.closeSettingsSubpage();
 }
 
 function renderSettingsSubpage(type) {
