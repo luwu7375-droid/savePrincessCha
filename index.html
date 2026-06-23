@@ -54,8 +54,8 @@
         <section class="home-hero">
           <button type="button" class="home-cover editable-asset" data-upload-slot="home-cover" aria-label="更换首页背景图"><div class="heartbeat-line" aria-hidden="true"></div></button>
           <div class="profile-row">
-            <div class="profile-person"><button type="button" class="profile-avatar editable-asset" data-upload-slot="home-cha-avatar" aria-label="更换 Cha 头像"></button><h2 data-edit-field="cha-name">Cha</h2><p data-edit-field="cha-id">ID：@Cha_orz</p><span data-edit-field="cha-bio">幸福是两双眼睛望向同一个明天</span></div>
-            <div class="days-counter"><span>在一起已经</span><strong id="togetherDays">520</strong><span>天</span><p>从 2022.07.15 开始</p></div>
+            <div class="profile-person"><button type="button" class="profile-avatar editable-asset" data-upload-slot="home-cha-avatar" aria-label="更换 Cha 头像" data-avatar-role="cha"></button><h2 data-edit-field="cha-name">Cha</h2><p data-edit-field="cha-id">ID：@Cha_orz</p><span data-edit-field="cha-bio">幸福是两双眼睛望向同一个明天</span></div>
+            <div class="days-counter"><span>在一起已经</span><strong id="togetherDays">520</strong><span>天</span><p id="togetherStartDate" style="cursor:pointer">从 2022.07.15 开始</p></div>
             <div class="profile-person"><button type="button" class="profile-avatar profile-avatar--kk editable-asset" data-upload-slot="home-kk-avatar" aria-label="更换 KK 头像"></button><h2 data-edit-field="kk-name">KK</h2><p data-edit-field="kk-id">ID：@Karke</p><span data-edit-field="kk-bio">慢慢来 反正明天还是夏天</span></div>
           </div>
         </section>
@@ -70,32 +70,31 @@
 
     <section class="v2-page v2-page--couple" data-page="couple" aria-label="Couple Space">
       <div class="v2-scroll">
-        <header class="page-header"><div class="header-avatar"></div><div><h1>我们的空间 ❤</h1><p>我们一起留下了什么？</p></div><div class="v2-top-status v2-top-status--inline"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div></header>
+        <header class="page-header"><div class="header-avatar" data-avatar-role="cha"></div><div><h1>我们的空间 ❤</h1><p>我们一起留下了什么？</p></div><div class="v2-top-status v2-top-status--inline"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div></header>
         <button type="button" class="memory-vortex editable-asset" data-upload-slot="couple-memory-vortex" aria-label="Open Memory Vortex"><span class="memory-vortex-title">Memory Vortex</span><span class="memory-vortex-desc">Those fragments that keep floating back.</span><span class="memory-vortex-arrow" aria-hidden="true">›</span></button>
         <div class="feature-grid feature-grid--two">
-          <button class="feature-card" data-placeholder-route="/couple/memory-hall"><span>记忆长廊</span><small>档案馆</small><img src="assets/illustrations/couple-space/memory-hall.jpg" alt=""></button>
+          <button class="feature-card" data-placeholder-route="/couple/memory-hall"><span>记忆长廊</span><img src="assets/illustrations/couple-space/memory-hall.jpg" alt=""></button>
           <button class="feature-card" data-placeholder-route="/couple/timeline"><span>时间线</span><small>&nbsp;</small><img src="assets/illustrations/couple-space/timeline.jpg" alt=""></button>
           <button class="feature-card" data-placeholder-route="/couple/moments"><span>朋友圈</span><small>&nbsp;</small><img src="assets/illustrations/couple-space/moments.jpg" alt=""></button>
-          <button class="feature-card" data-placeholder-route="/couple/favorites"><span>收藏夹</span><small>&nbsp;</small><img src="assets/illustrations/couple-space/photowall.jpg" alt=""></button>
+          <button class="feature-card img-crop-edge" data-placeholder-route="/couple/favorites"><span>收藏夹</span><small>&nbsp;</small><img src="assets/illustrations/couple-space/photowall.jpg" alt=""></button>
         </div>
       </div>
     </section>
 
     <section class="v2-page v2-page--playground" data-page="playground" aria-label="Playground">
       <div class="v2-scroll">
-        <header class="page-header"><div class="header-avatar"></div><div><h1>Playground ✦</h1><p>一起玩耍</p></div><div class="v2-top-status v2-top-status--inline"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div></header>
+        <header class="page-header"><div class="header-avatar" data-avatar-role="cha"></div><div><h1>Playground ✦</h1><p>一起玩耍</p></div><div class="v2-top-status v2-top-status--inline"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div></header>
         <div class="feature-grid feature-grid--play">
           <button class="feature-card" data-placeholder-route="/playground/stardew-valley"><img src="assets/illustrations/playground/stardew-valley.jpg" alt=""><span>星露谷</span></button>
           <button class="feature-card" data-placeholder-route="/playground/wishlist"><img src="assets/illustrations/playground/wishlist.jpg" alt=""><span>愿望清单</span></button>
           <button class="feature-card" data-placeholder-route="/playground/reading"><img src="assets/illustrations/playground/reading.jpg" alt=""><span>看书</span></button>
           <button class="feature-card" data-placeholder-route="/playground/phone"><img src="assets/illustrations/playground/phone.jpg" alt=""><span>查手机</span></button>
-          <button class="feature-card" data-placeholder-route="/playground/forum"><img src="assets/illustrations/playground/forum.jpg" alt=""><span>论坛体</span></button>
+          <button class="feature-card img-crop-edge" data-placeholder-route="/playground/forum"><img src="assets/illustrations/playground/forum.jpg" alt=""><span>论坛体</span></button>
           <button class="feature-card" data-placeholder-route="/playground/mastodon"><img src="assets/illustrations/playground/mastodon.jpg" alt=""><span>发毛象</span></button>
           <button class="feature-card" data-placeholder-route="/playground/movie"><img src="assets/illustrations/playground/movie.jpg" alt=""><span>看电影</span></button>
           <button class="feature-card" data-placeholder-route="/playground/music"><img src="assets/illustrations/playground/music.jpg" alt=""><span>听歌</span></button>
           <button class="feature-card" data-placeholder-route="/playground/dream"><img src="assets/illustrations/playground/dream.jpg" alt=""><span>做梦</span></button>
         </div>
-        <div class="word-tree" aria-label="文字树"><span>雨滴</span><span>风穿过</span><span>在菌上写诗</span><span>树梢的睡眠</span><span>你说过</span><span>有海</span><span>有我们</span><span>很多个未完成的梦</span><span>晚安</span><span>星星</span><span>再出发</span></div>
         <section class="daily-record-row"><article class="soft-card daily-record"><h2>Daily Record</h2><div class="record-input">写下今天的点滴吧...</div></article><button class="soft-card history-card" data-placeholder-route="/playground/history"><span>历史记录</span><small>共 48 篇日记</small><b>→</b></button></section>
       </div>
     </section>

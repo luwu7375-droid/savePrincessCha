@@ -2523,18 +2523,39 @@ function getMemoryToken() {
   return sessionStorage.getItem("memory_admin_token") || "";
 }
 
+async function getAuthHeaders() {
+  if (!supabaseClient) return {};
+  try {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    return session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {};
+  } catch (err) {
+    console.warn("[auth] Failed to get session:", err);
+    return {};
+  }
+}
+
 async function memoryFetch(path, options = {}) {
   const endpoint = getMemoryEndpoint();
   if (!endpoint) throw new Error("MEMORIES_API_ENDPOINT 未配置");
-  const token = getMemoryToken();
+
   const url = new URL(endpoint);
   if (path.startsWith("?")) {
     const params = new URLSearchParams(path.slice(1));
     for (const [k, v] of params) url.searchParams.set(k, v);
   }
+
+  const authHeaders = await getAuthHeaders();
+  const headers = {
+    "Content-Type": "application/json",
+    ...authHeaders,
+    ...(options.headers || {}),
+  };
+
   return fetch(url.toString(), {
     ...options,
-    headers: { "Content-Type": "application/json", "x-memory-admin-token": token, ...(options.headers || {}) },
+    headers,
   });
 }
 
@@ -5910,13 +5931,6 @@ async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessag
   if (!endpoint) return;
   if (!currentUserId) return;
   if (!userMessage || !assistantMessage) return;
-  // Require admin token — same token used by Memory Center.
-  // If not configured, skip silently: vault is a best-effort feature.
-  const token = getMemoryToken();
-  if (!token) {
-    console.warn("[vault] skipped no token");
-    return;
-  }
   // Guard: warn if userMessage looks wrong (empty after trim, or suspiciously short)
   const trimmedUser = userMessage.trim();
   if (!trimmedUser) {
@@ -5936,9 +5950,10 @@ async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessag
     route,
   });
   try {
+    const authHeaders = await getAuthHeaders();
     const res = await fetch(endpoint + "?type=vault_after_chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-memory-admin-token": token },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({
         userId: currentUserId,
         conversationId: conversationId || null,
