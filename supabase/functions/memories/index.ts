@@ -568,6 +568,7 @@ Deno.serve(async (req) => {
           orApiKey,
           fastModel,
           userMessageId: turn.userMessageId,
+          source: "backfill",
         });
 
         stats.raw_candidates_count += vaultResult.raw_candidates_count;
@@ -616,6 +617,167 @@ Deno.serve(async (req) => {
       nextCursor,
       samples,
     }, 200);
+  }
+
+  // ── backfill_cleanup: fix existing dirty candidates ──────────────────────────
+  // POST ?type=backfill_cleanup
+  // Body: { action, userId, dryRun? }
+  // action: "report" | "demote_project_auto_accept" | "disable_project_memories"
+  if (type === "backfill_cleanup" && req.method === "POST") {
+    const cleanAdminToken = Deno.env.get("MEMORY_ADMIN_TOKEN");
+    if (!cleanAdminToken || req.headers.get("x-memory-admin-token") !== cleanAdminToken) {
+      return json({ ok: false, error: "unauthorized" }, 401);
+    }
+    if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "DB not configured" }, 500);
+
+    let cleanBody: { action?: string; userId?: string; dryRun?: boolean };
+    try { cleanBody = await req.json(); } catch { return json({ ok: false, error: "invalid JSON body" }, 400); }
+
+    const cleanUserId = cleanBody.userId;
+    if (!cleanUserId) return json({ ok: false, error: "userId required" }, 400);
+    const cleanDryRun = cleanBody.dryRun !== false;
+    const action = cleanBody.action ?? "report";
+
+    const cleanHeaders = {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    };
+
+    // ── report: group candidates by canonical key ─────────────────────────────
+    if (action === "report") {
+      const candRes = await fetch(
+        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,candidate_type,content,recommended_action,status,confidence,source_msg_ids,created_at&user_id=eq.${encodeURIComponent(cleanUserId)}&order=created_at.asc&limit=500`,
+        { headers: cleanHeaders }
+      );
+      if (!candRes.ok) return json({ ok: false, error: "fetch failed" }, 500);
+      const cands = await candRes.json() as {
+        id: string; candidate_type: string; content: string;
+        recommended_action: string; status: string; confidence: number;
+        source_msg_ids: number[] | null; created_at: string;
+      }[];
+
+      function canonicalKey(type: string, content: string): string {
+        const c = content.toLowerCase();
+        if (type === "project") {
+          if (/救公主|saveprincess|小手机|新家/.test(c)) return "project:savePrincessCha";
+          if (/nagibridge|星露谷|stardew/.test(c)) return "project:nagibridge_stardew";
+          if (/api.*(调通|连通|provider|token)|provider.*api|token.*api/.test(c)) return "project:api_connectivity";
+          if (/记忆|memory|候选|vault|backfill/.test(c)) return "project:memory_system";
+          if (/ui|界面|前端|frontend/.test(c)) return "project:ui";
+          return "project:other";
+        }
+        return `${type}:misc`;
+      }
+
+      const groups: Record<string, typeof cands> = {};
+      for (const c of cands) {
+        const key = canonicalKey(c.candidate_type, c.content);
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(c);
+      }
+
+      const report = Object.entries(groups).map(([key, rows]) => ({
+        canonical_key: key,
+        count: rows.length,
+        auto_accept_count: rows.filter(r => r.recommended_action === "auto_accept").length,
+        pending_count: rows.filter(r => r.recommended_action === "pending").length,
+        samples: rows.slice(0, 3).map(r => ({
+          id: r.id,
+          recommended_action: r.recommended_action,
+          status: r.status,
+          content: r.content.slice(0, 100),
+          created_at: r.created_at,
+        })),
+      })).sort((a, b) => b.count - a.count);
+
+      return json({
+        ok: true, action: "report", dryRun: true,
+        total_candidates: cands.length,
+        type_breakdown: {
+          project: cands.filter(c => c.candidate_type === "project").length,
+          fact: cands.filter(c => c.candidate_type === "fact").length,
+          preference: cands.filter(c => c.candidate_type === "preference").length,
+          relationship: cands.filter(c => c.candidate_type === "relationship").length,
+          other: cands.filter(c => !["project","fact","preference","relationship"].includes(c.candidate_type)).length,
+        },
+        action_breakdown: {
+          auto_accept: cands.filter(c => c.recommended_action === "auto_accept").length,
+          pending: cands.filter(c => c.recommended_action === "pending").length,
+          quarantine: cands.filter(c => c.recommended_action === "quarantine").length,
+        },
+        by_canonical_key: report,
+      }, 200);
+    }
+
+    // ── demote_project_auto_accept: project auto_accept → pending ─────────────
+    if (action === "demote_project_auto_accept") {
+      const fetchRes = await fetch(
+        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,content&user_id=eq.${encodeURIComponent(cleanUserId)}&candidate_type=eq.project&recommended_action=eq.auto_accept`,
+        { headers: cleanHeaders }
+      );
+      if (!fetchRes.ok) return json({ ok: false, error: "fetch failed" }, 500);
+      const todemote = await fetchRes.json() as { id: string; content: string }[];
+
+      if (cleanDryRun) {
+        return json({
+          ok: true, action, dryRun: true,
+          would_demote: todemote.length,
+          samples: todemote.slice(0, 5).map(r => ({ id: r.id, content: r.content.slice(0, 80) })),
+        }, 200);
+      }
+
+      let demoted = 0;
+      for (const row of todemote) {
+        const patchRes = await fetch(
+          `${supabaseUrl}/rest/v1/auto_memory_candidates?id=eq.${encodeURIComponent(row.id)}`,
+          {
+            method: "PATCH",
+            headers: { ...cleanHeaders, Prefer: "return=minimal" },
+            body: JSON.stringify({ recommended_action: "pending" }),
+          }
+        );
+        if (patchRes.ok) demoted += 1;
+      }
+      return json({ ok: true, action, dryRun: false, demoted, total: todemote.length }, 200);
+    }
+
+    // ── disable_project_memories: disable memories promoted from project candidates ──
+    if (action === "disable_project_memories") {
+      const promRes = await fetch(
+        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,promoted_memory_id,content&user_id=eq.${encodeURIComponent(cleanUserId)}&candidate_type=eq.project&status=eq.promoted&promoted_memory_id=not.is.null`,
+        { headers: cleanHeaders }
+      );
+      if (!promRes.ok) return json({ ok: false, error: "fetch candidates failed" }, 500);
+      const promoted = await promRes.json() as { id: string; promoted_memory_id: string; content: string }[];
+
+      if (cleanDryRun) {
+        return json({
+          ok: true, action, dryRun: true,
+          would_disable_memories: promoted.length,
+          samples: promoted.slice(0, 5).map(r => ({
+            candidate_id: r.id, promoted_memory_id: r.promoted_memory_id,
+            content: r.content.slice(0, 80),
+          })),
+        }, 200);
+      }
+
+      let disabled = 0;
+      for (const row of promoted) {
+        const patchRes = await fetch(
+          `${supabaseUrl}/rest/v1/memories?id=eq.${encodeURIComponent(row.promoted_memory_id)}`,
+          {
+            method: "PATCH",
+            headers: { ...cleanHeaders, Prefer: "return=minimal" },
+            body: JSON.stringify({ enabled: false }),
+          }
+        );
+        if (patchRes.ok) disabled += 1;
+      }
+      return json({ ok: true, action, dryRun: false, disabled, total: promoted.length }, 200);
+    }
+
+    return json({ ok: false, error: `unknown action: ${action}` }, 400);
   }
 
   // ── Helper: verify user auth and get userId ──────────────────────────────────

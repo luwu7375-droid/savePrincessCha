@@ -66,16 +66,16 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 - 只从"用户消息"中提取用户的事实，不从 G（assistant）的回复中推断。
 - G 的回复仅作为理解上下文的参考，不作为提取源。
 
-【候选类型】只使用以下 4 类（最多输出 3 个候选）：
+【候选类型】只使用以下 4 类（最多输出 2 个候选）：
 1. fact: 关于用户的客观事实（职业、地点、经历、健康状况等）
 2. preference: 用户的偏好、喜好、习惯
 3. relationship: 用户与他人的关系信号
-4. project: 用户正在做的项目/工作/计划
-   - 用户明确陈述项目当前版本、已完成事项、验收结果、已上线能力、文档更新、下一步计划时，应提取为 project。
-   - 不要把项目状态更新误判为一次性任务；即使语气像汇报，也属于可记项目状态。
-   - 例：用户消息「我已经做到 v0.9，将 README/docs/frontend 状态更新完成，并完成单图 Storage 持久化、多气泡短回复验收。」
-     应输出：
-     {"candidate_type":"project","title":"救公主v0.9进展","summary":"救公主项目 v0.9 已更新文档状态，并完成单图持久化与多气泡短回复验收。","content":"救公主项目 v0.9 已完成文档状态更新、单图 Storage 持久化和多气泡短回复验收。","confidence":0.92,"sensitivity":0.10,"reason":"用户明确陈述项目版本与已完成事项"}
+4. project: 用户项目/工作的具体进展或重要决策
+   - ✅ 可提取：明确版本号、已完成事项、验收结果、重要决策、方向变更
+   - ✅ 可提取：例如"v0.9.1 已完成验收""决定将旧G只读封存""记忆系统改为第一人称"
+   - ❌ 不可提取："用户正在进行救公主项目"（没有新信息）
+   - ❌ 不可提取："用户正在开发某个项目"（过于泛化）
+   - ❌ 不可提取：仅说明"有项目"而无进展的陈述
 
 【敏感度规则（sensitivity 字段）】
 - medical（医疗/健康/身体症状）→ sensitivity >= 0.70
@@ -93,6 +93,7 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 ✗ 不输出 confidence < 0.65 的候选
 ✗ 不输出已是众所周知的通用信息
 ✗ 不过度解读，不添加假设
+✗ project 类型：如果内容只说明"用户在做某项目"而无具体进展，不输出
 
 【输出格式】只输出 JSON，不要解释，不要加 markdown 代码块：
 {"candidates":[{"candidate_type":"fact|preference|relationship|project","title":"6-16字短标题","summary":"一句话摘要，40-80字","content":"完整可注入记忆内容，不超过80字","confidence":0.85,"sensitivity":0.10,"reason":"提取依据一句话"}]}
@@ -101,19 +102,23 @@ const VAULT_EXTRACTION_SYSTEM_PROMPT =
 // ── Action matrix ─────────────────────────────────────────────────────────────
 // Priority order:
 // 1. sensitivity >= 0.70 → quarantine
-// 2. fact/project only: confidence >= 0.90 && sensitivity <= 0.30 → auto_accept
-// 3. confidence >= 0.65 → pending  (preference 类一律落此，需用户确认)
+// 2. fact only (NOT project): confidence >= 0.90 && sensitivity <= 0.30 → auto_accept
+//    project is NEVER auto_accept — project milestones need human review
+// 3. confidence >= 0.65 → pending
 // 4. else → reject
+//
+// backfillSource=true overrides all → forces pending (never auto_accept from backfill)
 
 function computeRecommendedAction(
   confidence: number,
   sensitivity: number,
   candidateType: string,
+  backfillSource = false,
 ): "auto_accept" | "pending" | "quarantine" | "reject" {
   if (sensitivity >= 0.70) return "quarantine";
-  // preference 类不允许 auto_accept — 交互偏好应由用户主动确认
-  const autoAcceptTypes = new Set(["fact", "project"]);
-  if (autoAcceptTypes.has(candidateType) && confidence >= 0.90 && sensitivity <= 0.30) return "auto_accept";
+  // project is never auto_accept regardless of confidence — too noisy from backfill
+  const autoAcceptTypes = new Set(["fact"]);
+  if (!backfillSource && autoAcceptTypes.has(candidateType) && confidence >= 0.90 && sensitivity <= 0.30) return "auto_accept";
   if (confidence >= 0.65) return "pending";
   return "reject";
 }
@@ -243,6 +248,22 @@ async function extractVaultCandidates(params: {
 const VALID_CANDIDATE_TYPES = new Set(["fact", "preference", "relationship", "event", "emotion", "project"]);
 
 const PROMOTION_ALLOWED_TYPES = new Set(["project", "fact", "preference"]);
+
+// ── Low-value project patterns — discard on match ────────────────────────────
+// These generic statements add no information beyond "project exists".
+const LOW_VALUE_PROJECT_PATTERNS = [
+  /用户正在(进行|做|开发|设计|构建|开展)(一个|某|该|这个)?(名为|叫做?|叫|的)?[^，。！？\n]{0,20}?(项目|工作|计划|开发|设计)$/,
+  /用户(有|在做|在开发|在进行)(一个|某)?[^，。！？\n]{0,20}?(项目|工程|产品)/,
+  /用户正在(参与|负责|推进)[^，。！？\n]{0,20}?(项目|工作)/,
+];
+
+function isLowValueProject(content: string): boolean {
+  const c = content.trim();
+  if (LOW_VALUE_PROJECT_PATTERNS.some((re) => re.test(c))) return true;
+  // Also discard if content is <= 20 chars and candidate_type=project
+  // (handled at call site with type check)
+  return false;
+}
 
 const SENSITIVE_KEYWORDS = [
   "家人", "家庭", "父母", "妈妈", "爸爸", "兄弟", "姐妹", "孩子",
@@ -401,6 +422,7 @@ export async function runAutoMemoryVault(params: {
   orApiKey: string;
   fastModel: string;
   userMessageId: number | null;
+  source?: "realtime" | "backfill"; // backfill: no auto_accept, max 1 candidate per message
 }): Promise<AutoMemoryVaultResult> {
   const {
     supabaseUrl,
@@ -415,6 +437,7 @@ export async function runAutoMemoryVault(params: {
     fastModel,
     userMessageId,
   } = params;
+  const isBackfill = params.source === "backfill";
 
   const result: AutoMemoryVaultResult = {
     raw_candidates_count: 0,
@@ -471,7 +494,20 @@ export async function runAutoMemoryVault(params: {
 
     if (rawCandidates.length === 0) return result;
 
-    for (const c of rawCandidates) {
+    // ── Candidate priority ranking for backfill throttle ─────────────────────
+    // relationship > preference > fact > project (generic last)
+    const TYPE_PRIORITY: Record<string, number> = {
+      relationship: 4, preference: 3, fact: 2, emotion: 2, event: 2, project: 1,
+    };
+
+    // Sort candidates by priority descending so we pick highest-value first
+    const sortedCandidates = [...rawCandidates].sort(
+      (a, b) => (TYPE_PRIORITY[b.candidate_type] ?? 0) - (TYPE_PRIORITY[a.candidate_type] ?? 0),
+    );
+
+    let insertedThisTurn = 0; // for backfill per-message limit
+
+    for (const c of sortedCandidates) {
       // Validate required fields
       if (
         typeof c.content !== "string" ||
@@ -493,10 +529,27 @@ export async function runAutoMemoryVault(params: {
         continue;
       }
 
-      const recommendedAction = computeRecommendedAction(confidence, sensitivity, c.candidate_type);
+      // Low-value project filter: discard generic "user is doing project X" statements
+      if (c.candidate_type === "project" && isLowValueProject(c.content)) {
+        result.reject_count += 1;
+        console.log(JSON.stringify({
+          fn: "runAutoMemoryVault",
+          event: "low_value_project_dropped",
+          content_head: c.content.slice(0, 80),
+        }));
+        continue;
+      }
+
+      const recommendedAction = computeRecommendedAction(confidence, sensitivity, c.candidate_type, isBackfill);
 
       // Skip reject-classified candidates — no point storing them
       if (recommendedAction === "reject") {
+        result.reject_count += 1;
+        continue;
+      }
+
+      // Backfill throttle: max 1 inserted candidate per userMessage
+      if (isBackfill && insertedThisTurn >= 1) {
         result.reject_count += 1;
         continue;
       }
@@ -530,6 +583,7 @@ export async function runAutoMemoryVault(params: {
 
       if (upsertResult.status === "inserted") {
         result.inserted_count += 1;
+        insertedThisTurn += 1;
         if (recommendedAction === "auto_accept") result.auto_accept_count += 1;
         else if (recommendedAction === "pending") result.pending_count += 1;
         else if (recommendedAction === "quarantine") result.quarantine_count += 1;
