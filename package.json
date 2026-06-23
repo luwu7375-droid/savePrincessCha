@@ -1,5 +1,9 @@
 {
   "scripts": {
-    "check": "node --check app.js"
+    "check": "node --check app.js && node --check modules/*.js",
+    "check:app": "node --check app.js",
+    "check:modules": "node --check modules/*.js",
+    "grep:unsafe": "grep -En \"\\?\\.[a-zA-Z0-9_$]+[[:space:]]*=\" app.js modules/*.js || true",
+    "preflight": "npm run check && npm run grep:unsafe"
   }
 }
