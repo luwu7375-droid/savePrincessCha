@@ -5841,6 +5841,11 @@ function renderMemoryCenterDebug(log) {
     ["历史对话命中数",         log.conversation_history_hit_count ?? "—"],
     // 时间线
     ["时间线已召回",           log.timeline_recalled],
+    // 世界书
+    ["世界书已注入",           log.worldbook_loaded],
+    ["世界书数量",             log.worldbook_count ?? "—"],
+    ["世界书标题",             Array.isArray(log.worldbook_titles) ? log.worldbook_titles.join(", ") : "—"],
+    ["世界书字数",             log.worldbook_chars ?? "—"],
     // 汇总
     ["本轮参考来源数",         providerCount],
   ];

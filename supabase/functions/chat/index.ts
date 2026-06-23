@@ -2,6 +2,7 @@ import { MASTODON_TIMELINE_MD } from "./mastodon_timeline.ts";
 import { CONVERSATION_BEHAVIOR_PACK } from "./conversation_behavior.ts";
 import { callGeminiEmotion } from "../_shared/gemini-service.ts";
 // import { compilePersonalityLayerContext, fetchLayer1Features, fetchLayer2Features, afterChat as afterChatPersonality } from "./personality_system.ts";
+import { runAfterChatVault } from "./vault_runner.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -2206,11 +2207,11 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
               const parts = injected.map(
                 (b) => `<!-- From: ${b.name} (priority: ${b.priority}) -->\n${b.content}`
               );
-              let worldBooksBlock = `\n\n<world_books>\n${parts.join("\n\n---\n\n")}\n`;
+              let worldBooksBlock = `\n\n<worldbook source="world_books" enabled="true">\n${parts.join("\n\n---\n\n")}\n`;
               if (skippedCount > 0) {
                 worldBooksBlock += `\n<!-- 已达 token 上限，后续 ${skippedCount} 个世界书未注入 -->`;
               }
-              worldBooksBlock += `\n</world_books>`;
+              worldBooksBlock += `\n</worldbook>`;
               systemContent += worldBooksBlock;
             }
 
@@ -2218,6 +2219,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
             logRecord.world_books_injected = injected.length;
             logRecord.world_books_skipped  = skippedCount;
             logRecord.world_books_chars    = charCount;
+            logRecord.world_books_titles   = injected.map(b => b.name);
           }
         }
       } catch (wbErr) {
@@ -2358,6 +2360,10 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
       running_summary_message_count: logRecord.running_summary_message_count,
       running_summary_kept_recent_count: logRecord.running_summary_kept_recent_count,
       running_summary_error: logRecord.running_summary_error,
+      worldbook_loaded: (logRecord.world_books_injected ?? 0) > 0,
+      worldbook_count: logRecord.world_books_count ?? 0,
+      worldbook_titles: logRecord.world_books_titles ?? [],
+      worldbook_chars: logRecord.world_books_chars ?? 0,
     };
     const memoryDebugHeader = base64EncodeUtf8(memoryDebugPayload);
     const chatStatusHeader = base64EncodeUtf8(chatStatus);
@@ -2418,9 +2424,23 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     const backgroundApiKey = backgroundProviderConfig.primary.apiKey;
     let responseBody: ReadableStream<Uint8Array> | null = result.response.body;
 
-    // Vault extraction is now triggered by the frontend after stream completes
-    // (via POST memories?type=vault_after_chat). No tee on the main stream.
-    responseBody = result.response.body;
+    if (!disableAfterChat && supabaseUrl && serviceRoleKey && afterChatUserId !== "anon" && responseBody) {
+      const [clientBody, vaultBody] = responseBody.tee();
+      responseBody = clientBody;
+      runAfterChatVault({
+        streamBody: vaultBody,
+        supabaseUrl,
+        serviceRoleKey,
+        userId: afterChatUserId,
+        conversationId,
+        userMessage: lastUserMessage,
+        route: topicRoute,
+        orBaseUrl: backgroundBaseUrl,
+        orApiKey: backgroundApiKey,
+        fastModel: backgroundModel,
+        userMessageId: null,
+      }).catch((e) => console.error(JSON.stringify({ fn: "vault_runner", event: "uncaught", error: String(e) })));
+    }
 
     return new Response(responseBody, {
       status: result.response.status,
