@@ -654,7 +654,8 @@ body {
   min-height: 136px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-end;
+  padding-bottom: 16px;
 }
 
 .feature-grid--two .feature-card img {
@@ -713,6 +714,7 @@ body {
   grid-template-columns: 1fr 120px;
   gap: 12px;
   align-items: stretch;
+  margin-top: 18px;
 }
 
 .daily-record,

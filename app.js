@@ -3288,6 +3288,47 @@ chaAvatarButton?.addEventListener("click", async () => {
   uploader.destroy();
 });
 
+// 在一起天数真实计算
+(function() {
+  const DEFAULT_START = "2022-07-15";
+  const STORAGE_KEY = "relationship_start_date";
+  const daysEl = document.getElementById("togetherDays");
+  const startEl = document.getElementById("togetherStartDate");
+  if (!daysEl || !startEl) return;
+
+  function calcDays(dateStr) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const start = new Date(y, m - 1, d);
+    const today = new Date();
+    const todayNorm = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return Math.floor((todayNorm - start) / 86400000) + 1;
+  }
+
+  function formatDisplay(dateStr) {
+    return dateStr.replace(/-/g, ".");
+  }
+
+  function applyDate(dateStr) {
+    daysEl.textContent = calcDays(dateStr);
+    startEl.textContent = "从 " + formatDisplay(dateStr) + " 开始";
+  }
+
+  const saved = localStorage.getItem(STORAGE_KEY);
+  applyDate(saved && /^\d{4}-\d{2}-\d{2}$/.test(saved) ? saved : DEFAULT_START);
+
+  startEl.addEventListener("click", () => {
+    const cur = (localStorage.getItem(STORAGE_KEY) || DEFAULT_START);
+    const input = prompt("修改开始日期（格式：YYYY-MM-DD）", cur);
+    if (input === null) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+      alert("格式错误，请使用 YYYY-MM-DD");
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, input);
+    applyDate(input);
+  });
+})();
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
