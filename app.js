@@ -2445,7 +2445,7 @@ messageList.addEventListener("contextmenu", (e) => {
 messageList.addEventListener("scroll", () => {
   closeMessageActionMenu();
   cancelLongPress();
-  if (messageList.scrollTop <= 40) loadOlderMessages();
+  if (messageList.scrollTop <= 40) loadOlderHistory();
 });
 
 messageList.addEventListener("pointerdown", (e) => {
@@ -4890,6 +4890,28 @@ function _renderChatSubpage() {
     </div>`;
 }
 
+window._saveMemoryToken = function() {
+  const val = document.getElementById("_memTokenInput")?.value?.trim();
+  if (val) sessionStorage.setItem("memory_admin_token", val);
+  else sessionStorage.removeItem("memory_admin_token");
+  document.getElementById("_memTokenStatus").textContent = val ? "hasToken=true" : "hasToken=false";
+  document.getElementById("_memTokenInput").value = "";
+};
+window._testMemoryEndpoint = async function() {
+  const endpoint = getMemoryEndpoint();
+  const token = getMemoryToken();
+  const btn = document.getElementById("_memTestBtn");
+  if (!endpoint) { btn.textContent = "❌ 无 endpoint"; return; }
+  if (!token) { btn.textContent = "❌ 无 token"; return; }
+  btn.textContent = "请求中…";
+  try {
+    const res = await fetch(endpoint + "?type=audit", { headers: { "Authorization": "Bearer " + token } });
+    btn.textContent = res.ok ? `✅ ${res.status}` : `❌ ${res.status}`;
+  } catch(e) {
+    btn.textContent = "❌ 网络错误";
+  }
+};
+
 function _renderDebugSubpage() {
   const buildLabel = (document.querySelector("script[src*='app.js']")?.src.match(/v=([^&]+)/) || [])[1] || "unknown";
   return `
@@ -4903,6 +4925,22 @@ function _renderDebugSubpage() {
         <div class="settings-card-row">
           <div><strong>平台</strong></div>
           <span class="settings-row-value">${navigator.userAgent.includes("Mobile") ? "Mobile" : "Desktop"}</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">记忆 Token（仅 Dev）</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>Token 状态</strong></div>
+          <span id="_memTokenStatus" class="settings-row-value">${sessionStorage.getItem("memory_admin_token") ? "hasToken=true" : "hasToken=false"}</span>
+        </div>
+        <div class="settings-card-row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <input id="_memTokenInput" type="password" placeholder="粘贴 memory admin token" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border-color,#ccc);background:var(--input-bg,#fff);color:inherit;font-size:13px"/>
+          <div style="display:flex;gap:8px">
+            <button type="button" onclick="window._saveMemoryToken()" style="flex:1;padding:6px;border-radius:6px;border:none;background:var(--accent-color,#555);color:#fff;cursor:pointer">保存</button>
+            <button id="_memTestBtn" type="button" onclick="window._testMemoryEndpoint()" style="flex:1;padding:6px;border-radius:6px;border:none;background:var(--secondary-bg,#888);color:#fff;cursor:pointer">测试记忆端点</button>
+          </div>
         </div>
       </div>
     </div>
