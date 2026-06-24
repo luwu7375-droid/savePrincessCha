@@ -3245,3 +3245,81 @@ body {
   background: none; border: none; cursor: pointer;
   color: var(--accent, #8b5cf6); font-size: 12px; padding: 0; text-decoration: underline;
 }
+
+/* ── Splash screen ─────────────────────────────────────────── */
+#appSplash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 72px;
+  background: #080d14;
+  transition: opacity 0.4s ease;
+}
+#appSplash.splash-hiding { opacity: 0; pointer-events: none; }
+#appSplashBg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
+#appSplashTitle {
+  position: relative;
+  z-index: 1;
+  color: rgba(255,255,255,0.55);
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  font-weight: 300;
+}
+
+/* ── Reply preview bar (composer accessory) ────────────────── */
+.reply-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 12px;
+  background: var(--surface, #f7f7f5);
+  border-top: 1px solid var(--border-subtle, rgba(0,0,0,.06));
+  flex-shrink: 0;
+}
+.reply-preview-line {
+  width: 3px;
+  min-height: 28px;
+  border-radius: 2px;
+  background: var(--accent-primary, oklch(62% 0.14 280));
+  flex-shrink: 0;
+}
+.reply-preview-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.reply-preview-author {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-primary, oklch(62% 0.14 280));
+  line-height: 1.3;
+}
+.reply-preview-text {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+.reply-preview-close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #999);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+}

@@ -170,6 +170,10 @@
           if (typeof openPhoneOverlay === "function") openPhoneOverlay();
           return;
         }
+        if (route === "/home/diary") {
+          if (window.SPDiary) window.SPDiary.navigateToDiaryList();
+          return;
+        }
         if (route === "/settings/api") {
           var tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[
             typeof currentModelTier !== "undefined" ? currentModelTier : ""

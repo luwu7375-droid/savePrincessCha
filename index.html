@@ -17,6 +17,30 @@
   <link rel="apple-touch-icon" href="/assets/pwa/icon-192.png">
 </head>
 <body>
+  <!-- 开屏页面 -->
+  <div id="appSplash" aria-hidden="true">
+    <div id="appSplashBg"></div>
+    <div id="appSplashTitle">救公主</div>
+  </div>
+  <script>
+  (function(){
+    var bg=document.getElementById("appSplashBg");
+    if(!bg)return;
+    var c=localStorage.getItem("asset_app_splash_wallpaper");
+    bg.style.backgroundImage='url("'+(c||"assets/splash/default.jpg")+'")';
+    var appReady=false,minDone=false;
+    function dismiss(){
+      if(!appReady||!minDone)return;
+      var s=document.getElementById("appSplash");
+      if(!s)return;
+      s.classList.add("splash-hiding");
+      setTimeout(function(){if(s.parentNode)s.remove();},450);
+    }
+    setTimeout(function(){minDone=true;dismiss();},3000);
+    setTimeout(function(){appReady=true;minDone=true;dismiss();},8000);
+    window.splashReady=function(){appReady=true;dismiss();};
+  })();
+  </script>
   <!-- 登录 overlay -->
   <div id="loginOverlay" class="overlay hidden">
     <div class="modal" style="max-width:360px;max-height:none">

@@ -1250,7 +1250,7 @@ function buildMessageEventFields(fields = {}) {
   return out;
 }
 
-async function saveMessage(role, content, imageStoragePath = null, eventFields = {}) {
+async function saveMessage(role, content, imageStoragePath = null, eventFields = {}, replyTo = null) {
   if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
   const { data: { user } } = await supabaseClient.auth.getUser();
@@ -1263,6 +1263,11 @@ async function saveMessage(role, content, imageStoragePath = null, eventFields =
   };
   if (imageStoragePath && !row.type) row.type = "image";
   if (imageStoragePath) row.image_storage_path = imageStoragePath;
+  if (replyTo?.id) {
+    row.reply_to_message_id = replyTo.id;
+    row.reply_to_preview    = replyTo.preview || null;
+    row.reply_to_role       = replyTo.role   || null;
+  }
   const { data, error } = await supabaseClient
     .from("messages")
     .insert(row)
@@ -1335,7 +1340,7 @@ async function loadOlderHistory() {
   historyLoadingOlder = true;
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role")
     .eq("conversation_id", conversationId)
     .lt("created_at", oldestLoadedMessageCreatedAt)
     .order("created_at", { ascending: false })
@@ -1345,15 +1350,16 @@ async function loadOlderHistory() {
   const older = await resolveImagePaths([...data].reverse());
   const prevScrollHeight = messageList.scrollHeight;
   const prevScrollTop = messageList.scrollTop;
-  const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null }));
+  const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null, reply_to_message_id: m.reply_to_message_id ?? null, reply_to_preview: m.reply_to_preview ?? null, reply_to_role: m.reply_to_role ?? null }));
   chatMessages.unshift(...newEntries);
   messageList.innerHTML = "";
   lastMessageTime = null;
   for (const m of chatMessages) {
+    const rt = m.reply_to_message_id ? { id: String(m.reply_to_message_id), preview: m.reply_to_preview || "", role: m.reply_to_role || "user" } : null;
     if (m.role === "assistant") {
-      addAssistantBubbles(m.content, m.created_at, m.id, !!m.read_by_user_at);
+      addAssistantBubbles(m.content, m.created_at, m.id, !!m.read_by_user_at, rt);
     } else {
-      addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at }, m.id);
+      addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at, replyTo: rt }, m.id);
     }
   }
   messageList.scrollTop = prevScrollTop + (messageList.scrollHeight - prevScrollHeight);
@@ -4282,6 +4288,12 @@ async function handleSubmit() {
   updateAttachmentCard();
   imageInput.value = "";
 
+  // Capture and clear reply state before render
+  const replyId      = _replyToId;
+  const replyPreview = _replyToPreview;
+  const replyRole    = _replyToRole;
+  clearReplyDraft();
+
   const isFirst = chatMessages.length === 0;
   const now = new Date().toISOString();
 
@@ -4294,11 +4306,11 @@ async function handleSubmit() {
     content = text;
   }
 
+  const replyTo = replyId ? { id: replyId, preview: replyPreview || "", role: replyRole || "user" } : null;
+
   // Optimistic update：先渲染，不等接口
-  // Assign a temp id so the render cache can be written immediately and migrated
-  // to the real server id once the DB insert returns.
   const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const msgEl = addMessage(content, "user", now, { tempId });
+  const msgEl = addMessage(content, "user", now, { tempId, replyTo });
   const msgGroupId = msgEl.closest(".msg-row")?.dataset.groupId;
   const getMsgRows = () => msgGroupId
     ? Array.from(messageList.querySelectorAll(`.msg-row[data-group-id="${msgGroupId}"]`))
@@ -4325,7 +4337,7 @@ async function handleSubmit() {
         return;
       }
     }
-    const msgId = await saveMessage("user", dbContent, storagePath).catch(() => null);
+    const msgId = await saveMessage("user", dbContent, storagePath, {}, replyTo).catch(() => null);
     if (msgId != null) {
       getMsgRows().forEach(r => { r.dataset.msgId = String(msgId); });
       // Migrate render cache from tempId to real msgId
@@ -4744,8 +4756,9 @@ async function hideLoginAndInit(session) {
   await initConversations();
   await reloadHistory();
   setLoading(false);
+  window.splashReady?.();
   if (window.SPDiary) {
-    window.SPDiary.updateHomeDiaryCard(supabaseClient, currentUserId)
+    window.SPDiary.updateHomeDiaryCard(supabaseClient, 'default')
       .catch(err => console.error('Failed to update diary card:', err));
   }
   // Desktop only: auto-focus on init. Mobile must not trigger soft keyboard.
@@ -4766,10 +4779,12 @@ if (supabaseClient) {
       hideLoginAndInit(session);
     } else {
       loginOverlay.classList.remove("hidden");
+      window.splashReady?.();
     }
   });
 } else {
   loginOverlay.classList.remove("hidden");
+  window.splashReady?.();
 }
 
 initTierBar();
@@ -4973,6 +4988,10 @@ function _renderAppearanceResourcesSubpage() {
           <div><strong>开屏封面</strong><small>首页顶部横幅图</small></div>
           <button type="button" class="settings-row-action-btn" id="srCoverBtn">更换</button>
         </div>
+        <div class="settings-card-row">
+          <div><strong>开屏壁纸</strong><small>下次启动时生效</small></div>
+          <button type="button" class="settings-row-action-btn" id="srSplashBtn">更换</button>
+        </div>
       </div>
     </div>
     <div class="settings-section">
@@ -5129,6 +5148,23 @@ function _initSettingsSubpageEvents(container, type) {
       const btn = document.querySelector(".home-cover");
       if (btn) btn.click();
       closeSettingsSubpage();
+    });
+    const splashBtn = container.querySelector("#srSplashBtn");
+    if (splashBtn) splashBtn.addEventListener("click", () => {
+      const inp = document.createElement("input");
+      inp.type = "file"; inp.accept = "image/*";
+      inp.addEventListener("change", () => {
+        const file = inp.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          localStorage.setItem("asset_app_splash_wallpaper", reader.result);
+          splashBtn.textContent = "已更换";
+          splashBtn.disabled = true;
+        };
+        reader.readAsDataURL(file);
+      });
+      inp.click();
     });
     const emojiCacheBtn = container.querySelector("#srEmojiCacheBtn");
     if (emojiCacheBtn) emojiCacheBtn.addEventListener("click", () => {
@@ -8379,17 +8415,5 @@ window.addEventListener("load", () => {
   if (supabaseClient && window.SPDiary) {
     window.SPDiary.updateHomeDiaryCard(supabaseClient, currentUserId || 'default')
       .catch(err => console.error('Failed to update diary card:', err));
-  }
-});
-
-// Setup diary card click handler
-document.addEventListener("DOMContentLoaded", () => {
-  const diaryCard = document.querySelector('.diary-card');
-  if (diaryCard) {
-    diaryCard.addEventListener('click', () => {
-      if (window.SPDiary) {
-        window.SPDiary.navigateToDiaryList();
-      }
-    });
   }
 });
