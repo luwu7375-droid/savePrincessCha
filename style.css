@@ -3281,7 +3281,7 @@ img.msg-image {
 }
 
 .v2-page--chat #chatSearchButton {
-  justify-self: end;
+  display: none !important;
 }
 
 @keyframes slideIn {

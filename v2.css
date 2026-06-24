@@ -447,6 +447,7 @@ body {
 .daily-record h2 {
   font-size: 14px;
   font-weight: 600;
+  text-align: left;
 }
 
 .today-card blockquote {
@@ -754,6 +755,12 @@ body {
 .history-card {
   padding: 16px;
   border-radius: var(--radius-card);
+}
+
+.daily-record {
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
 }
 
 .record-input {
@@ -1490,14 +1497,14 @@ body {
 }
 
 .plus-panel-item {
-  min-height: 74px;
+  min-height: 48px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 9px 7px;
-  text-align: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  text-align: left;
 }
 
 .plus-panel-item:hover,
@@ -1525,23 +1532,24 @@ body {
 }
 
 .plus-panel-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
   background: var(--surface);
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
 
 .plus-panel-icon img {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   object-fit: contain;
 }
 
 .plus-panel-item strong,
 .plus-panel-item small {
-  display: block;
+  display: inline;
 }
 
 .plus-panel-item strong {
@@ -1552,6 +1560,7 @@ body {
 .plus-panel-item small {
   color: var(--text-muted);
   font-size: 11px;
+  margin-left: 4px;
 }
 
 .plus-panel-title {
@@ -1812,14 +1821,14 @@ body {
   }
 
   .plus-panel-item {
-    min-height: 70px;
-    padding: 8px 6px;
+    min-height: 44px;
+    padding: 7px 10px;
   }
 
   .plus-panel-icon {
-    width: 30px;
-    height: 30px;
-    border-radius: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
   }
 
   .input-bar,
