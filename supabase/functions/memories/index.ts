@@ -278,6 +278,7 @@ Deno.serve(async (req) => {
         p1,
         p2,
         promoted_count: p2?.promoted_count ?? 0,
+        promotion_enabled: promotionEnabled,
         debug: {
           has_auth: true,
           user_id: authenticatedUserId,
@@ -294,6 +295,8 @@ Deno.serve(async (req) => {
           extraction_event: p1.extraction_debug_event ?? null,
           extraction_text_head: p1.extraction_text_head ?? null,
           extraction_error: p1.extraction_empty_reason ?? null,
+          promotion_enabled: promotionEnabled,
+          promotion_skipped_reason: promotionEnabled ? null : "AUTO_MEMORY_PROMOTION_ENABLED=false",
         },
       }, 200);
     } catch (err) {
@@ -630,7 +633,7 @@ Deno.serve(async (req) => {
     }
     if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "DB not configured" }, 500);
 
-    let cleanBody: { action?: string; userId?: string; dryRun?: boolean };
+    let cleanBody: { action?: string; userId?: string; dryRun?: boolean; confirm?: string };
     try { cleanBody = await req.json(); } catch { return json({ ok: false, error: "invalid JSON body" }, 400); }
 
     const cleanUserId = cleanBody.userId;
@@ -706,6 +709,8 @@ Deno.serve(async (req) => {
           pending: cands.filter(c => c.recommended_action === "pending").length,
           quarantine: cands.filter(c => c.recommended_action === "quarantine").length,
         },
+        project_auto_accept_count: cands.filter(c => c.candidate_type === "project" && c.recommended_action === "auto_accept").length,
+        project_promoted_count: cands.filter(c => c.candidate_type === "project" && c.status === "promoted").length,
         by_canonical_key: report,
       }, 200);
     }
@@ -775,6 +780,86 @@ Deno.serve(async (req) => {
         if (patchRes.ok) disabled += 1;
       }
       return json({ ok: true, action, dryRun: false, disabled, total: promoted.length }, 200);
+    }
+
+    // ── disable_generic_project_memories: targeted disable of low-value promoted project memories ──
+    // Only touches: candidate_type=project, status=promoted, promoted_memory_id not null,
+    // AND content matches LOW_VALUE_PROJECT_PATTERNS or a generic project regex.
+    // dryRun defaults to true. dryRun=false requires body.confirm === "DISABLE_GENERIC_PROJECT_MEMORIES".
+    if (action === "disable_generic_project_memories") {
+      // Safety: dryRun=false requires explicit confirmation token
+      if (!cleanDryRun && cleanBody.confirm !== "DISABLE_GENERIC_PROJECT_MEMORIES") {
+        return json({
+          ok: false,
+          error: "confirmation required",
+          detail: "Set body.confirm = \"DISABLE_GENERIC_PROJECT_MEMORIES\" to execute. Default is dryRun=true.",
+        }, 400);
+      }
+
+      // Fetch promoted project candidates
+      const gpRes = await fetch(
+        `${supabaseUrl}/rest/v1/auto_memory_candidates` +
+          `?select=id,promoted_memory_id,content` +
+          `&user_id=eq.${encodeURIComponent(cleanUserId)}` +
+          `&candidate_type=eq.project` +
+          `&status=eq.promoted` +
+          `&promoted_memory_id=not.is.null`,
+        { headers: cleanHeaders }
+      );
+      if (!gpRes.ok) return json({ ok: false, error: "fetch candidates failed" }, 500);
+      const gpCands = await gpRes.json() as { id: string; promoted_memory_id: string; content: string }[];
+
+      // Local copy of low-value patterns (same as auto_memory_vault.ts)
+      const LOW_VALUE_RE = [
+        /用户正在(进行|做|开发|设计|构建|开展)(一个|某|该|���个)?(名为|叫做?|叫|的)?[^，。！？\n]{0,20}?(项目|工作|计划|开发|设计)$/,
+        /用户(有|在做|在开发|在进行)(一个|某)?[^，。！？\n]{0,20}?(项目|工程|产品)/,
+        /用户正在(参与|负责|推进)[^，。！？\n]{0,20}?(项目|工作)/,
+      ];
+      // Generic project regex: content is <= 30 chars and mentions 项目/工程/工作 with no milestone
+      const GENERIC_PROJECT_RE = /^.{0,30}(项目|工程|工作).{0,10}$/;
+
+      function isGenericProjectContent(content: string): boolean {
+        const c = content.trim();
+        if (LOW_VALUE_RE.some((re) => re.test(c))) return true;
+        if (GENERIC_PROJECT_RE.test(c)) return true;
+        return false;
+      }
+
+      const toDisable = gpCands.filter((r) => isGenericProjectContent(r.content));
+
+      if (cleanDryRun) {
+        return json({
+          ok: true,
+          action,
+          dryRun: true,
+          scanned: gpCands.length,
+          would_disable: toDisable.length,
+          would_disable_list: toDisable.map((r) => ({
+            candidate_id: r.id,
+            promoted_memory_id: r.promoted_memory_id,
+            content: r.content.slice(0, 100),
+          })),
+        }, 200);
+      }
+
+      let gpDisabled = 0;
+      for (const row of toDisable) {
+        const patchRes = await fetch(
+          `${supabaseUrl}/rest/v1/memories?id=eq.${encodeURIComponent(row.promoted_memory_id)}`,
+          {
+            method: "PATCH",
+            headers: { ...cleanHeaders, Prefer: "return=minimal" },
+            body: JSON.stringify({ enabled: false }),
+          }
+        );
+        if (patchRes.ok) gpDisabled += 1;
+      }
+      return json({
+        ok: true, action, dryRun: false,
+        scanned: gpCands.length,
+        disabled: gpDisabled,
+        total_matched: toDisable.length,
+      }, 200);
     }
 
     return json({ ok: false, error: `unknown action: ${action}` }, 400);

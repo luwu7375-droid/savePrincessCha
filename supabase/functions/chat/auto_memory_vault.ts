@@ -247,7 +247,9 @@ async function extractVaultCandidates(params: {
 
 const VALID_CANDIDATE_TYPES = new Set(["fact", "preference", "relationship", "event", "emotion", "project"]);
 
-const PROMOTION_ALLOWED_TYPES = new Set(["project", "fact", "preference"]);
+// "project" intentionally excluded: project candidates must go through human review,
+// never auto-promoted. Hard lock even if AUTO_MEMORY_PROMOTION_ENABLED is accidentally on.
+const PROMOTION_ALLOWED_TYPES = new Set(["fact", "preference"]);
 
 // ── Low-value project patterns — discard on match ────────────────────────────
 // These generic statements add no information beyond "project exists".
