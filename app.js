@@ -2087,7 +2087,10 @@ function refreshMessageActions() {
     const isAssistant = row.classList.contains("assistant");
     const isUser = row.classList.contains("user");
     if (!isAssistant && !isUser) continue;
-    if (isAssistant && !row.dataset.msgId) continue;
+
+    // Get msgId from either msgId or bubbleSibling (for split messages)
+    const effectiveMsgId = row.dataset.msgId || row.dataset.bubbleSibling;
+    if (isAssistant && !effectiveMsgId) continue;
 
     const actions = document.createElement("div");
     actions.className = "msg-actions";
@@ -2101,7 +2104,7 @@ function refreshMessageActions() {
     });
     actions.appendChild(copyBtn);
 
-    if ((isAssistant || isUser) && row.dataset.msgId) {
+    if ((isAssistant || isUser) && effectiveMsgId) {
       const replyBtn = document.createElement("button");
       replyBtn.textContent = "引用";
       replyBtn.addEventListener("click", (e) => {
@@ -2110,7 +2113,7 @@ function refreshMessageActions() {
         const role = isAssistant ? "assistant" : "user";
         const textEl = row.querySelector(".message-text");
         const preview = (textEl?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
-        setReplyDraft(row.dataset.msgId, preview, role);
+        setReplyDraft(effectiveMsgId, preview, role);
       });
       actions.appendChild(replyBtn);
     }
@@ -2530,13 +2533,15 @@ function showMessageActionMenu(row, x, y) {
     await copyMessage(row, btn);
   });
 
-  if (row.dataset.msgId) {
+  // Get msgId from either msgId or bubbleSibling (for split messages)
+  const effectiveMsgId = row.dataset.msgId || row.dataset.bubbleSibling;
+  if (effectiveMsgId) {
     addMessageMenuButton(menu, "引用", () => {
       const role = isAssistant ? "assistant" : "user";
       const textEl = row.querySelector(".message-text");
       const preview = (textEl?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
       closeMessageActionMenu();
-      setReplyDraft(row.dataset.msgId, preview, role);
+      setReplyDraft(effectiveMsgId, preview, role);
     });
   }
 

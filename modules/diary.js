@@ -177,6 +177,16 @@
 
     // Store entry ID for navigation
     diaryCard.dataset.diaryId = entry.id;
+
+    // Bind click handler (only once)
+    if (!diaryCard.dataset.clickBound) {
+      diaryCard.addEventListener('click', () => {
+        if (diaryCard.dataset.diaryId) {
+          navigateToDiaryDetail(diaryCard.dataset.diaryId);
+        }
+      });
+      diaryCard.dataset.clickBound = 'true';
+    }
   }
 
   /**
