@@ -109,6 +109,7 @@ const logoutBtn         = document.getElementById("logoutBtn");
 const imageInput        = document.getElementById("imageInput");
 const imagePreviewBar   = document.getElementById("imagePreviewBar");
 const imageAttachBtn    = document.getElementById("imageAttachBtn");
+const voiceInputBtn     = document.getElementById("voiceInputBtn");
 const chatBackButton    = document.getElementById("chatBackButton");
 const chaAvatarButton   = document.getElementById("chaAvatarButton");
 const chatSearchButton  = document.getElementById("chatSearchButton");
@@ -409,6 +410,9 @@ async function deleteConv(id) {
 async function switchConversation(id) {
   if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
   // Cancel any in-progress message edit to avoid carrying state to another conversation
+
+  // Stop TTS playback when switching conversations
+  if (window.SPVoice) window.SPVoice.stopSpeaking();
   if (composerEditMode === "edit") exitEditMessageMode({ restoreDraft: false });
   setActiveConversationId(id);
   _conversationStartedAt = null; // reset for new conversation context
@@ -867,6 +871,13 @@ function insertBubbleSync(text, createdAt, msgId, isSibling) {
   const el = document.createElement("div");
   el.className = "message assistant cha-message message-text";
   setMessageContent(el, text, { messageId: msgId != null ? String(msgId) : undefined });
+
+  // Add speaker button for TTS
+  if (window.SPVoice) {
+    const speakerBtn = window.SPVoice.createSpeakerButton(el);
+    el.appendChild(speakerBtn);
+  }
+
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
@@ -1548,6 +1559,13 @@ async function callChatAPI(messages, replyMode = "auto") {
         const lastReal = [...chatMessages].reverse().find(m => m.role === "user");
         const text = extractTextFromMessageContent(lastReal?.content).trim();
         return text || null;
+      })(),
+      webContext: (() => {
+        const ctx = _pendingWebContext;
+        _pendingWebContext = null;
+        const hint = document.getElementById("webContextHint");
+        if (hint) hint.setAttribute("hidden", "");
+        return ctx || null;
       })(),
       emojiGuide: buildEmojiGuide() || undefined,
     }),
@@ -2325,6 +2343,9 @@ function fallbackCopy(text) {
 }
 
 async function regenerateMessage(row) {
+  // Stop TTS playback when regenerating
+  if (window.SPVoice) window.SPVoice.stopSpeaking();
+
   if (isReplying || row !== getLastMessageRow("assistant")) return;
   const msgId = row.dataset.msgId;
   const idx = chatMessages.findIndex(m => m.id === msgId);
@@ -2518,6 +2539,24 @@ document.addEventListener("pointerdown", (e) => {
 function getMemoryEndpoint() {
   return getConfigValue("MEMORIES_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_MEMORIES_URL");
 }
+
+function getWebApiEndpoint() {
+  return getConfigValue("WEB_API_ENDPOINT", "YOUR_WEB_API_ENDPOINT");
+}
+
+// ── Web context injection ──────────────────────────────────────────────────────
+// Set by phone.js "在聊天里讲给KK"; consumed once by the next callChatAPI call.
+let _pendingWebContext = null;
+
+window.injectWebContextToChat = function ({ summary, sourceUrl, title }) {
+  _pendingWebContext = `[cha 刚读了一个链接]\n来源：${title || sourceUrl}\n内容摘要：${summary}`;
+  // Show a subtle indicator in the composer area
+  const hint = document.getElementById("webContextHint");
+  if (hint) {
+    hint.textContent = `cha 会在下条回复里结合这个链接的内容。`;
+    hint.removeAttribute("hidden");
+  }
+};
 
 function getMemoryToken() {
   return sessionStorage.getItem("memory_admin_token") || "";
@@ -4080,6 +4119,9 @@ messageList.addEventListener("click", (e) => {
 });
 
 async function handleSubmit() {
+  // Stop TTS playback when sending a new message
+  if (window.SPVoice) window.SPVoice.stopSpeaking();
+
   // ── Edit mode: save the edited message ──────────────────────────────────────
   if (composerEditMode === "edit") {
     const newText = messageInput.value.trim();
@@ -4094,6 +4136,28 @@ async function handleSubmit() {
     setChatStatus("Cha 正在回复，等他说完再发～");
     setTimeout(() => setChatStatus(""), 2000);
     return;
+  }
+
+  // ── URL detection: show "查手机" shortcut, no auto-fetch ──────────────────
+  const _URL_RE = /https?:\/\/[^\s<>"'{}|\\^`\[\]]{4,}/i;
+  const detectedUrl = _URL_RE.exec(text)?.[0];
+  if (detectedUrl) {
+    const hint = document.getElementById("webUrlHint");
+    if (hint) {
+      hint.innerHTML = `检测到链接 · <button type="button" id="webUrlOpenBtn" class="web-url-hint-btn">在查手机里读</button>`;
+      hint.removeAttribute("hidden");
+      const openBtn = document.getElementById("webUrlOpenBtn");
+      if (openBtn) {
+        openBtn.addEventListener("click", () => {
+          hint.setAttribute("hidden", "");
+          if (typeof window.openPhoneOverlayWithUrl === "function") {
+            window.openPhoneOverlayWithUrl(detectedUrl);
+          }
+        }, { once: true });
+      }
+      // Auto-hide after 8s
+      setTimeout(() => hint.setAttribute("hidden", ""), 8000);
+    }
   }
 
   messageInput.value = "";
@@ -4401,6 +4465,25 @@ function _syncChatMoreSubsheet(id) {
     }
     const status = document.getElementById("cmsKeepAliveStatus");
     if (status) status.textContent = on ? "已开启" : "已关闭";
+  } else if (id === "cmsVoiceSheet") {
+    if (window.SPVoice) {
+      const engine = window.SPVoice.getTTSEngine();
+      const rate = window.SPVoice.getTTSRate();
+      const volume = window.SPVoice.getTTSVolume();
+
+      const engineEl = document.getElementById("cmsVoiceEngine");
+      if (engineEl) engineEl.value = engine;
+
+      const rateEl = document.getElementById("cmsVoiceRate");
+      const rateValEl = document.getElementById("cmsVoiceRateVal");
+      if (rateEl) rateEl.value = rate;
+      if (rateValEl) rateValEl.textContent = rate.toFixed(1);
+
+      const volumeEl = document.getElementById("cmsVoiceVolume");
+      const volumeValEl = document.getElementById("cmsVoiceVolumeVal");
+      if (volumeEl) volumeEl.value = volume;
+      if (volumeValEl) volumeValEl.textContent = volume.toFixed(1);
+    }
   } else if (id === "cmsAppearanceSheet") {
     const bgVal = localStorage.getItem("ui_custom_chat_background") ? "已自定义" : "默认";
     const bubbleVal = localStorage.getItem("ui_chat_bubble_theme") || "默认";
@@ -4437,6 +4520,9 @@ function _syncChatMoreSubsheet(id) {
   document.getElementById("cmsReplyStyleBtn")?.addEventListener("click", () => {
     openChatMoreSubsheet("cmsReplyStyleSheet");
   });
+  document.getElementById("cmsVoiceBtn")?.addEventListener("click", () => {
+    openChatMoreSubsheet("cmsVoiceSheet");
+  });
   document.getElementById("cmsAutoFreqBtn")?.addEventListener("click", () => {
     openChatMoreSubsheet("cmsAutoReplyFreqSheet");
   });
@@ -4454,6 +4540,7 @@ function _syncChatMoreSubsheet(id) {
   // Sub-sheet back buttons
   document.getElementById("cmsAppearanceBack")?.addEventListener("click", closeChatMoreSubsheet);
   document.getElementById("cmsReplyStyleBack")?.addEventListener("click", closeChatMoreSubsheet);
+  document.getElementById("cmsVoiceBack")?.addEventListener("click", closeChatMoreSubsheet);
   document.getElementById("cmsAutoFreqBack")?.addEventListener("click", closeChatMoreSubsheet);
   document.getElementById("cmsKeepAliveBack")?.addEventListener("click", closeChatMoreSubsheet);
 
@@ -4499,6 +4586,25 @@ function _syncChatMoreSubsheet(id) {
     const next = !getChatKeepAlive();
     localStorage.setItem(CHAT_KEEPALIVE_KEY, next ? "on" : "off");
     _syncChatMoreSubsheet("cmsKeepAliveSheet");
+  });
+
+  // Voice controls
+  document.getElementById("cmsVoiceEngine")?.addEventListener("change", (e) => {
+    if (window.SPVoice) {
+      window.SPVoice.setTTSEngine(e.target.value);
+    }
+  });
+  document.getElementById("cmsVoiceRate")?.addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value);
+    const valEl = document.getElementById("cmsVoiceRateVal");
+    if (valEl) valEl.textContent = val.toFixed(1);
+    if (window.SPVoice) window.SPVoice.setTTSRate(val);
+  });
+  document.getElementById("cmsVoiceVolume")?.addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value);
+    const valEl = document.getElementById("cmsVoiceVolumeVal");
+    if (valEl) valEl.textContent = val.toFixed(1);
+    if (window.SPVoice) window.SPVoice.setTTSVolume(val);
   });
 
   // Esc key closes sheet
@@ -4679,6 +4785,8 @@ function renderSettingsSubpage(type) {
       return _renderWorldbookSubpage();
     case "memory":
       return _renderMemorySubpage();
+    case "voice":
+      return _renderVoiceSubpage();
     case "api":
       return _renderApiSubpage();
     case "backup":
@@ -4849,7 +4957,57 @@ function _renderChatAppearanceSubpage() {
     </div>`;
 }
 
+function _renderVoiceSubpage() {
+  const engine = window.SPVoice ? window.SPVoice.getTTSEngine() : "system";
+  const rate = window.SPVoice ? window.SPVoice.getTTSRate() : 1.0;
+  const volume = window.SPVoice ? window.SPVoice.getTTSVolume() : 1.0;
+  const ttsSupported = window.SPVoice ? window.SPVoice.isTTSSupported() : false;
+
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">朗读引擎</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>引擎</strong><small>选择 TTS 服务</small></div>
+          <select id="voiceTTSEngine" class="settings-select" ${!ttsSupported ? 'disabled' : ''}>
+            <option value="system" ${engine === "system" ? "selected" : ""}>系统语音</option>
+            <option value="elevenlabs" ${engine === "elevenlabs" ? "selected" : ""} disabled>ElevenLabs（未配置）</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">语速与音量</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>语速</strong><small>朗读速度（0.5 - 2.0）</small></div>
+          <input type="range" id="voiceTTSRate" min="0.5" max="2.0" step="0.1" value="${rate}" ${!ttsSupported ? 'disabled' : ''}>
+          <span id="voiceTTSRateValue">${rate.toFixed(1)}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>音量</strong><small>播放音量（0.0 - 1.0）</small></div>
+          <input type="range" id="voiceTTSVolume" min="0" max="1" step="0.1" value="${volume}" ${!ttsSupported ? 'disabled' : ''}>
+          <span id="voiceTTSVolumeValue">${volume.toFixed(1)}</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">试听</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>测试朗读</strong><small>听听小cha的声音</small></div>
+          <button type="button" class="settings-row-action-btn" id="voiceTestBtn" ${!ttsSupported ? 'disabled' : ''}>试听</button>
+        </div>
+      </div>
+    </div>
+    ${!ttsSupported ? '<div class="settings-notice">您的浏览器不支持语音合成功能</div>' : ''}`;
+}
+
 function _initSettingsSubpageEvents(container, type) {
+  if (type === "voice") {
+    _initSettingsVoiceSubpage(container);
+    return;
+  }
   if (type === "memory") {
     _initSettingsMemorySubpage(container);
     return;
@@ -4926,6 +5084,46 @@ function _initSettingsWorldbookSubpage(container) {
 
 function _renderMemorySubpage() {
   return `<div id="settingsMemoryMount" style="min-height:200px"></div>`;
+}
+
+function _initSettingsVoiceSubpage(container) {
+  if (!window.SPVoice) return;
+
+  const engineSelect = container.querySelector("#voiceTTSEngine");
+  const rateSlider = container.querySelector("#voiceTTSRate");
+  const rateValue = container.querySelector("#voiceTTSRateValue");
+  const volumeSlider = container.querySelector("#voiceTTSVolume");
+  const volumeValue = container.querySelector("#voiceTTSVolumeValue");
+  const testBtn = container.querySelector("#voiceTestBtn");
+
+  if (engineSelect) {
+    engineSelect.addEventListener("change", (e) => {
+      window.SPVoice.setTTSEngine(e.target.value);
+    });
+  }
+
+  if (rateSlider && rateValue) {
+    rateSlider.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      rateValue.textContent = val.toFixed(1);
+      window.SPVoice.setTTSRate(val);
+    });
+  }
+
+  if (volumeSlider && volumeValue) {
+    volumeSlider.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      volumeValue.textContent = val.toFixed(1);
+      window.SPVoice.setTTSVolume(val);
+    });
+  }
+
+  if (testBtn) {
+    testBtn.addEventListener("click", () => {
+      const testText = "你好，kk。我是小cha，很高兴认识你。";
+      window.SPVoice.speakText(testText, testBtn);
+    });
+  }
 }
 
 function _initSettingsMemorySubpage(container) {
@@ -5157,6 +5355,17 @@ function initV2Composer() {
 
     const actions = document.createElement("div");
     actions.className = "plus-panel-grid";
+
+    // Voice call entry (placeholder for MVP)
+    addPanelItem(actions, {
+      label: "语音电话",
+      desc: "拨号入口",
+      icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 2h8v16H6V2z" stroke="currentColor" stroke-width="1.5" rx="2"/><path d="M10 15h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+      onClick: () => {
+        alert("语音电话\n\n呼叫小cha\n\n先把入口放在这里");
+      },
+    });
+
     addPanelItem(actions, {
       label: "图片上传",
       desc: "相册或文件",
@@ -5241,6 +5450,20 @@ initInputKeyboardHints();
 initKeyboardViewportState();
 initStableShellHeight();
 initVisualVh();
+
+// Initialize voice module
+if (window.SPVoice) {
+  window.SPVoice.initVoice();
+}
+
+// Voice input button handler (MVP placeholder)
+if (voiceInputBtn) {
+  voiceInputBtn.addEventListener("click", () => {
+    console.log("Voice input clicked - recording UI not yet implemented");
+    alert("语音输入功能\n\n录音界面开发中...");
+  });
+}
+
 // Start loading emoji catalog in the background — never blocks UI
 window.SPEmoji.loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
 
@@ -7990,3 +8213,25 @@ if (_SW_DEV_HOST) {
     });
   });
 }
+
+// ── Diary Module Initialization ──────────────────────────────────────────────
+
+// Update Home diary card on page load
+window.addEventListener("load", () => {
+  if (supabaseClient && window.SPDiary) {
+    window.SPDiary.updateHomeDiaryCard(supabaseClient, currentUserId || 'default')
+      .catch(err => console.error('Failed to update diary card:', err));
+  }
+});
+
+// Setup diary card click handler
+document.addEventListener("DOMContentLoaded", () => {
+  const diaryCard = document.querySelector('.diary-card');
+  if (diaryCard) {
+    diaryCard.addEventListener('click', () => {
+      if (window.SPDiary) {
+        window.SPDiary.navigateToDiaryList();
+      }
+    });
+  }
+});

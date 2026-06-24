@@ -80,6 +80,7 @@ type ChatRequest = {
   userMessageId?: number | null; // messages.id of the triggering user message
   rawUserMessage?: string | null; // original user input before any frontend wrapping
   emojiGuide?: string | null; // client-built guide of usable custom emoji shortcodes
+  webContext?: string | null; // injected by phone.js after user confirms URL read
 };
 
 // ── Model tier ────────────────────────────────────────────────────────────────
@@ -2181,6 +2182,10 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     );
     if (memContext) {
       systemContent += memContext;
+    }
+    // Inject web context if provided from phone.js URL read (transient, current-turn only)
+    if (typeof payload.webContext === "string" && payload.webContext.trim()) {
+      systemContent += `\n\n<web_context source="phone_url_read" transient="true">\n${payload.webContext.trim()}\n\n这是cha刚才读到的内容摘要，用来自然融入本轮回复，不要直接引用或报告，用自己的话讲出来。不要写入长期记忆。\n</web_context>`;
     }
     logRecord.active_memory_providers = memLog.active_memory_providers;
     logRecord.memory_provider_count = memLog.memory_provider_count;

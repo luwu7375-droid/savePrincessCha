@@ -1,0 +1,217 @@
+/* Diary Module Styles - First-person Diary Draft MVP */
+
+/* ── Home Diary Card ──────────────────────────────────────────────────────── */
+
+.diary-card {
+  position: relative;
+}
+
+.diary-card .card-kicker span {
+  opacity: 0.6;
+  font-size: 0.9em;
+}
+
+.diary-card .diary-note {
+  margin-top: 0.75rem;
+  font-size: 0.85em;
+  opacity: 0.7;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.diary-card .diary-note span:last-child {
+  opacity: 0.5;
+}
+
+/* ── Diary List Page ──────────────────────────────────────────────────────── */
+
+.v2-page--diary-list .page-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.v2-page--diary-list .page-header > div:nth-child(2) {
+  flex: 1;
+}
+
+.diary-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  opacity: 0.5;
+}
+
+.diary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.diary-list-card {
+  text-align: left;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.diary-list-card:hover {
+  transform: translateY(-2px);
+}
+
+.diary-list-card h3 {
+  font-size: 1.1em;
+  font-weight: 500;
+  margin: 0;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.diary-summary {
+  font-size: 0.95em;
+  opacity: 0.7;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.diary-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85em;
+  opacity: 0.5;
+  margin-top: 0.25rem;
+}
+
+.diary-source {
+  padding: 0.125rem 0.5rem;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+}
+
+/* ── Diary Detail Page ────────────────────────────────────────────────────── */
+
+.v2-page--diary-detail {
+  /* Inherits from base v2-page styles */
+}
+
+.diary-detail-header {
+  margin-bottom: 1.5rem;
+}
+
+.diary-detail-header .back-btn {
+  background: none;
+  border: none;
+  font-size: 1em;
+  cursor: pointer;
+  padding: 0.5rem 0;
+  margin-bottom: 0.75rem;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.diary-detail-header .back-btn:hover {
+  opacity: 1;
+}
+
+.diary-detail-header h1 {
+  font-size: 1.5em;
+  font-weight: 500;
+  margin: 0.5rem 0;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.diary-date {
+  font-size: 0.9em;
+  opacity: 0.5;
+  margin: 0.25rem 0 0 0;
+}
+
+.diary-detail-body {
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.diary-private-body {
+  font-size: 1em;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.diary-want-to-share {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.diary-section-label {
+  font-size: 0.85em;
+  opacity: 0.5;
+  margin: 0 0 0.5rem 0;
+  font-weight: 500;
+}
+
+.diary-want-to-share p:last-child {
+  font-size: 0.95em;
+  opacity: 0.8;
+  margin: 0;
+  font-style: italic;
+}
+
+/* Reflection fields */
+
+.diary-reflection-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.diary-reflection-card {
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.diary-reflection-card p:last-child {
+  font-size: 0.95em;
+  line-height: 1.6;
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* ── Manual Generation Button ─────────────────────────────────────────────── */
+
+#diaryGenerateBtn {
+  padding: 0.5rem 1rem;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+#diaryGenerateBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Responsive adjustments ───────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .diary-detail-body {
+    padding: 1.25rem;
+  }
+
+  .diary-private-body {
+    font-size: 0.95em;
+  }
+
+  .v2-page--diary-list .page-header {
+    flex-wrap: wrap;
+  }
+
+  #diaryGenerateBtn {
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+}

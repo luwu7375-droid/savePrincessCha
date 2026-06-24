@@ -9,3 +9,6 @@ verify_jwt = false
 
 [functions.game]
 verify_jwt = false
+
+[functions.web]
+verify_jwt = false

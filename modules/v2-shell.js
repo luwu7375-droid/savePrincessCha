@@ -15,6 +15,7 @@
     "prompt-worldbook":     { title: "Prompt 与世界书",  subtitle: "提示词、世界书与注入规则" },
     worldbook:              { title: "世界书管理",        subtitle: "上传后手动启用才会注入 Prompt" },
     memory:                 { title: "记忆管理",          subtitle: "查看、禁用与清理记忆" },
+    voice:                  { title: "小cha 的声音",      subtitle: "朗读引擎、语速与音量" },
     api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
     backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
     debug:                  { title: "Debug",             subtitle: "日志、版本与诊断工具" },
@@ -163,6 +164,10 @@
 
         if (route === "/settings/memory") {
           if (typeof openMemoryCenter === "function") openMemoryCenter();
+          return;
+        }
+        if (route === "/playground/phone") {
+          if (typeof openPhoneOverlay === "function") openPhoneOverlay();
           return;
         }
         if (route === "/settings/api") {

@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css?v=cloudflare-0093">
   <link rel="stylesheet" href="v2.css?v=cloudflare-0093">
   <link rel="stylesheet" href="v2-bubbles.css?v=cloudflare-0093">
+  <link rel="stylesheet" href="css/diary.css">
   <!-- PWA -->
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#f7f7f5">
@@ -108,6 +109,7 @@
           <button class="setting-row" data-settings-subpage="appearance-resources"><img src="assets/icons/settings/theme.svg" alt=""><span><strong>外观与资源</strong><small>头像、壁纸、开屏图与表情包</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="prompt-worldbook"><img src="assets/icons/settings/prompt.svg" alt=""><span><strong>Prompt 与世界书</strong><small>提示词、世界书与注入规则</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="memory"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>记忆管理</strong><small>查看、禁用与清理记忆</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="voice"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 3L7 6H4v4h3l3 3V3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 6c.5.5 1 1.5 1 2.5s-.5 2-1 2.5M15 4c1 1 2 3 2 5s-1 4-2 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span><strong>小cha 的声音</strong><small>朗���引擎、语速与音量</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="api"><img src="assets/icons/settings/api.svg" alt=""><span><strong>API 设置</strong><small>模型、接口与连接状态</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="backup"><img src="assets/icons/settings/backup.svg" alt=""><span><strong>备份与导入</strong><small>导出、恢复与记忆书上传</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="debug"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>Debug</strong><small>日志、版本与诊断工具</small></span><b>›</b></button>
@@ -169,6 +171,7 @@
               <li><button type="button" class="chat-more-item" id="cmsSearchBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="7.5" cy="7.5" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11.5 11.5L15 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>搜索聊天记录</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsAppearanceBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="2" y="2" width="13" height="13" rx="3" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 6L13 8.5L9.5 11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>聊天外观</span><span class="chat-more-item-arrow">›</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsReplyStyleBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M3 5h11M3 8.5h7M3 12h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>回复风格</span><span id="cmsReplyStyleVal" class="chat-more-item-value">均衡</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsVoiceBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.5 3L6 5.5H3.5v3H6l2.5 2.5V3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 6c.5.5 1 1.2 1 2.5s-.5 2-1 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>声音</span><span class="chat-more-item-arrow">›</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsAutoFreqBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="8.5" cy="8.5" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 5.5v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>主动回复频率</span><span id="cmsAutoFreqVal" class="chat-more-item-value">关</span><span class="chat-more-item-arrow">›</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsKeepAliveBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.5 2.5C5.19 2.5 2.5 5.19 2.5 8.5s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6z" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5l2 2 3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>后台与通知</span><span class="chat-more-item-arrow">›</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--muted" id="cmsQuietModeBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M3 3l11 11M10.5 7A4 4 0 0 0 6 7v3.5M4.5 10.5A4 4 0 0 0 12.5 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span id="cmsQuietModeLabel">安静模式</span><span id="cmsQuietModeStatus" class="chat-more-item-value">关</span></button></li>
@@ -216,6 +219,36 @@
                 </div>
               </li>
               <li><div class="chat-more-item chat-more-item--status"><span>通知</span><span class="cms-badge cms-badge--info">系统通知，无法保证实时</span></div></li>
+            </ul>
+          </div>
+          <!-- 声音子面板 -->
+          <div id="cmsVoiceSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsVoiceBack">← 返回</button><span>声音</span></div>
+            <p class="cms-section-hint">小cha 朗读消息时的声音设置</p>
+            <ul class="chat-more-list" role="list">
+              <li>
+                <div class="chat-more-item">
+                  <span>朗读引擎</span>
+                  <select id="cmsVoiceEngine" class="cms-select">
+                    <option value="system">系统语音</option>
+                    <option value="elevenlabs" disabled>ElevenLabs（未配置）</option>
+                  </select>
+                </div>
+              </li>
+              <li>
+                <div class="chat-more-item">
+                  <span>语速</span>
+                  <input type="range" id="cmsVoiceRate" min="0.5" max="2.0" step="0.1" value="1.0">
+                  <span id="cmsVoiceRateVal" class="cms-slider-value">1.0</span>
+                </div>
+              </li>
+              <li>
+                <div class="chat-more-item">
+                  <span>音量</span>
+                  <input type="range" id="cmsVoiceVolume" min="0" max="1" step="0.1" value="1.0">
+                  <span id="cmsVoiceVolumeVal" class="cms-slider-value">1.0</span>
+                </div>
+              </li>
             </ul>
           </div>
         </div>
@@ -319,9 +352,13 @@
         </div>
       </div>
 
+      <!-- URL 检测提示 / web context 提示 -->
+      <div id="webUrlHint" class="web-url-hint" hidden></div>
+      <div id="webContextHint" class="web-context-hint" hidden></div>
       <form class="input-bar" id="chatForm">
         <input type="file" id="imageInput" accept="image/*" style="display:none">
         <button id="imageAttachBtn" type="button" class="ghost-icon-btn" title="附图" aria-label="附图"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 12.5L5.5 9L8.5 12L11 9.5L16 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="voiceInputBtn" type="button" class="ghost-icon-btn" title="语音输入" aria-label="语音输入"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="2" width="6" height="10" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M4 10c0 2.5 2 4.5 5 4.5s5-2 5-4.5M9 14.5v2.5M6 17h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
         <textarea id="messageInput" rows="1" placeholder="继续说…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
         <!-- desktop secondary btns -->
         <button id="forceReplyBtn" type="button" class="ghost-icon-btn desktop-only-btn" title="让公主回复" aria-label="让公主回复">✦</button>
@@ -558,6 +595,32 @@
     </div>
   </div>
 
+  <!-- 查手机 overlay —— Phase 1 联网读取 + 活动日志 -->
+  <div id="phoneOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="查手机">
+    <button id="phoneOverlayBackdrop" type="button" class="overlay-backdrop" aria-label="关闭"></button>
+    <div class="phone-modal">
+      <header class="phone-modal-header">
+        <h2>查手机</h2>
+        <button id="phoneOverlayClose" type="button" class="phone-close-btn" aria-label="关闭">×</button>
+      </header>
+
+      <!-- URL 读取区 -->
+      <section class="phone-read-section">
+        <div class="phone-input-row">
+          <input id="phoneUrlInput" type="url" placeholder="粘贴链接，让cha去看看…" autocomplete="off" spellcheck="false">
+          <button id="phoneReadBtn" type="button" class="phone-read-btn">让cha看看</button>
+        </div>
+        <div id="phoneResult" hidden></div>
+      </section>
+
+      <!-- 活动时间线 -->
+      <section class="phone-activity-section">
+        <h3 class="phone-section-title">今天的上网记录</h3>
+        <div id="phoneTimeline"></div>
+      </section>
+    </div>
+  </div>
+
   <script src="version.js" charset="utf-8"></script>
   <script>
     // Apply version to cacheable resources
@@ -572,6 +635,10 @@
       document.write('<script src="modules/emoji-suggestions.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/keyboard-viewport.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/v2-shell.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/diary.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/diary-generation.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/phone.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/voice.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="app.js?v=' + v + '" charset="utf-8"><\/script>');
     })();
   </script>
