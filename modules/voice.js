@@ -10,6 +10,11 @@
   let currentPlayingButton = null;
   let ttsSupported = false;
 
+  // ── Voice Input State ────────────────────────────────────────────────────────
+  let recognition = null;
+  let isRecording = false;
+  let recognitionSupported = false;
+
   // ── localStorage Keys ────────────────────────────────────────────────────────
   const VOICE_TTS_ENGINE = "voice_tts_engine";
   const VOICE_TTS_RATE = "voice_tts_rate";
@@ -21,6 +26,74 @@
     ttsSupported = 'speechSynthesis' in window;
     if (!ttsSupported) {
       console.warn("SpeechSynthesis not supported in this browser");
+    }
+
+    // Initialize speech recognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognitionSupported = !!SpeechRecognition;
+
+    if (recognitionSupported) {
+      recognition = new SpeechRecognition();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        const messageInput = document.getElementById('messageInput');
+        if (messageInput) {
+          messageInput.value = (messageInput.value + ' ' + transcript).trim();
+          messageInput.focus();
+        }
+      };
+
+      recognition.onend = () => {
+        isRecording = false;
+        updateVoiceInputButton(false);
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        isRecording = false;
+        updateVoiceInputButton(false);
+      };
+    }
+
+    // Wire up voice input button
+    const voiceInputBtn = document.getElementById('voiceInputBtn');
+    if (voiceInputBtn) {
+      voiceInputBtn.disabled = !recognitionSupported;
+      voiceInputBtn.addEventListener('click', toggleVoiceInput);
+    }
+  }
+
+  // ── Voice Input Helpers ──────────────────────────────────────────────────────
+  function toggleVoiceInput() {
+    if (!recognitionSupported || !recognition) return;
+
+    if (isRecording) {
+      recognition.stop();
+    } else {
+      try {
+        recognition.start();
+        isRecording = true;
+        updateVoiceInputButton(true);
+      } catch (err) {
+        console.error('Failed to start recognition:', err);
+      }
+    }
+  }
+
+  function updateVoiceInputButton(active) {
+    const btn = document.getElementById('voiceInputBtn');
+    if (!btn) return;
+
+    if (active) {
+      btn.classList.add('active');
+      btn.title = '停止录音';
+    } else {
+      btn.classList.remove('active');
+      btn.title = '语音输入';
     }
   }
 
