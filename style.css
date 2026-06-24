@@ -867,30 +867,32 @@ body {
   z-index: 600;
   background: var(--bg-raise);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 6px;
-  min-width: 150px;
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 100px;
   box-shadow: 0 8px 24px oklch(0% 0 0 / 0.3);
   animation: fade-in 0.12s ease both;
 }
 .composer-menu button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 6px;
   width: 100%;
   background: none;
   border: none;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13px;
   font-family: inherit;
-  text-align: left;
-  padding: 10px 12px;
-  border-radius: 8px;
+  text-align: center;
+  padding: 6px 10px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 0.1s;
+  white-space: nowrap;
 }
 .composer-menu button:hover { background: var(--surface); }
-.composer-menu button .menu-icon { font-size: 16px; width: 20px; text-align: center; }
+.composer-menu button .menu-icon { font-size: 14px; width: 16px; text-align: center; }
 .composer-menu button.active-item { color: oklch(62% 0.18 248); }
 
 .input-bar button[type="submit"] {
@@ -3697,11 +3699,8 @@ img.msg-image {
    Voice Features
    ══════════════════════════════════════════════════════════════════════════════ */
 
-/* Speaker button on assistant messages */
+/* Speaker button on assistant messages (outside bubble) */
 .speaker-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   width: 28px;
   height: 28px;
   border: none;
@@ -3714,9 +3713,11 @@ img.msg-image {
   justify-content: center;
   opacity: 0;
   transition: opacity 0.2s, background 0.2s;
+  flex-shrink: 0;
+  margin-top: 4px;
 }
 
-.message:hover .speaker-btn {
+.msg-row:hover .speaker-btn {
   opacity: 1;
 }
 

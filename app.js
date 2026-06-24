@@ -872,15 +872,15 @@ function insertBubbleSync(text, createdAt, msgId, isSibling) {
   el.className = "message assistant cha-message message-text";
   setMessageContent(el, text, { messageId: msgId != null ? String(msgId) : undefined });
 
-  // Add speaker button for TTS
-  if (window.SPVoice) {
-    const speakerBtn = window.SPVoice.createSpeakerButton(el);
-    el.appendChild(speakerBtn);
-  }
-
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
+
+  // Add speaker button for TTS (outside bubble)
+  if (window.SPVoice) {
+    const speakerBtn = window.SPVoice.createSpeakerButton(el);
+    stack.appendChild(speakerBtn);
+  }
   // No read-receipt on assistant messages — user-read state drives the unread badge only
   const row = document.createElement("div");
   row.className = "msg-row assistant";
@@ -4257,7 +4257,7 @@ function buildComposerMenu(anchorBtn) {
   // Force reply item
   const forceItem = document.createElement("button");
   forceItem.type = "button";
-  forceItem.innerHTML = `<span class="menu-icon">✦</span><span>戳一下</span>`;
+  forceItem.innerHTML = `<span>让cha回复</span>`;
   if (isReplying || !chatMessages.length) forceItem.disabled = true;
   forceItem.addEventListener("click", () => {
     closeComposerMenu();
@@ -4265,27 +4265,12 @@ function buildComposerMenu(anchorBtn) {
   });
   menu.appendChild(forceItem);
 
-  // Auto reply toggle item
-  const autoItem = document.createElement("button");
-  autoItem.type = "button";
-  if (autoReplyEnabled) autoItem.classList.add("active-item");
-  const autoIcon = autoReplyEnabled ? "●" : "◌";
-  const autoLabel = autoReplyEnabled ? "自动接话：开" : "自动接话：关";
-  autoItem.innerHTML = `<span class="menu-icon">${autoIcon}</span><span>${autoLabel}</span>`;
-  autoItem.addEventListener("click", () => {
-    closeComposerMenu();
-    autoReplyEnabled = !autoReplyEnabled;
-    updateAutoReplyToggle();
-    if (!autoReplyEnabled) cancelAutoReplyTimer();
-  });
-  menu.appendChild(autoItem);
-
   document.body.appendChild(menu);
   activeComposerMenu = menu;
 
   const rect = anchorBtn.getBoundingClientRect();
   menu.style.bottom = `${window.innerHeight - rect.top + 6}px`;
-  const menuW = menu.offsetWidth || 160;
+  const menuW = menu.offsetWidth || 120;
   let left = rect.right - menuW;
   left = Math.max(8, Math.min(left, window.innerWidth - menuW - 8));
   menu.style.left = `${left}px`;
