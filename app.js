@@ -2532,6 +2532,10 @@ document.addEventListener("pointerdown", (e) => {
   if (target.closest(".tier-dropdown-menu")) return;
   if (target.closest(".msg-actions")) return;
   if (document.activeElement === messageInput) messageInput.blur();
+  // Deselect TTS message when clicking outside speaker button
+  if (!target.closest(".speaker-btn") && window.SPVoice) {
+    window.SPVoice.stopSpeaking();
+  }
 });
 
 // ── Memory panel ──────────────────────────────────────────────────────────────
@@ -4290,7 +4294,6 @@ document.getElementById("composerMenuBtn")?.addEventListener("click", (e) => {
 var CHAT_REPLY_STYLE_KEY = "chat_reply_style_v1";    // "stable" | "balanced" | "creative"
 var CHAT_AUTO_FREQ_KEY   = "chat_auto_reply_frequency_v1"; // "off" | "low" | "normal" | "high"
 var CHAT_KEEPALIVE_KEY   = "chat_keepalive_preference_v1"; // "on" | "off"
-var CHAT_QUIET_MODE_KEY  = "chat_quiet_mode_v1";     // "on" | "off"
 var CHAT_BLOCK_CHA_KEY   = "chat_block_cha_v1";      // "on" | "off"
 
 var REPLY_STYLE_TEMP = { stable: 0.4, balanced: 0.7, creative: 1.0 };
@@ -4336,7 +4339,6 @@ function closeAllChatPanels() {
 
 function getChatReplyStyle()  { return localStorage.getItem(CHAT_REPLY_STYLE_KEY)  || "balanced"; }
 function getChatAutoFreq()    { return localStorage.getItem(CHAT_AUTO_FREQ_KEY)    || "off"; }
-function getChatQuietMode()   { return localStorage.getItem(CHAT_QUIET_MODE_KEY)   === "on"; }
 function getChatBlockCha()    { return localStorage.getItem(CHAT_BLOCK_CHA_KEY)    === "on"; }
 function getChatKeepAlive()   { return localStorage.getItem(CHAT_KEEPALIVE_KEY)    !== "off"; }
 
@@ -4351,7 +4353,7 @@ var _STYLE_LABEL = { stable: "稳定", balanced: "均衡", creative: "发散" };
 function applyChatAutoFreq(freq) {
   localStorage.setItem(CHAT_AUTO_FREQ_KEY, freq);
   // "off" turns off auto-reply; anything else turns it on
-  const shouldEnable = (freq !== "off") && !getChatQuietMode() && !getChatBlockCha();
+  const shouldEnable = (freq !== "off") && !getChatBlockCha();
   if (autoReplyEnabled !== shouldEnable) {
     autoReplyEnabled = shouldEnable;
     updateAutoReplyToggle();
@@ -4359,17 +4361,6 @@ function applyChatAutoFreq(freq) {
   }
 }
 
-function applyChatQuietMode(on) {
-  localStorage.setItem(CHAT_QUIET_MODE_KEY, on ? "on" : "off");
-  if (on) {
-    autoReplyEnabled = false;
-    updateAutoReplyToggle();
-    cancelAutoReplyTimer();
-  } else {
-    // restore auto-freq if not blocked
-    if (!getChatBlockCha()) applyChatAutoFreq(getChatAutoFreq());
-  }
-}
 
 function openChatMoreSheet() {
   const sheet = document.getElementById("chatMoreSheet");
@@ -4380,7 +4371,7 @@ function openChatMoreSheet() {
   _showChatMoreMain(true);
   sheet.classList.remove("hidden");
   sheet.removeAttribute("aria-hidden");
-  document.getElementById("cmsSearchBtn")?.focus();
+  document.getElementById("cmsSearchBtn")?.focus({ preventScroll: true });
 }
 
 function closeChatMoreSheet() {
@@ -4422,8 +4413,6 @@ function _updateChatMoreSheetValues() {
   if (styleEl) styleEl.textContent = _STYLE_LABEL[getChatReplyStyle()] || "均衡";
   const freqEl = document.getElementById("cmsAutoFreqVal");
   if (freqEl) freqEl.textContent = _FREQ_LABEL[getChatAutoFreq()] || "关";
-  const quietEl = document.getElementById("cmsQuietModeStatus");
-  if (quietEl) quietEl.textContent = getChatQuietMode() ? "开" : "关";
 }
 
 function _syncChatMoreSubsheet(id) {
@@ -4513,13 +4502,6 @@ function _syncChatMoreSubsheet(id) {
   });
   document.getElementById("cmsKeepAliveBtn")?.addEventListener("click", () => {
     openChatMoreSubsheet("cmsKeepAliveSheet");
-  });
-  document.getElementById("cmsQuietModeBtn")?.addEventListener("click", () => {
-    const next = !getChatQuietMode();
-    applyChatQuietMode(next);
-    _updateChatMoreSheetValues();
-    const label = document.getElementById("cmsQuietModeLabel");
-    if (label) label.textContent = next ? "安静模式（开）" : "安静模式";
   });
 
   // Sub-sheet back buttons

@@ -3,6 +3,7 @@
 // Does NOT auto-promote to memories or inject into compileMemoryContext
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { DIARY_PROMPT, CHECKER_PROMPT } from "./prompts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,12 +94,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Read prompts from files (stored in function directory)
-    const diaryPromptPath = new URL("./xiaocha_diary_prompt.md", import.meta.url).pathname;
-    const checkerPromptPath = new URL("./xiaocha_diary_checker_prompt.md", import.meta.url).pathname;
-
-    const diaryPromptTemplate = await Deno.readTextFile(diaryPromptPath);
-    const checkerPromptTemplate = await Deno.readTextFile(checkerPromptPath);
+    // Use embedded prompts
+    const diaryPromptTemplate = DIARY_PROMPT;
+    const checkerPromptTemplate = CHECKER_PROMPT;
 
     // Build diary prompt
     const sourceEventsText = source_events.map((evt, idx) => {

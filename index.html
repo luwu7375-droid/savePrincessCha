@@ -96,7 +96,7 @@
           <button class="feature-card" data-placeholder-route="/playground/music"><img src="assets/illustrations/playground/music.jpg" alt=""><span>听歌</span></button>
           <button class="feature-card" data-placeholder-route="/playground/dream"><img src="assets/illustrations/playground/dream.jpg" alt=""><span>做梦</span></button>
         </div>
-        <section class="daily-record-row"><article class="soft-card daily-record"><h2>Daily Record</h2><div class="record-input">写下今天的点滴吧...</div></article><button class="soft-card history-card" data-placeholder-route="/playground/history"><span>历史记录</span><small>共 48 篇日记</small><b>→</b></button></section>
+        <section class="daily-record-row"><button class="soft-card daily-record" data-placeholder-route="/playground/daily-record"><h2>Daily Record</h2><div class="record-input">写下今天的点滴吧...</div></button><button class="soft-card history-card" data-placeholder-route="/playground/history"><span>历史记录</span><small>共 48 篇日记</small><b>→</b></button></section>
       </div>
     </section>
 
@@ -109,7 +109,7 @@
           <button class="setting-row" data-settings-subpage="appearance-resources"><img src="assets/icons/settings/theme.svg" alt=""><span><strong>外观与资源</strong><small>头像、壁纸、开屏图与表情包</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="prompt-worldbook"><img src="assets/icons/settings/prompt.svg" alt=""><span><strong>Prompt 与世界书</strong><small>提示词、世界书与注入规则</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="memory"><img src="assets/icons/settings/memory.svg" alt=""><span><strong>记忆管理</strong><small>查看、禁用与清理记忆</small></span><b>›</b></button>
-          <button class="setting-row" data-settings-subpage="voice"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 3L7 6H4v4h3l3 3V3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 6c.5.5 1 1.5 1 2.5s-.5 2-1 2.5M15 4c1 1 2 3 2 5s-1 4-2 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span><strong>小cha 的声音</strong><small>朗���引擎、语速与音量</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="voice"><img src="assets/icons/settings/voice.svg" alt=""><span><strong>声音与朗读</strong><small>朗读引擎、语速与音量</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="api"><img src="assets/icons/settings/api.svg" alt=""><span><strong>API 设置</strong><small>模型、接口与连接状态</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="backup"><img src="assets/icons/settings/backup.svg" alt=""><span><strong>备份与导入</strong><small>导出、恢复与记忆书上传</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="debug"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>Debug</strong><small>日志、版本与诊断工具</small></span><b>›</b></button>
@@ -174,7 +174,6 @@
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsVoiceBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.5 3L6 5.5H3.5v3H6l2.5 2.5V3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 6c.5.5 1 1.2 1 2.5s-.5 2-1 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>声音</span><span class="chat-more-item-arrow">›</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsAutoFreqBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="8.5" cy="8.5" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 5.5v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>主动回复频率</span><span id="cmsAutoFreqVal" class="chat-more-item-value">关</span><span class="chat-more-item-arrow">›</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsKeepAliveBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.5 2.5C5.19 2.5 2.5 5.19 2.5 8.5s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6z" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5l2 2 3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>后台与通知</span><span class="chat-more-item-arrow">›</span></button></li>
-              <li><button type="button" class="chat-more-item chat-more-item--muted" id="cmsQuietModeBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M3 3l11 11M10.5 7A4 4 0 0 0 6 7v3.5M4.5 10.5A4 4 0 0 0 12.5 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span id="cmsQuietModeLabel">安静模式</span><span id="cmsQuietModeStatus" class="chat-more-item-value">关</span></button></li>
             </ul>
           </div>
           <!-- 聊天外观子面板 -->

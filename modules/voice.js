@@ -8,6 +8,7 @@
   // ── TTS State ────────────────────────────────────────────────────────────────
   let currentUtterance = null;
   let currentPlayingButton = null;
+  let currentSelectedRow = null;
   let ttsSupported = false;
 
   // ── Voice Input State ────────────────────────────────────────────────────────
@@ -149,13 +150,16 @@
   function speakText(text, button) {
     if (!ttsSupported) return;
 
-    // If already speaking this button, stop it
+    // Get the message row
+    const row = button?.closest(".msg-row");
+
+    // If clicking the same button, stop and deselect
     if (currentUtterance && currentPlayingButton === button) {
       stopSpeaking();
       return;
     }
 
-    // Stop any current speech
+    // Stop any current speech and deselect previous row
     stopSpeaking();
 
     const cleanText = cleanTextForTTS(text);
@@ -171,19 +175,25 @@
       utterance.onstart = () => {
         currentUtterance = utterance;
         currentPlayingButton = button;
+        currentSelectedRow = row;
         button?.classList.add("speaking");
+        row?.classList.add("msg-row-selected");
       };
 
       utterance.onend = () => {
         currentUtterance = null;
         currentPlayingButton = null;
         button?.classList.remove("speaking");
+        row?.classList.remove("msg-row-selected");
+        currentSelectedRow = null;
       };
 
       utterance.onerror = () => {
         currentUtterance = null;
         currentPlayingButton = null;
         button?.classList.remove("speaking");
+        row?.classList.remove("msg-row-selected");
+        currentSelectedRow = null;
       };
 
       window.speechSynthesis.speak(utterance);
@@ -204,6 +214,11 @@
     if (currentPlayingButton) {
       currentPlayingButton.classList.remove("speaking");
       currentPlayingButton = null;
+    }
+
+    if (currentSelectedRow) {
+      currentSelectedRow.classList.remove("msg-row-selected");
+      currentSelectedRow = null;
     }
   }
 

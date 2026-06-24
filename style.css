@@ -499,6 +499,8 @@ body {
 .msg-row.assistant { justify-content: flex-start; }
 .msg-row.search-hidden { display: none; }
 .msg-row.search-hit .message { box-shadow: 0 0 0 2px oklch(70% 0.12 90 / 0.7); }
+.msg-row-selected .message { box-shadow: 0 0 0 2px oklch(60% 0.14 240 / 0.5) !important; }
+.msg-row-selected { position: relative; }
 
 .avatar {
   width: 28px;
