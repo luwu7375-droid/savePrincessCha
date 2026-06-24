@@ -192,14 +192,10 @@
 
     // Header
     const header = document.createElement('header');
-    header.className = 'page-header';
+    header.className = 'diary-overlay-header';
     header.innerHTML = `
-      <div class="header-avatar" data-avatar-role="cha"></div>
-      <div>
-        <h1>小cha 的日记</h1>
-        <p>共 ${total} 篇</p>
-      </div>
-      <button type="button" class="pill-btn" id="diaryGenerateBtn">写今晚日记</button>
+      <button type="button" class="diary-overlay-back" id="diaryListCloseBtn">←</button>
+      <div style="flex:1"><h1 style="margin:0;font-size:1.2em;font-weight:500">小cha 的日记</h1><p style="margin:0;opacity:.5;font-size:.85em">共 ${total} 篇</p></div>
     `;
 
     scroll.appendChild(header);
@@ -344,68 +340,52 @@
 
   // ── Navigation ─────────────────────────────────────────────────────────────
 
-  function navigateToDiaryList() {
-    const supabaseClient = window.supabaseClient;
-    if (!supabaseClient) {
-      console.error('Supabase client not available');
-      return;
+  function _getDiaryOverlay() {
+    let el = document.getElementById('diaryOverlay');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'diaryOverlay';
+      el.className = 'overlay diary-overlay-layer hidden';
+      document.body.appendChild(el);
     }
+    return el;
+  }
 
-    fetchDiaryEntries(supabaseClient, window.currentUserId || 'default')
+  function navigateToDiaryList() {
+    const sc = window.supabaseClient;
+    if (!sc) return;
+    const overlay = _getDiaryOverlay();
+    overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">加载中…</p></div>';
+    overlay.classList.remove('hidden');
+
+    fetchDiaryEntries(sc, window.currentUserId || 'default')
       .then(({ entries, total }) => {
         const page = renderDiaryListPage(entries, total);
-
-        // Remove existing diary pages
-        document.querySelectorAll('[data-page^="diary-"]').forEach(el => el.remove());
-
-        // Insert page
-        document.querySelector('.v2-container').appendChild(page);
-
-        // Navigate
-        if (window.v2Shell && window.v2Shell.navigate) {
-          window.v2Shell.navigate('diary-list');
-        }
+        page.classList.add('v2-active');
+        overlay.innerHTML = '';
+        overlay.appendChild(page);
+        overlay.querySelector('#diaryListCloseBtn')?.addEventListener('click', () => {
+          overlay.classList.add('hidden');
+        });
       })
-      .catch(err => {
-        console.error('Failed to load diary list:', err);
-      });
+      .catch(err => console.error('Failed to load diary list:', err));
   }
 
   function navigateToDiaryDetail(entryId) {
-    const supabaseClient = window.supabaseClient;
-    if (!supabaseClient) {
-      console.error('Supabase client not available');
-      return;
-    }
+    const sc = window.supabaseClient;
+    if (!sc) return;
+    const overlay = _getDiaryOverlay();
 
-    fetchDiaryEntryById(supabaseClient, entryId)
+    fetchDiaryEntryById(sc, entryId)
       .then(entry => {
-        if (!entry) {
-          console.error('Diary entry not found');
-          return;
-        }
-
+        if (!entry) return;
         const page = renderDiaryDetailPage(entry);
-
-        // Remove existing detail pages
-        document.querySelectorAll('[data-page="diary-detail"]').forEach(el => el.remove());
-
-        // Insert page
-        document.querySelector('.v2-container').appendChild(page);
-
-        // Navigate
-        if (window.v2Shell && window.v2Shell.navigate) {
-          window.v2Shell.navigate('diary-detail');
-        }
-
-        // Setup back button
-        document.getElementById('diaryBackBtn')?.addEventListener('click', () => {
-          navigateToDiaryList();
-        });
+        page.classList.add('v2-active');
+        overlay.innerHTML = '';
+        overlay.appendChild(page);
+        overlay.querySelector('#diaryBackBtn')?.addEventListener('click', navigateToDiaryList);
       })
-      .catch(err => {
-        console.error('Failed to load diary detail:', err);
-      });
+      .catch(err => console.error('Failed to load diary detail:', err));
   }
 
   // ── Utilities ──────────────────────────────────────────────────────────────

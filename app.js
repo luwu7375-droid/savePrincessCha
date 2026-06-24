@@ -122,6 +122,11 @@ const chatSearchInput   = document.getElementById("chatSearchInput");
 const chatSearchClear   = document.getElementById("chatSearchClear");
 const chatSearchResults = document.getElementById("chatSearchResults");
 
+// ── Reply / Quote draft state ────────────────────────────────────────────────
+var _replyToId      = null;
+var _replyToPreview = null;
+var _replyToRole    = null;
+
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 const themeMediaQuery = window.matchMedia("(prefers-color-scheme: light)");
@@ -760,8 +765,8 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   if (!hasImages) {
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-text`;
-    // Use real msgId if available; fall back to tempId for optimistic messages
     const cacheIdStr = msgId != null ? String(msgId) : (options.tempId || undefined);
+    if (options.replyTo) el.insertBefore(makeQuoteBlock(options.replyTo), null);
     setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""), { messageId: cacheIdStr });
     const stack = document.createElement("div");
     stack.className = "msg-stack";
@@ -867,9 +872,90 @@ function splitBubbles(rawText) {
  * 同步插入（历史渲染用）：insertBubbleSync
  * 逐条延迟插入（新回复用）：insertBubblesAnimated（返回 Promise）
  */
-function insertBubbleSync(text, createdAt, msgId, isSibling) {
+
+// ── Quote / Reply helpers ────────────────────────────────────────────────────
+
+function makeQuoteBlock(replyTo) {
+  const block = document.createElement("div");
+  block.className = "msg-quote-block";
+  if (replyTo.id) block.dataset.replyTargetId = replyTo.id;
+  const bar = document.createElement("div");
+  bar.className = "msg-quote-bar";
+  const inner = document.createElement("div");
+  inner.className = "msg-quote-inner";
+  const author = document.createElement("span");
+  author.className = "msg-quote-author";
+  author.textContent = replyTo.role === "assistant" ? "Cha" : "你";
+  const text = document.createElement("span");
+  text.className = "msg-quote-text";
+  text.textContent = replyTo.preview || "";
+  inner.appendChild(author);
+  inner.appendChild(text);
+  block.appendChild(bar);
+  block.appendChild(inner);
+  block.addEventListener("click", () => scrollToQuotedMessage(replyTo.id));
+  return block;
+}
+
+function scrollToQuotedMessage(id) {
+  if (!id) return;
+  const target = messageList.querySelector(`.msg-row[data-msg-id="${id}"]`);
+  if (!target) { setChatStatus("原消息不可用"); setTimeout(() => setChatStatus(""), 2000); return; }
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  target.classList.add("msg-highlight");
+  setTimeout(() => target.classList.remove("msg-highlight"), 1800);
+}
+
+function setReplyDraft(id, preview, role) {
+  _replyToId      = id;
+  _replyToPreview = preview;
+  _replyToRole    = role;
+  renderReplyPreview();
+}
+
+function clearReplyDraft() {
+  _replyToId = _replyToPreview = _replyToRole = null;
+  document.getElementById("replyPreviewBar")?.remove();
+}
+
+function renderReplyPreview() {
+  if (!_replyToId) return;
+  let bar = document.getElementById("replyPreviewBar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "replyPreviewBar";
+    bar.className = "reply-preview-bar";
+    const form = document.getElementById("chatForm");
+    if (form?.parentNode) form.parentNode.insertBefore(bar, form);
+  }
+  bar.innerHTML = "";
+  const line = document.createElement("div");
+  line.className = "reply-preview-line";
+  const content = document.createElement("div");
+  content.className = "reply-preview-content";
+  const authorEl = document.createElement("span");
+  authorEl.className = "reply-preview-author";
+  authorEl.textContent = _replyToRole === "assistant" ? "Cha" : "你";
+  const textEl = document.createElement("span");
+  textEl.className = "reply-preview-text";
+  textEl.textContent = _replyToPreview || "";
+  content.appendChild(authorEl);
+  content.appendChild(textEl);
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "reply-preview-close";
+  closeBtn.setAttribute("aria-label", "取消引用");
+  closeBtn.textContent = "✕";
+  closeBtn.addEventListener("click", clearReplyDraft);
+  bar.appendChild(line);
+  bar.appendChild(content);
+  bar.appendChild(closeBtn);
+}
+
+function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo) {
   const el = document.createElement("div");
   el.className = "message assistant cha-message message-text";
+  if (replyTo && !isSibling) el.insertBefore(makeQuoteBlock(replyTo), el.firstChild || null);
   setMessageContent(el, text, { messageId: msgId != null ? String(msgId) : undefined });
 
   const stack = document.createElement("div");
@@ -900,11 +986,10 @@ function insertBubbleSync(text, createdAt, msgId, isSibling) {
   return row;
 }
 
-function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false) {
+function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false, replyTo = null) {
   const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
   if (bubbles.length === 0) return;
-  // 第一个气泡带 msgId，后续气泡带 bubbleSibling=msgId
-  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null);
+  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo);
   if (isAlreadyRead && firstRow) delete firstRow.dataset.unreadCha;
   for (let i = 1; i < bubbles.length; i++) {
     insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
@@ -912,11 +997,10 @@ function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false
 }
 
 // allSiblings=true 时：bubbles 里每一条都作为兄弟气泡插入（第一条已由调用方处理）
-function insertBubblesAnimated(bubbles, createdAt, msgId, allSiblings = false) {
+function insertBubblesAnimated(bubbles, createdAt, msgId, allSiblings = false, replyTo = null) {
   return new Promise(resolve => {
     if (!allSiblings) {
-      // 先插入第一条作为主气泡
-      insertBubbleSync(bubbles[0], createdAt, msgId, null);
+      insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo);
       if (bubbles.length === 1) { resolve(); return; }
     } else {
       if (bubbles.length === 0) { resolve(); return; }
@@ -924,7 +1008,7 @@ function insertBubblesAnimated(bubbles, createdAt, msgId, allSiblings = false) {
     let i = allSiblings ? 0 : 1;
     function next() {
       if (i >= bubbles.length) { resolve(); return; }
-      const delay = 600 + Math.floor(Math.random() * 600); // 600–1200ms
+      const delay = 600 + Math.floor(Math.random() * 600);
       setTimeout(() => {
         showTypingIndicator();
         setTimeout(() => {
@@ -1204,7 +1288,7 @@ async function reloadHistory(opts = {}) {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
@@ -1218,10 +1302,13 @@ async function reloadHistory(opts = {}) {
   chaUnreadCount = 0;
   if (!resolved.length) { renderWelcomeMessage(); return; }
   for (const m of resolved) {
+    const replyTo = m.reply_to_message_id
+      ? { id: String(m.reply_to_message_id), preview: m.reply_to_preview || "", role: m.reply_to_role || "user" }
+      : null;
     if (m.role === "assistant") {
-      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null, !!m.read_by_user_at);
+      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null, !!m.read_by_user_at, replyTo);
     } else {
-      addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at }, m.id);
+      addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at, replyTo }, m.id);
     }
     chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null });
   }
@@ -2008,6 +2095,20 @@ function refreshMessageActions() {
     });
     actions.appendChild(copyBtn);
 
+    if ((isAssistant || isUser) && row.dataset.msgId) {
+      const replyBtn = document.createElement("button");
+      replyBtn.textContent = "引用";
+      replyBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const role = isAssistant ? "assistant" : "user";
+        const textEl = row.querySelector(".message-text");
+        const preview = (textEl?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
+        setReplyDraft(row.dataset.msgId, preview, role);
+      });
+      actions.appendChild(replyBtn);
+    }
+
     if (isAssistant) {
       if (row === lastAssistantRow && canRegenerateRow(row)) {
         const regenBtn = document.createElement("button");
@@ -2422,6 +2523,16 @@ function showMessageActionMenu(row, x, y) {
   addMessageMenuButton(menu, "复制", async (btn) => {
     await copyMessage(row, btn);
   });
+
+  if (row.dataset.msgId) {
+    addMessageMenuButton(menu, "引用", () => {
+      const role = isAssistant ? "assistant" : "user";
+      const textEl = row.querySelector(".message-text");
+      const preview = (textEl?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
+      closeMessageActionMenu();
+      setReplyDraft(row.dataset.msgId, preview, role);
+    });
+  }
 
   if (isUser && row === getLastMessageRow("user") && row.dataset.msgId) {
     addMessageMenuButton(menu, "编辑", () => editUserMessage(row));
@@ -4633,6 +4744,10 @@ async function hideLoginAndInit(session) {
   await initConversations();
   await reloadHistory();
   setLoading(false);
+  if (window.SPDiary) {
+    window.SPDiary.updateHomeDiaryCard(supabaseClient, currentUserId)
+      .catch(err => console.error('Failed to update diary card:', err));
+  }
   // Desktop only: auto-focus on init. Mobile must not trigger soft keyboard.
   if (!isMobileLayout()) messageInput.focus();
 }
