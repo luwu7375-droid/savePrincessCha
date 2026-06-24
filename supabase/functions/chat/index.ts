@@ -981,30 +981,14 @@ async function compileMemoryContext(
     }
   }
 
-  // ── mastodon_profile: always injected ──────────────────────────────────────
-  // Profile is fetched from the persona_profile DB table.
-  // Previously inlined as MASTODON_PROFILE_MD in mastodon_profile.ts.
+  // ── mastodon_profile: DISABLED by v2 policy ────────────────────────────────
+  // v2: persona_profile (大段用户画像) is south_city material, not active L1 memory.
+  // Default-off. Future: gate by explicit user request or L2 Identity Brain source.
   let mastodonProfileChars = 0;
-  // enabled reflects provider config, not load success
-  const mastodonProfileEnabled = true;
+  // v2_policy: default false — south_city_only, not injected into main chat
+  const mastodonProfileEnabled = false;
   let mastodonProfileLoaded = false;
-  let mastodonProfileError: string | null = null;
-  if (supabaseUrl && serviceRoleKey) {
-    const { content: profileText, error: profileErr } = await fetchPersonaProfile(supabaseUrl, serviceRoleKey);
-    if (profileErr) {
-      mastodonProfileError = profileErr;
-      console.error("[memory] mastodon_profile load failed:", mastodonProfileError);
-    } else if (profileText && profileText.trim()) {
-      mastodonProfileLoaded = true;
-      mastodonProfileChars = profileText.length;
-      activeProviders.push("mastodon_profile");
-      context += `\n\n<user_core_profile source="mastodon_profile" describes="human_user" not_assistant_identity="true">\n以下内容描述的是人类用户卡卡 / kk / 宝宝，只用于理解用户和调整回应方式。assistant 不得把这些内容当成自己的身份或经历。\n\n${profileText.trim()}\n</user_core_profile>`;
-    } else {
-      mastodonProfileError = "persona_profile table returned empty content";
-    }
-  } else {
-    mastodonProfileError = "missing supabaseUrl or serviceRoleKey";
-  }
+  const mastodonProfileError: string | null = "v2_policy_south_city_only: mastodon_profile not injected by default";
 
   // ── persona_layer1 + layer2: Ombre Brain dynamic personality injection ─────────
   // L1: human-maintained long-term features (always injected when userId present)
@@ -1023,88 +1007,27 @@ async function compileMemoryContext(
   }
   */
 
-  // ── mastodon_timeline: injected on-demand for event/place/year queries ────────
-  const timelineDetection = detectTimelineQuery(userMessage);
+  // ── mastodon_timeline: DISABLED by v2 policy ──────────────────────────────
+  // v2: timeline is kk's historical events — south_city material.
+  // Small_cha must not treat it as first-hand memory.
+  // Future: wrap as <south_city_old_stories source="archive" not_experience="true">
+  // with explicit source attribution ("我读到旧档案里……").
+  // Default-off until south_city reader is implemented.
   let timelineLoaded = false;
-  if (userMessage && timelineDetection.detected) {
-    const timelineText = MASTODON_TIMELINE_MD;
-    if (timelineText.trim()) {
-      timelineLoaded = true;
-      activeProviders.push("mastodon_timeline");
-      context += `\n\n<timeline_events source="mastodon_timeline">\n${timelineText.trim()}\n</timeline_events>`;
-    }
-  }
+  const _timelineDetection = detectTimelineQuery(userMessage); // kept for future use
+  // v2_policy: not injected — south_city_default_injected=false
 
-  // ── project_memory: L2, keyword-triggered, reads from memories table ─────────
-  // Injected only when user message matches project-related keywords.
-  // Keyword matching done client-side here (no extra DB query) — the single row
-  // is fetched and injected if any trigger keyword appears in the user message.
-  const PROJECT_MEMORY_TRIGGERS = [
-    "图片上传", "记忆系统", "记忆中枢",
-    "UI", "debug", "Supabase", "Edge Function",
-    "API", "Claude", "部署", "bug",
-    "外链", "视频", "跑团", "星露谷",
-    "Codex", "GitHub Pages", "任务卡",
-    "电话", "savePrincess", "provider",
-    "L1", "L2", "L3", "persona_memories", "openai_archive",
-    "图片识别", "多图", "移动端", "Mastodon",
-  ];
+  // ── project_memory: DISABLED by v2 policy ────────────────────────────────
+  // v2: third-person project logs are not active L1/L2 memory for small_cha.
+  // They belong in project_reference / construction_log / south_city archive.
+  // Future: only first-person Identity Brain digests may re-enter active memory.
   let projectMemoryLoaded = false;
   let projectMemoryRecalled = false;
-  let projectMemoryHitCount = 0;
-  let projectMemoryKeys: string[] = [];
-  let projectMemoryReason: string | null = null;
-  // project_memory gate: opt-in only.
-  // Requires topicRoute === "project_work" (set by frontend explicit dev-verb detection).
-  // Suppressed by: silence TTL, or any non-project route.
-  const suppressRoutes = ["ai_nostalgia", "historical_roleplay", "care_low_energy", "intimacy", "meta_complaint"];
-  const routeSuppressed = topicRoute !== null && suppressRoutes.includes(topicRoute);
-  const projectMemoryGate = !routeSuppressed &&
-    projectSilencedTtl === 0 &&
-    topicRoute === "project_work";
-  const projectMemorySuppressedReason = routeSuppressed
-    ? `route suppressed: ${topicRoute}`
-    : projectSilencedTtl > 0
-    ? `project_silenced_ttl=${projectSilencedTtl}`
-    : topicRoute !== "project_work"
-    ? `route=${topicRoute ?? "null"} (not project_work)`
-    : null;
-  console.log(JSON.stringify({ fn: "chat", debug: "project_memory_gate", projectMemoryGate, topicRoute, projectLockTurns, projectSilencedTtl, routeSuppressed, project_memory_suppressed_reason: projectMemorySuppressedReason, has_supabaseUrl: Boolean(supabaseUrl), has_serviceRoleKey: Boolean(serviceRoleKey), userMessage_head: userMessage.slice(0, 30) }));
-  if (projectMemoryGate && supabaseUrl && serviceRoleKey) {
-    try {
-      const pmRes = await fetch(
-        `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=eq.project_memory&select=id,content&order=created_at.asc&limit=1`,
-        { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
-      );
-      console.log(JSON.stringify({ fn: "chat", debug: "project_memory_fetch", status: pmRes.status, ok: pmRes.ok }));
-      if (pmRes.ok) {
-        const pmRows = (await pmRes.json()) as { id: string; content: string }[];
-        console.log(JSON.stringify({ fn: "chat", debug: "project_memory_rows", count: pmRows.length }));
-        if (pmRows.length > 0) {
-          projectMemoryLoaded = true;
-          projectMemoryRecalled = true;
-          projectMemoryHitCount = pmRows.length;
-          projectMemoryKeys = ["current_project_summary"];
-          const hitKw = PROJECT_MEMORY_TRIGGERS.filter((kw) =>
-            userMessage.toLocaleLowerCase().includes(kw.toLocaleLowerCase())
-          );
-          projectMemoryReason = `keyword match: ${hitKw.slice(0, 3).join(", ")}`;
-          activeProviders.push("project_memory");
-          const lines = pmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-          context += `\n\n<project_memory source="memories_table" category="project_memory" inject_mode="keyword_triggered">\n以下是项目背景，仅在相关时参考：\n${lines}\n</project_memory>`;
-        } else {
-          projectMemoryReason = "no project_memory row found";
-        }
-      } else {
-        projectMemoryReason = `fetch failed: HTTP ${pmRes.status}`;
-      }
-    } catch (err) {
-      projectMemoryReason = `error: ${err instanceof Error ? err.message : String(err)}`;
-      console.error("[memory] project_memory load failed:", projectMemoryReason);
-    }
-  } else if (!projectMemoryGate) {
-    projectMemoryReason = projectMemorySuppressedReason ?? "not project_work route";
-  }
+  const projectMemoryHitCount = 0;
+  const projectMemoryKeys: string[] = [];
+  const projectMemoryReason = "v2_policy_project_reference_not_active_memory";
+  const projectMemorySuppressedReason = "v2_policy: project_memory disabled — third-person project logs not injected into main chat";
+  console.log(JSON.stringify({ fn: "chat", debug: "project_memory_gate", projectMemoryGate: false, topicRoute, v2_suppressed: true, project_memory_suppressed_reason: projectMemorySuppressedReason }));
 
   // ── writing_memory: keyword-triggered, reads category=writing_memory from memories ──
   // Injected when user message hits writing domain keywords (OC / 家产 / 角色 / etc.)
@@ -1276,6 +1199,18 @@ async function compileMemoryContext(
   return {
     context,
     log: {
+      // v2 policy markers
+      memory_policy_version: "v2",
+      south_city_default_injected: false,
+      mastodon_profile_default_injected: false,
+      mastodon_timeline_default_injected: false,
+      project_memory_default_injected: false,
+      active_memory_layers: [
+        "L0",
+        personaMemoriesLoaded ? "L1" : null,
+        historyRecalled ? "L3" : null,
+      ].filter(Boolean),
+      suppressed_legacy_providers: ["mastodon_profile", "mastodon_timeline", "project_memory"],
       active_memory_providers: activeProviders,
       memory_provider_count: activeProviders.length,
       persona_memories_loaded: personaMemoriesLoaded,
@@ -1286,13 +1221,15 @@ async function compileMemoryContext(
       mastodon_profile_loaded: mastodonProfileLoaded,
       mastodon_profile_chars: mastodonProfileChars,
       mastodon_profile_error: mastodonProfileError,
-      mastodon_timeline_enabled: true,
-      timeline_query_detected: timelineDetection.detected,
+      mastodon_profile_suppressed_reason: "v2_policy_south_city_only",
+      mastodon_timeline_enabled: false,
+      mastodon_timeline_suppressed_reason: "v2_policy_south_city_only: not injected until south_city reader implemented",
+      timeline_query_detected: _timelineDetection.detected,
       timeline_loaded: timelineLoaded,
       timeline_recalled: timelineLoaded,
-      timeline_hit_count: timelineDetection.hitKeys.length,
-      timeline_hit_keys: timelineDetection.hitKeys,
-      timeline_reason: timelineDetection.reason,
+      timeline_hit_count: _timelineDetection.hitKeys.length,
+      timeline_hit_keys: _timelineDetection.hitKeys,
+      timeline_reason: _timelineDetection.reason,
       openai_export_enabled: false,
       ombre_vault_enabled: false,
       project_memory_loaded: projectMemoryLoaded,
