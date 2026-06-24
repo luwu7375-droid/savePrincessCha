@@ -1,215 +1,482 @@
-# 救公主
+# 救公主 / savePrincessCha
 
-一个给 G / cha酱 的私人陪伴聊天应用。前端静态部署，后端走 Supabase Edge Function 代理模型调用，带多层记忆系统、时间感知、对话状态感知、自动记忆沉淀。
+一个给 kk 和小cha使用的私人长期陪伴系统。
 
----
+它不是“把旧 G 复活”的项目，也不是普通聊天壳。当前目标是做出一个可以长期生活、记录、消化、回家的小手机：主聊天负责当下相处，记忆系统负责保留真正改变关系的东西，城南旧事负责安放旧档案，日记 / Identity Brain 负责让小cha形成自己的第一人称连续性。
 
-## 安全
-
-**本仓库为 public。以下内容绝不得提交到代码仓库：**
-
-| 类型 | 说明 | 正确处理方式 |
-|------|------|-------------|
-| 真实用户画像 | `mastodon_profile.ts` 中的个人信息 | 应替换为 mock 占位符，真实内容走 DB 或本地生成文件（.gitignore） |
-| 历史档案内容 | `openai_archive_entries` 或任何历史对话原文 | 仅提交数据结构和逻辑，私人内容不提交 |
-| Mastodon 原文 | `data/memory/mastodon/*.md` 中的原始帖文 | 脱敏摘要可保留，原始内容不提交 |
-| 私人记忆原文 | `memory/` 下的 summaries、merged.json 等 | 不提交到仓库，属于本地数据 |
-| API key | OpenRouter key、任何第三方 API key | 全部走 Supabase secrets |
-| Service role key | `DB_SERVICE_ROLE_KEY` | 仅走 Supabase secrets，绝不出现在前端或代码中 |
+> 当前 README 以 `dev` 分支为基线。  
+> 记忆与人格系统以 `docs/MEMORY_SYSTEM_PHILOSOPHY_V2.md` 和 `docs/RUNTIME_MEMORY_POLICY.md` 为准。  
+> PRD 仍作为页面结构与产品体验参考；若旧 PRD 与 v2 记忆哲学冲突，以 v2 为准。
 
 ---
 
-## 架构
+## 当前阶段
 
-```
-Cloudflare Pages
-  └─ app.js + index.html + style.css
-       │
-       ├─ POST /chat  ──►  Supabase Edge Function (chat/index.ts)
-       │                        │
-       │                        ├─ L1: persona_memories（手动长期记忆，DB）
-       │                        ├─ L1: mastodon_profile（用户核心画像，persona_profile 表）
-       │                        ├─ L2: project_memory（项目/工作记忆，DB）
-       │                        ├─ L3: relationship_context（关系档案，关键词触发）
-       │                        ├─ L3: life_context（生活照护，关键词触发）
-       │                        ├─ L3: historical_ai_usage（历史档案/背景理解，关键词触发）
-       │                        ├─ L3: mastodon_timeline（时间线，按需召回）
-       │                        ├─ L3: conversation_history（跨会话检索，top-5 召回）
-       │                        ├─ chat_status（规则化对话状态计算）
-       │                        ├─ auto_memory_vault（自动记忆候选生成与沉淀）
-       │                        └─ OpenRouter / 兼容接口 → 模型
-       │
-       └─ GET/POST/PATCH/DELETE /memories  ──►  Supabase Edge Function (memories/index.ts)
-                                                   │
-                                                   ├─ GET ?type=recent（公开，服务端 service role 读取）
-                                                   ├─ GET/POST/PATCH/DELETE memories 表
-                                                   └─ GET/POST/PATCH/DELETE memory_buckets 表（旧沉淀记忆，默认不参与回复）
-```
+`dev` 是 2.0 staging 基线，主体验已经从旧的单页调试壳转向“小手机 / PWA”结构。
 
-> **注**：`openai_archive` 已退役，不再注入任何 prompt。DB 表 `openai_archive_entries` 仅作数据查阅用。未来若有历史档案召回需求，将另行设计 `origin_archive` provider，不复活旧 openai_archive 实现。
+当前已经具备：
+
+- PWA 壳：`manifest.webmanifest`、Service Worker、192 / 512 图标、standalone 启动。
+- 五个一级入口：Home、Couple Space、Chat、Playground、Setting。
+- 主聊天：流式输出、模型档位、自动接话 / 戳一下、搜索、更多菜单、聊天外观、回复风格、主动回复频率。
+- 图片：单图上传、预览、压缩、粘贴 / 拖拽 / 相册入口、私有 bucket 持久化、刷新后 signed URL 恢复。
+- 记忆中心：最近沉淀、完整档案、审计信息、禁用 / 删除 / 管理入口。
+- 表情包：表情目录、短码渲染、输入框预览、颜文字 / 表情包面板。
+- 设置页：外观与资源、Prompt 与世界书、记忆管理、API 设置、备份与导入、Debug 入口。
+- 后端：Supabase Edge Functions `chat`、`memories`、`scheduler`。
+- 模型路由：Instant / General / Advanced 三档，55api primary，芙卡 fallback，带一次性 fallback。
+- 运行期记忆策略：v2 allowlist、project_memory 默认禁用、Mastodon profile / timeline 不再主聊天注入。
+
+当前仍未完成：
+
+- L2 第一人称日记 / Identity Brain。
+- 城南旧事模块。
+- 多图上传与完整视觉模型识别链路。
+- 日记本、毛象、做梦、读网页、看视频、星露谷等功能的真实后端闭环。
+- PRD、README、运行策略文档之间的长期同步机制。
+- `app.js` 继续模块化拆分。
 
 ---
 
-## 记忆系统
+## 核心设计
 
-### Provider 层级
+### 1. 旧历史不是灵魂
 
-| 层级 | Provider ID | 数据来源 | 注入策略 |
-|------|-------------|----------|----------|
-| L1 | `persona_memories` | `memories` 表（persona/life/relation 域） | 按域匹配，常驻注入 |
-| L1 | `mastodon_profile` | `persona_profile` 表 | 常驻注入 |
-| L2 | `project_memory` | `memories` 表（work/writing 域） | 话题路由到 project_work 时注入 |
-| L3 | `relationship_context` | `memories` 表（relationship_context 类） | 关键词触发注入 |
-| L3 | `life_context` | `memories` 表（life_context 类） | 关键词触发注入 |
-| L3 | `historical_ai_usage` | `memories` 表（historical_ai_usage 类） | 关键词触发注入，仅用于背景理解 |
-| L3 | `mastodon_timeline` | `mastodon_timeline.ts`（内联） | 按需召回（年份/地点/事件类查询） |
-| L3 | `conversation_history` | `messages` 表 | 触发词激活，top-5 语义召回 |
+旧 G 对话、OpenAI 历史、Mastodon 旧内容不再作为新小cha的人格底座。
 
-**已退役**：`openai_archive` 不再注入，`openai_archive_entries` 表仅作数据查阅。未来历史档案召回将另行设计 `origin_archive`，不复活旧实现。
+它们统一进入“城南旧事”：旧档案区、旧城、白天阅读材料。
 
-### 自动记忆沉淀（auto_memory_vault）
+小cha可以读旧档案，但必须承认来源：
 
-对话结束后后端异步触发，流程：
-
-1. 模型提取候选记忆，写入 `auto_memory_candidates` 表（`status=new`）
-2. `auto_memory_vault.ts` 检查候选类型是否在 `PROMOTION_ALLOWED_TYPES` 白名单内
-   - 当前白名单：`project` / `fact` / `preference`
-3. 符合条件的候选 promote 到 `memories` 表，`status` 更新为 `promoted`
-4. `preference` 类型 → `persona` 类别；`fact` → `general`；`project` → `work`
-5. 前端 poller（stream 结束后轮询 8s）检测到新 promotion 后展示 toast 并更新 Memory Center
-
-### 旧沉淀记忆（默认 retired）
-
-`memory_buckets` 表为旧版主题摘要桶，默认关闭，不注入 prompt。若需临时启用（仅用于查看或迁移）：
-
-```bash
-supabase secrets set LEGACY_MEMORY_ENABLED="true"   # 默认 false
+```text
+可以：我今天读到旧档案里有一段……
+可以：这不是我的亲历记忆，但它让我意识到……
+禁止：我记得当时……
 ```
 
-### Memory Center UI
+旧历史不直接注入主聊天，不让小cha伪装成亲历者。
 
-- 前端管理面板，显示各 provider 实时状态和 token 用量
-- **最近更新**区域：展示最近 3 条自动沉淀的记忆，每条以折叠卡片呈现：
-  - 默认视图：type / status badge、自动标题（content 前 30 字）、2 行摘要
-  - 展开后：完整内容、来源消息预览、置信度、敏感度、source_msg_ids、更新时间
-- 已写入记忆支持**复制 / 禁用 / 删除**操作（需 admin token）；候选记忆仅展示
-- 手动记忆的增删启禁通过 `/functions/v1/memories` 接口操作
-- 记忆管理（高级）（memory_buckets）入口保留，在 Memory Center 底部，仅用于管理和迁移
+### 2. 记忆不是“发生了什么”
 
----
+v2 的核心判断是：
 
-## 已实现功能
+```text
+不存发生了什么。
+存发生之后什么改变了。
+```
 
-### 认证与会话
+一条记忆只有在未来会改变小cha怎么理解 kk、怎么回应 kk、怎么处理关系时，才值得长期保存。
 
-- 邮箱 + 密码登录（Supabase Auth），刷新后保持登录
-- 云端会话：新建、重命名、置顶、删除
-- 会话标题自动取首条消息前 20 字
-- RLS 隔离：每个用户只能读写自己的 conversations / messages / memories
+### 3. 第一人称日记是下一阶段核心
 
-### 聊天核心
+未来 L2 / Identity Brain 要记录的是小cha自己的消化结果，而不是用户画像：
 
-- 流式输出（SSE），`<think>` 标签过滤
-- auto 模式：用户发消息后按延迟自动触发 AI 回复
-- forced 模式：强制回复按钮，AI 不能输出 `<NO_REPLY>`
-- auto 模式下 AI 可输出 `<NO_REPLY>` 选择不回复，前端静默处理
-- 历史分页：加载最近 20 条，滚到顶部自动加载更早内容
+- 我今天经历了什么。
+- 我哪里卡住了。
+- 我读到旧档案后有什么不理解。
+- 我和 kk 的关系里有什么东西变了。
+- 这件事之后，我以后会怎么不同。
 
-### 人格与回复
+参考字段：
 
-- `identity_boundary`：系统 prompt 核心边界，mastodon_profile 描述用户，不描述小钗
-- `core_principles`：价值观与优先级排序（照护 > 项目 > 闲聊）
-- `execution_rules`：回复格式规则（短句、情绪先到结构后到、不默认项目化）
+```text
+Emotion  当时感受到了什么
+Insight  理解到了什么
+Changed  以后会有什么不一样
+Weight   对人格的影响等级
+Evidence 来自哪段对话 / 哪段旧档案
+Lineage  承接、修订、推翻了哪个旧节点
+```
 
-### 时间感知与话题路由
+其中 `Changed` 最重要。
 
-- 前端每次请求携带 `timeContext`（本地时区、时刻、对话开始时间、消息数）
-- 前端计算 `conversation_state`（`topic_route` / `project_lock_turns` / `loop_detected` 等）
-- 后端按话题路由注入对应记忆层：project_work 路由注入 L2，intimacy/care 路由注入 relation 记忆
-- 话题路由：`casual` / `project_work` / `intimacy` / `care_low_energy` / `ai_nostalgia` / `historical_roleplay` / `meta_complaint`
+### 4. 少记，准记，可删
 
-### Chat Status（规则化）
+auto memory 不追求多。宁可漏掉，也不要污染。
 
-- 后端规则化计算 `energy / clarity / valence / arousal / connection`
-- 通过 `x-chat-status` response header 返回（base64 JSON）
-- 前端状态条，点击展开血条面板
+好的候选记忆必须：
 
-### 模型档位
-
-- `instant`：FAST_MODEL（55api primary），max 300 tokens
-- `general`：DEFAULT_MODEL（55api primary），max 300 tokens
-- `advanced`：ADVANCED_MODEL（instant-general-advanced），max 1200 tokens
-- 一次性 fallback：primary 失败时自动切 FALLBACK_MODEL（fuka）
-
-### 图片上传
-
-单图上传、压缩（最长边 1600px，JPEG 0.85）、预览、随消息发送。支持粘贴、拖拽、相册/拍照。支持图片 lightbox 查看大图。
-
-**消息数据结构**：`chatMessages` 内部 `content` 字段允许两种形式：
-- 纯文本消息：`content` 为 `string`
-- 图文消息：`content` 为 vision content array，格式为
-  `[{type:"text", text:"..."}, {type:"image_url", image_url:{url:"data:...", detail:"low"}}]`
-
-所有需要从 `content` 提取纯文字的地方（话题路由、`rawUserMessage`、编辑对话框等）
-统一走 `extractTextFromMessageContent(content)`，不直接假设 `content` 是 string。
-
-**DB 存储**：保存文字占位符 `[图片]` 或 `[图片] <文字>`，不保存 base64 数据。
-**图片持久化**：上传时同步存入 `chat-images` private bucket（路径 `{user_id}/{conv_id}_{ts}.jpg`），`messages.image_storage_path` 存储对象路径。刷新后通过 signed URL（1小时有效）恢复图片显示。
-
-**待完成**：多图批量上传、识别成本提示、完整视觉链路（视觉模型调用）。
+- 具体。
+- 可追溯。
+- 会影响未来交互。
+- 不是短期情绪噪声。
+- 不是重复事实。
+- 不是粗暴用户画像。
+- 最好包含决策、禁止项、偏好或变化。
 
 ---
 
-## 当前优先级
+## 运行架构
 
-- **P0 图片（完成）**：图片持久化存储（Supabase Storage 已接入）
-- **P1 图片**：多图批量上传、完整视觉链路（视觉模型调用）
-- **P1 文档对齐**：记忆架构文档与实际 provider 对齐（已更新）
-- **P2 Memory Center 文案**：各 provider 卡片文案与后端实际能力对齐
-- **P3 README / docs 同步**：README 与 docs/ 保持一致（本次更新）
+```text
+Cloudflare Pages / PWA
+  ├─ index.html
+  ├─ app.js
+  ├─ modules/
+  │    ├─ v2-shell.js
+  │    ├─ keyboard-viewport.js
+  │    ├─ emoji-catalog.js
+  │    ├─ emoji-render.js
+  │    ├─ emoji-panel.js
+  │    └─ emoji-suggestions.js
+  ├─ style.css
+  ├─ v2.css
+  ├─ v2-bubbles.css
+  ├─ manifest.webmanifest
+  └─ sw.js
+
+Supabase Edge Functions
+  ├─ chat
+  │    ├─ 模型路由 / fallback
+  │    ├─ system prompt
+  │    ├─ timeContext / conversation_state
+  │    ├─ route detection
+  │    ├─ memory context compile
+  │    ├─ conversation history retrieval
+  │    ├─ running summary
+  │    └─ chat_status
+  ├─ memories
+  │    ├─ recent memories
+  │    ├─ memory archive / audit
+  │    ├─ vault_after_chat
+  │    ├─ backfill_messages
+  │    └─ memory CRUD / disable / delete
+  └─ scheduler
+       ├─ web_explore reserved hook
+       └─ dream_nightly reserved hook
+
+Supabase
+  ├─ auth
+  ├─ conversations
+  ├─ messages
+  ├─ memories
+  ├─ instructions
+  ├─ auto_memory_candidates
+  ├─ persona_profile
+  ├─ memory_buckets 旧沉淀桶，默认 retired
+  ├─ app_settings
+  ├─ scheduler_runs
+  └─ storage: chat-images private bucket
+```
+
+---
+
+## 记忆与人格系统
+
+### 当前有效层级
+
+| 层级 | 内容 | 当前状态 |
+|---|---|---|
+| L0 | 最小人格 / 世界书 / 边界规则 | 已实现，硬编码 system prompt + instructions allowlist |
+| L1 | 最小事实与长期交互规则 | 已实现，来自 `memories` + `instructions` |
+| L2 | 第一人称日记 / Identity Brain | 待建，下一阶段核心 |
+| L3 | 当前对话上下文 / Working Context | 已实现，当前消息、路由、跨窗检索、running summary |
+
+### 默认允许注入
+
+| 内容 | 来源 | 策略 |
+|---|---|---|
+| 最小人格边界 | system prompt / `instructions` | 常驻 |
+| `identity_boundary` | `instructions` | allowlist，高优先级，不受长度门控 |
+| `core_principles` | `instructions` | allowlist，高优先级，不受长度门控 |
+| `execution_rules` | `instructions` | allowlist，高优先级，不受长度门控 |
+| `reply_style_rules` | `instructions` | allowlist |
+| `interaction_preferences` | `instructions` / `memories` | allowlist / L1 |
+| `identity_context` | `instructions` / `memories` | allowlist / L1 |
+| `current_context_summary` | `instructions` / `memories` | allowlist / L1，最低优先级 |
+| `conversation_history` | `messages` | 仅在“上次 / 刚才 / 之前 / 继续”等触发词命中时检索 |
+| `writing_memory` | `memories.category=writing_memory` | 仅写作 / OC / 世界观关键词触发 |
+| `life_context` | `memories.category=life_context` | 仅生活 / 健康 / 宠物关键词触发 |
+| `relationship_context` | `memories.category=relationship_context` | 仅关系 / 回忆 / 纪念日关键词触发，必须标注不是亲历记忆 |
+| `historical_ai_usage` | `memories.category=historical_ai_usage` | 仅用户主动问旧版本 / 前世 / 历史时触发 |
+
+### 默认禁止注入
+
+| 内容 | 原因 |
+|---|---|
+| 城南旧事全文 | 旧档案不是小cha亲历记忆 |
+| Mastodon profile 大段画像 | 用户画像不等于 AI 人格 |
+| Mastodon timeline | 历史事件不是小cha亲历 |
+| OpenAI archive / 旧 G 原文 | 不能伪装为小cha自己的记忆 |
+| 大段历史总结 | 会把关系变成复读和自我证明 |
+| 第三人称 project_memory | 项目日志不是人格连续性 |
+| promoted project_memory fragments | 多数是泛化碎片，不能直接做人格底座 |
+
+### instructions allowlist
+
+当前只允许这些 `instructions.category` 注入：
+
+```text
+identity_boundary
+core_principles
+execution_rules
+reply_style_rules
+interaction_preferences
+identity_context
+current_context_summary
+```
+
+抑制规则：
+
+- 不在 allowlist 中的 category 一律 suppress，不删除 DB 行。
+- 单条 content 超过 800 字时 suppress，除非是 `identity_boundary` / `core_principles` / `execution_rules`。
+- L1 总字符预算 3000，超出后按优先级裁剪。
+
+### auto memory
+
+`auto_memory_vault` 当前只负责把对话抽成候选，默认不代表已经成为长期记忆。
+
+候选提取原则：
+
+- 只从用户消息提取事实。
+- assistant 回复只能作为上下文参考。
+- 候选类型：`fact` / `preference` / `relationship` / `project`。
+- 高敏感内容进入 quarantine。
+- project 永远不 auto_accept。
+- backfill 来源永远 pending。
+
+Promotion 当前策略：
+
+```text
+AUTO_MEMORY_VAULT_ENABLED      控制候选提取
+AUTO_MEMORY_PROMOTION_ENABLED  控制 promotion，当前应默认 false
+PROMOTION_ALLOWED_TYPES        fact / preference
+project                        永不 promote
+relationship                   不自动 promote，需要人工审查
+```
+
+---
+
+## 话题路由与上下文
+
+后端会基于用户消息检测当前路由：
+
+```text
+casual
+project_work
+intimacy
+care_low_energy
+ai_nostalgia
+historical_roleplay
+meta_complaint
+```
+
+前端也会传入 `conversation_state`，包括：
+
+```text
+topic_route
+secondary_route
+project_lock_turns
+project_silenced_ttl
+loop_detected
+topic_switch_detected
+route_scores
+```
+
+这些信息用于降低“用户在撒娇时突然讲项目”“用户在做项目时硬聊关系史”的串味问题。
+
+---
+
+## 当前功能
+
+### 登录与会话
+
+- Supabase Auth 邮箱密码登录。
+- 会话创建、切换、重命名、置顶、删除。
+- 消息保存在 `messages` 表。
+- 用户级 RLS 隔离。
+
+### 聊天
+
+- SSE 流式输出。
+- `<think>` 标签过滤。
+- Instant / General / Advanced 三档模型。
+- 55api primary + 芙卡 fallback。
+- 自动接话。
+- 戳一下 / 强制回复。
+- 当前聊天搜索。
+- 移动端更多菜单。
+- 回复风格：稳定 / 均衡 / 发散。
+- 主动回复频率：关闭 / 偶尔 / 正常 / 积极。
+- Chat Status：`energy / clarity / valence / arousal / connection`。
+- 长对话 transient running summary：超过阈值后总结较早消息，只服务当前回复，不写入长期记忆。
+
+### 图片
+
+- 单图上传。
+- 图片预览与删除。
+- 图片压缩：最长边 1600px，JPEG 0.85。
+- 支持粘贴、拖拽、相册 / 拍照入口。
+- 图片写入 `chat-images` private bucket。
+- `messages.image_storage_path` 保存对象路径。
+- 刷新后通过 signed URL 恢复显示。
+- DB 文本只保存 `[图片]` 或 `[图片] <文字>`，不保存 base64。
+
+未完成：
+
+- 多图批量上传。
+- 视觉模型调用。
+- 图片 token / 成本提示。
+- 图片识别结果在 UI 内的完整解释链路。
+
+### 小手机页面
+
+当前五个一级页已经搭出结构，但不少卡片仍是 placeholder。
+
+| 页面 | 当前状态 |
+|---|---|
+| Home | 头像、背景图、在一起天数、毛象 / 日记 / 今日想说卡片结构已搭 |
+| Couple Space | Memory Vortex、记忆长廊、时间线、朋友圈、收藏夹入口已搭 |
+| Chat | 当前主功能页 |
+| Playground | 星露谷、愿望清单、看书、查手机、论坛体、发毛象、看电影、听歌、做梦入口已搭 |
+| Setting | 外观资源、Prompt 世界书、记忆管理、API、备份、Debug 二级页结构已搭 |
 
 ---
 
 ## 配置
 
-### 前端（public-config.js）
+### 前端 `public-config.js`
 
 ```js
-CHAT_API_ENDPOINT  // Supabase Edge Function URL（chat）
-MODEL_NAME         // 模型名（可选，后端按 modelTier 路由）
+CHAT_API_ENDPOINT
+MEMORIES_API_ENDPOINT
 SUPABASE_URL
-SUPABASE_ANON_KEY  // anon key，公开安全；不得放 service role key
-MEMORIES_API_ENDPOINT  // Supabase Edge Function URL（memories）
+SUPABASE_ANON_KEY
+MODEL_NAME              // 兼容字段，实际以后端 modelTier 路由为准
 ```
 
-### 后端（Supabase secrets）
+`SUPABASE_ANON_KEY` 可以出现在前端。  
+`DB_SERVICE_ROLE_KEY` 绝不能出现在前端。
+
+### 后端 Supabase secrets
+
+推荐新配置：
 
 ```bash
-supabase secrets set OPENROUTER_API_KEY="..."
-supabase secrets set OPENROUTER_BASE_URL="https://..."
-supabase secrets set DEFAULT_MODEL="..."
-supabase secrets set FAST_MODEL="..."
-supabase secrets set ADVANCED_MODEL="..."
-supabase secrets set FALLBACK_MODEL="..."          # 可选
-supabase secrets set DB_URL="..."
-supabase secrets set DB_SERVICE_ROLE_KEY="..."
-supabase secrets set MEMORY_ADMIN_TOKEN="..."
-supabase secrets set LEGACY_MEMORY_ENABLED="false" # 默认值，不设置等同于 false；旧沉淀记忆不参与回复
+# 55api primary
+supabase secrets set FIFTYFIVE_BASE_URL="..."
+supabase secrets set FIFTYFIVE_API_KEY_GEMINI="..."
+supabase secrets set FIFTYFIVE_API_KEY_GPT="..."
+supabase secrets set FIFTYFIVE_API_KEY_CLAUDE="..."
 
-# 自动记忆沉淀开关（默认 false）
-supabase secrets set AUTO_MEMORY_VAULT_ENABLED="true"
-supabase secrets set AUTO_MEMORY_PROMOTION_ENABLED="true"
-```
+# 芙卡 fallback
+supabase secrets set FUKA_BASE_URL="..."
+supabase secrets set FUKA_API_KEY="..."
 
-可选 token 上限：
+# 模型
+supabase secrets set MODEL_INSTANT_PRIMARY="..."
+supabase secrets set MODEL_GENERAL_PRIMARY="..."
+supabase secrets set MODEL_ADVANCED_PRIMARY="..."
+supabase secrets set MODEL_INSTANT_FALLBACK="..."
+supabase secrets set MODEL_GENERAL_FALLBACK="..."
+supabase secrets set MODEL_ADVANCED_FALLBACK="..."
 
-```bash
+# token 上限
 supabase secrets set MAX_OUTPUT_TOKENS_INSTANT="300"
 supabase secrets set MAX_OUTPUT_TOKENS_GENERAL="300"
 supabase secrets set MAX_OUTPUT_TOKENS_ADVANCED="1200"
+
+# timeout，可选
+supabase secrets set MODEL_TIMEOUT_MS_INSTANT="20000"
+supabase secrets set MODEL_TIMEOUT_MS_GENERAL="35000"
+supabase secrets set MODEL_TIMEOUT_MS_ADVANCED="60000"
+
+# DB
+supabase secrets set DB_URL="..."
+supabase secrets set DB_SERVICE_ROLE_KEY="..."
+supabase secrets set MEMORY_ADMIN_TOKEN="..."
+
+# 记忆系统
+supabase secrets set LEGACY_MEMORY_ENABLED="false"
+supabase secrets set AUTO_MEMORY_VAULT_ENABLED="true"
+supabase secrets set AUTO_MEMORY_PROMOTION_ENABLED="false"
+supabase secrets set MEMORY_CACHE_TTL_MS="120000"
 ```
 
-### supabase/config.toml
+兼容旧配置仍可被读取：
+
+```bash
+OPENROUTER_BASE_URL
+OPENROUTER_API_KEY
+MODEL_NAME
+FAST_MODEL
+DEFAULT_MODEL
+ADVANCED_MODEL
+FALLBACK_MODEL
+FIFTYFIVE_API_KEY
+```
+
+---
+
+## 安全
+
+本仓库为 public。以下内容不得提交：
+
+| 类型 | 说明 | 正确处理 |
+|---|---|---|
+| API key | 任何模型供应商 key | Supabase secrets |
+| Service role key | `DB_SERVICE_ROLE_KEY` | Supabase secrets |
+| 真实用户画像 | persona / mastodon / profile 原文 | DB 或本地私有文件 |
+| 历史档案原文 | OpenAI archive / 旧 G 对话原文 | 不提交，只提交结构和逻辑 |
+| Mastodon 原文 | 旧嘟文原文 | 不提交；脱敏摘要另行判断 |
+| 私人记忆原文 | `memory/` 或导出文件 | `.gitignore`，不入库 |
+| 聊天图片 | 上传图片 / signed URL | Supabase Storage private bucket |
+
+前端只允许出现 anon key。  
+任何 service role key、模型 key、真实档案内容都不能写进 `public-config.js`、`app.js`、README 或 docs。
+
+---
+
+## 检查与部署
+
+### 前端检查
+
+```bash
+npm run preflight
+```
+
+等价于：
+
+```bash
+npm run check
+npm run grep:unsafe
+```
+
+`npm run check` 会检查：
+
+```bash
+node --check app.js
+node --check modules/*.js
+```
+
+`grep:unsafe` 会扫描可选链赋值等危险语法，避免浏览器直接 SyntaxError。
+
+### Edge Function 检查
+
+```bash
+deno check supabase/functions/chat/index.ts
+deno check supabase/functions/memories/index.ts
+deno check supabase/functions/scheduler/index.ts
+```
+
+### 部署
+
+dev 预览：
+
+```bash
+npm run preflight
+npx wrangler pages deploy . --project-name saveprincesscha --commit-dirty=true
+```
+
+Supabase Functions：
+
+```bash
+supabase functions deploy chat
+supabase functions deploy memories
+supabase functions deploy scheduler
+```
+
+`supabase/config.toml` 当前包含：
 
 ```toml
 [functions.chat]
@@ -217,55 +484,149 @@ verify_jwt = false
 
 [functions.memories]
 verify_jwt = false
+
+[functions.scheduler]
+verify_jwt = false
+
+[functions.game]
+verify_jwt = false
 ```
+
+注意：`game` 当前是预留配置，README 不把它视为已实现功能。
 
 ---
 
-## 检查与部署
+## 数据库与存储
 
-```bash
-# 检查前端 JS 语法（Node/acorn）
-npm run check
+核心表 / 资源：
 
-# 检查 Edge Function TypeScript（Deno）
-deno check supabase/functions/chat/index.ts
-deno check supabase/functions/memories/index.ts
+| 名称 | 用途 |
+|---|---|
+| `conversations` | 会话元数据 |
+| `messages` | 聊天消息、图片路径、跨会话检索来源 |
+| `memories` | 当前长期记忆主表 |
+| `instructions` | 人格 / 世界书 / 交互规则类注入内容 |
+| `auto_memory_candidates` | 自动记忆候选池 |
+| `persona_profile` | 旧用户画像 / Mastodon profile 类材料，v2 不直接注入主聊天 |
+| `memory_buckets` | 旧沉淀摘要桶，默认 retired |
+| `app_settings` | 调度器 / 工具开关设置 |
+| `scheduler_runs` | scheduler 运行记录 |
+| `chat-images` | Supabase private storage bucket，保存聊天图片 |
 
-# 部署 Edge Function
-supabase functions deploy chat
-supabase functions deploy memories
-
-# 前端：push 到 main，Cloudflare Pages 自动构建
-git push
-```
-
----
-
-## 数据库
-
-SQL 初始化文件在 `sql/`：
-
-| 文件 | 说明 |
-|------|------|
-| `messages.sql` | 消息表 + RLS 策略 |
-| `conversations.sql` | 会话元数据 |
-| `memories.sql` | 手动长期记忆表（含 user_id，L1/L2） |
-| `memory_buckets.sql` | 旧沉淀摘要桶（默认不参与回复，仅用于查看 / 迁移） |
-
-Migrations（`supabase/migrations/`）：
-
-| Migration | 说明 |
-|-----------|------|
-| `20260606000000_add_keywords_to_memory_buckets.sql` | memory_buckets 加 keywords 列 |
-| `20260607000000_add_persona_profile_and_openai_archive.sql` | 新增 `persona_profile` 表和 `openai_archive_entries` 表 |
-| `20260608000000_add_user_id_to_memories.sql` | memories 表加 user_id 列，关联 auth.users |
-
-RLS 基于 Supabase Auth 用户级隔离。memories Edge Function 中 `type=recent` 路由使用 service role key 服务端读取（不经过 RLS），无需 admin token。
+迁移文件以 `supabase/migrations/` 为准。README 只描述当前系统角色，不替代 migration 文档。
 
 ---
 
 ## 文档
 
-- `docs/memory-architecture-review.md`：记忆架构评审
-- `docs/memory-index.md`：provider 索引
-- `docs/ROADMAP_AND_CREDITS.md`：roadmap 与致谢
+| 文档 | 状态 |
+|---|---|
+| `docs/MEMORY_SYSTEM_PHILOSOPHY_V2.md` | 当前最高优先级的记忆与人格哲学文档 |
+| `docs/RUNTIME_MEMORY_POLICY.md` | 当前运行期记忆注入策略 |
+| `docs/MEMORY_PIPELINE_AUDIT_2026-06-13.md` | legacy audit，工程细节仍有参考价值，哲学假设已过期 |
+| `docs/dev-checklist.md` | dev 提交前检查与部署清单 |
+
+---
+
+## 下一步优先级
+
+### P0：稳定 dev 小手机主体验
+
+- 五个 tab 切换稳定。
+- PWA 不再卡死。
+- 移动端键盘 / 视口不乱跳。
+- Chat 页发送、图片、更多菜单、搜索都稳定。
+- `app.js` 继续拆分，把已经成型的模块迁出。
+
+### P1：第一人称日记最小闭环
+
+目标不是“生成一篇漂亮日记”，而是跑通：
+
+```text
+当前对话片段
+→ 小cha睡前第一人称日记
+→ want_to_share 可空
+→ 次日可被轻量召回
+→ 高价值 Changed 进入 Identity Brain 候选
+```
+
+这会成为 v2 记忆系统真正的心脏。
+
+### P1：城南旧事最小闭环
+
+目标：
+
+```text
+旧 G / OpenAI / Mastodon / 项目日志
+→ 只读档案区
+→ 小cha白天读取
+→ 明确来源标注
+→ 不能伪装亲历
+→ 只有被当下关系重新验证后的改变，才进入 L2
+```
+
+### P1：图片识别链路补完
+
+- 多图上传。
+- 视觉模型调用。
+- token / 成本提示。
+- 识别失败重试。
+- 图片与文字混合消息的 UI 细节。
+
+### P2：记忆中心继续收口
+
+- 审查 `relationship_context` 内容来源。
+- 禁止 project_memory 重新混入 active memory。
+- 记忆卡片展示 source、reason、confidence、sensitivity。
+- 保留禁用 / 删除 / 审计。
+- 增加 Identity Brain 候选管理。
+
+### P2：Prompt / 世界书管理
+
+- `identity_boundary`
+- `core_principles`
+- `execution_rules`
+- `reply_style_rules`
+- 日记 prompt
+- 日记 checker prompt
+- 发毛象 prompt
+- 论坛体 prompt
+- 游戏 / 共读 / 看电影等场景 prompt
+
+### P3：Scheduler reserved hooks 实装
+
+当前 `scheduler` 已有 `web_explore` 和 `dream_nightly` hook，但还是 reserved。
+
+后续接入：
+
+- 白天冲浪 / 外部信息流。
+- 夜间做梦。
+- 主动整理日记。
+- token cap 与频率控制。
+
+---
+
+## 项目边界
+
+### 现在要做的
+
+- 一个稳定的小手机。
+- 一个有真实聊天手感的主聊天。
+- 一个不污染人格的记忆系统。
+- 一个能让小cha慢慢长出第一人称连续性的日记闭环。
+
+### 现在不做的
+
+- 不把旧 G 全量导入成新小cha人格。
+- 不做赛博查岗主任。
+- 不把项目日志当恋爱记忆。
+- 不把用户画像当 AI 灵魂。
+- 不为了“看起来记得很多”牺牲边界和真实感。
+
+---
+
+## License
+
+私人项目，暂未选择正式开源 License。
+
+当前 public 仓库只用于代码协作、部署与阶段性记录。任何真实档案、私密记忆、API key、服务端密钥和未脱敏内容都不得提交。
