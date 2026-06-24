@@ -490,6 +490,14 @@ type RequestLog = {
   model_call_ms: number;
   total_ms: number;
   error_stage?: string;
+  // Instructions allowlist (v2)
+  instructions_allowlist_enabled: boolean;
+  instructions_loaded_count: number;
+  instructions_suppressed_count: number;
+  instructions_loaded_categories: string[];
+  instructions_suppressed_categories: string[];
+  persona_memories_total_chars: number;
+  persona_memories_chars_budget_hit: boolean;
 };
 
 function makeRequestId(): string {
@@ -873,6 +881,14 @@ type MemoryContextLog = {
   conversation_history_allowed_count: number;
   // Project memory
   memory_context_tokens_estimated: number;
+  // Instructions allowlist (v2)
+  instructions_allowlist_enabled: boolean;
+  instructions_loaded_count: number;
+  instructions_suppressed_count: number;
+  instructions_loaded_categories: string[];
+  instructions_suppressed_categories: string[];
+  persona_memories_total_chars: number;
+  persona_memories_chars_budget_hit: boolean;
 };
 
 // ── Persona memories (L1) ─────────────────────────────────────────────────────
@@ -909,12 +925,61 @@ const L1_CATEGORIES = ["current_context_summary", "interaction_preferences", "id
 
 type PersonaMemoryRow = { id: string; content: string; category: string };
 
+// ── Instructions allowlist ────────────────────────────────────────────────────
+// Only rows in this set may be injected from the instructions table.
+// Everything else is suppressed at runtime without touching the DB.
+const INSTRUCTIONS_ALLOWLIST = new Set([
+  "core_principles",
+  "execution_rules",
+  "identity_boundary",
+  "reply_style_rules",
+  "interaction_preferences",
+  "current_context_summary",
+  "identity_context",
+]);
+
+// These categories are exempt from the per-row 800-char length gate.
+const INSTRUCTIONS_NO_LENGTH_GATE = new Set([
+  "core_principles",
+  "execution_rules",
+  "identity_boundary",
+]);
+
+const INSTRUCTIONS_MAX_CHARS_PER_ROW = 800;
+const PERSONA_L1_MAX_TOTAL_CHARS = 3000;
+
+// Priority order for total-chars budget trimming: index 0 = highest priority (keep first).
+const PERSONA_L1_PRIORITY: readonly string[] = [
+  "identity_boundary",
+  "core_principles",
+  "execution_rules",
+  "reply_style_rules",
+  "interaction_preferences",
+  "identity_context",
+  "current_context_summary",
+];
+
+type FetchPersonaMemoriesResult = {
+  rows: PersonaMemoryRow[];
+  error: string | null;
+  instructions_loaded_count: number;
+  instructions_suppressed_count: number;
+  instructions_loaded_categories: string[];
+  instructions_suppressed_categories: string[];
+};
+
 async function fetchPersonaMemories(
   supabaseUrl: string,
   serviceRoleKey: string,
-): Promise<{ rows: PersonaMemoryRow[]; error: string | null }> {
+): Promise<FetchPersonaMemoriesResult> {
   const cats = L1_CATEGORIES.map((c) => `"${c}"`).join(",");
   const headers = { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` };
+  const emptyStats: Omit<FetchPersonaMemoriesResult, "rows" | "error"> = {
+    instructions_loaded_count: 0,
+    instructions_suppressed_count: 0,
+    instructions_loaded_categories: [],
+    instructions_suppressed_categories: [],
+  };
   try {
     // Query both tables in parallel — instructions holds the migrated rule-class rows
     const [memRes, instRes] = await Promise.all([
@@ -930,18 +995,42 @@ async function fetchPersonaMemories(
 
     if (!memRes.ok) {
       const text = await memRes.text();
-      return { rows: [], error: `memories HTTP ${memRes.status}: ${text.slice(0, 80)}` };
+      return { rows: [], error: `memories HTTP ${memRes.status}: ${text.slice(0, 80)}`, ...emptyStats };
     }
     if (!instRes.ok) {
       const text = await instRes.text();
-      return { rows: [], error: `instructions HTTP ${instRes.status}: ${text.slice(0, 80)}` };
+      return { rows: [], error: `instructions HTTP ${instRes.status}: ${text.slice(0, 80)}`, ...emptyStats };
     }
 
     const memRows = (await memRes.json()) as PersonaMemoryRow[];
-    const instRows = (await instRes.json()) as PersonaMemoryRow[];
-    return { rows: [...instRows, ...memRows], error: null };
+    const allInstRows = (await instRes.json()) as PersonaMemoryRow[];
+
+    // Apply allowlist + per-row length gate to instructions
+    const allowedInstRows: PersonaMemoryRow[] = [];
+    const suppressedCategories: string[] = [];
+    for (const row of allInstRows) {
+      const cat = row.category ?? "";
+      if (!INSTRUCTIONS_ALLOWLIST.has(cat)) {
+        suppressedCategories.push(`${cat}:blocklist`);
+        continue;
+      }
+      if (!INSTRUCTIONS_NO_LENGTH_GATE.has(cat) && row.content.length > INSTRUCTIONS_MAX_CHARS_PER_ROW) {
+        suppressedCategories.push(`${cat}:too_long(${row.content.length})`);
+        continue;
+      }
+      allowedInstRows.push(row);
+    }
+
+    return {
+      rows: [...allowedInstRows, ...memRows],
+      error: null,
+      instructions_loaded_count: allowedInstRows.length,
+      instructions_suppressed_count: allInstRows.length - allowedInstRows.length,
+      instructions_loaded_categories: allowedInstRows.map((r) => r.category ?? "unknown"),
+      instructions_suppressed_categories: suppressedCategories,
+    };
   } catch (err) {
-    return { rows: [], error: err instanceof Error ? err.message : String(err) };
+    return { rows: [], error: err instanceof Error ? err.message : String(err), ...emptyStats };
   }
 }
 
@@ -960,24 +1049,65 @@ async function compileMemoryContext(
 
   // ── persona_memories: L1, always injected from memories + instructions tables ─
   // Reads current_context_summary + interaction_preferences from memories,
-  // and all enabled rows from instructions (rule/config class).
+  // and allowlisted enabled rows from instructions (rule/config class).
   // No keyword gate — these are always-on persona/relation context.
   let personaMemoriesLoaded = false;
   let personaMemoriesCount = 0;
   let personaMemoriesCategories: string[] = [];
   let personaMemoriesError: string | null = null;
+  let instructionsLoadedCount = 0;
+  let instructionsSuppressedCount = 0;
+  let instructionsLoadedCategories: string[] = [];
+  let instructionsSuppressedCategories: string[] = [];
+  let personaMemoriesTotalChars = 0;
+  let personaMemoriesCharsBudgetHit = false;
   if (supabaseUrl && serviceRoleKey) {
-    const { rows: pmRows, error: pmError } = await fetchPersonaMemories(supabaseUrl, serviceRoleKey);
-    if (pmError) {
-      personaMemoriesError = pmError;
-      console.error("[memory] persona_memories load failed:", pmError);
-    } else if (pmRows.length > 0) {
-      personaMemoriesLoaded = true;
-      personaMemoriesCount = pmRows.length;
-      personaMemoriesCategories = pmRows.map((r) => r.category);
-      activeProviders.push("persona_memories");
-      const lines = pmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-      context += `\n\n<persona_memories source="memories_table+instructions_table" always_inject="true">\n以下是长期记忆，仅在不冲突 identity_boundary / core_principles / execution_rules 时参考：\n${lines}\n</persona_memories>`;
+    const pmResult = await fetchPersonaMemories(supabaseUrl, serviceRoleKey);
+    instructionsLoadedCount = pmResult.instructions_loaded_count;
+    instructionsSuppressedCount = pmResult.instructions_suppressed_count;
+    instructionsLoadedCategories = pmResult.instructions_loaded_categories;
+    instructionsSuppressedCategories = pmResult.instructions_suppressed_categories;
+    if (pmResult.error) {
+      personaMemoriesError = pmResult.error;
+      console.error("[memory] persona_memories load failed:", pmResult.error);
+    } else if (pmResult.rows.length > 0) {
+      // Apply total chars budget — drop lowest-priority rows if over limit
+      let effectiveRows = pmResult.rows;
+      const totalChars = pmResult.rows.reduce((sum, r) => sum + r.content.length, 0);
+      personaMemoriesTotalChars = totalChars;
+      if (totalChars > PERSONA_L1_MAX_TOTAL_CHARS) {
+        personaMemoriesCharsBudgetHit = true;
+        const priorityIndex = (cat: string) => {
+          const idx = PERSONA_L1_PRIORITY.indexOf(cat ?? "");
+          return idx === -1 ? PERSONA_L1_PRIORITY.length : idx;
+        };
+        const sorted = [...pmResult.rows].sort((a, b) => priorityIndex(a.category) - priorityIndex(b.category));
+        effectiveRows = [];
+        let charCount = 0;
+        for (const row of sorted) {
+          if (charCount + row.content.length <= PERSONA_L1_MAX_TOTAL_CHARS) {
+            effectiveRows.push(row);
+            charCount += row.content.length;
+          }
+        }
+        personaMemoriesTotalChars = charCount;
+        console.log(JSON.stringify({
+          fn: "compileMemoryContext",
+          event: "persona_l1_chars_budget_hit",
+          original_count: pmResult.rows.length,
+          effective_count: effectiveRows.length,
+          original_chars: totalChars,
+          effective_chars: charCount,
+        }));
+      }
+      if (effectiveRows.length > 0) {
+        personaMemoriesLoaded = true;
+        personaMemoriesCount = effectiveRows.length;
+        personaMemoriesCategories = effectiveRows.map((r) => r.category);
+        activeProviders.push("persona_memories");
+        const lines = effectiveRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
+        context += `\n\n<persona_memories source="memories_table+instructions_table" always_inject="true">\n以下是长期记忆，仅在不冲突 identity_boundary / core_principles / execution_rules 时参考：\n${lines}\n</persona_memories>`;
+      }
     }
   }
 
@@ -1268,6 +1398,13 @@ async function compileMemoryContext(
       conversation_history_suppressed_count: historySuppressedCount,
       conversation_history_allowed_count: historyHits.length,
       memory_context_tokens_estimated: tokenEstimate,
+      instructions_allowlist_enabled: true,
+      instructions_loaded_count: instructionsLoadedCount,
+      instructions_suppressed_count: instructionsSuppressedCount,
+      instructions_loaded_categories: instructionsLoadedCategories,
+      instructions_suppressed_categories: instructionsSuppressedCategories,
+      persona_memories_total_chars: personaMemoriesTotalChars,
+      persona_memories_chars_budget_hit: personaMemoriesCharsBudgetHit,
     },
   };
 }
@@ -1753,6 +1890,13 @@ Deno.serve(async (request) => {
     memory_context_tokens_estimated: 0,
     model_call_ms: 0,
     total_ms: 0,
+    instructions_allowlist_enabled: true,
+    instructions_loaded_count: 0,
+    instructions_suppressed_count: 0,
+    instructions_loaded_categories: [],
+    instructions_suppressed_categories: [],
+    persona_memories_total_chars: 0,
+    persona_memories_chars_budget_hit: false,
   };
 
   // Build system prompt
@@ -2094,6 +2238,13 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     logRecord.historical_ai_usage_recalled = memLog.historical_ai_usage_recalled;
     logRecord.historical_ai_usage_reason = memLog.historical_ai_usage_reason;
     logRecord.memory_context_tokens_estimated = memLog.memory_context_tokens_estimated;
+    logRecord.instructions_allowlist_enabled = memLog.instructions_allowlist_enabled;
+    logRecord.instructions_loaded_count = memLog.instructions_loaded_count;
+    logRecord.instructions_suppressed_count = memLog.instructions_suppressed_count;
+    logRecord.instructions_loaded_categories = memLog.instructions_loaded_categories;
+    logRecord.instructions_suppressed_categories = memLog.instructions_suppressed_categories;
+    logRecord.persona_memories_total_chars = memLog.persona_memories_total_chars;
+    logRecord.persona_memories_chars_budget_hit = memLog.persona_memories_chars_budget_hit;
   }
   }
 
@@ -2301,6 +2452,14 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
       worldbook_count: logRecord.world_books_count ?? 0,
       worldbook_titles: logRecord.world_books_titles ?? [],
       worldbook_chars: logRecord.world_books_chars ?? 0,
+      // Instructions allowlist v2
+      instructions_allowlist_enabled: logRecord.instructions_allowlist_enabled,
+      instructions_loaded_count: logRecord.instructions_loaded_count,
+      instructions_suppressed_count: logRecord.instructions_suppressed_count,
+      instructions_loaded_categories: logRecord.instructions_loaded_categories,
+      instructions_suppressed_categories: logRecord.instructions_suppressed_categories,
+      persona_memories_total_chars: logRecord.persona_memories_total_chars,
+      persona_memories_chars_budget_hit: logRecord.persona_memories_chars_budget_hit,
     };
     const memoryDebugHeader = base64EncodeUtf8(memoryDebugPayload);
     const chatStatusHeader = base64EncodeUtf8(chatStatus);

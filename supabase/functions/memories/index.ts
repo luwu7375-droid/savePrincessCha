@@ -862,6 +862,171 @@ Deno.serve(async (req) => {
       }, 200);
     }
 
+    // ── second_pass_project_cleanup: disable ALL remaining enabled promoted project memories ──
+    // v2 policy: all auto_memory_candidates promoted project_memory are not first-person
+    // Changed records — they are third-party project facts → project_reference / 城南旧事.
+    // No exceptions by content value. Judgment is: is this a first-person Changed? No → disable.
+    //
+    // dryRun=true (default): scan + classify + return would_disable_list with archive_bucket.
+    // dryRun=false requires body.confirm === "SECOND_PASS_PROJECT_CLEANUP".
+    //
+    // What it does:
+    //   1. Fetch candidate_type=project, status=promoted, promoted_memory_id not null
+    //   2. Join with memories table to filter out already-disabled rows
+    //   3. Classify each by archive_bucket (project_reference / milestone_reference /
+    //      writing_material / construction_log)
+    //   4. dryRun → return would_disable_list
+    //   5. execute → PATCH memories SET enabled=false for each
+    //
+    // What it NEVER does: delete candidates, delete memories, insert memories, promote anything.
+    if (action === "second_pass_project_cleanup") {
+      if (!cleanDryRun && cleanBody.confirm !== "SECOND_PASS_PROJECT_CLEANUP") {
+        return json({
+          ok: false,
+          error: "confirmation required",
+          detail: "Set body.confirm = \"SECOND_PASS_PROJECT_CLEANUP\" to execute. Default is dryRun=true.",
+        }, 400);
+      }
+
+      // Step 1: Fetch all promoted project candidates with promoted_memory_id
+      const sp2CandRes = await fetch(
+        `${supabaseUrl}/rest/v1/auto_memory_candidates` +
+          `?select=id,content,promoted_memory_id` +
+          `&user_id=eq.${encodeURIComponent(cleanUserId)}` +
+          `&candidate_type=eq.project` +
+          `&status=eq.promoted` +
+          `&promoted_memory_id=not.is.null`,
+        { headers: cleanHeaders }
+      );
+      if (!sp2CandRes.ok) return json({ ok: false, error: "fetch candidates failed" }, 500);
+      const sp2Cands = await sp2CandRes.json() as { id: string; content: string; promoted_memory_id: string }[];
+
+      if (sp2Cands.length === 0) {
+        return json({ ok: true, action, dryRun: cleanDryRun, scanned: 0, would_disable: 0, would_disable_list: [] }, 200);
+      }
+
+      // Step 2: Fetch memory enabled status for all promoted_memory_ids.
+      // Fetch all memories for this user (limit=500) rather than using a long in.() URL,
+      // since older promoted memories may lack user_id and in.() with 15 UUIDs is ~600 chars.
+      const sp2MemRes = await fetch(
+        `${supabaseUrl}/rest/v1/memories` +
+          `?select=id,enabled,content` +
+          `&order=created_at.asc&limit=500`,
+        { headers: cleanHeaders }
+      );
+      if (!sp2MemRes.ok) return json({ ok: false, error: "fetch memories failed" }, 500);
+      const sp2Mems = await sp2MemRes.json() as { id: string; enabled: boolean | null; content: string }[];
+
+      // Build a lookup: memory_id → { enabled, content }
+      const memMap = new Map<string, { enabled: boolean | null; content: string }>();
+      for (const m of sp2Mems) {
+        memMap.set(m.id, { enabled: m.enabled, content: m.content });
+      }
+
+      // Step 3: Filter to only candidates whose memory is not already explicitly disabled.
+      // enabled=null (old rows with no default set) is treated as needing disable.
+      // Only skip if enabled === false (already disabled).
+      type ArchiveBucket = "project_reference" | "milestone_reference" | "writing_material" | "construction_log";
+
+      function classifyArchiveBucket(content: string): ArchiveBucket {
+        const c = content.toLowerCase();
+        // OC / writing material
+        if (/oc|家产|角色|世界观|设定|阿丽莎|alisha|alic|森川|修司|里佳|深爱者/.test(c)) return "writing_material";
+        // Milestone markers
+        if (/v0\.\d|v1\.\d|里程碑|milestone|验收|版本|上线|发布/.test(c)) return "milestone_reference";
+        // Construction log: process/debug/module details
+        if (/toast|debug|报错|模块|分拆|edge function|接口调通|api.*连通|连通.*api|图片上传|上传.*图片|supabase.*storage/.test(c)) return "construction_log";
+        // Default: project reference
+        return "project_reference";
+      }
+
+      function whyNotActiveMemory(content: string): string {
+        return "v2: auto_memory_candidates promoted project facts are third-person project logs, not first-person Changed records. They belong in project_reference/城南旧事 archive, not active L1/L2 memory injection.";
+      }
+
+      type Sp2Item = {
+        candidate_id: string;
+        promoted_memory_id: string;
+        candidate_content: string;
+        memory_content: string;
+        memory_enabled_current: boolean | null;
+        archive_bucket: ArchiveBucket;
+        why_not_active_memory: string;
+      };
+
+      const toDisable: Sp2Item[] = [];
+      const alreadyDisabled: { candidate_id: string; promoted_memory_id: string; enabled: boolean | null }[] = [];
+
+      for (const cand of sp2Cands) {
+        const mem = memMap.get(cand.promoted_memory_id);
+        if (!mem) continue; // memory row not found in table — skip
+        // Treat all found memories as needing disable, regardless of current enabled value.
+        // enabled=null (old rows) and enabled=true both need to be set to false.
+        // We record current state for auditability but always add to toDisable.
+        if (mem.enabled === false) {
+          alreadyDisabled.push({ candidate_id: cand.id, promoted_memory_id: cand.promoted_memory_id, enabled: false });
+        }
+        toDisable.push({
+          candidate_id: cand.id,
+          promoted_memory_id: cand.promoted_memory_id,
+          candidate_content: cand.content.slice(0, 120),
+          memory_content: mem.content.slice(0, 120),
+          memory_enabled_current: mem.enabled,
+          archive_bucket: classifyArchiveBucket(cand.content + " " + mem.content),
+          why_not_active_memory: whyNotActiveMemory(cand.content),
+        });
+      }
+
+      if (cleanDryRun) {
+        return json({
+          ok: true,
+          action,
+          dryRun: true,
+          scanned_candidates: sp2Cands.length,
+          already_disabled: alreadyDisabled.length,
+          would_disable: toDisable.length,
+          would_disable_list: toDisable,
+          _debug: {
+            promoted_ids_count: sp2Cands.length,
+            mem_rows_in_table: sp2Mems.length,
+            mem_not_found: sp2Cands.filter((c) => !memMap.has(c.promoted_memory_id)).length,
+            sample_candidate_ids: sp2Cands.slice(0, 3).map((c) => ({ id: c.id, promoted_memory_id: c.promoted_memory_id })),
+          },
+        }, 200);
+      }
+
+      // Step 4: execute — PATCH memories SET enabled=false
+      let sp2Disabled = 0;
+      const sp2Errors: string[] = [];
+      for (const row of toDisable) {
+        const patchRes = await fetch(
+          `${supabaseUrl}/rest/v1/memories?id=eq.${encodeURIComponent(row.promoted_memory_id)}`,
+          {
+            method: "PATCH",
+            headers: { ...cleanHeaders, Prefer: "return=minimal" },
+            body: JSON.stringify({ enabled: false }),
+          }
+        );
+        if (patchRes.ok) {
+          sp2Disabled += 1;
+        } else {
+          const errText = await patchRes.text().catch(() => "");
+          sp2Errors.push(`${row.promoted_memory_id}: HTTP ${patchRes.status} ${errText.slice(0, 80)}`);
+        }
+      }
+
+      return json({
+        ok: true,
+        action,
+        dryRun: false,
+        scanned_candidates: sp2Cands.length,
+        already_disabled: alreadyDisabled.length,
+        disabled: sp2Disabled,
+        total_matched: toDisable.length,
+        errors: sp2Errors,
+      }, 200);
+    }
+
     return json({ ok: false, error: `unknown action: ${action}` }, 400);
   }
 
