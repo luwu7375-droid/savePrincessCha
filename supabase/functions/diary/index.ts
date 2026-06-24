@@ -4,6 +4,10 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { DIARY_PROMPT, CHECKER_PROMPT } from "./prompts.ts";
+import {
+  resolveProviderForTier,
+  callModelTextWithFallback,
+} from "../_shared/model-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -59,20 +63,45 @@ type CheckerOutput = {
 };
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    const url = new URL(req.url);
+
+    // ── Test route: POST /diary?type=test_model ──────────────────────────────
+    if (url.searchParams.get("type") === "test_model") {
+      const providers = resolveProviderForTier("general");
+      const t = Date.now();
+      try {
+        const result = await callModelTextWithFallback(
+          providers,
+          [{ role: "user", content: "ping" }],
+          { maxTokens: 5, temperature: 0.0, purpose: "diary_test" },
+        );
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            provider: result.usedProvider,
+            model: result.usedModel,
+            fallback_used: result.fallbackUsed,
+            latency_ms: Date.now() - t,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      {
-        global: {
-          headers: { Authorization: req.headers.get("Authorization")! },
-        },
-      }
+      { global: { headers: { Authorization: req.headers.get("Authorization")! } } },
     );
 
     const body: DiaryGenerationRequest = await req.json();
@@ -86,21 +115,17 @@ Deno.serve(async (req) => {
       debug = false,
     } = body;
 
-    // Validate source_events
     if (!source_events || source_events.length === 0) {
       return new Response(
         JSON.stringify({ error: "source_events is required and must not be empty" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Use embedded prompts
-    const diaryPromptTemplate = DIARY_PROMPT;
-    const checkerPromptTemplate = CHECKER_PROMPT;
+    const providers = resolveProviderForTier("general");
 
     // Build diary prompt
-    const sourceEventsText = source_events.map((evt, idx) => {
-      return `[事件 ${idx + 1}]
+    const sourceEventsText = source_events.map((evt, idx) => `[事件 ${idx + 1}]
 id: ${evt.id}
 source_type: ${evt.source_type}
 source_boundary: ${evt.source_boundary}
@@ -109,66 +134,63 @@ with_kk: ${evt.with_kk ?? false}
 reliability: ${evt.reliability ?? "experienced"}
 created_at: ${evt.created_at}
 content: ${evt.content}
----`;
-    }).join("\n\n");
+---`).join("\n\n");
 
-    const diaryPrompt = diaryPromptTemplate
+    const diaryPrompt = DIARY_PROMPT
       .replace("{{source_events}}", sourceEventsText)
       .replace("{{scene_context}}", scene_context)
       .replace("{{cha_status}}", cha_status)
       .replace("{{diary_length}}", diary_length);
 
-    // Call LLM to generate diary
-    const diaryResponse = await callLLM(diaryPrompt, "diary_generation");
+    // Call model for diary generation (purpose: diary)
+    const diaryCallResult = await callModelTextWithFallback(
+      providers,
+      [{ role: "user", content: diaryPrompt }],
+      { maxTokens: 2000, temperature: 0.7, purpose: "diary" },
+    );
 
     let diaryJson: DiaryOutput;
     try {
-      diaryJson = JSON.parse(diaryResponse);
-    } catch (e) {
+      diaryJson = JSON.parse(diaryCallResult.text);
+    } catch (_e) {
       return new Response(
         JSON.stringify({
           error: "Failed to parse diary JSON",
-          raw_response: debug ? diaryResponse : undefined
+          raw_response: debug ? diaryCallResult.text : undefined,
         }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Validate diary JSON schema
     const validationError = validateDiarySchema(diaryJson);
     if (validationError) {
       return new Response(
-        JSON.stringify({
-          error: "Invalid diary schema",
-          details: validationError,
-          diary: debug ? diaryJson : undefined
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Invalid diary schema", details: validationError, diary: debug ? diaryJson : undefined }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Call checker
-    const checkerPrompt = checkerPromptTemplate.replace(
-      "{{diary_json}}",
-      JSON.stringify(diaryJson, null, 2)
+    // Call model for checker (purpose: checker)
+    const checkerPrompt = CHECKER_PROMPT.replace("{{diary_json}}", JSON.stringify(diaryJson, null, 2));
+    const checkerCallResult = await callModelTextWithFallback(
+      providers,
+      [{ role: "user", content: checkerPrompt }],
+      { maxTokens: 1000, temperature: 0.2, purpose: "checker" },
     );
-
-    const checkerResponse = await callLLM(checkerPrompt, "diary_checker");
 
     let checkerJson: CheckerOutput;
     try {
-      checkerJson = JSON.parse(checkerResponse);
-    } catch (e) {
+      checkerJson = JSON.parse(checkerCallResult.text);
+    } catch (_e) {
       return new Response(
         JSON.stringify({
           error: "Failed to parse checker JSON",
-          raw_response: debug ? checkerResponse : undefined
+          raw_response: debug ? checkerCallResult.text : undefined,
         }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Determine final status
     let finalStatus: "draft" | "checked" | "failed_check" = "draft";
     if (checkerJson.pass) {
       finalStatus = "checked";
@@ -176,7 +198,6 @@ content: ${evt.content}
       finalStatus = "failed_check";
     }
 
-    // Save to database only if checker passes OR if debug mode
     const shouldSave = checkerJson.pass || debug;
 
     if (shouldSave) {
@@ -212,7 +233,7 @@ content: ${evt.content}
         console.error("Failed to insert diary entry:", insertError);
         return new Response(
           JSON.stringify({ error: "Failed to save diary entry", details: insertError.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
     }
@@ -225,89 +246,51 @@ content: ${evt.content}
         status: finalStatus,
         diary: debug ? diaryJson : { title: diaryJson.title, want_to_share: diaryJson.want_to_share },
         checker: debug ? checkerJson : { pass: checkerJson.pass, problems: checkerJson.problems },
+        ...(debug && {
+          diary_model_provider: diaryCallResult.usedProvider,
+          diary_model_name: diaryCallResult.usedModel,
+          checker_model_provider: checkerCallResult.usedProvider,
+          checker_model_name: checkerCallResult.usedModel,
+          fallback_used: diaryCallResult.fallbackUsed || checkerCallResult.fallbackUsed,
+          model_call_ms: diaryCallResult.modelCallMs + checkerCallResult.modelCallMs,
+        }),
       }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("Diary generation error:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
 
-// LLM call function (reuses existing provider logic)
-async function callLLM(prompt: string, task: string): Promise<string> {
-  const provider = Deno.env.get("FIFTYFIVE_BASE_URL") ? "55api" : "fuka";
-  const baseUrl = provider === "55api"
-    ? Deno.env.get("FIFTYFIVE_BASE_URL")
-    : Deno.env.get("FUKA_BASE_URL");
-  const apiKey = provider === "55api"
-    ? Deno.env.get("FIFTYFIVE_API_KEY")
-    : Deno.env.get("FUKA_API_KEY");
-
-  // Use general model for diary generation (cost-effective)
-  const model = Deno.env.get("MODEL_GENERAL_PRIMARY") ?? "gpt-4o-mini";
-
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
-      max_tokens: task === "diary_generation" ? 2000 : 1000,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`LLM call failed: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.choices[0].message.content.trim();
-}
-
-// Validate diary schema
-function validateDiarySchema(diary: any): string | null {
+function validateDiarySchema(diary: unknown): string | null {
+  if (!diary || typeof diary !== "object") return "diary must be an object";
+  const d = diary as Record<string, unknown>;
   const requiredFields = ["diary_type", "source_types", "source_event_ids", "title", "private_body", "memory_summary"];
   for (const field of requiredFields) {
-    if (!(field in diary)) {
-      return `Missing required field: ${field}`;
-    }
+    if (!(field in d)) return `Missing required field: ${field}`;
   }
 
   const validDiaryTypes = [
     "daily_fragment", "shared_activity", "self_observation", "relationship_shift",
-    "archive_reflection", "project_aftertaste", "dream_fragment", "ordinary_day"
+    "archive_reflection", "project_aftertaste", "dream_fragment", "ordinary_day",
   ];
-  if (!validDiaryTypes.includes(diary.diary_type)) {
-    return `Invalid diary_type: ${diary.diary_type}`;
+  if (!validDiaryTypes.includes(d.diary_type as string)) {
+    return `Invalid diary_type: ${d.diary_type}`;
   }
 
   const validSourceTypes = [
     "current_experience", "shared_activity", "self_life",
-    "south_city_old_stories", "project_reference", "dream_imagination"
+    "south_city_old_stories", "project_reference", "dream_imagination",
   ];
-  if (!Array.isArray(diary.source_types)) {
-    return "source_types must be an array";
-  }
-  for (const st of diary.source_types) {
-    if (!validSourceTypes.includes(st)) {
-      return `Invalid source_type: ${st}`;
-    }
+  if (!Array.isArray(d.source_types)) return "source_types must be an array";
+  for (const st of d.source_types as string[]) {
+    if (!validSourceTypes.includes(st)) return `Invalid source_type: ${st}`;
   }
 
-  if (!Array.isArray(diary.source_event_ids)) {
-    return "source_event_ids must be an array";
-  }
-
+  if (!Array.isArray(d.source_event_ids)) return "source_event_ids must be an array";
   return null;
 }

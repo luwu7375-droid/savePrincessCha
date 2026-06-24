@@ -3,6 +3,21 @@ import { CONVERSATION_BEHAVIOR_PACK } from "./conversation_behavior.ts";
 import { callGeminiEmotion } from "../_shared/gemini-service.ts";
 // import { compilePersonalityLayerContext, fetchLayer1Features, fetchLayer2Features, afterChat as afterChatPersonality } from "./personality_system.ts";
 import { runAfterChatVault } from "./vault_runner.ts";
+import {
+  type ModelTier,
+  type ProviderName,
+  type ProviderConfig,
+  type TierProviders,
+  type CallResult,
+  normalizeTier,
+  toCompletionsUrl,
+  resolveProviderForTier,
+  isFallbackableStatus,
+  getTimeoutMs,
+  callModel,
+  callModelWithFallback,
+  callModelText,
+} from "../_shared/model-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -84,209 +99,8 @@ type ChatRequest = {
 };
 
 // ── Model tier ────────────────────────────────────────────────────────────────
-//
-// Per-tier primary/fallback provider routing:
-//
-//   instant  → primary: 55api  fallback: 芙卡
-//   general  → primary: 55api  fallback: 芙卡
-//   advanced → primary: 55api  fallback: 芙卡
-//
-// New env vars (take priority):
-//   FIFTYFIVE_BASE_URL / FIFTYFIVE_API_KEY   — 55api provider
-//   FUKA_BASE_URL / FUKA_API_KEY             — 芙卡 provider
-//
-//   MODEL_INSTANT_PRIMARY / MODEL_INSTANT_FALLBACK
-//   MODEL_GENERAL_PRIMARY / MODEL_GENERAL_FALLBACK
-//   MODEL_ADVANCED_PRIMARY / MODEL_ADVANCED_FALLBACK
-//
-//   MAX_OUTPUT_TOKENS_INSTANT  (default 300)
-//   MAX_OUTPUT_TOKENS_GENERAL  (default 300)
-//   MAX_OUTPUT_TOKENS_ADVANCED (default 1200)
-//
-//   MODEL_TIMEOUT_MS_INSTANT  (default 20000)
-//   MODEL_TIMEOUT_MS_GENERAL  (default 35000)
-//   MODEL_TIMEOUT_MS_ADVANCED (default 60000)
-//
-// Legacy / compatibility env vars (still honoured as fallback):
-//   OPENROUTER_BASE_URL / OPENROUTER_API_KEY
-//   MODEL_NAME   — used if primary model env unset
-//   FAST_MODEL   — model for instant tier
-//   ADVANCED_MODEL / FALLBACK_MODEL
+// Provider/tier/fallback logic lives in ../_shared/model-client.ts
 
-type ModelTier = "instant" | "general" | "advanced";
-
-const VALID_TIERS: ModelTier[] = ["instant", "general", "advanced"];
-
-function normalizeTier(raw: string | undefined): ModelTier {
-  if (raw && VALID_TIERS.includes(raw as ModelTier)) return raw as ModelTier;
-  return "general";
-}
-
-// ── Provider config ───────────────────────────────────────────────────────────
-
-type ProviderName = "fiftyfive" | "fuka" | "openrouter";
-
-type ProviderConfig = {
-  providerName: ProviderName;
-  baseUrl: string; // full completions endpoint URL
-  apiKey: string;
-  model: string;
-  maxTokens: number;
-  tier: ModelTier;
-  role: "primary" | "fallback";
-};
-
-type TierProviders = {
-  primary: ProviderConfig;
-  fallback: ProviderConfig | null;
-};
-
-/**
- * Normalises an API base URL to a full /chat/completions endpoint.
- *
- * Handles three input patterns:
- *   "https://api.fuka.win/v1/chat/completions" → unchanged (already full)
- *   "https://openrouter.ai/api/v1"             → appends /chat/completions
- *   "https://api.example.com"                  → appends /v1/chat/completions
- */
-function toCompletionsUrl(base: string): string {
-  if (base.endsWith("/chat/completions")) return base;
-  const stripped = base.replace(/\/$/, "");
-  if (/\/v\d+$/.test(stripped)) return stripped + "/chat/completions";
-  return stripped + "/v1/chat/completions";
-}
-
-function resolveProviderForTier(tier: ModelTier): TierProviders {
-  const fiftyfiveBaseUrl = toCompletionsUrl(
-    Deno.env.get("FIFTYFIVE_BASE_URL") ||
-    Deno.env.get("OPENROUTER_BASE_URL") ||
-    "https://api.openai.com/v1/chat/completions",
-  );
-
-  // ── 55api per-group keys (primary) ──────────────────────────────────────────
-  // Each token group is bound to specific models; fall back to generic key last.
-  const legacyFiftyfiveKey = Deno.env.get("FIFTYFIVE_API_KEY") || "";
-
-  const fiftyfiveKeyGemini =
-    Deno.env.get("FIFTYFIVE_API_KEY_GEMINI") || legacyFiftyfiveKey;
-  const fiftyfiveKeyGpt =
-    Deno.env.get("FIFTYFIVE_API_KEY_GPT") || legacyFiftyfiveKey;
-  const fiftyfiveKeyClaude =
-    Deno.env.get("FIFTYFIVE_API_KEY_CLAUDE") || legacyFiftyfiveKey;
-
-  // ── 芙卡 (fallback) ─────────────────────────────────────────────────────────
-  const fukaBaseUrl = toCompletionsUrl(
-    Deno.env.get("FUKA_BASE_URL") ||
-    Deno.env.get("OPENROUTER_BASE_URL") ||
-    "https://api.fuka.win/v1/chat/completions",
-  );
-  const fukaApiKey =
-    Deno.env.get("FUKA_API_KEY") ||
-    Deno.env.get("OPENROUTER_API_KEY") ||
-    "";
-
-  // ── Legacy model name defaults ──────────────────────────────────────────────
-  const legacyDefault =
-    Deno.env.get("DEFAULT_MODEL") || Deno.env.get("MODEL_NAME") || "";
-
-  // ── fiftyfive model name guard ───────────────────────────────────────────────
-  // Blocks fuka-specific channel names from being sent to fiftyfive.
-  // fuka display names contain channel identifiers like [浣溪沙], [鸢尾花], [百香果],
-  // or trailing variant numbers ①②. These are NOT valid fiftyfive model ids.
-  // Note: 55api model ids CAN contain Chinese prefixes like [A-按量], [G-按量],
-  // [K-按量], [aws-量] — these are valid and must NOT be blocked.
-  function assertFiftyfiveModel(model: string, tierName: string): void {
-    const FUKA_CHANNEL_PATTERN = /浣溪沙|鸢尾花|百香果|\u2460|\u2461|\u2462|\u2463|\u2464/;
-    if (FUKA_CHANNEL_PATTERN.test(model)) {
-      console.error(JSON.stringify({
-        fn: "resolveProviderForTier",
-        event: "config_error_fuka_model_on_fiftyfive",
-        tier: tierName,
-        model,
-        hint: "fuka channel name detected in fiftyfive primary model. Set MODEL_" + tierName.toUpperCase() + "_PRIMARY to a valid 55api model id.",
-      }));
-      throw new Error(`config_error: fuka channel name detected in fiftyfive primary for tier ${tierName}: "${model}". Check MODEL_${tierName.toUpperCase()}_PRIMARY secret.`);
-    }
-  }
-
-  switch (tier) {
-    case "instant": {
-      const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_INSTANT") || "300", 10);
-      const primaryModel =
-        Deno.env.get("MODEL_INSTANT_PRIMARY") ||
-        Deno.env.get("FAST_MODEL") ||
-        legacyDefault;
-      assertFiftyfiveModel(primaryModel, "instant");
-      const fallbackModel =
-        Deno.env.get("MODEL_INSTANT_FALLBACK") ||
-        Deno.env.get("FALLBACK_MODEL") ||
-        "";
-      const primary: ProviderConfig = {
-        providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
-        apiKey: fiftyfiveKeyGemini, model: primaryModel, maxTokens, tier, role: "primary",
-      };
-      const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
-        ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier, role: "fallback" }
-        : null;
-      return { primary, fallback };
-    }
-    case "advanced": {
-      const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_ADVANCED") || "1200", 10);
-      const primaryModel =
-        Deno.env.get("MODEL_ADVANCED_PRIMARY") ||
-        Deno.env.get("ADVANCED_MODEL") ||
-        legacyDefault;
-      assertFiftyfiveModel(primaryModel, "advanced");
-      const fallbackModel =
-        Deno.env.get("MODEL_ADVANCED_FALLBACK") ||
-        Deno.env.get("FALLBACK_MODEL") ||
-        "";
-      const primary: ProviderConfig = {
-        providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
-        apiKey: fiftyfiveKeyClaude, model: primaryModel, maxTokens, tier, role: "primary",
-      };
-      const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
-        ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier, role: "fallback" }
-        : null;
-      return { primary, fallback };
-    }
-    default: {
-      // general
-      const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "300", 10);
-      const primaryModel =
-        Deno.env.get("MODEL_GENERAL_PRIMARY") ||
-        legacyDefault;
-      assertFiftyfiveModel(primaryModel, "general");
-      const fallbackModel =
-        Deno.env.get("MODEL_GENERAL_FALLBACK") ||
-        Deno.env.get("FALLBACK_MODEL") ||
-        "";
-      const primary: ProviderConfig = {
-        providerName: "fiftyfive", baseUrl: fiftyfiveBaseUrl,
-        apiKey: fiftyfiveKeyGpt, model: primaryModel, maxTokens, tier: "general", role: "primary",
-      };
-      const fallback: ProviderConfig | null = fukaApiKey && fallbackModel
-        ? { providerName: "fuka", baseUrl: fukaBaseUrl, apiKey: fukaApiKey, model: fallbackModel, maxTokens, tier: "general", role: "fallback" }
-        : null;
-      return { primary, fallback };
-    }
-  }
-}
-
-
-
-/** Returns true for upstream errors that warrant a one-shot fallback attempt. */
-function isFallbackableStatus(status: number, bodyText: string): boolean {
-  if (status === 408 || status === 429 || status >= 500) return true;
-  const lower = bodyText.toLocaleLowerCase();
-  return (
-    lower.includes("insufficient credits") ||
-    lower.includes("insufficient_credits") ||
-    lower.includes("bad_response_status_code") ||
-    lower.includes("quota exceeded") ||
-    lower.includes("rate limit")
-  );
-}
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
@@ -1435,173 +1249,7 @@ function base64EncodeUtf8(value: unknown): string {
 }
 
 // ── Model call (with one-shot fallback) ───────────────────────────────────────
-
-type CallResult = {
-  response: Response;
-  usedModel: string;
-  usedProvider: ProviderName;
-  fallbackUsed: boolean;
-  fallbackModel: string | null;
-  fallbackProvider: ProviderName | null;
-  fallbackReason: string | null;
-  modelCallMs: number;
-};
-
-const TIER_TIMEOUT_MS: Record<ModelTier, number> = {
-  instant: 20_000,
-  general: 35_000,
-  advanced: 60_000,
-};
-
-function getTimeoutMs(tier: ModelTier): number {
-  const envKey = `MODEL_TIMEOUT_MS_${tier.toUpperCase()}` as
-    | "MODEL_TIMEOUT_MS_INSTANT"
-    | "MODEL_TIMEOUT_MS_GENERAL"
-    | "MODEL_TIMEOUT_MS_ADVANCED";
-  const fromEnv = parseInt(Deno.env.get(envKey) || "", 10);
-  return isNaN(fromEnv) ? TIER_TIMEOUT_MS[tier] : fromEnv;
-}
-
-async function callModel(
-  provider: ProviderConfig,
-  messages: unknown[],
-): Promise<{ res: Response; ms: number }> {
-  const t = Date.now();
-  const timeoutMs = getTimeoutMs(provider.tier);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(provider.baseUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        messages,
-        stream: true,
-        max_tokens: provider.maxTokens,
-      }),
-      signal: controller.signal,
-    });
-    return { res, ms: Date.now() - t };
-  } catch (err) {
-    const isTimeout =
-      err instanceof Error &&
-      (err.name === "AbortError" || err.message.includes("aborted"));
-    if (isTimeout) {
-      // Wrap as a synthetic 408 so upstream fallback logic can handle it uniformly
-      return {
-        res: new Response(
-          JSON.stringify({ error: "upstream_timeout", provider: provider.providerName }),
-          { status: 408, headers: { "Content-Type": "application/json" } },
-        ),
-        ms: Date.now() - t,
-      };
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function callModelWithFallback(
-  tierProviders: TierProviders,
-  messages: unknown[],
-): Promise<CallResult> {
-  const { primary, fallback } = tierProviders;
-
-  let primaryRes: Response;
-  let primaryMs: number;
-
-  try {
-    const result = await callModel(primary, messages);
-    primaryRes = result.res;
-    primaryMs = result.ms;
-  } catch (err) {
-    // Network/connection error thrown by primary — route to fallback if available.
-    const errMsg = err instanceof Error ? err.message : String(err);
-    const errName = err instanceof Error ? err.name : "unknown";
-    console.error(JSON.stringify({
-      fn: "callModelWithFallback",
-      event: "primary_fetch_error",
-      primary_error_name: errName,
-      primary_error_message: errMsg.slice(0, 300),
-      primary_providerName: primary.providerName,
-      primary_baseUrl: primary.baseUrl,
-      primary_model: primary.model,
-      has_fallback: Boolean(fallback),
-      fallback_providerName: fallback?.providerName ?? null,
-      fallback_baseUrl: fallback?.baseUrl ?? null,
-      fallback_model: fallback?.model ?? null,
-    }));
-    if (!fallback) throw err;
-    const fallbackReason = `primary_error: ${errMsg.slice(0, 120)}`;
-    let fallbackRes: Response;
-    let fallbackMs: number;
-    try {
-      const fb = await callModel(fallback, messages);
-      fallbackRes = fb.res;
-      fallbackMs = fb.ms;
-    } catch (fbErr) {
-      const fbMsg = fbErr instanceof Error ? fbErr.message : String(fbErr);
-      const fbName = fbErr instanceof Error ? fbErr.name : "unknown";
-      console.error(JSON.stringify({
-        fn: "callModelWithFallback",
-        event: "fallback_fetch_error",
-        fallback_error_name: fbName,
-        fallback_error_message: fbMsg.slice(0, 300),
-        fallback_providerName: fallback.providerName,
-        fallback_baseUrl: fallback.baseUrl,
-        fallback_model: fallback.model,
-      }));
-      throw fbErr;
-    }
-    return {
-      response: fallbackRes,
-      usedModel: fallback.model,
-      usedProvider: fallback.providerName,
-      fallbackUsed: true,
-      fallbackModel: fallback.model,
-      fallbackProvider: fallback.providerName,
-      fallbackReason,
-      modelCallMs: fallbackMs,
-    };
-  }
-
-  if (primaryRes.ok) {
-    return {
-      response: primaryRes,
-      usedModel: primary.model,
-      usedProvider: primary.providerName,
-      fallbackUsed: false,
-      fallbackModel: null,
-      fallbackProvider: null,
-      fallbackReason: null,
-      modelCallMs: primaryMs,
-    };
-  }
-
-  const bodyText = await primaryRes.text();
-
-  if (!fallback || !isFallbackableStatus(primaryRes.status, bodyText)) {
-    return {
-      response: new Response(bodyText, { status: primaryRes.status, headers: primaryRes.headers }),
-      usedModel: primary.model,
-      usedProvider: primary.providerName,
-      fallbackUsed: false,
-      fallbackModel: null,
-      fallbackProvider: null,
-      fallbackReason: null,
-      modelCallMs: primaryMs,
-    };
-  }
-
-  // One-shot fallback
-  const bodySnippet = bodyText.slice(0, 120).replace(/[\r\n]+/g, " ");
-  const fallbackReason = `primary_${primaryRes.status}: ${bodySnippet}`;
-  const { res: fallbackRes, ms: fallbackMs } = await callModel(fallback, messages);
+// All model call logic imported from ../_shared/model-client.ts
 
   return {
     response: fallbackRes,
@@ -1657,43 +1305,7 @@ function messageTextForSummary(message: unknown): string {
   }
 }
 
-async function callModelText(
-  provider: ProviderConfig,
-  messages: unknown[],
-  maxTokens: number,
-): Promise<string> {
-  const timeoutMs = getTimeoutMs(provider.tier);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(provider.baseUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${provider.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        messages,
-        stream: false,
-        max_tokens: maxTokens,
-      }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`summary_model_${res.status}: ${text.slice(0, 160)}`);
-    }
-    const data = await res.json();
-    const text =
-      data?.choices?.[0]?.message?.content ??
-      data?.choices?.[0]?.text ??
-      "";
-    return typeof text === "string" ? text.trim() : "";
-  } finally {
-    clearTimeout(timer);
-  }
-}
+// callModelText imported from ../_shared/model-client.ts
 
 async function buildRunningSummary(
   tierProviders: TierProviders,

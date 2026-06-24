@@ -4769,30 +4769,51 @@ function renderSettingsSubpage(type) {
 
 function _renderApiSubpage() {
   const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
+  const diaryTier = localStorage.getItem("diary_model_tier") || "follow_chat";
+  const diaryTierLabel = { follow_chat: "跟随对话模型", general: "General", advanced: "Advanced" }[diaryTier] || diaryTier;
   return `
     <div class="settings-section">
-      <div class="settings-section-label">模型档位</div>
+      <div class="settings-section-label">对话模型</div>
       <div class="settings-card">
         <div class="settings-card-row">
           <div><strong>当前档位</strong><small>影响回复质量与速度</small></div>
           <span class="settings-row-value">${tierLabel}</span>
         </div>
         <div class="settings-card-row">
-          <div><strong>切换档位</strong><small>在聊天页底部或 + 菜单选择</small></div>
-          <span class="settings-row-value">›</span>
+          <div><strong>连接状态</strong><small></small></div>
+          <span class="settings-row-value" id="srChatStatus">—</span>
+        </div>
+        <div class="settings-card-row">
+          <button type="button" class="settings-row-action-btn" id="srChatTestBtn">测试连接</button>
         </div>
       </div>
     </div>
     <div class="settings-section">
-      <div class="settings-section-label">接口配置</div>
+      <div class="settings-section-label">写日记模型</div>
       <div class="settings-card">
         <div class="settings-card-row">
-          <div><strong>Provider</strong><small>API 服务商</small></div>
-          <span class="settings-row-value">占位</span>
+          <div><strong>模型档位</strong><small>日记生成使用的档位</small></div>
+          <span class="settings-row-value">${diaryTierLabel}</span>
         </div>
         <div class="settings-card-row">
-          <div><strong>Endpoint</strong><small>接口地址</small></div>
-          <span class="settings-row-value">占位</span>
+          <select id="srDiaryTierSelect" class="settings-select">
+            <option value="follow_chat"${diaryTier === "follow_chat" ? " selected" : ""}>跟随对话模型</option>
+            <option value="general"${diaryTier === "general" ? " selected" : ""}>General</option>
+            <option value="advanced"${diaryTier === "advanced" ? " selected" : ""}>Advanced</option>
+          </select>
+        </div>
+        <div class="settings-card-row">
+          <button type="button" class="settings-row-action-btn" id="srDiaryTestBtn">测试日记模型</button>
+          <span class="settings-row-value" id="srDiaryTestStatus"></span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">联网搜索</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>联网搜索</strong><small>网页内容检索</small></div>
+          <span class="settings-row-value settings-row-value--muted">未启用</span>
         </div>
       </div>
     </div>`;
@@ -5023,11 +5044,66 @@ function _initSettingsSubpageEvents(container, type) {
       resetBtn.disabled = true;
     });
   }
+  if (type === "api") {
+    _initSettingsApiSubpage(container);
+  }
 }
 
 // Legacy stubs (kept so any other code referencing the old names keeps working)
 function _renderBeautifySubpage()  { return _renderAppearanceResourcesSubpage(); }
 function _renderPromptSubpage()    { return _renderPromptWorldbookSubpage(); }
+
+function _initSettingsApiSubpage(container) {
+  async function testDiaryModel() {
+    const statusEl = container.querySelector("#srDiaryTestStatus");
+    if (statusEl) statusEl.textContent = "测试中…";
+    try {
+      const session = supabaseClient && (await supabaseClient.auth.getSession()).data.session;
+      const headers = { "Content-Type": "application/json" };
+      if (session) headers["Authorization"] = "Bearer " + session.access_token;
+      const baseUrl = getConfigValue("SUPABASE_URL", "");
+      const t = Date.now();
+      const res = await fetch(baseUrl + "/functions/v1/diary?type=test_model", { method: "POST", headers });
+      const data = await res.json();
+      if (data.ok) {
+        if (statusEl) statusEl.textContent = `${data.provider} · ${data.model} · ${data.latency_ms}ms`;
+      } else {
+        if (statusEl) statusEl.textContent = "失败: " + (data.error || res.status);
+      }
+    } catch (_err) {
+      if (statusEl) statusEl.textContent = "网络错误";
+    }
+  }
+
+  const chatTestBtn = container.querySelector("#srChatTestBtn");
+  if (chatTestBtn) {
+    chatTestBtn.addEventListener("click", async () => {
+      chatTestBtn.disabled = true;
+      const statusEl = container.querySelector("#srChatStatus");
+      if (statusEl) statusEl.textContent = "测试中…";
+      await testDiaryModel();
+      const diaryStatus = container.querySelector("#srDiaryTestStatus");
+      if (statusEl && diaryStatus) statusEl.textContent = diaryStatus.textContent;
+      chatTestBtn.disabled = false;
+    });
+  }
+
+  const diaryTestBtn = container.querySelector("#srDiaryTestBtn");
+  if (diaryTestBtn) {
+    diaryTestBtn.addEventListener("click", async () => {
+      diaryTestBtn.disabled = true;
+      await testDiaryModel();
+      diaryTestBtn.disabled = false;
+    });
+  }
+
+  const diaryTierSelect = container.querySelector("#srDiaryTierSelect");
+  if (diaryTierSelect) {
+    diaryTierSelect.addEventListener("change", () => {
+      localStorage.setItem("diary_model_tier", diaryTierSelect.value);
+    });
+  }
+}
 
 function _renderWorldbookSubpage() {
   return `<div id="wbSubpageMount" class="wb-subpage-mount"></div>`;
