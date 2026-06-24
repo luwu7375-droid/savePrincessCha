@@ -120,6 +120,14 @@ async function readUrl(url: string): Promise<ReadResult> {
     clearTimeout(timer);
   }
 
+  // Re-validate final URL after redirect to prevent SSRF via open redirect
+  if (res.url && res.url !== url) {
+    const recheck = validateUrl(res.url);
+    if (!recheck.ok) {
+      throw Object.assign(new Error("ssrf_blocked"), { code: "ssrf_blocked" });
+    }
+  }
+
   const contentType = res.headers.get("content-type") ?? "";
   const isReadable = /text\/(html|plain)|application\/json/.test(contentType);
   if (!isReadable) {
