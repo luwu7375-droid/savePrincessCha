@@ -1439,6 +1439,19 @@ body {
   display: grid !important;
 }
 
+/* mic always last among visible buttons */
+#voiceInputBtn { order: 1; }
+
+/* Mobile: 4-column grid with plus on the left */
+@media (max-width: 1287px) {
+  .input-bar {
+    grid-template-columns: 36px 1fr 36px 36px;
+  }
+  #composerMenuBtn {
+    order: -1;
+  }
+}
+
 .plus-panel {
   position: relative;
   z-index: 10;
