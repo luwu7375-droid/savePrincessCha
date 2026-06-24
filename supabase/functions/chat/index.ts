@@ -2438,7 +2438,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
         orBaseUrl: backgroundBaseUrl,
         orApiKey: backgroundApiKey,
         fastModel: backgroundModel,
-        userMessageId: null,
+        userMessageId: typeof payload.userMessageId === "number" ? payload.userMessageId : null,
       }).catch((e) => console.error(JSON.stringify({ fn: "vault_runner", event: "uncaught", error: String(e) })));
     }
 
