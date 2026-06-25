@@ -2673,6 +2673,7 @@ function getWebApiEndpoint() {
 // ── Web context injection ──────────────────────────────────────────────────────
 // Set by phone.js "在聊天里讲给KK"; consumed once by the next callChatAPI call.
 let _pendingWebContext = null;
+let _bypassUrlCheck = false;
 
 window.injectWebContextToChat = function ({ summary, sourceUrl, title }) {
   _pendingWebContext = `[cha 刚读了一个链接]\n来源：${title || sourceUrl}\n内容摘要：${summary}`;
@@ -4264,26 +4265,27 @@ async function handleSubmit() {
     return;
   }
 
-  // ── URL detection: show "查手机" shortcut, no auto-fetch ──────────────────
+  // ── URL detection: confirm before send ──────────────────────────────────
   const _URL_RE = /https?:\/\/[^\s<>"'{}|\\^`\[\]]{4,}/i;
   const detectedUrl = _URL_RE.exec(text)?.[0];
-  if (detectedUrl) {
+  const shouldBypass = _bypassUrlCheck;
+  _bypassUrlCheck = false;
+  if (detectedUrl && !shouldBypass) {
     const hint = document.getElementById("webUrlHint");
     if (hint) {
-      hint.innerHTML = `检测到链接 · <button type="button" id="webUrlOpenBtn" class="web-url-hint-btn">在查手机里读</button>`;
+      hint.innerHTML = `要让 cha 先打开看看吗？ <button type="button" id="webUrlReadBtn" class="web-url-hint-btn">让cha先读</button> <button type="button" id="webUrlSendBtn" class="web-url-hint-btn web-url-hint-btn--secondary">直接发送</button>`;
       hint.removeAttribute("hidden");
-      const openBtn = document.getElementById("webUrlOpenBtn");
-      if (openBtn) {
-        openBtn.addEventListener("click", () => {
-          hint.setAttribute("hidden", "");
-          if (typeof window.openPhoneOverlayWithUrl === "function") {
-            window.openPhoneOverlayWithUrl(detectedUrl);
-          }
-        }, { once: true });
-      }
-      // Auto-hide after 8s
-      setTimeout(() => hint.setAttribute("hidden", ""), 8000);
+      document.getElementById("webUrlReadBtn")?.addEventListener("click", () => {
+        hint.setAttribute("hidden", "");
+        window.openPhoneOverlayWithUrl?.(detectedUrl);
+      }, { once: true });
+      document.getElementById("webUrlSendBtn")?.addEventListener("click", () => {
+        hint.setAttribute("hidden", "");
+        _bypassUrlCheck = true;
+        handleSubmit();
+      }, { once: true });
     }
+    return;
   }
 
   messageInput.value = "";

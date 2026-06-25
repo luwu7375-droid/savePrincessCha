@@ -82,11 +82,11 @@
     }
 
     try {
-      const userId = getCurrentUserId();
+      const authHeaders = await getSupabaseAuthHeaders();
       const res = await fetch(endpoint + "?action=summarize_url", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: rawUrl, userId, saveLog: true }),
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ url: rawUrl, saveLog: true }),
       });
       const data = await res.json();
 

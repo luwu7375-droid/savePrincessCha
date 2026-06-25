@@ -95,6 +95,7 @@ type ReadResult = {
   url: string;
   final_url: string;
   excerpt: string;
+  text_for_summary: string;
   text_chars: number;
   truncated: boolean;
   fetched_at: string;
@@ -163,16 +164,16 @@ async function readUrl(url: string): Promise<ReadResult> {
   const title = contentType.includes("html") ? extractTitle(raw) : "";
   const description = contentType.includes("html") ? extractDescription(raw) : "";
   const bodyText = contentType.includes("html") ? extractText(raw) : raw;
-  const text = bodyText.slice(0, TEXT_TRUNCATE_CHARS);
-
-  const excerpt = description || text.slice(0, 300).replace(/\s+/g, " ");
+  const text_for_summary = bodyText.slice(0, TEXT_TRUNCATE_CHARS);
+  const excerpt = description || text_for_summary.slice(0, 300).replace(/\s+/g, " ");
 
   return {
     title,
     url,
     final_url: res.url || url,
     excerpt,
-    text_chars: text.length,
+    text_for_summary,
+    text_chars: text_for_summary.length,
     truncated,
     fetched_at: new Date().toISOString(),
     duration_ms: Date.now() - t0,
@@ -212,7 +213,7 @@ async function summarizeUrl(
 ${focusLine}
 
 网页内容：
-${readResult.excerpt}`;
+${readResult.text_for_summary}`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
@@ -249,8 +250,8 @@ async function saveLog(params: {
   durationMs?: number;
   tokenEstimate?: number;
 }): Promise<string | null> {
-  const supabaseUrl = Deno.env.get("DB_URL");
-  const serviceKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
+  const supabaseUrl = Deno.env.get("DB_URL") || Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("DB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) return null;
 
   const payload = {
@@ -299,6 +300,30 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// ── Auth verification ─────────────────────────────────────────────────────────
+
+async function verifyUser(req: Request): Promise<{ userId: string } | Response> {
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) return json({ error: "unauthorized" }, 401);
+
+  const supabaseUrl = Deno.env.get("DB_URL") || Deno.env.get("SUPABASE_URL") || "";
+  const serviceKey = Deno.env.get("DB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (!supabaseUrl) return json({ error: "server_config_error" }, 500);
+
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: serviceKey },
+    });
+    if (!res.ok) return json({ error: "unauthorized" }, 401);
+    const user = await res.json();
+    if (!user?.id) return json({ error: "unauthorized" }, 401);
+    return { userId: user.id as string };
+  } catch {
+    return json({ error: "auth_error" }, 401);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -313,7 +338,13 @@ Deno.serve(async (req) => {
     return json({ error: "invalid_json" }, 400);
   }
 
-  const userId = typeof body.userId === "string" && body.userId ? body.userId : "anon";
+  const authResult = await verifyUser(req);
+  if (authResult instanceof Response) return authResult;
+  const userId = authResult.userId;
+
+  const bodyUserId = typeof body.userId === "string" ? body.userId.trim() : null;
+  if (bodyUserId && bodyUserId !== userId) return json({ error: "forbidden" }, 403);
+
   const conversationId = typeof body.conversationId === "string" ? body.conversationId : undefined;
   const saveLogFlag = body.saveLog !== false;
 
@@ -351,7 +382,8 @@ Deno.serve(async (req) => {
         });
       }
 
-      return json({ ok: true, ...result, saved_log_id: savedLogId });
+      const { text_for_summary: _tf, ...publicResult } = result;
+      return json({ ok: true, ...publicResult, saved_log_id: savedLogId });
     } catch (err) {
       const isTimeout = err instanceof Error && err.name === "AbortError";
       const code = isTimeout ? "timeout" : ((err as { code?: string }).code ?? "fetch_error");
