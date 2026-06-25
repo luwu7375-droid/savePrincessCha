@@ -3797,6 +3797,18 @@ img.msg-image {
   margin: 0 12px;
 }
 
+.settings-text-input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: var(--font-mono, monospace);
+  min-width: 0;
+  flex: 1;
+}
+
 .settings-notice {
   padding: 12px 16px;
   margin: 16px 0;

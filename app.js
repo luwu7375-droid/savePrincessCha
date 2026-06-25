@@ -5095,10 +5095,27 @@ function _renderChatAppearanceSubpage() {
 }
 
 function _renderVoiceSubpage() {
-  const engine = window.SPVoice ? window.SPVoice.getTTSEngine() : "system";
+  const cfg = window.SPVoice ? window.SPVoice.getTTSConfig() : { provider: "system", profiles: {} };
+  const engine = cfg.provider || "system";
   const rate = window.SPVoice ? window.SPVoice.getTTSRate() : 1.0;
   const volume = window.SPVoice ? window.SPVoice.getTTSVolume() : 1.0;
   const ttsSupported = window.SPVoice ? window.SPVoice.isTTSSupported() : false;
+  const profiles = cfg.profiles || {};
+
+  function profileRow(lang, label, hint) {
+    const p = profiles[lang] || {};
+    const voiceId = p.voice_id || "";
+    const modelId = p.model_id || "eleven_v3";
+    return `
+      <div class="settings-card-row">
+        <div><strong>${label}</strong><small>${hint}</small></div>
+        <input type="text" class="settings-text-input voice-profile-voice-id" data-lang="${lang}"
+          placeholder="voice_id" value="${voiceId}" autocomplete="off" spellcheck="false">
+        <input type="text" class="settings-text-input voice-profile-model-id" data-lang="${lang}"
+          placeholder="model_id" value="${modelId}" autocomplete="off" spellcheck="false"
+          style="width:9em">
+      </div>`;
+  }
 
   return `
     <div class="settings-section">
@@ -5106,11 +5123,22 @@ function _renderVoiceSubpage() {
       <div class="settings-card">
         <div class="settings-card-row">
           <div><strong>引擎</strong><small>选择 TTS 服务</small></div>
-          <select id="voiceTTSEngine" class="settings-select" ${!ttsSupported ? 'disabled' : ''}>
+          <select id="voiceTTSEngine" class="settings-select">
             <option value="system" ${engine === "system" ? "selected" : ""}>系统语音</option>
             <option value="elevenlabs" ${engine === "elevenlabs" ? "selected" : ""}>ElevenLabs</option>
+            <option value="minimax" ${engine === "minimax" ? "selected" : ""}>MiniMax</option>
+            <option value="local_http" ${engine === "local_http" ? "selected" : ""}>本地 HTTP</option>
           </select>
         </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">声音配置</div>
+      <div class="settings-card" id="voiceProfilesCard">
+        ${profileRow("zh", "中文", "默认中文 voice_id")}
+        ${profileRow("en", "英文", "默认英文 voice_id")}
+        ${profileRow("ja", "日文", "日语 voice_id")}
+        ${profileRow("default", "其他", "未匹配语言的 voice_id")}
       </div>
     </div>
     <div class="settings-section">
@@ -5310,6 +5338,20 @@ function _initSettingsVoiceSubpage(container) {
       window.SPVoice.setTTSEngine(e.target.value);
     });
   }
+
+  // Wire per-language voice_id and model_id inputs
+  container.querySelectorAll(".voice-profile-voice-id").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const lang = e.target.dataset.lang;
+      if (lang) window.SPVoice.setTTSConfig({ profiles: { [lang]: { voice_id: e.target.value.trim() } } });
+    });
+  });
+  container.querySelectorAll(".voice-profile-model-id").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const lang = e.target.dataset.lang;
+      if (lang) window.SPVoice.setTTSConfig({ profiles: { [lang]: { model_id: e.target.value.trim() || "eleven_v3" } } });
+    });
+  });
 
   if (rateSlider && rateValue) {
     rateSlider.addEventListener("input", (e) => {

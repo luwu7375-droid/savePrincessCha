@@ -156,9 +156,8 @@
   // ── TTS Helpers ──────────────────────────────────────────────────────────────
   function getTTSEngine() {
     const cfg = getTTSConfig();
-    if (cfg.provider && cfg.provider !== "elevenlabs") return cfg.provider;
-    if (cfg.provider === "elevenlabs") return "elevenlabs";
-    // Legacy fallback
+    if (cfg.provider) return cfg.provider;
+    // Legacy fallback for users who never saved voice_tts_config
     return localStorage.getItem(VOICE_TTS_ENGINE) || "system";
   }
 
@@ -217,7 +216,8 @@
   // ── TTS Playback ─────────────────────────────────────────────────────────────
   function speakText(text, button, msgId) {
     const engine = getTTSEngine();
-    if (engine === "elevenlabs") {
+    // All non-system providers go through the backend TTS function
+    if (engine !== "system") {
       speakElevenLabs(cleanTextForTTS(text), button, msgId);
       return;
     }
@@ -285,7 +285,7 @@
     return (key && key !== "YOUR_KEY_HERE") ? key : null;
   }
 
-  async function speakElevenLabs(text, button, msgId) {
+  async function speakElevenLabs(text, button, msgId, language_hint) {
     const row = button?.closest(".msg-row");
 
     if (currentPlayingButton === button && currentAudio) {
@@ -305,13 +305,27 @@
       button.disabled = true;
 
       try {
+        // Build voice profile from config
+        const cfg = getTTSConfig();
+        const lang = detectTtsLanguage(text, language_hint || null);
+        const profile = cfg.profiles[lang] || cfg.profiles.default || {};
+        const voice_id = profile.voice_id || "";
+        const model_id = profile.model_id || "eleven_v3";
+
         const res = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(anonKey ? { "Authorization": `Bearer ${anonKey}`, "apikey": anonKey } : {}),
+            "Authorization": `Bearer ${anonKey}`,
+            "apikey": anonKey,
           },
-          body: JSON.stringify({ message_id: msgId ? Number(msgId) : null, text }),
+          body: JSON.stringify({
+            message_id: msgId ? Number(msgId) : null,
+            text,
+            language_hint: lang,
+            provider: cfg.provider || "elevenlabs",
+            voice_profile: { voice_id, model_id },
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
@@ -416,6 +430,9 @@
     setTTSEngine,
     setTTSRate,
     setTTSVolume,
+    getTTSConfig,
+    setTTSConfig,
+    detectTtsLanguage,
     createSpeakerButton,
     attachVoicePlayback,
     playMessageText,
@@ -429,6 +446,7 @@
     VOICE_TTS_RATE,
     VOICE_TTS_VOLUME,
     VOICE_ELEVENLABS_VOICE_ID,
+    VOICE_TTS_CONFIG,
   };
 
 })(window);
