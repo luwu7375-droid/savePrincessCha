@@ -1029,11 +1029,9 @@ body {
   background: rgba(247, 247, 245, 0.94);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
-  /* avatar | title(1fr) | onlineDot | search | more */
-  gap: 4px;
+  display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 #sidebarToggle {
