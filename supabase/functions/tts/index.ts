@@ -27,6 +27,8 @@ function prepareVoiceText(text: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/#{1,6} /g, "")
     .replace(/[*_~]/g, "")
+    .replace(/\[图片\]/g, "")
+    .replace(/\[image\]/gi, "")
     .trim();
   const paras = cleaned.split(/\n\n+/).filter((p) => p.trim());
   return paras.slice(0, 2).join("\n\n");

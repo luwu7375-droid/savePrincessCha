@@ -6,6 +6,22 @@
 (function () {
   "use strict";
 
+  // ── Shared visualViewport dispatcher ─────────────────────────────────────────
+  // All initX functions register their schedule fn here instead of binding their
+  // own listeners. One listener pair handles all three, avoiding duplicate RAFs.
+  const _vvSchedules = [];
+  let _vvListenerBound = false;
+
+  function _registerVVHandler(fn) {
+    _vvSchedules.push(fn);
+    if (!_vvListenerBound && window.visualViewport) {
+      _vvListenerBound = true;
+      const dispatch = () => _vvSchedules.forEach(f => f());
+      window.visualViewport.addEventListener("resize", dispatch);
+      window.visualViewport.addEventListener("scroll", dispatch);
+    }
+  }
+
   // ── Stable shell height ──────────────────────────────────────────────────────
   // --app-shell-h drives .layout height. Uses visualViewport.height when
   // available so iOS Safari browser-chrome is accounted for. Skips capture
@@ -44,10 +60,7 @@
       scheduleCapture();
     });
 
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", scheduleCapture);
-      window.visualViewport.addEventListener("scroll", scheduleCapture);
-    }
+    _registerVVHandler(scheduleCapture);
   }
 
   // ── Visual viewport vars ─────────────────────────────────────────────────────
@@ -71,15 +84,14 @@
       }
     }
     update();
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", scheduleUpdate);
-      window.visualViewport.addEventListener("scroll", scheduleUpdate);
-    } else {
+    _registerVVHandler(scheduleUpdate);
+    // Fallback for browsers without visualViewport
+    if (!window.visualViewport) {
       window.addEventListener("resize", scheduleUpdate);
     }
   }
 
-  // ── Keyboard viewport state ──────────────────────���───────────────────────────
+  // ── Keyboard viewport state ───────────────────────────────────────────────────
   // Manages .layout.keyboard-open and --keyboard-inset.
   // opts.messageInput / opts.chatSearchInput: DOM refs (may be null/undefined).
   // opts.onKeyboardOpen(inset): callback when keyboard opens (for app.js hooks).
@@ -93,18 +105,21 @@
     if (!shell || !window.visualViewport) return;
 
     const clampViewportToOrigin = () => {
-      if (window.visualViewport) {
-        const ol = window.visualViewport.offsetLeft;
-        if (ol !== 0) console.debug("[kb] visualViewport.offsetLeft =", ol);
+      // Only correct horizontal viewport offset (iOS Safari can shift viewport left
+      // on input focus). Do NOT reset vertical scroll — it races with
+      // messageList.scrollTo() and is always 0 on this app because html/body are
+      // overflow:hidden.
+      const needsHFix =
+        window.scrollX !== 0 ||
+        (window.visualViewport && window.visualViewport.offsetLeft !== 0);
+      if (!needsHFix) return;
+      if (window.visualViewport && window.visualViewport.offsetLeft !== 0) {
+        console.debug("[kb] visualViewport.offsetLeft =", window.visualViewport.offsetLeft);
       }
-      window.scrollTo({ left: 0, top: 0, behavior: "auto" });
+      window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
       document.documentElement.scrollLeft = 0;
-      document.documentElement.scrollTop  = 0;
       document.body.scrollLeft = 0;
-      document.body.scrollTop  = 0;
-      if (document.scrollingElement) {
-        document.scrollingElement.scrollLeft = 0;
-      }
+      if (document.scrollingElement) document.scrollingElement.scrollLeft = 0;
     };
 
     const resetKeyboardState = () => {
@@ -155,8 +170,7 @@
       });
     };
 
-    window.visualViewport.addEventListener("resize", updateKeyboardState);
-    window.visualViewport.addEventListener("scroll", updateKeyboardState);
+    _registerVVHandler(updateKeyboardState);
 
     if (opts.messageInput) {
       opts.messageInput.addEventListener("focus", () => {
