@@ -777,6 +777,7 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     stack.className = "msg-stack";
     stack.appendChild(el);
     if (role === "user") stack.appendChild(makeReceipt(!!readByChaAt));
+    if (role === "assistant" && window.SPVoice) stack.appendChild(window.SPVoice.createSpeakerButton(el, msgId));
     const row = makeRow(msgId);
     row.appendChild(stack);
     messageList.appendChild(row);
@@ -967,9 +968,9 @@ function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo) {
   stack.className = "msg-stack";
   stack.appendChild(el);
 
-  // Add speaker button for TTS (outside bubble)
-  if (window.SPVoice) {
-    const speakerBtn = window.SPVoice.createSpeakerButton(el);
+  // Add speaker button for TTS — only on primary bubbles (not siblings)
+  if (window.SPVoice && !isSibling) {
+    const speakerBtn = window.SPVoice.createSpeakerButton(el, msgId);
     stack.appendChild(speakerBtn);
   }
   // No read-receipt on assistant messages — user-read state drives the unread badge only
@@ -4761,7 +4762,7 @@ async function hideLoginAndInit(session) {
   setLoading(false);
   window.splashReady?.();
   if (window.SPDiary) {
-    window.SPDiary.updateHomeDiaryCard(supabaseClient, 'default')
+    window.SPDiary.updateHomeDiaryCard(supabaseClient, currentUserId || 'default')
       .catch(err => console.error('Failed to update diary card:', err));
   }
   // Desktop only: auto-focus on init. Mobile must not trigger soft keyboard.
@@ -5096,7 +5097,7 @@ function _renderVoiceSubpage() {
           <div><strong>引擎</strong><small>选择 TTS 服务</small></div>
           <select id="voiceTTSEngine" class="settings-select" ${!ttsSupported ? 'disabled' : ''}>
             <option value="system" ${engine === "system" ? "selected" : ""}>系统语音</option>
-            <option value="elevenlabs" ${engine === "elevenlabs" ? "selected" : ""} disabled>ElevenLabs（未配置）</option>
+            <option value="elevenlabs" ${engine === "elevenlabs" ? "selected" : ""}>ElevenLabs</option>
           </select>
         </div>
       </div>

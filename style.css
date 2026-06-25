@@ -3739,6 +3739,21 @@ img.msg-image {
   background: rgba(59, 130, 246, 0.1);
 }
 
+.speaker-btn.tts-loading {
+  opacity: 1;
+  animation: speaker-pulse 1s ease-in-out infinite;
+}
+
+.speaker-btn.tts-error {
+  opacity: 1;
+  color: #ef4444;
+}
+
+@keyframes speaker-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
 /* Ensure message has relative positioning for absolute speaker button */
 .message.cha-message {
   position: relative;
