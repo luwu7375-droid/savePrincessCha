@@ -921,6 +921,37 @@ function scrollToQuotedMessage(id) {
   setTimeout(() => target.classList.remove("msg-highlight"), 1800);
 }
 
+function getMessageQuotePreview(row) {
+  const textEl = row.querySelector(".message-text");
+  const imgEl = row.querySelector(".message-image");
+  const audioEl = row.querySelector("audio");
+
+  let preview = "";
+
+  // 图片消息
+  if (imgEl) {
+    preview = "[图片]";
+    if (textEl?.textContent) {
+      preview += " " + textEl.textContent.trim();
+    }
+  }
+  // 语音消息
+  else if (audioEl) {
+    const duration = audioEl.duration;
+    if (duration && isFinite(duration)) {
+      preview = `[语音 ${Math.round(duration)}"]`;
+    } else {
+      preview = "[语音]";
+    }
+  }
+  // 文本消息
+  else if (textEl) {
+    preview = textEl.textContent || "";
+  }
+
+  return preview.replace(/\s+/g, " ").trim().slice(0, 100);
+}
+
 function setReplyDraft(id, preview, role) {
   _replyToId      = id;
   _replyToPreview = preview;
@@ -1346,7 +1377,8 @@ async function reloadHistory(opts = {}) {
     } else {
       addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at, replyTo }, m.id);
     }
-    chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null });
+    const replyToData = replyTo ? { id: replyTo.id, role: replyTo.role, preview: replyTo.preview } : null;
+  chatMessages.push({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null, replyTo: replyToData });
   }
   if (resolved.length > 0) oldestLoadedMessageCreatedAt = resolved[0].created_at;
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
@@ -1381,7 +1413,10 @@ async function loadOlderHistory() {
   const older = await resolveImagePaths([...data].reverse());
   const prevScrollHeight = messageList.scrollHeight;
   const prevScrollTop = messageList.scrollTop;
-  const newEntries = older.map(m => ({ role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null, reply_to_message_id: m.reply_to_message_id ?? null, reply_to_preview: m.reply_to_preview ?? null, reply_to_role: m.reply_to_role ?? null }));
+  const newEntries = older.map(m => {
+    const rt = m.reply_to_message_id ? { id: String(m.reply_to_message_id), preview: m.reply_to_preview || "", role: m.reply_to_role || "user" } : null;
+    return { role: m.role, content: m.content, created_at: m.created_at, id: m.id != null ? String(m.id) : null, read_by_cha_at: m.read_by_cha_at ?? null, read_by_user_at: m.read_by_user_at ?? null, replyTo: rt };
+  });
   chatMessages.unshift(...newEntries);
   messageList.innerHTML = "";
   lastMessageTime = null;
@@ -1653,14 +1688,25 @@ async function callChatAPI(messages, replyMode = "auto") {
     longChat,
     loopDetected,
   });
+
+  // 编译引用消息到 content 中
+  const compiledMessages = messages.map(msg => {
+    if (!msg.replyTo || msg.role !== "user") {
+      return { role: msg.role, content: msg.content };
+    }
+    // 用户消息有引用，编译引用上下文
+    const replyLabel = msg.replyTo.role === "assistant" ? "Cha" : "用户";
+    const replyPreview = msg.replyTo.preview || "[消息]";
+    const compiledContent = `[引用${replyLabel}的消息]\n${replyPreview}\n\n[用户回复]\n${extractTextFromMessageContent(msg.content)}`;
+    return { role: msg.role, content: compiledContent };
+  });
+
   return fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: modelName,
-      messages: [
-        ...messages.map(({ role, content }) => ({ role, content })),
-      ],
+      messages: compiledMessages,
       stream: true,
       replyMode,
       userId: currentUserId,
@@ -1995,7 +2041,7 @@ async function requestStreamingReply(replyMode = "auto") {
   const replyTime = new Date().toISOString();
   const replyId = await saveMessage("assistant", cleanReply);
   const replyIdStr = replyId != null ? String(replyId) : null;
-  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null });
+  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null, replyTo: null });
   lastMessageTime = new Date(replyTime).getTime();
 
   // If the user is already on the Chat tab, pre-mark this reply as read by user
@@ -2074,6 +2120,8 @@ async function requestStreamingReply(replyMode = "auto") {
   // Sync user read receipts now that a new assistant message has been appended.
   // This ensures all user messages before the reply get the watermark treatment.
   refreshUserReceipts();
+  // Maintain bottom anchor after assistant reply completes
+  maintainBottomAnchor("assistant-done");
   // After stream ends, start short-polling for memory promotion results
   startMemoryPromotionPoller(_currentRequestStartTime, _currentRequestUserMessageId);
 }
@@ -2587,8 +2635,7 @@ function showMessageActionMenu(row, x, y) {
   if (effectiveMsgId) {
     addMessageMenuButton(menu, "引用", () => {
       const role = isAssistant ? "assistant" : "user";
-      const textEl = row.querySelector(".message-text");
-      const preview = (textEl?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
+      const preview = getMessageQuotePreview(row);
       closeMessageActionMenu();
       setReplyDraft(effectiveMsgId, preview, role);
     });
@@ -2630,8 +2677,17 @@ function cancelLongPress() {
 }
 
 messageList.addEventListener("contextmenu", (e) => {
-  if (!isMobileMessageActions()) return;
-  if (e.target instanceof Element && e.target.closest(".message")) e.preventDefault();
+  // 禁用消息区域的原生右键菜单，改用自定义菜单
+  if (!(e.target instanceof Element)) return;
+  const row = e.target.closest(".msg-row");
+  if (!row || row.id === "typingIndicatorRow") return;
+
+  e.preventDefault();
+
+  // 桌面端：右键直接打开自定义菜单
+  if (!isMobileMessageActions()) {
+    showMessageActionMenu(row, e.clientX, e.clientY);
+  }
 });
 
 messageList.addEventListener("scroll", () => {
@@ -3866,21 +3922,21 @@ function scrollChatToLatest(behavior = "auto") {
 }
 
 // Returns true when the user is close enough to the bottom that auto-scroll
-// should run (≤ 80px above the bottom edge).
+// should run (≤ 120px above the bottom edge).
 function isNearBottom() {
   if (!messageList) return true;
-  return messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight <= 80;
+  return messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight <= 120;
 }
 
 // Only scroll to bottom when the user is already near the bottom, or when
-// explicitly forced (e.g. after sending a message).
+// explicitly forced (e.g. after sending a message or assistant reply done).
 function maintainBottomAnchor(reason) {
   if (!messageList) return;
 
   // keyboard 不触发滚动，交给 CSS padding
   if (reason === "keyboard") return;
 
-  const force = reason === "send" || reason === "open-panel";
+  const force = reason === "send" || reason === "assistant-done" || reason === "open-panel";
   if (force || isNearBottom()) {
     requestAnimationFrame(() => scrollChatToLatest());
   }
@@ -4377,7 +4433,7 @@ async function handleSubmit() {
     : (msgEl.closest(".msg-row") ? [msgEl.closest(".msg-row")] : []);
   maintainBottomAnchor("send");
   const dbContent = snapshot ? (text ? `[图片] ${text}` : "[图片]") : text;
-  chatMessages.push({ role: "user", content, created_at: now, id: null, read_by_cha_at: null, read_by_user_at: null });
+  chatMessages.push({ role: "user", content, created_at: now, id: null, read_by_cha_at: null, read_by_user_at: null, replyTo });
   refreshMessageActions();
   if (isFirst) updateConvTitle(getActiveConversationId(), text || "[图片]");
 

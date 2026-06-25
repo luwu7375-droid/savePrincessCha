@@ -1402,6 +1402,10 @@ body {
 
 .msg-row {
   margin: 16px 0;
+  /* 禁用消息行的文本选择 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .msg-row.user {
@@ -1424,6 +1428,10 @@ body {
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: break-word;
+  /* 禁用原生文本选择和长按菜单 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .msg-stack {
@@ -1485,6 +1493,10 @@ body {
   line-height: 1.45;
   resize: none;
   -webkit-text-size-adjust: 100%;
+  /* 确保输入框可以选择文本 */
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .input-bar textarea::placeholder {
