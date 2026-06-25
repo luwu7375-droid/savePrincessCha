@@ -94,7 +94,10 @@
       }
     }
 
-    // 3. Force recheck next frame
+    // 3. Record visualViewport offsetLeft for potential CSS compensation
+    root.style.setProperty("--vv-offset-left", `${Math.round(vv?.offsetLeft || 0)}px`);
+
+    // 4. Force recheck next frame
     requestAnimationFrame(() => {
       if (window.scrollX !== 0) window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
       if (scrollingEl) scrollingEl.scrollLeft = 0;
@@ -109,6 +112,9 @@
         vvOffsetLeft: vv?.offsetLeft ?? null,
         docScrollLeft: document.documentElement.scrollLeft,
         bodyScrollLeft: document.body.scrollLeft,
+        innerWidth: window.innerWidth,
+        docClientWidth: document.documentElement.clientWidth,
+        bodyScrollWidth: document.body.scrollWidth,
       });
     }
   }
@@ -124,6 +130,15 @@
   function resetHorizontalSoon(reason) {
     resetHorizontalViewportDrift(reason);
     [50, 150, 300, 600].forEach((t) => {
+      setTimeout(() => resetHorizontalViewportDrift(`${reason}:${t}`), t);
+    });
+  }
+
+  // ── Reset during focus with tighter sequence ───────────────────────────────
+  // Focus triggers immediate drift. Use aggressive sequence to catch it early.
+  function resetHorizontalDuringFocus(reason) {
+    resetHorizontalViewportDrift(reason);
+    [16, 50, 100, 180, 300, 500, 800].forEach((t) => {
       setTimeout(() => resetHorizontalViewportDrift(`${reason}:${t}`), t);
     });
   }
@@ -159,8 +174,22 @@
     if (!shell || !window.visualViewport) return;
 
     const vv = window.visualViewport;
-    vv.addEventListener("resize", schedule);
-    vv.addEventListener("scroll", schedule);
+    vv.addEventListener("resize", () => {
+      schedule();
+      // If chat input is focused during resize, also reset horizontal drift
+      const active = document.activeElement;
+      if (isChatInput(active)) {
+        resetHorizontalViewportDrift("resize-while-focused");
+      }
+    });
+    vv.addEventListener("scroll", () => {
+      schedule();
+      // If chat input is focused during scroll, also reset horizontal drift
+      const active = document.activeElement;
+      if (isChatInput(active)) {
+        resetHorizontalViewportDrift("scroll-while-focused");
+      }
+    });
 
     const reset = () => {
       // Re-evaluate state and re-pin horizontally at several moments, because
@@ -170,7 +199,11 @@
     };
 
     if (_opts.messageInput) {
-      _opts.messageInput.addEventListener("focus", schedule);
+      _opts.messageInput.addEventListener("focus", () => {
+        // Reset horizontal drift IMMEDIATELY on focus, before keyboard animates
+        resetHorizontalDuringFocus("messageInput-focus");
+        schedule();
+      });
       _opts.messageInput.addEventListener("blur", () => {
         if (_opts.getChatInputMode && _opts.getChatInputMode() === "keyboard") {
           if (_opts.setChatInputMode) _opts.setChatInputMode("plain");
@@ -180,7 +213,10 @@
       });
     }
     if (_opts.chatSearchInput) {
-      _opts.chatSearchInput.addEventListener("focus", schedule);
+      _opts.chatSearchInput.addEventListener("focus", () => {
+        resetHorizontalDuringFocus("chatSearchInput-focus");
+        schedule();
+      });
       _opts.chatSearchInput.addEventListener("blur", reset);
     }
 
@@ -205,5 +241,6 @@
     initKeyboardViewportState,
     resetHorizontalViewportDrift,
     resetHorizontalSoon,
+    resetHorizontalDuringFocus,
   };
 })();
