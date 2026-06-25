@@ -225,9 +225,14 @@
       return;
     }
 
+    // Preserve quote blocks (msg-quote-block) before clearing content
+    const existingQuoteBlocks = Array.from(el.querySelectorAll(".msg-quote-block"));
+
     const cached = cacheId ? getRenderCacheTokens(cacheId, contentHash) : null;
     if (cached) {
       el.textContent = "";
+      // Restore quote blocks first
+      existingQuoteBlocks.forEach(block => el.appendChild(block));
       el.appendChild(buildFragmentFromTokens(cached));
       el.dataset.emojiRendered = "1";
       el.dataset.contentHash = contentHash;
@@ -236,6 +241,8 @@
 
     if (!emojiCatalog.loaded) {
       el.textContent = rawText;
+      // Restore quote blocks at the beginning
+      existingQuoteBlocks.reverse().forEach(block => el.insertBefore(block, el.firstChild));
       el.dataset.emojiRendered = "0";
       el.dataset.contentHash = contentHash;
       if (cacheId) el.dataset.pendingEmojiId = cacheId;
@@ -244,6 +251,8 @@
 
     const tokens = parseEmojiTokens(rawText);
     el.textContent = "";
+    // Restore quote blocks first
+    existingQuoteBlocks.forEach(block => el.appendChild(block));
     el.appendChild(buildFragmentFromTokens(tokens));
     el.dataset.emojiRendered = "1";
     el.dataset.contentHash = contentHash;
