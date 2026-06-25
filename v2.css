@@ -3568,6 +3568,34 @@ body {
    Phone System Simulator (查手机)
    ══════════════════════════════════════════════════════════════════════════════ */
 
+.phone-overlay-close-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9001;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  color: #1c1c1e;
+  font-size: 24px;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.phone-overlay-close-btn:hover {
+  background: #ffffff;
+  transform: scale(1.1);
+}
+
+.phone-overlay-close-btn:active {
+  transform: scale(0.95);
+}
+
 .phone-shell {
   position: relative;
   width: 375px;
