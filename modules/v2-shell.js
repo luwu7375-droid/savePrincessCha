@@ -80,6 +80,27 @@
 
   // ── Shell init ───────────────────────────────────────────────────────────────
 
+  // ── Asset upload slots ───────────────────────────────────────────────────────
+
+  var ASSET_SLOTS = {
+    "home-cover":           ".home-cover",
+    "home-cha-avatar":      ".profile-avatar:not(.profile-avatar--kk), .header-avatar, .top-avatar",
+    "home-kk-avatar":       ".profile-avatar.profile-avatar--kk",
+    "home-today-image":     ".today-photo",
+    "couple-memory-vortex": ".memory-vortex",
+  };
+
+  function _applyAsset(slot, url) {
+    var sel = ASSET_SLOTS[slot];
+    if (!sel) return;
+    document.querySelectorAll(sel).forEach(function (el) {
+      el.style.backgroundImage    = 'url("' + url + '")';
+      el.style.backgroundSize     = "cover";
+      el.style.backgroundPosition = "center";
+      el.style.backgroundRepeat   = "no-repeat";
+    });
+  }
+
   function initV2Shell() {
     var pages = Array.from(document.querySelectorAll(".v2-page"));
     var tabs  = Array.from(document.querySelectorAll(".bottom-tab"));
@@ -199,15 +220,27 @@
     });
 
     document.querySelectorAll("[data-upload-slot]").forEach(function (entry) {
+      var slot = entry.dataset.uploadSlot;
+      // Apply any previously saved asset on load
+      var saved = localStorage.getItem("asset_" + slot);
+      if (saved) _applyAsset(slot, saved);
+      // Wire real upload handler — always enabled so user can re-upload
       entry.addEventListener("click", function (event) {
         event.stopPropagation();
-        if (typeof showDialog === "function") {
-          showDialog({
-            title: "更换入口已预留",
-            body: entry.dataset.uploadSlot + " 将复用统一上传组件接入，本轮先保留点击入口。",
-            confirmLabel: "知道了",
-          });
-        }
+        var inp = document.createElement("input");
+        inp.type = "file";
+        inp.accept = "image/*";
+        inp.addEventListener("change", function () {
+          var file = inp.files && inp.files[0];
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function () {
+            localStorage.setItem("asset_" + slot, reader.result);
+            _applyAsset(slot, reader.result);
+          };
+          reader.readAsDataURL(file);
+        });
+        inp.click();
       });
     });
 
