@@ -19,6 +19,11 @@ function createSupabaseClient() {
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎回家，kk。";
 let currentUserId = "";
+
+// Expose runtime context for diary module
+if (supabaseClient) {
+  window.supabaseClient = supabaseClient;
+}
 const _VALID_TIERS_INIT = ["instant", "general", "advanced"];
 const _storedTier = localStorage.getItem("modelTier");
 let currentModelTier = _VALID_TIERS_INIT.includes(_storedTier) ? _storedTier : "general";
@@ -4738,12 +4743,15 @@ logoutBtn.addEventListener("click", async () => {
   conversationsCache = [];
   chatMessages.length = 0;
   messageList.innerHTML = "";
+  currentUserId = "";
+  window.currentUserId = "";
   logoutBtn.classList.add("hidden");
   loginOverlay.classList.remove("hidden");
 });
 
 async function hideLoginAndInit(session) {
   currentUserId = session?.user?.id || "";
+  window.currentUserId = currentUserId;
   loginOverlay.classList.add("hidden");
   if (logoutBtn) logoutBtn.classList.remove("hidden");
   initPrincessStatusBar();

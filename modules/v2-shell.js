@@ -197,6 +197,12 @@
           if (window.SPDiary) {
             var diaryCard = document.querySelector('.diary-card');
             var diaryId = diaryCard && diaryCard.dataset.diaryId;
+            console.info("[diary] home route click", {
+              hasSPDiary: !!window.SPDiary,
+              diaryId: diaryId || null,
+              hasSupabase: !!window.supabaseClient,
+              currentUserId: window.currentUserId || null,
+            });
             if (diaryId) window.SPDiary.navigateToDiaryDetail(diaryId);
             else window.SPDiary.navigateToDiaryList();
           }
