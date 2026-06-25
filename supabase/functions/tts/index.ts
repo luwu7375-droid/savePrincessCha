@@ -33,20 +33,95 @@ function prepareVoiceText(text: string): string {
 }
 
 function normalizeVoiceTextForTTS(text: string, language: string): string | null {
-  // Remove extra whitespace
   let normalized = text.replace(/\s+/g, " ").trim();
-
-  // Check if there's any speakable content (letters, numbers, CJK characters)
   if (!/[\p{L}\p{N}]/u.test(normalized)) return null;
-
-  // Add punctuation if missing
   const endsWithPunctuation = /[。！？.!?…]$/.test(normalized);
   if (!endsWithPunctuation) {
     const isCJK = ["zh", "ja", "ko"].includes(language) || /[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/.test(normalized);
     normalized += isCJK ? "。" : ".";
   }
-
   return normalized;
+}
+
+type VoiceStyle = "neutral" | "soft" | "low_voice" | "dry" | "quiet_laugh" | "murmurs" | "curious";
+
+interface VoiceScript {
+  voice_text: string;
+  voice_style: VoiceStyle;
+  reason: string;
+}
+
+function inferVoiceStyle(text: string): { style: VoiceStyle; reason: string } {
+  const lo = text.toLowerCase();
+  // Technical content — never tag
+  if (/[{}\[\]<>]|error|exception|\bapi\b|function\b|\bclass\b|\bconst\b|\blet\b|\bvar\b|undefined/.test(lo)) {
+    return { style: "neutral", reason: "technical" };
+  }
+  // Intimate
+  if (/我想你|过来一点|靠着|贴着|在你旁边|抱着你|陪着你/.test(text)) {
+    return { style: "murmurs", reason: "intimate" };
+  }
+  // Soft / comforting
+  if (/我在[^，。！？]*$|别急|慢慢说|慢慢来|不用急|不是你的问题|还好的|没关系|放松/.test(text)) {
+    return { style: "soft", reason: "comforting" };
+  }
+  // Frustration
+  if (/烦|气死|离谱|不对啊|不对吧|怎么又|真的假的|无语/.test(text)) {
+    return { style: "low_voice", reason: "frustration" };
+  }
+  // Humor / dry
+  if (/笑死|好好好|小破|哈哈|💀|这破/.test(text)) {
+    return { style: "dry", reason: "humor" };
+  }
+  // Quiet laugh
+  if (/嗯嗯嗯|哈哈哈|嘿嘿/.test(text)) {
+    return { style: "quiet_laugh", reason: "light_laugh" };
+  }
+  // Question
+  if (/[？?]$/.test(text.trim())) {
+    return { style: "curious", reason: "question" };
+  }
+  // Short CJK acknowledgment (≤4 content chars)
+  if (text.replace(/[。，！？.!?, \s]/g, "").length <= 4 && /[\u4e00-\u9fff]/.test(text)) {
+    return { style: "soft", reason: "short_ack" };
+  }
+  return { style: "neutral", reason: "default" };
+}
+
+function buildVoiceText(normalized: string, style: VoiceStyle): string {
+  const TAG: Partial<Record<VoiceStyle, string>> = {
+    soft: "[softly]",
+    low_voice: "[low voice]",
+    dry: "[dryly]",
+    quiet_laugh: "[quiet laugh]",
+    murmurs: "[murmurs]",
+    curious: "[curiously]",
+  };
+  const tag = TAG[style];
+
+  // For long text, insert one [pause] near a natural sentence break at midpoint
+  let body = normalized;
+  if (normalized.length > 80) {
+    const mid = Math.floor(normalized.length / 2);
+    let breakIdx = -1;
+    for (const ch of ["。", "！", "？", ".", "!", "?"]) {
+      const idx = normalized.lastIndexOf(ch, mid + 20);
+      if (idx > mid - 30 && idx > breakIdx) breakIdx = idx;
+    }
+    if (breakIdx > 0 && breakIdx < normalized.length - 5) {
+      body = normalized.slice(0, breakIdx + 1) + " [pause] " + normalized.slice(breakIdx + 1).trimStart();
+    }
+  }
+
+  return tag ? `${tag} ${body}` : body;
+}
+
+function createVoiceScript(displayText: string, language: string): VoiceScript | null {
+  const prepared = prepareVoiceText(displayText);
+  const normalized = normalizeVoiceTextForTTS(prepared, language);
+  if (!normalized) return null;
+  const { style, reason } = inferVoiceStyle(normalized);
+  return { voice_text: buildVoiceText(normalized, style), voice_style: style, reason };
 }
 
 function textHash(text: string): string {
@@ -79,6 +154,8 @@ interface RequestBody {
   language_hint?: string | null;
   provider?: string | null;
   voice_profile?: VoiceProfile | null;
+  role?: string | null;
+  context?: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -154,27 +231,24 @@ Deno.serve(async (req) => {
     return jsonResp({ ok: false, code: "PROVIDER_NOT_CONFIGURED", message: "MiniMax API key is not set", request_id }, 500);
   }
 
-  // ── Structured log context ──────────────────────────────────────────────────
-  const prepared = prepareVoiceText(text);
-  const voiceText = normalizeVoiceTextForTTS(prepared, language);
+  // ── Voice director: clean → normalize → style → tag ────────────────────────
+  const script = createVoiceScript(text, language);
 
-  if (!voiceText) {
-    return jsonResp({
-      ok: false,
-      code: "EMPTY_VOICE_TEXT",
-      message: "朗读文本为空",
-      request_id,
-    }, 400);
+  if (!script) {
+    return jsonResp({ ok: false, code: "EMPTY_VOICE_TEXT", message: "朗读文本为空", request_id }, 400);
   }
 
+  const voiceText = script.voice_text;
   const hash = textHash(voiceText);
 
   const logCtx: Record<string, unknown> = {
     request_id,
     provider,
     language,
-    voice_id: voice_id.slice(0, 8) + "…", // partial id only
+    voice_id: voice_id.slice(0, 8) + "…",
     model_id,
+    voice_style: script.voice_style,
+    voice_style_reason: script.reason,
     text_length: text.length,
     text_hash: hash,
     cached: false,
@@ -222,6 +296,8 @@ Deno.serve(async (req) => {
           language,
           voice_id,
           model_id,
+          voice_text: script.voice_text,
+          voice_style: script.voice_style,
           cached: true,
         });
       }
@@ -274,6 +350,8 @@ Deno.serve(async (req) => {
       language,
       voice_id,
       model_id,
+      voice_text: script.voice_text,
+      voice_style: script.voice_style,
       cached: false,
     });
   }
@@ -322,6 +400,8 @@ Deno.serve(async (req) => {
     language,
     voice_id,
     model_id,
+    voice_text: script.voice_text,
+    voice_style: script.voice_style,
     cached: false,
   });
 });
