@@ -5727,7 +5727,11 @@ function initV2Composer() {
     setChatInputMode("plain"); // plus-panel is not a keyboard-replacement state
     requestAnimationFrame(() => {
       panel.classList.add("open");
-      maintainBottomAnchor("open-panel");
+      // 不强制滚动：浮模式下 composer 不动，message-list 靠 padding 自然留白
+      // 只有当用户原本就在底部时才轻微跟随
+      if (isNearBottom()) {
+        scrollChatToLatest();
+      }
     });
   }
 
