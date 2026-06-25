@@ -21,6 +21,15 @@
   --chat-input-height: 70px;
   --composer-bottom-gap: 18px;
   --keyboard-inset: 0px;
+  /* ── Unified composer dock model ──────────────────────────────────────────
+     --kb        : keyboard height, set by keyboard-viewport.js (0 when closed)
+     --dock-gap  : distance from .chat-shell bottom edge to the composer.
+                   Non-keyboard = leave room for the global bottom-tab-bar.
+                   Keyboard     = sit just above the keyboard.
+     Every composer-area element (input-bar, emoji-panel, plus-panel) anchors
+     to --dock-gap, so a single variable switch moves them all in sync. */
+  --kb: 0px;
+  --dock-gap: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + var(--composer-bottom-gap));
   --chat-bottom-space: calc(var(--chat-input-height) + var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 32px);
   /* Set by JS via visualViewport; fallback to 100dvh */
   --app-vh: 100dvh;
@@ -1393,11 +1402,11 @@ body {
   /* Only scrollable region in the chat skeleton */
   flex: 1;
   min-height: 0;
-  padding: 18px 20px calc(var(--chat-bottom-space) + var(--keyboard-inset));
+  padding: 18px 20px calc(var(--chat-input-height) + var(--dock-gap));
   background: transparent;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset));
+  scroll-padding-bottom: calc(var(--chat-input-height) + var(--dock-gap));
 }
 
 .msg-row {
@@ -1465,11 +1474,12 @@ body {
 }
 
 .input-bar {
-  /* Anchored composer — never moves when panels open */
+  /* Anchored composer — positioned via the unified --dock-gap.
+     Never uses ad-hoc margins that jump between keyboard states. */
   position: relative;
   z-index: 11;
   flex-shrink: 0;
-  margin: 0 20px calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 18px);
+  margin: 0 20px var(--dock-gap);
   padding: 6px 10px 6px 18px;
   min-height: 54px;
   border-radius: var(--radius-input);
@@ -1547,12 +1557,11 @@ body {
 }
 
 .plus-panel {
-  /* 浮模式：和 emoji-panel 一致，浮在 composer 上方，不挤压布局 */
+  /* Floating above the composer, anchored to the unified dock baseline. */
   position: absolute;
   left: 0;
   right: 0;
-  /* bottom 对齐 emoji-panel 的算法 */
-  bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 18px + 54px);
+  bottom: calc(var(--dock-gap) + var(--chat-input-height));
   z-index: 20;
   margin: 0 20px;
   padding: 12px;
@@ -1726,13 +1735,18 @@ body {
   display: none;
 }
 
-.layout.keyboard-open .input-bar {
-  margin-bottom: 10px;
+/* Keyboard open: switch the single dock baseline to sit just above the
+   keyboard. The composer (and any panel anchored to --dock-gap) follows in
+   sync, with no per-element margin jumps. */
+.layout.keyboard-open {
+  --dock-gap: calc(var(--kb) + 10px);
 }
 
 .layout.keyboard-open .message-list {
-  padding-bottom: calc(var(--chat-input-height) + 18px);
-  scroll-padding-bottom: calc(var(--chat-input-height) + 18px);
+  /* Reserve composer height + the dock gap so the last message rests just
+     above the composer, never hidden by it. */
+  padding-bottom: calc(var(--chat-input-height) + var(--dock-gap));
+  scroll-padding-bottom: calc(var(--chat-input-height) + var(--dock-gap));
 }
 
 .bottom-tab {
@@ -2027,12 +2041,13 @@ body {
 
 .emoji-panel {
   /* Absolute so it floats above the input-bar without pushing it down.
-     translateY animates in/out — the chat skeleton never rescales. */
+     translateY animates in/out — the chat skeleton never rescales.
+     Anchored to the unified dock baseline so it sits directly on the composer. */
   position: absolute;
   left: 0;
   right: 0;
-  /* Bottom edge = composer bottom margin + bottom-nav height + safe-area */
-  bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 18px + 54px);
+  /* Bottom edge = dock gap + composer height (sits on top of the composer) */
+  bottom: calc(var(--dock-gap) + var(--chat-input-height));
   z-index: 20;
   background: var(--surface);
   border-radius: 18px 18px 0 0;
@@ -2055,22 +2070,21 @@ body {
 }
 
 /* When keyboard is open the bottom-tab-bar is hidden — composer sits lower */
-.layout.keyboard-open .emoji-panel {
-  bottom: calc(max(10px, var(--keyboard-inset)) + env(safe-area-inset-bottom) + 54px);
-}
+/* emoji-panel already anchors to --dock-gap, which becomes keyboard-aware
+   automatically. No separate keyboard-open override needed. */
 
 /* When emoji panel is open: give message-list enough bottom padding so the
    last message is visible above the panel. No page-level rescale. */
 .chat-shell.emoji-panel-open .message-list {
-  padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
-  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
+  /* dock baseline + composer + panel height (emoji panel ≈ 320px) */
+  padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
+  scroll-padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
 }
 
-/* plus panel 打开时，message-list 留出面板空间（和 emoji 一致） */
+/* plus panel open: reserve dock baseline + composer + measured panel height */
 .chat-shell.plus-panel-open .message-list {
-  /* 动态匹配 plus 面板实际高度，JS 实测后注入 --plus-panel-h */
-  padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + var(--plus-panel-h, 250px));
-  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + var(--plus-panel-h, 250px));
+  padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + var(--plus-panel-h, 250px));
+  scroll-padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + var(--plus-panel-h, 250px));
 }
 
 /* ── Emoji search: exclusive overlay ─────────────────────────────────────────
