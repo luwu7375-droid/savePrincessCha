@@ -771,8 +771,10 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-text`;
     const cacheIdStr = msgId != null ? String(msgId) : (options.tempId || undefined);
-    if (options.replyTo) el.insertBefore(makeQuoteBlock(options.replyTo), null);
     setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""), { messageId: cacheIdStr });
+    if (options.replyTo) {
+      el.prepend(makeQuoteBlock(options.replyTo));
+    }
     const stack = document.createElement("div");
     stack.className = "msg-stack";
     stack.appendChild(el);
@@ -798,6 +800,9 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     el.className = `message ${role} ${speakerClass} message-text`;
     const cacheIdStr = msgId != null ? String(msgId) : (options.tempId || undefined);
     setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""), { messageId: cacheIdStr });
+    if (options.replyTo) {
+      el.prepend(makeQuoteBlock(options.replyTo));
+    }
     const stack = document.createElement("div");
     stack.className = "msg-stack";
     stack.appendChild(el);
@@ -824,6 +829,11 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-image`;
     el.appendChild(img);
+
+    // If pure images (no text) and first image, add quote block
+    if (options.replyTo && !hasText && idx === 0) {
+      el.prepend(makeQuoteBlock(options.replyTo));
+    }
 
     const stack = document.createElement("div");
     stack.className = "msg-stack";
@@ -1001,8 +1011,10 @@ function renderReplyPreview() {
 function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo) {
   const el = document.createElement("div");
   el.className = "message assistant cha-message message-text";
-  if (replyTo && !isSibling) el.insertBefore(makeQuoteBlock(replyTo), el.firstChild || null);
   setMessageContent(el, text, { messageId: msgId != null ? String(msgId) : undefined });
+  if (replyTo && !isSibling) {
+    el.prepend(makeQuoteBlock(replyTo));
+  }
 
   const stack = document.createElement("div");
   stack.className = "msg-stack";
@@ -1698,6 +1710,11 @@ async function callChatAPI(messages, replyMode = "auto") {
     const replyLabel = msg.replyTo.role === "assistant" ? "Cha" : "用户";
     const replyPreview = msg.replyTo.preview || "[消息]";
     const compiledContent = `[引用${replyLabel}的消息]\n${replyPreview}\n\n[用户回复]\n${extractTextFromMessageContent(msg.content)}`;
+    console.info("[quote] compiled message", {
+      hasReplyTo: !!msg.replyTo,
+      replyPreview: msg.replyTo?.preview,
+      compiledLength: compiledContent.length,
+    });
     return { role: msg.role, content: compiledContent };
   });
 
