@@ -1798,6 +1798,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     // Inject web context if provided from phone.js URL read (transient, current-turn only)
     if (typeof payload.webContext === "string" && payload.webContext.trim()) {
       systemContent += `\n\n<web_context source="phone_url_read" transient="true">\n${payload.webContext.trim()}\n\n这是cha刚才读到的内容摘要，用来自然融入本轮回复，不要直接引用或报告，用自己的话讲出来。不要写入长期记忆。\n</web_context>`;
+      systemContent += `\n\n读完网页后，你可以在回复最开头加一条内心想法，格式如下（可选，只在有真实感受时使用）：\n<visible_thought>一两句对KK的感受或反应，最多40字</visible_thought>\n<reply>正常回复内容</reply>\n\n规则：visible_thought 只写对KK的感受/关注/真实反应，最多40字；禁止出现"根据/调用/搜索/fetch/token/用户意图/步骤"等词。如果没有特别想说的，直接输出正常回复即可（不强制使用这个格式）。`;
     }
     logRecord.active_memory_providers = memLog.active_memory_providers;
     logRecord.memory_provider_count = memLog.memory_provider_count;

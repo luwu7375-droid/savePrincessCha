@@ -3371,3 +3371,14 @@ body {
   flex-shrink: 0;
   line-height: 1;
 }
+
+/* ── visible_thought bubble ──────────────────────────────────────────────── */
+.thinking-bubble {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-muted, #aaa);
+  font-size: 13px;
+  font-style: italic;
+  padding: 2px 8px !important;
+  opacity: 0.8;
+}
