@@ -142,6 +142,7 @@
         shell.classList.toggle("keyboard-open", keyboardOpen);
         shell.style.setProperty("--keyboard-inset", keyboardOpen ? `${Math.round(inset)}px` : "0px");
         if (keyboardOpen) {
+          clampViewportToOrigin();
           if (document.activeElement === opts.messageInput) {
             const mode = opts.getChatInputMode ? opts.getChatInputMode() : null;
             if (mode !== "emojiSearch" && opts.setChatInputMode) {
