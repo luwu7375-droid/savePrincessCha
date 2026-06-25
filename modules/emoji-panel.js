@@ -313,6 +313,14 @@
     _emojiPanelOpen = true;
     _emojiPanelMode = "browse";
 
+    // Dismiss the soft keyboard cleanly so the emoji panel takes its place.
+    // Without this the keyboard lingers and --kb animates, dragging the
+    // composer with it. Blur first, then the panel anchors to the stable dock.
+    const _msgInput = document.getElementById("messageInput");
+    if (_msgInput && document.activeElement === _msgInput) {
+      _msgInput.blur();
+    }
+
     // Enforce mutual exclusion via state machine
     if (typeof window.setChatInputMode === "function") window.setChatInputMode("emoji");
     if (typeof window.closeV2PlusPanel === "function") window.closeV2PlusPanel();

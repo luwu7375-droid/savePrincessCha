@@ -2070,8 +2070,15 @@ body {
 }
 
 /* When keyboard is open the bottom-tab-bar is hidden — composer sits lower */
-/* emoji-panel already anchors to --dock-gap, which becomes keyboard-aware
-   automatically. No separate keyboard-open override needed. */
+/* When a panel (emoji/plus) replaces the keyboard, lock --dock-gap to the
+   stable non-keyboard baseline. The keyboard is dismissing (its --kb is
+   animating to 0); without this lock the composer and panel would drift with
+   that animation. Locking keeps the composer fixed above the bottom-tab area
+   while the panel floats on top of it. */
+.chat-shell.emoji-panel-open,
+.chat-shell.plus-panel-open {
+  --dock-gap: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + var(--composer-bottom-gap));
+}
 
 /* When emoji panel is open: give message-list enough bottom padding so the
    last message is visible above the panel. No page-level rescale. */

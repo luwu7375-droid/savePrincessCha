@@ -5766,6 +5766,11 @@ function initV2Composer() {
   function openPanel() {
     closeStatusPanel();
     closePanel();
+    // Dismiss the soft keyboard cleanly so the plus panel takes its place,
+    // preventing the composer from drifting with the keyboard-close animation.
+    if (messageInput && document.activeElement === messageInput) {
+      messageInput.blur();
+    }
     panel = document.createElement("div");
     panel.className = "plus-panel";
 
