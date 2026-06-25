@@ -27,6 +27,63 @@
     return !!el && CHAT_INPUT_IDS.indexOf(el.id) !== -1;
   }
 
+  // ── Diagnostic snapshot function ──────────────────────────────────────────────
+  // Captures complete viewport state to diagnose iOS Safari left drift on input focus.
+  // Call at key moments: before-focus, after-focus, vv-resize, vv-scroll, blur, blank-click
+  function getViewportDriftSnapshot(reason = "unknown") {
+    const vv = window.visualViewport;
+    const layout = document.querySelector(".layout");
+    const input = document.getElementById("messageInput");
+    const inputBar = document.getElementById("chatForm");
+    const scrollingEl = document.scrollingElement || document.documentElement;
+
+    return {
+      reason,
+      ts: Date.now(),
+      windowInnerWidth: window.innerWidth,
+      documentClientWidth: document.documentElement.clientWidth,
+      bodyClientWidth: document.body.clientWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+      docScrollWidth: document.documentElement.scrollWidth,
+      scrollX: window.scrollX,
+      scrollingLeft: scrollingEl?.scrollLeft ?? null,
+      docScrollLeft: document.documentElement.scrollLeft,
+      bodyScrollLeft: document.body.scrollLeft,
+      visualViewport: vv ? {
+        width: vv.width,
+        height: vv.height,
+        offsetLeft: vv.offsetLeft,
+        offsetTop: vv.offsetTop,
+        scale: vv.scale,
+      } : null,
+      layoutRect: layout ? (layout.getBoundingClientRect().toJSON?.() || {
+        left: layout.getBoundingClientRect().left,
+        right: layout.getBoundingClientRect().right,
+        width: layout.getBoundingClientRect().width,
+        top: layout.getBoundingClientRect().top,
+      }) : null,
+      inputBarRect: inputBar ? {
+        left: inputBar.getBoundingClientRect().left,
+        right: inputBar.getBoundingClientRect().right,
+        width: inputBar.getBoundingClientRect().width,
+      } : null,
+      inputRect: input ? {
+        left: input.getBoundingClientRect().left,
+        right: input.getBoundingClientRect().right,
+        width: input.getBoundingClientRect().width,
+      } : null,
+      activeElement: document.activeElement?.id || document.activeElement?.tagName,
+    };
+  }
+
+  // Expose for manual console inspection
+  window.__dumpViewportDrift = (reason = "manual") => {
+    const snap = getViewportDriftSnapshot(reason);
+    console.table(snap);
+    console.info("[viewport-drift]", snap);
+    return snap;
+  };
+
   function currentInset() {
     const vv = window.visualViewport;
     if (!vv) return 0;
@@ -72,14 +129,15 @@
     const vv = window.visualViewport;
     const scrollingEl = document.scrollingElement || document.documentElement;
     const layout = document.querySelector(".layout");
+    const offsetLeft = vv?.offsetLeft || 0;
 
-    // 1. Clear browser horizontal scroll
+    // 1. Clear browser horizontal scroll (ONLY if non-zero to avoid unnecessary ops)
     if (window.scrollX !== 0) {
       window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
     }
-    if (scrollingEl) scrollingEl.scrollLeft = 0;
-    document.documentElement.scrollLeft = 0;
-    document.body.scrollLeft = 0;
+    if (scrollingEl && scrollingEl.scrollLeft !== 0) scrollingEl.scrollLeft = 0;
+    if (document.documentElement.scrollLeft !== 0) document.documentElement.scrollLeft = 0;
+    if (document.body.scrollLeft !== 0) document.body.scrollLeft = 0;
 
     // 2. Clear any residual inline horizontal styles on .layout
     if (layout) {
@@ -95,21 +153,23 @@
     }
 
     // 3. Record visualViewport offsetLeft for potential CSS compensation
-    root.style.setProperty("--vv-offset-left", `${Math.round(vv?.offsetLeft || 0)}px`);
+    root.style.setProperty("--vv-offset-left", `${Math.round(offsetLeft)}px`);
 
-    // 4. Force recheck next frame
-    requestAnimationFrame(() => {
-      if (window.scrollX !== 0) window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
-      if (scrollingEl) scrollingEl.scrollLeft = 0;
-      document.documentElement.scrollLeft = 0;
-      document.body.scrollLeft = 0;
-    });
+    // 4. Force recheck next frame (only if there's actual drift)
+    if (window.scrollX !== 0 || offsetLeft !== 0) {
+      requestAnimationFrame(() => {
+        if (window.scrollX !== 0) window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
+        if (scrollingEl && scrollingEl.scrollLeft !== 0) scrollingEl.scrollLeft = 0;
+        if (document.documentElement.scrollLeft !== 0) document.documentElement.scrollLeft = 0;
+        if (document.body.scrollLeft !== 0) document.body.scrollLeft = 0;
+      });
+    }
 
     if (window.DEBUG_LAYOUT) {
       console.info("[viewport] reset horizontal drift", {
         reason,
         scrollX: window.scrollX,
-        vvOffsetLeft: vv?.offsetLeft ?? null,
+        vvOffsetLeft: offsetLeft,
         docScrollLeft: document.documentElement.scrollLeft,
         bodyScrollLeft: document.body.scrollLeft,
         innerWidth: window.innerWidth,
@@ -175,6 +235,7 @@
 
     const vv = window.visualViewport;
     vv.addEventListener("resize", () => {
+      console.info("[viewport-drift vv resize]", getViewportDriftSnapshot("vv-resize"));
       schedule();
       // If chat input is focused during resize, also reset horizontal drift
       const active = document.activeElement;
@@ -183,6 +244,7 @@
       }
     });
     vv.addEventListener("scroll", () => {
+      console.info("[viewport-drift vv scroll]", getViewportDriftSnapshot("vv-scroll"));
       schedule();
       // If chat input is focused during scroll, also reset horizontal drift
       const active = document.activeElement;
@@ -200,11 +262,20 @@
 
     if (_opts.messageInput) {
       _opts.messageInput.addEventListener("focus", () => {
+        // DIAGNOSTIC: Capture state before any action
+        console.info("[viewport-drift before focus]", getViewportDriftSnapshot("before-focus"));
+
         // Reset horizontal drift IMMEDIATELY on focus, before keyboard animates
         resetHorizontalDuringFocus("messageInput-focus");
         schedule();
+
+        // DIAGNOSTIC: Capture state after reset (async to catch post-layout)
+        setTimeout(() => {
+          console.info("[viewport-drift after focus]", getViewportDriftSnapshot("after-focus"));
+        }, 0);
       });
       _opts.messageInput.addEventListener("blur", () => {
+        console.info("[viewport-drift blur]", getViewportDriftSnapshot("blur"));
         if (_opts.getChatInputMode && _opts.getChatInputMode() === "keyboard") {
           if (_opts.setChatInputMode) _opts.setChatInputMode("plain");
         }

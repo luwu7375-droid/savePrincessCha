@@ -1495,6 +1495,10 @@ body {
   grid-template-columns: 1fr 36px 36px;
   gap: 4px;
   align-items: center;
+  /* Prevent horizontal overflow that causes drift */
+  box-sizing: border-box;
+  max-width: calc(100% - 40px);
+  width: auto;
 }
 
 .input-bar textarea {
@@ -1512,6 +1516,10 @@ body {
   -webkit-user-select: text;
   user-select: text;
   -webkit-touch-callout: default;
+  /* Prevent grid item overflow */
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .input-bar textarea::placeholder {
@@ -1914,6 +1922,9 @@ body {
     border: 0;
     border-radius: 0;
     box-shadow: none;
+    /* Compensate for visualViewport.offsetLeft drift on iOS Safari.
+       This transform only applies when --vv-offset-left is non-zero. */
+    transform: translateX(calc(-1 * var(--vv-offset-left, 0px)));
   }
 
   .v2-scroll {
@@ -1955,6 +1966,10 @@ body {
   .image-preview-bar {
     margin-left: 16px;
     margin-right: 16px;
+  }
+
+  .input-bar {
+    max-width: calc(100% - 32px);
   }
 }
 
