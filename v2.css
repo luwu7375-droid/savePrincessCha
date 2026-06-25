@@ -1557,11 +1557,11 @@ body {
 }
 
 .plus-panel {
-  /* Floating above the composer, anchored to the unified dock baseline. */
+  /* Floating above the composer, anchored to screen bottom. */
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(var(--dock-gap) + var(--chat-input-height));
+  bottom: 0;
   z-index: 20;
   margin: 0 20px;
   padding: 12px;
@@ -2042,12 +2042,12 @@ body {
 .emoji-panel {
   /* Absolute so it floats above the input-bar without pushing it down.
      translateY animates in/out — the chat skeleton never rescales.
-     Anchored to the unified dock baseline so it sits directly on the composer. */
+     Anchored to screen bottom, covering composer and bottom-tab. */
   position: absolute;
   left: 0;
   right: 0;
-  /* Bottom edge = dock gap + composer height (sits on top of the composer) */
-  bottom: calc(var(--dock-gap) + var(--chat-input-height));
+  /* Bottom edge = screen bottom (covers everything below) */
+  bottom: 0;
   z-index: 20;
   background: var(--surface);
   border-radius: 18px 18px 0 0;
