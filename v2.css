@@ -1038,8 +1038,18 @@ body {
   display: none;
 }
 
+/* avatar 固定宽度，不收缩 */
+.top-bar .top-avatar {
+  flex: 0 0 auto;
+}
+
+/* title 吃掉所有剩余空间，但允许收缩防止挤压 more */
 .top-bar h1 {
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
@@ -1050,10 +1060,15 @@ body {
   cursor: pointer;
 }
 
-#chatSearchButton,
+/* online dot 紧跟在 title 后面 */
+.top-bar .online-dot-hitbox {
+  flex: 0 0 auto;
+}
+
+/* more 按钮强制推到最右 */
 #chatMoreBtn {
   flex: 0 0 auto;
-  position: static;
+  margin-left: auto;  /* ← 关键：把 more 推到最右 */
 }
 
 .chat-status {
