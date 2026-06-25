@@ -8,7 +8,10 @@ create table if not exists public.messages (
   is_favorite boolean not null default false,
   ai_tags jsonb not null default '[]'::jsonb,
   system_action text default null,
-  ref_event_id bigint default null references public.messages(id) on delete set null
+  ref_event_id bigint default null references public.messages(id) on delete set null,
+  reply_to_message_id text default null,
+  reply_to_preview text default null,
+  reply_to_role text default null
 );
 
 -- Add conversation_id to existing table if missing
@@ -18,6 +21,9 @@ alter table public.messages add column if not exists is_favorite boolean not nul
 alter table public.messages add column if not exists ai_tags jsonb not null default '[]'::jsonb;
 alter table public.messages add column if not exists system_action text default null;
 alter table public.messages add column if not exists ref_event_id bigint default null references public.messages(id) on delete set null;
+alter table public.messages add column if not exists reply_to_message_id text default null;
+alter table public.messages add column if not exists reply_to_preview text default null;
+alter table public.messages add column if not exists reply_to_role text default null;
 
 alter table public.messages drop constraint if exists messages_type_check;
 alter table public.messages
