@@ -4407,50 +4407,6 @@ forceReplyBtn.addEventListener("click", () => {
   triggerReply("forced");
 });
 
-// ── Composer menu (mobile: replaces forceReplyBtn + autoReplyToggle) ──────────
-
-let activeComposerMenu = null;
-
-function closeComposerMenu() {
-  if (activeComposerMenu) { activeComposerMenu.remove(); activeComposerMenu = null; }
-}
-
-function buildComposerMenu(anchorBtn) {
-  closeComposerMenu();
-  const menu = document.createElement("div");
-  menu.className = "composer-menu";
-
-  // Force reply item
-  const forceItem = document.createElement("button");
-  forceItem.type = "button";
-  forceItem.innerHTML = `<span>让cha回复</span>`;
-  if (isReplying || !chatMessages.length) forceItem.disabled = true;
-  forceItem.addEventListener("click", () => {
-    closeComposerMenu();
-    if (!isReplying && chatMessages.length) triggerReply("forced");
-  });
-  menu.appendChild(forceItem);
-
-  document.body.appendChild(menu);
-  activeComposerMenu = menu;
-
-  const rect = anchorBtn.getBoundingClientRect();
-  menu.style.bottom = `${window.innerHeight - rect.top + 6}px`;
-  const menuW = menu.offsetWidth || 120;
-  let left = rect.right - menuW;
-  left = Math.max(8, Math.min(left, window.innerWidth - menuW - 8));
-  menu.style.left = `${left}px`;
-
-  setTimeout(() => document.addEventListener("click", closeComposerMenu, { once: true }), 0);
-}
-
-document.getElementById("composerMenuBtn")?.addEventListener("click", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (activeComposerMenu) { closeComposerMenu(); return; }
-  buildComposerMenu(e.currentTarget);
-});
-
 // ── Chat more sheet ──────────────────────────────────────────────────────────
 
 var CHAT_REPLY_STYLE_KEY = "chat_reply_style_v1";    // "stable" | "balanced" | "creative"
@@ -5536,7 +5492,7 @@ function initV2Composer() {
     emojiButton.className = "ghost-icon-btn v2-emoji-btn";
     emojiButton.title = "Emoji";
     emojiButton.setAttribute("aria-label", "Emoji");
-    emojiButton.innerHTML = '<img src="assets/icons/chat/emoji.svg" alt="">';
+    emojiButton.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="8" r="1" fill="currentColor"/><circle cx="11.5" cy="8" r="1" fill="currentColor"/><path d="M6 11c.7 1.2 1.8 2 3 2s2.3-.8 3-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
     inputBar.insertBefore(emojiButton, plusButton);
   }
 
@@ -5589,25 +5545,17 @@ function initV2Composer() {
     const actions = document.createElement("div");
     actions.className = "plus-panel-grid";
 
-    // Voice call entry (placeholder for MVP)
-    addPanelItem(actions, {
-      label: "语音电话",
-      desc: "拨号入口",
-      icon: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 2h8v16H6V2z" stroke="currentColor" stroke-width="1.5" rx="2"/><path d="M10 15h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
-      onClick: () => {
-        alert("语音电话\n\n呼叫小cha\n\n先把入口放在这里");
-      },
-    });
+    // Voice call — hidden for now (placeholder entry deferred)
 
     addPanelItem(actions, {
-      label: "图片上传",
+      label: "图片",
       desc: "相册或文件",
       icon: '<span>＋</span>',
       onClick: () => imageAttachBtn?.click(),
     });
     addPanelItem(actions, {
-      label: autoReplyEnabled ? "自动接话开" : "自动接话关",
-      desc: "空闲时回应",
+      label: "接话",
+      desc: autoReplyEnabled ? "已开启" : "已关闭",
       icon: '<img src="assets/icons/chat/regenerate.svg" alt="">',
       onClick: () => {
         autoReplyEnabled = !autoReplyEnabled;

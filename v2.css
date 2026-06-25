@@ -1576,6 +1576,9 @@ body {
 .plus-panel-item strong,
 .plus-panel-item small {
   display: inline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .plus-panel-item strong {

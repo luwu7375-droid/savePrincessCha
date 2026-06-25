@@ -117,6 +117,8 @@
 
       // Close all chat overlays whenever page switches
       if (typeof closeAllChatPanels === "function") closeAllChatPanels();
+      var _diaryOverlay = document.getElementById('diaryOverlay');
+      if (_diaryOverlay) _diaryOverlay.classList.add('hidden');
 
       if (activeName === "chat") {
         requestAnimationFrame(function () {
@@ -192,7 +194,12 @@
           return;
         }
         if (route === "/home/diary") {
-          if (window.SPDiary) window.SPDiary.navigateToDiaryList();
+          if (window.SPDiary) {
+            var diaryCard = document.querySelector('.diary-card');
+            var diaryId = diaryCard && diaryCard.dataset.diaryId;
+            if (diaryId) window.SPDiary.navigateToDiaryDetail(diaryId);
+            else window.SPDiary.navigateToDiaryList();
+          }
           return;
         }
         if (route === "/settings/api") {
