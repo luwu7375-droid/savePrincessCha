@@ -2049,8 +2049,9 @@ body {
   /* Bottom edge aligns to top of composer (dock-gap is the space below composer) */
   bottom: calc(var(--chat-input-height) + var(--dock-gap));
   z-index: 20;
+  margin: 0 20px;
   background: var(--surface);
-  border-radius: 18px 18px 0 0;
+  border-radius: 18px;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   display: flex;
@@ -3377,26 +3378,44 @@ body {
 
 .phone-loading, .phone-error { font-size: 14px; color: var(--text-muted); padding: 10px 0; }
 .phone-error { color: #e57373; }
+.phone-timeline-error { font-size: 13px; color: #e57373; padding: 16px; text-align: center; }
 
 /* Timeline */
-.phone-timeline { display: flex; flex-direction: column; gap: 0; }
+.phone-timeline { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
 .phone-timeline-item {
-  display: grid; grid-template-columns: 46px 12px 1fr;
-  gap: 0 8px; padding: 10px 0;
-  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,.06));
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
 }
-.phone-timeline-item:last-child { border-bottom: none; }
-.phone-timeline-time { font-size: 11px; color: var(--text-muted); padding-top: 2px; text-align: right; }
-.phone-timeline-dot {
-  width: 8px; height: 8px; border-radius: 50%; margin-top: 4px;
-  background: var(--text-muted);
+.phone-timeline-item:hover {
+  background: var(--surface-soft);
+  border-color: rgba(30, 30, 30, 0.12);
 }
-.phone-timeline-item--ok .phone-timeline-dot { background: #4ade80; }
-.phone-timeline-item--err .phone-timeline-dot { background: #f87171; }
-.phone-timeline-body { min-width: 0; }
-.phone-timeline-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.phone-timeline-url { display: block; font-size: 11px; color: var(--accent, #8b5cf6); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
-.phone-timeline-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.phone-timeline-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.phone-timeline-time {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.phone-timeline-url {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .phone-timeline-empty { font-size: 13px; color: var(--text-muted); padding: 16px 0; text-align: center; }
 
 /* Chat composer hints */
