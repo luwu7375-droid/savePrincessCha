@@ -5099,25 +5099,21 @@ function _renderChatAppearanceSubpage() {
 }
 
 function _renderVoiceSubpage() {
-  const cfg = window.SPVoice ? window.SPVoice.getTTSConfig() : { provider: "system", profiles: {} };
+  const cfg = window.SPVoice ? window.SPVoice.getTTSConfig() : { provider: "system", model_id: "eleven_v3", profiles: {} };
   const engine = cfg.provider || "system";
+  const modelId = cfg.model_id || "eleven_v3";
   const rate = window.SPVoice ? window.SPVoice.getTTSRate() : 1.0;
   const volume = window.SPVoice ? window.SPVoice.getTTSVolume() : 1.0;
   const ttsSupported = window.SPVoice ? window.SPVoice.isTTSSupported() : false;
   const profiles = cfg.profiles || {};
 
   function profileRow(lang, label, hint) {
-    const p = profiles[lang] || {};
-    const voiceId = p.voice_id || "";
-    const modelId = p.model_id || "eleven_v3";
+    const voiceId = (profiles[lang] || {}).voice_id || "";
     return `
       <div class="settings-card-row">
         <div><strong>${label}</strong><small>${hint}</small></div>
         <input type="text" class="settings-text-input voice-profile-voice-id" data-lang="${lang}"
           placeholder="voice_id" value="${voiceId}" autocomplete="off" spellcheck="false">
-        <input type="text" class="settings-text-input voice-profile-model-id" data-lang="${lang}"
-          placeholder="model_id" value="${modelId}" autocomplete="off" spellcheck="false"
-          style="width:9em">
       </div>`;
   }
 
@@ -5134,13 +5130,19 @@ function _renderVoiceSubpage() {
             <option value="local_http" ${engine === "local_http" ? "selected" : ""}>本地 HTTP</option>
           </select>
         </div>
+        <div class="settings-card-row">
+          <div><strong>模型</strong><small>ElevenLabs model_id</small></div>
+          <input type="text" class="settings-text-input" id="voiceTTSModelId"
+            placeholder="eleven_v3" value="${modelId}" autocomplete="off" spellcheck="false"
+            style="max-width:14em">
+        </div>
       </div>
     </div>
     <div class="settings-section">
       <div class="settings-section-label">声音配置</div>
       <div class="settings-card" id="voiceProfilesCard">
-        ${profileRow("zh", "中文", "默认中文 voice_id")}
-        ${profileRow("en", "英文", "默认英文 voice_id")}
+        ${profileRow("zh", "中文", "中文 voice_id")}
+        ${profileRow("en", "英文", "英文 voice_id")}
         ${profileRow("ja", "日文", "日语 voice_id")}
         ${profileRow("default", "其他", "未匹配语言的 voice_id")}
       </div>
@@ -5343,17 +5345,18 @@ function _initSettingsVoiceSubpage(container) {
     });
   }
 
-  // Wire per-language voice_id and model_id inputs
+  const modelIdInput = container.querySelector("#voiceTTSModelId");
+  if (modelIdInput) {
+    modelIdInput.addEventListener("change", (e) => {
+      window.SPVoice.setTTSConfig({ model_id: e.target.value.trim() || "eleven_v3" });
+    });
+  }
+
+  // Wire per-language voice_id inputs
   container.querySelectorAll(".voice-profile-voice-id").forEach((input) => {
     input.addEventListener("change", (e) => {
       const lang = e.target.dataset.lang;
       if (lang) window.SPVoice.setTTSConfig({ profiles: { [lang]: { voice_id: e.target.value.trim() } } });
-    });
-  });
-  container.querySelectorAll(".voice-profile-model-id").forEach((input) => {
-    input.addEventListener("change", (e) => {
-      const lang = e.target.dataset.lang;
-      if (lang) window.SPVoice.setTTSConfig({ profiles: { [lang]: { model_id: e.target.value.trim() || "eleven_v3" } } });
     });
   });
 

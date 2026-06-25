@@ -27,11 +27,12 @@
   // ── TTS Config (provider + voice profiles) ───────────────────────────────────
   const DEFAULT_TTS_CONFIG = {
     provider: "elevenlabs",
+    model_id: "eleven_v3",
     profiles: {
-      default: { voice_id: "", model_id: "eleven_v3" },
-      zh:      { voice_id: "", model_id: "eleven_v3" },
-      en:      { voice_id: "", model_id: "eleven_v3" },
-      ja:      { voice_id: "", model_id: "eleven_v3" },
+      default: { voice_id: "" },
+      zh:      { voice_id: "" },
+      en:      { voice_id: "" },
+      ja:      { voice_id: "" },
     },
   };
 
@@ -40,7 +41,6 @@
       const raw = localStorage.getItem(VOICE_TTS_CONFIG);
       if (raw) {
         const parsed = JSON.parse(raw);
-        // Ensure all expected keys exist (merge with defaults)
         const cfg = { ...DEFAULT_TTS_CONFIG, ...parsed };
         cfg.profiles = { ...DEFAULT_TTS_CONFIG.profiles, ...parsed.profiles };
         for (const lang of Object.keys(cfg.profiles)) {
@@ -310,7 +310,7 @@
         const lang = detectTtsLanguage(text, language_hint || null);
         const profile = cfg.profiles[lang] || cfg.profiles.default || {};
         const voice_id = profile.voice_id || "";
-        const model_id = profile.model_id || "eleven_v3";
+        const model_id = cfg.model_id || "eleven_v3";
 
         const res = await fetch(endpoint, {
           method: "POST",
