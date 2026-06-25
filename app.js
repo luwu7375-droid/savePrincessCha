@@ -30,6 +30,100 @@ let currentModelTier = _VALID_TIERS_INIT.includes(_storedTier) ? _storedTier : "
 // Sanitise: if stored value was invalid, overwrite it so localStorage stays clean.
 if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", "general");
 
+// ── Provider Groups & Model Role Mapping ──────────────────────────────────────
+
+// Provider groups configuration
+const PROVIDER_GROUPS = {
+  "55api-claude": {
+    name: "55api Claude",
+    description: "55api Claude 分组",
+    provider: "fiftyfive",
+    keyType: "claude",
+    models: [
+      "claude-3-5-sonnet-20241022",
+      "claude-3-5-sonnet-20240620",
+      "claude-3-opus-20240229"
+    ]
+  },
+  "55api-openai": {
+    name: "55api OpenAI",
+    description: "55api OpenAI 分组",
+    provider: "fiftyfive",
+    keyType: "gpt",
+    models: [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-4-turbo"
+    ]
+  },
+  "55api-gemini": {
+    name: "55api Gemini",
+    description: "55api Gemini 分组",
+    provider: "fiftyfive",
+    keyType: "gemini",
+    models: [
+      "gemini-2.0-flash-exp",
+      "gemini-1.5-pro",
+      "gemini-1.5-flash"
+    ]
+  },
+  "fuka": {
+    name: "Fuka 中转站",
+    description: "Fuka 统一通道",
+    provider: "fuka",
+    keyType: "fuka",
+    models: [
+      "[浣溪沙]gpt-5.5①",
+      "[浣溪沙]gpt-5.5②",
+      "[鸢尾花]claude-sonnet-4-20250514",
+      "[百香果]gpt-4.5-turbo"
+    ]
+  }
+};
+
+// Model role definitions
+const MODEL_ROLES = {
+  chat: { label: "对话模型", description: "主聊天回复" },
+  diary: { label: "日记模型", description: "自动写日记、手动生成日记" },
+  webReader: { label: "联网工具读取模型", description: "读取网页、搜索结果总结" },
+  utility: { label: "脏活/后台任务模型", description: "摘要、分类、标签提取等低成本任务" }
+};
+
+// Storage key for model role mapping
+const MODEL_ROLE_MAPPING_KEY = "spc_model_role_mapping_v1";
+
+// Get model role mapping from localStorage
+function getModelRoleMapping() {
+  try {
+    const stored = localStorage.getItem(MODEL_ROLE_MAPPING_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch (err) {
+    console.error("Failed to parse model role mapping:", err);
+    return {};
+  }
+}
+
+// Save model role mapping to localStorage
+function saveModelRoleMapping(mapping) {
+  try {
+    const data = {
+      ...mapping,
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem(MODEL_ROLE_MAPPING_KEY, JSON.stringify(data));
+    return true;
+  } catch (err) {
+    console.error("Failed to save model role mapping:", err);
+    return false;
+  }
+}
+
+// Get provider group and model for a specific role
+function getModelForRole(role) {
+  const mapping = getModelRoleMapping();
+  return mapping[role] || null;
+}
+
 // ── Story Seeds 开关（旧关系史已停用，保留变量避免引用报错） ──────────────────
 // LEGACY_MEMORY_ENABLED=false，storySeedsEnabled 不再影响 chat 注入。
 const storySeedsEnabled = false;
@@ -1732,6 +1826,24 @@ async function callChatAPI(messages, replyMode = "auto") {
     return { role: msg.role, content: compiledContent };
   });
 
+  // Build model parameters from role mapping
+  const chatModel = getModelForRole('chat');
+  let modelTierToSend = currentModelTier;
+  let customModelParams = null;
+
+  if (chatModel && chatModel.providerGroup && chatModel.model) {
+    // Use custom model mapping
+    const providerGroup = PROVIDER_GROUPS[chatModel.providerGroup];
+    if (providerGroup) {
+      customModelParams = {
+        providerGroup: chatModel.providerGroup,
+        provider: providerGroup.provider,
+        model: chatModel.model
+      };
+      console.log("[model-mapping] Using chat model mapping:", customModelParams);
+    }
+  }
+
   return fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1742,7 +1854,8 @@ async function callChatAPI(messages, replyMode = "auto") {
       replyMode,
       userId: currentUserId,
       conversationId: getActiveConversationId(),
-      modelTier: currentModelTier,
+      modelTier: modelTierToSend,
+      customModel: customModelParams,
       timeContext,
       conversation_state,
       // storySeedsEnabled intentionally omitted — legacy memory system retired
@@ -4409,6 +4522,11 @@ messageList.addEventListener("click", (e) => {
 
   // Click on message list background (not on bubbles/controls) clears keyboard
   if (e.target === messageList) {
+    // DIAGNOSTIC: Capture state before clearing keyboard
+    if (window.__dumpViewportDrift) {
+      console.info("[viewport-drift blank click]", window.__dumpViewportDrift("blank-click"));
+    }
+
     clearKeyboardState("messageList-background-click");
     // Reset horizontal viewport drift after blank click
     if (window.SPKeyboardViewport?.resetHorizontalSoon) {
@@ -5081,55 +5199,72 @@ function renderSettingsSubpage(type) {
 }
 
 function _renderApiSubpage() {
-  const tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[currentModelTier] || currentModelTier;
-  const diaryTier = localStorage.getItem("diary_model_tier") || "follow_chat";
-  const diaryTierLabel = { follow_chat: "跟随对话模型", general: "General", advanced: "Advanced" }[diaryTier] || diaryTier;
-  return `
-    <div class="settings-section">
-      <div class="settings-section-label">对话模型</div>
-      <div class="settings-card">
-        <div class="settings-card-row">
-          <div><strong>当前档位</strong><small>影响回复质量与速度</small></div>
-          <span class="settings-row-value">${tierLabel}</span>
-        </div>
-        <div class="settings-card-row">
-          <div><strong>连接状态</strong><small></small></div>
-          <span class="settings-row-value" id="srChatStatus">—</span>
-        </div>
-        <div class="settings-card-row">
-          <button type="button" class="settings-row-action-btn" id="srChatTestBtn">测试连接</button>
-        </div>
+  const mapping = getModelRoleMapping();
+
+  // Build provider status section
+  let providerStatusHtml = '<div class="settings-section"><div class="settings-section-label">通道状态</div><div class="settings-card">';
+
+  Object.entries(PROVIDER_GROUPS).forEach(([groupId, group]) => {
+    // For now, mark all as "由环境变量配置" since we don't expose keys
+    providerStatusHtml += `
+      <div class="settings-card-row">
+        <div><strong>${group.name}</strong><small>${group.description}</small></div>
+        <span class="settings-row-value settings-row-value--muted">由环境变量配置</span>
+      </div>`;
+  });
+
+  providerStatusHtml += '</div></div>';
+
+  // Build model role mapping section
+  let rolesMappingHtml = '<div class="settings-section"><div class="settings-section-label">用途模型</div><div class="settings-card">';
+
+  Object.entries(MODEL_ROLES).forEach(([roleId, role]) => {
+    const currentMapping = mapping[roleId];
+    const providerLabel = currentMapping?.providerGroup ?
+      (PROVIDER_GROUPS[currentMapping.providerGroup]?.name || currentMapping.providerGroup) :
+      "未选择";
+    const modelLabel = currentMapping?.model || "未选择";
+
+    rolesMappingHtml += `
+      <div class="settings-card-row">
+        <div><strong>${role.label}</strong><small>${role.description}</small></div>
+        <span class="settings-row-value settings-row-value--compact">${providerLabel} · ${modelLabel}</span>
       </div>
-    </div>
+      <div class="settings-card-row">
+        <select class="settings-select" data-role="${roleId}" data-type="provider">
+          <option value="">选择通道</option>
+          ${Object.entries(PROVIDER_GROUPS).map(([gid, g]) =>
+            `<option value="${gid}"${currentMapping?.providerGroup === gid ? ' selected' : ''}>${g.name}</option>`
+          ).join('')}
+        </select>
+        <select class="settings-select" data-role="${roleId}" data-type="model" ${!currentMapping?.providerGroup ? 'disabled' : ''}>
+          <option value="">选择模型</option>
+          ${currentMapping?.providerGroup ?
+            PROVIDER_GROUPS[currentMapping.providerGroup].models.map(m =>
+              `<option value="${m}"${currentMapping?.model === m ? ' selected' : ''}>${m}</option>`
+            ).join('') :
+            ''}
+        </select>
+      </div>`;
+  });
+
+  rolesMappingHtml += '</div></div>';
+
+  // Build actions section
+  const actionsHtml = `
     <div class="settings-section">
-      <div class="settings-section-label">写日记模型</div>
       <div class="settings-card">
         <div class="settings-card-row">
-          <div><strong>模型档位</strong><small>日记生成使用的档位</small></div>
-          <span class="settings-row-value">${diaryTierLabel}</span>
+          <button type="button" class="settings-row-action-btn" id="saveModelRoleMappingBtn">保存设置</button>
         </div>
         <div class="settings-card-row">
-          <select id="srDiaryTierSelect" class="settings-select">
-            <option value="follow_chat"${diaryTier === "follow_chat" ? " selected" : ""}>跟随对话模型</option>
-            <option value="general"${diaryTier === "general" ? " selected" : ""}>General</option>
-            <option value="advanced"${diaryTier === "advanced" ? " selected" : ""}>Advanced</option>
-          </select>
-        </div>
-        <div class="settings-card-row">
-          <button type="button" class="settings-row-action-btn" id="srDiaryTestBtn">测试日记模型</button>
-          <span class="settings-row-value" id="srDiaryTestStatus"></span>
-        </div>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-section-label">联网搜索</div>
-      <div class="settings-card">
-        <div class="settings-card-row">
-          <div><strong>联网搜索</strong><small>网页内容检索</small></div>
-          <span class="settings-row-value settings-row-value--muted">未启用</span>
+          <button type="button" class="settings-row-action-btn" id="testModelRoleMappingBtn">测试当前配置</button>
+          <span class="settings-row-value" id="testModelRoleMappingStatus"></span>
         </div>
       </div>
     </div>`;
+
+  return providerStatusHtml + rolesMappingHtml + actionsHtml;
 }
 
 function _renderBackupSubpage() {
@@ -5418,53 +5553,103 @@ function _renderBeautifySubpage()  { return _renderAppearanceResourcesSubpage();
 function _renderPromptSubpage()    { return _renderPromptWorldbookSubpage(); }
 
 function _initSettingsApiSubpage(container) {
-  async function testDiaryModel() {
-    const statusEl = container.querySelector("#srDiaryTestStatus");
-    if (statusEl) statusEl.textContent = "测试中…";
-    try {
-      const session = supabaseClient && (await supabaseClient.auth.getSession()).data.session;
-      const headers = { "Content-Type": "application/json" };
-      if (session) headers["Authorization"] = "Bearer " + session.access_token;
-      const baseUrl = getConfigValue("SUPABASE_URL", "");
-      const t = Date.now();
-      const res = await fetch(baseUrl + "/functions/v1/diary?type=test_model", { method: "POST", headers });
-      const data = await res.json();
-      if (data.ok) {
-        if (statusEl) statusEl.textContent = `${data.provider} · ${data.model} · ${data.latency_ms}ms`;
+  const mapping = getModelRoleMapping();
+
+  // Handle provider selection change
+  container.querySelectorAll('select[data-type="provider"]').forEach(select => {
+    select.addEventListener('change', () => {
+      const role = select.dataset.role;
+      const providerGroup = select.value;
+      const modelSelect = container.querySelector(`select[data-type="model"][data-role="${role}"]`);
+
+      if (!modelSelect) return;
+
+      if (providerGroup && PROVIDER_GROUPS[providerGroup]) {
+        // Enable model select and populate options
+        modelSelect.disabled = false;
+        modelSelect.innerHTML = '<option value="">选择模型</option>' +
+          PROVIDER_GROUPS[providerGroup].models.map(m =>
+            `<option value="${m}">${m}</option>`
+          ).join('');
       } else {
-        if (statusEl) statusEl.textContent = "失败: " + (data.error || res.status);
+        // Disable model select
+        modelSelect.disabled = true;
+        modelSelect.innerHTML = '<option value="">选择模型</option>';
       }
-    } catch (_err) {
-      if (statusEl) statusEl.textContent = "网络错误";
-    }
-  }
+    });
+  });
 
-  const chatTestBtn = container.querySelector("#srChatTestBtn");
-  if (chatTestBtn) {
-    chatTestBtn.addEventListener("click", async () => {
-      chatTestBtn.disabled = true;
-      const statusEl = container.querySelector("#srChatStatus");
-      if (statusEl) statusEl.textContent = "测试中…";
-      await testDiaryModel();
-      const diaryStatus = container.querySelector("#srDiaryTestStatus");
-      if (statusEl && diaryStatus) statusEl.textContent = diaryStatus.textContent;
-      chatTestBtn.disabled = false;
+  // Handle save button
+  const saveBtn = container.querySelector('#saveModelRoleMappingBtn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const newMapping = {};
+      let hasChanges = false;
+
+      container.querySelectorAll('select[data-type="provider"]').forEach(providerSelect => {
+        const role = providerSelect.dataset.role;
+        const providerGroup = providerSelect.value;
+        const modelSelect = container.querySelector(`select[data-type="model"][data-role="${role}"]`);
+        const model = modelSelect ? modelSelect.value : '';
+
+        if (providerGroup && model) {
+          newMapping[role] = { providerGroup, model };
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        const success = saveModelRoleMapping(newMapping);
+        if (success) {
+          if (typeof showToast === 'function') {
+            showToast('已保存用途模型映射');
+          } else {
+            alert('已保存用途模型映射');
+          }
+          // Refresh the subpage to show updated values
+          setTimeout(() => {
+            const subpageBody = document.getElementById('settingsSubpageBody');
+            if (subpageBody && typeof renderSettingsSubpage === 'function') {
+              subpageBody.innerHTML = renderSettingsSubpage('api');
+              if (typeof _initSettingsSubpageEvents === 'function') {
+                _initSettingsSubpageEvents(subpageBody, 'api');
+              }
+            }
+          }, 500);
+        } else {
+          alert('保存失败，请重试');
+        }
+      } else {
+        alert('请至少配置一个用途模型');
+      }
     });
   }
 
-  const diaryTestBtn = container.querySelector("#srDiaryTestBtn");
-  if (diaryTestBtn) {
-    diaryTestBtn.addEventListener("click", async () => {
-      diaryTestBtn.disabled = true;
-      await testDiaryModel();
-      diaryTestBtn.disabled = false;
-    });
-  }
+  // Handle test button
+  const testBtn = container.querySelector('#testModelRoleMappingBtn');
+  const testStatus = container.querySelector('#testModelRoleMappingStatus');
+  if (testBtn && testStatus) {
+    testBtn.addEventListener('click', async () => {
+      testBtn.disabled = true;
+      testStatus.textContent = '测试中…';
 
-  const diaryTierSelect = container.querySelector("#srDiaryTierSelect");
-  if (diaryTierSelect) {
-    diaryTierSelect.addEventListener("change", () => {
-      localStorage.setItem("diary_model_tier", diaryTierSelect.value);
+      const mapping = getModelRoleMapping();
+      const results = [];
+
+      // Check each role
+      for (const [roleId, role] of Object.entries(MODEL_ROLES)) {
+        const config = mapping[roleId];
+        if (!config || !config.providerGroup || !config.model) {
+          results.push(`${role.label}：未选择`);
+        } else if (!PROVIDER_GROUPS[config.providerGroup]) {
+          results.push(`${role.label}：通道未配置`);
+        } else {
+          results.push(`${role.label}：已配置`);
+        }
+      }
+
+      testStatus.textContent = results.join(' / ');
+      testBtn.disabled = false;
     });
   }
 }

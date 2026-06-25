@@ -121,22 +121,46 @@
       throw new Error('source_events is required');
     }
 
+    // Get diary model mapping from main app
+    let customModelParams = null;
+    if (window.getModelForRole && window.PROVIDER_GROUPS) {
+      const diaryModel = window.getModelForRole('diary');
+      if (diaryModel && diaryModel.providerGroup && diaryModel.model) {
+        const providerGroup = window.PROVIDER_GROUPS[diaryModel.providerGroup];
+        if (providerGroup) {
+          customModelParams = {
+            providerGroup: diaryModel.providerGroup,
+            provider: providerGroup.provider,
+            model: diaryModel.model
+          };
+          console.log('[diary] Using diary model mapping:', customModelParams);
+        }
+      }
+    }
+
     try {
+      const requestBody = {
+        userId,
+        conversationId,
+        source_events: sourceEvents,
+        scene_context: sceneContext,
+        cha_status: chaStatus,
+        diary_length: diaryLength,
+        debug
+      };
+
+      // Add custom model params if available
+      if (customModelParams) {
+        requestBody.customModel = customModelParams;
+      }
+
       const response = await fetch(`${supabaseClient.supabaseUrl}/functions/v1/diary`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${supabaseClient.supabaseKey}`
         },
-        body: JSON.stringify({
-          userId,
-          conversationId,
-          source_events: sourceEvents,
-          scene_context: sceneContext,
-          cha_status: chaStatus,
-          diary_length: diaryLength,
-          debug
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
