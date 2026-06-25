@@ -3916,3 +3916,27 @@ img.msg-image {
     -webkit-line-clamp: 3;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Mobile Input Auto-Zoom Prevention
+   ══════════════════════════════════════════════════════════════════════════════
+   iOS Safari triggers auto-zoom on any input with font-size < 16px.
+   Override all violating inputs with 16px minimum on mobile viewports.
+   ────────────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 820px) {
+  .dialog input,
+  .dialog textarea,
+  .dialog select,
+  .memory-add select,
+  .memory-add textarea,
+  .memory-add input,
+  #loginOverlay .modal input[type="email"],
+  #loginOverlay .modal input[type="password"],
+  .mc-search-input,
+  .mc-status-select,
+  .settings-select,
+  .settings-text-input {
+    font-size: 16px;
+  }
+}
