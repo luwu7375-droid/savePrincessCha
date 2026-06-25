@@ -5488,6 +5488,34 @@ function _renderDebugSubpage() {
     </div>`;
 }
 
+/**
+ * Show voice call loading page with heartbeat/ripple animation
+ */
+function showVoiceCallLoadingPage() {
+  const overlay = document.createElement('div');
+  overlay.className = 'voice-call-overlay';
+  overlay.innerHTML = `
+    <div class="voice-call-container">
+      <div class="heartbeat-pulse"></div>
+      <p>正在连接通话服务...</p>
+      <button type="button" class="voice-call-cancel" aria-label="取消">取消</button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('.voice-call-cancel')?.addEventListener('click', () => {
+    overlay.remove();
+  });
+
+  // 自动移除（预留：未来可以链接真实的 tts 和语音通话）
+  setTimeout(() => {
+    if (overlay.parentNode) {
+      overlay.remove();
+    }
+  }, 3000);
+}
+
 function initV2Composer() {
   const plusButton = document.getElementById("composerMenuBtn");
   const inputBar = document.getElementById("chatForm");
@@ -5555,6 +5583,17 @@ function initV2Composer() {
     actions.className = "plus-panel-grid";
 
     // Voice call — hidden for now (placeholder entry deferred)
+    addPanelItem(actions, {
+      label: "语音电话",
+      desc: "通话服务",
+      icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h4v8H3zM11 6h4v8h-4zM9 1v16M1 9h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      onClick: () => {
+        closePanel();
+        // 显示心跳/水波纹加载页面，链接 tts 和语音通话
+        showVoiceCallLoadingPage();
+      },
+      disabled: false,
+    });
 
     addPanelItem(actions, {
       label: "图片",

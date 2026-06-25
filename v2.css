@@ -1030,7 +1030,10 @@ body {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   display: grid;
-  grid-template-columns: 48px max-content 44px 1fr auto auto;
+  grid-template-columns: auto 1fr auto;
+  /* 简化为 3 列: avatar | title(flex占用剩余) | more
+     avatar 用 auto，title 用 1fr 吃掉剩余空间，more 用 auto
+  */
   gap: 4px;
   align-items: center;
 }
@@ -1489,7 +1492,12 @@ body {
   display: none !important;
 }
 
-#composerMenuBtn.active {
+#composerMenuBtn.active,
+.ghost-icon-btn.active {
+  /* 统一 active 样式：背景色 + 边框色 + 旋转 */
+  color: oklch(62% 0.18 248);
+  border-color: oklch(52% 0.16 248 / 0.6);
+  background: oklch(52% 0.16 248 / 0.1);
   transform: rotate(45deg);
 }
 
@@ -1533,8 +1541,14 @@ body {
 
 .plus-panel-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+
+@media (max-width: 380px) {
+  .plus-panel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .plus-panel-item,
@@ -3406,4 +3420,93 @@ body {
   font-style: italic;
   padding: 2px 8px !important;
   opacity: 0.8;
+}
+
+/* ── Voice call overlay ───────────────────────────────────────────────────── */
+
+.voice-call-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.voice-call-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.heartbeat-pulse {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--surface);
+  position: relative;
+  animation: heartbeat 1.2s ease-in-out infinite;
+}
+
+.heartbeat-pulse::before,
+.heartbeat-pulse::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  border: 2px solid oklch(62% 0.18 248);
+  border-radius: 50%;
+  animation: ripple 1.2s ease-out infinite;
+}
+
+.heartbeat-pulse::after {
+  animation-delay: 0.4s;
+}
+
+@keyframes heartbeat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes ripple {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.8);
+  }
+}
+
+.voice-call-container p {
+  color: var(--text-main);
+  font-size: 14px;
+  margin: 0;
+}
+
+.voice-call-cancel {
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.voice-call-cancel:active {
+  background: var(--surface-soft);
 }
