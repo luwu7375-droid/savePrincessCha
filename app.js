@@ -5771,6 +5771,11 @@ function initV2Composer() {
     if (messageInput && document.activeElement === messageInput) {
       messageInput.blur();
     }
+    // Force a clean non-keyboard state immediately so --dock-gap resolves to
+    // the stable baseline instead of --kb+10 during the keyboard-close window.
+    document.querySelector(".layout")?.classList.remove("keyboard-open");
+    document.documentElement.style.setProperty("--kb", "0px");
+    document.documentElement.style.setProperty("--keyboard-inset", "0px");
     panel = document.createElement("div");
     panel.className = "plus-panel";
 
