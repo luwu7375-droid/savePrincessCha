@@ -34,6 +34,11 @@
     else element.removeAttribute("hidden");
   }
 
+  // ── Phone System Simulator State ──────────────────────────────────────────
+
+  let currentScreen = "lock";
+  let screenHistory = [];
+
   // ── Open / Close overlay ──────────────────────────────────────────────────
 
   function openPhoneOverlay() {
@@ -41,6 +46,13 @@
     if (!overlay) return;
     overlay.classList.remove("hidden");
     overlay.removeAttribute("hidden");
+
+    // Reset to lock screen
+    currentScreen = "lock";
+    screenHistory = [];
+    showScreen("lock");
+
+    // Load activity data for browser history
     loadTodayActivity();
   }
 
@@ -52,33 +64,125 @@
 
   function resetReadForm() {
     const input = el("phoneUrlInput");
-    const result = el("phoneResult");
     if (input) input.value = "";
-    if (result) {
-      result.setAttribute("hidden", "");
-      result.innerHTML = "";
+  }
+
+  // ── Screen Navigation ─────────────────────────────────────────────────────
+
+  function showScreen(screenName) {
+    const screens = document.querySelectorAll(".phone-screen");
+    screens.forEach(screen => {
+      if (screen.dataset.screen === screenName) {
+        screen.classList.remove("hidden");
+      } else {
+        screen.classList.add("hidden");
+      }
+    });
+    currentScreen = screenName;
+  }
+
+  function navigateToScreen(screenName) {
+    if (currentScreen !== screenName) {
+      screenHistory.push(currentScreen);
+      showScreen(screenName);
+    }
+  }
+
+  function navigateBack() {
+    if (screenHistory.length > 0) {
+      const previousScreen = screenHistory.pop();
+      showScreen(previousScreen);
+    } else {
+      showScreen("home");
+    }
+  }
+
+  // ── Gesture Handlers ──────────────────────────────────────────────────────
+
+  function initGestures() {
+    const lockScreen = el("phoneLockScreen");
+    if (lockScreen) {
+      let startY = 0;
+      lockScreen.addEventListener("touchstart", (e) => {
+        startY = e.touches[0].clientY;
+      });
+      lockScreen.addEventListener("touchend", (e) => {
+        const endY = e.changedTouches[0].clientY;
+        const deltaY = startY - endY;
+        if (deltaY > 50) { // Swipe up
+          navigateToScreen("home");
+        }
+      });
+
+      // Mouse support for desktop
+      lockScreen.addEventListener("click", () => {
+        navigateToScreen("home");
+      });
+    }
+  }
+
+  // ── App Launchers ─────────────────────────────────────────────────────────
+
+  function initAppLaunchers() {
+    const appIcons = document.querySelectorAll(".phone-app-icon");
+    appIcons.forEach(icon => {
+      icon.addEventListener("click", () => {
+        const appName = icon.dataset.app;
+        if (appName) {
+          navigateToScreen(appName);
+        }
+      });
+    });
+  }
+
+  // ── Back Buttons ──────────────────────────────────────────────────────────
+
+  function initBackButtons() {
+    const backButtons = document.querySelectorAll(".phone-back-btn");
+    backButtons.forEach(btn => {
+      btn.addEventListener("click", navigateBack);
+    });
+  }
+
+  // ── Browser Integration ───────────────────────────────────────────────────
+
+  function initBrowser() {
+    const urlInput = document.querySelector(".phone-url-input");
+    const goBtn = document.querySelector(".phone-browser-go");
+
+    if (goBtn && urlInput) {
+      const handleBrowserGo = () => {
+        const url = urlInput.value.trim();
+        if (url) {
+          handleReadUrl(url);
+        }
+      };
+
+      goBtn.addEventListener("click", handleBrowserGo);
+      urlInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          handleBrowserGo();
+        }
+      });
     }
   }
 
   // ── Read URL ──────────────────────────────────────────────────────────────
 
-  async function handleReadUrl() {
+  async function handleReadUrl(urlOverride) {
     const endpoint = getWebEndpoint();
     if (!endpoint) {
-      showReadError("WEB_API_ENDPOINT 未配置");
+      alert("WEB_API_ENDPOINT 未配置");
       return;
     }
-    const input = el("phoneUrlInput");
-    const rawUrl = input ? input.value.trim() : "";
+
+    const urlInput = document.querySelector(".phone-url-input");
+    const rawUrl = urlOverride || (urlInput ? urlInput.value.trim() : "");
     if (!rawUrl) return;
 
-    const btn = el("phoneReadBtn");
-    if (btn) { btn.disabled = true; btn.textContent = "去看看…"; }
-
-    const resultEl = el("phoneResult");
-    if (resultEl) {
-      resultEl.removeAttribute("hidden");
-      resultEl.innerHTML = '<p class="phone-loading">cha 出去看了一眼，马上回来…</p>';
+    const historyContainer = el("phoneBrowserHistory");
+    if (historyContainer) {
+      historyContainer.innerHTML = '<p style="color: rgba(255, 255, 255, 0.6); padding: 20px;">加载中…</p>';
     }
 
     try {
@@ -96,61 +200,30 @@
           : data.error === "timeout" ? "网页加载超时了。"
           : data.error === "content_type_rejected" ? "这个链接的内容格式没办法读。"
           : `读取失败（${data.error || "unknown"}）`;
-        showReadError(msg);
+
+        if (historyContainer) {
+          historyContainer.innerHTML = `<p style="color: #ff3b30; padding: 20px;">${escapeHtml(msg)}</p>`;
+        }
         return;
       }
 
-      renderReadResult(data, rawUrl);
+      // Reload activity timeline to show new entry
       loadTodayActivity();
     } catch (err) {
-      showReadError("网络错误，没能拿到内容。");
+      if (historyContainer) {
+        historyContainer.innerHTML = '<p style="color: #ff3b30; padding: 20px;">网络错误，没能拿到内容。</p>';
+      }
       console.error("[phone] fetch error", err);
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = "让cha看看"; }
     }
   }
 
   function showReadError(msg) {
-    const resultEl = el("phoneResult");
-    if (resultEl) {
-      resultEl.removeAttribute("hidden");
-      resultEl.innerHTML = `<p class="phone-error">${escapeHtml(msg)}</p>`;
-    }
+    // Legacy function - kept for compatibility
+    console.warn("[phone]", msg);
   }
 
   function renderReadResult(data, rawUrl) {
-    const resultEl = el("phoneResult");
-    if (!resultEl) return;
-
-    const title = data.source?.title || rawUrl;
-    const url = data.source?.url || rawUrl;
-    const summary = data.summary || "";
-    const fetchedAt = data.fetched_at ? formatTime(data.fetched_at) : "";
-    const reliabilityNote = data.reliability_note || "";
-
-    resultEl.removeAttribute("hidden");
-    resultEl.innerHTML = `
-      <div class="phone-result-card">
-        <div class="phone-result-title">${escapeHtml(title)}</div>
-        <div class="phone-result-summary">${escapeHtml(summary)}</div>
-        ${reliabilityNote ? `<div class="phone-result-note">${escapeHtml(reliabilityNote)}</div>` : ""}
-        <div class="phone-result-meta">
-          <a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" class="phone-result-source">${escapeHtml(truncate(url, 60))}</a>
-          ${fetchedAt ? `<span class="phone-result-time">${escapeHtml(fetchedAt)}</span>` : ""}
-        </div>
-        <button type="button" class="phone-inject-btn" data-summary="${escapeAttr(summary)}" data-source="${escapeAttr(url)}" data-title="${escapeAttr(title)}">在聊天里讲给KK</button>
-      </div>`;
-
-    const injectBtn = resultEl.querySelector(".phone-inject-btn");
-    if (injectBtn) {
-      injectBtn.addEventListener("click", function () {
-        const s = this.dataset.summary;
-        const src = this.dataset.source;
-        const t = this.dataset.title;
-        injectToChat(s, src, t);
-        closePhoneOverlay();
-      });
-    }
+    // Legacy function - kept for compatibility
   }
 
   // ── Inject web result into chat ───────────────────────────────────────────
@@ -193,7 +266,7 @@
 
   function renderTimeline(container, rows) {
     if (!rows.length) {
-      container.innerHTML = '<p class="phone-timeline-empty">今天还没有上网记录。</p>';
+      container.innerHTML = '<p style="color: rgba(255, 255, 255, 0.4); padding: 20px; text-align: center;">今天还没有上网记录。</p>';
       return;
     }
 
@@ -201,24 +274,48 @@
       const time = formatTime(row.created_at);
       const title = row.title || row.query || row.url || "—";
       const isOk = row.status === "success";
-      const statusLabel = row.status === "timeout" ? "超时" : row.status === "error" ? "失败" : "成功";
-      const meta = [
-        row.duration_ms ? `${row.duration_ms}ms` : null,
-        row.token_estimate ? `~${row.token_estimate} tokens` : null,
-      ].filter(Boolean).join(" · ");
+      const url = row.final_url || row.url || "";
+      const summary = row.summary || "";
 
-      return `<div class="phone-timeline-item phone-timeline-item--${isOk ? "ok" : "err"}">
-        <span class="phone-timeline-time">${escapeHtml(time)}</span>
-        <span class="phone-timeline-dot"></span>
-        <div class="phone-timeline-body">
-          <div class="phone-timeline-title">${escapeHtml(truncate(title, 80))}</div>
-          ${row.url ? `<a href="${escapeAttr(row.url)}" target="_blank" rel="noopener noreferrer" class="phone-timeline-url">${escapeHtml(truncate(row.url, 60))}</a>` : ""}
-          <div class="phone-timeline-meta">${escapeHtml(statusLabel)}${meta ? " · " + escapeHtml(meta) : ""}</div>
-        </div>
+      return `<div style="padding: 12px; background: #1c1c1e; border-radius: 8px; margin-bottom: 8px; cursor: pointer;"
+        onclick="window.openBrowserResult('${escapeAttr(url)}', '${escapeAttr(title)}', '${escapeAttr(summary)}')">
+        <div style="font-size: 14px; color: #ffffff; margin-bottom: 4px;">${escapeHtml(truncate(title, 60))}</div>
+        <div style="font-size: 12px; color: rgba(255, 255, 255, 0.6);">${escapeHtml(time)}</div>
+        ${url ? `<div style="font-size: 11px; color: rgba(255, 255, 255, 0.4); margin-top: 4px;">${escapeHtml(truncate(url, 50))}</div>` : ""}
       </div>`;
     }).join("");
 
-    container.innerHTML = `<div class="phone-timeline">${items}</div>`;
+    container.innerHTML = items;
+  }
+
+  // ── Search and Notification Overlays ──────────────────────────────────────
+
+  function initOverlays() {
+    const searchBtn = document.querySelector('[data-action="search"]');
+    const searchOverlay = el("phoneSearchOverlay");
+    const searchClose = document.querySelector(".phone-search-close");
+
+    if (searchBtn && searchOverlay) {
+      searchBtn.addEventListener("click", () => {
+        searchOverlay.classList.remove("hidden");
+      });
+    }
+
+    if (searchClose && searchOverlay) {
+      searchClose.addEventListener("click", () => {
+        searchOverlay.classList.add("hidden");
+      });
+    }
+
+    // Status bar notification pull-down (simplified - just close overlay for now)
+    const notificationPanel = el("phoneNotificationPanel");
+    const notificationClose = document.querySelector(".phone-notification-close");
+
+    if (notificationClose && notificationPanel) {
+      notificationClose.addEventListener("click", () => {
+        notificationPanel.classList.add("hidden");
+      });
+    }
   }
 
   // ── Utils ─────────────────────────────────────────────────────────────────
@@ -250,21 +347,18 @@
   // ── Wire DOM after load ───────────────────────────────────────────────────
 
   function init() {
-    const readBtn = el("phoneReadBtn");
-    if (readBtn) readBtn.addEventListener("click", handleReadUrl);
-
-    const urlInput = el("phoneUrlInput");
-    if (urlInput) {
-      urlInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") handleReadUrl();
-      });
-    }
-
     const closeBtn = el("phoneOverlayClose");
     if (closeBtn) closeBtn.addEventListener("click", closePhoneOverlay);
 
     const backdrop = el("phoneOverlayBackdrop");
     if (backdrop) backdrop.addEventListener("click", closePhoneOverlay);
+
+    // Initialize phone simulator features
+    initGestures();
+    initAppLaunchers();
+    initBackButtons();
+    initBrowser();
+    initOverlays();
   }
 
   if (document.readyState === "loading") {
@@ -282,5 +376,13 @@
     const input = el("phoneUrlInput");
     if (input) input.value = url;
     openPhoneOverlay();
+  };
+
+  // Open browser result from timeline history
+  window.openBrowserResult = function (url, title, summary) {
+    if (summary && typeof window.injectWebContextToChat === "function") {
+      window.injectWebContextToChat({ summary, sourceUrl: url, title });
+      closePhoneOverlay();
+    }
   };
 })();

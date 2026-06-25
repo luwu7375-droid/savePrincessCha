@@ -359,6 +359,10 @@ Deno.serve(async (req) => {
   }
 
   // ── Upload to Storage ───────────────────────────────────────────────────────
+  // DEPLOYMENT REQUIREMENT:
+  // - Supabase bucket "message-audio" must exist
+  // - If using public URLs (below), bucket must be configured as public
+  // - If bucket is not public, use signed URLs instead of public URL path
   const storagePath = `${provider}/${language}/${voice_id.slice(0, 8)}/${message_id}_${hash}.mp3`;
   const uploadRes = await fetch(
     `${SUPABASE_URL}/storage/v1/object/message-audio/${storagePath}`,
@@ -375,10 +379,40 @@ Deno.serve(async (req) => {
 
   logCtx.storage_upload_status = uploadRes.status;
 
+  // ── Storage upload failed: fallback to data URL ─────────────────────────────
   if (!uploadRes.ok) {
     const errText = (await uploadRes.text()).slice(0, 500);
-    finalize({ error_code: "STORAGE_ERROR", error_message: errText });
-    return jsonResp({ ok: false, code: "STORAGE_ERROR", message: "Storage upload failed", request_id }, 502);
+    console.error("Storage upload failed - detailed context:", JSON.stringify({
+      request_id,
+      storage_upload_status: uploadRes.status,
+      storage_error_text: errText,
+      storagePath,
+      bucket: "message-audio",
+      provider,
+      language,
+      model_id,
+      text_hash: hash,
+    }));
+
+    finalize({
+      audio_url_type: "data_fallback",
+      cache_write_failed: true,
+      error_message: `Storage failed: ${errText}`,
+    });
+
+    return jsonResp({
+      ok: true,
+      audio_url: audioToDataUrl(audioBuffer),
+      provider,
+      language,
+      voice_id,
+      model_id,
+      voice_text: script.voice_text,
+      voice_style: script.voice_style,
+      cached: false,
+      cache_write_failed: true,
+      audio_url_type: "data_fallback",
+    });
   }
 
   const audio_url = `${SUPABASE_URL}/storage/v1/object/public/message-audio/${storagePath}`;

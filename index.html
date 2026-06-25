@@ -618,29 +618,235 @@
     </div>
   </div>
 
-  <!-- 查手机 overlay —— Phase 1 联网读取 + 活动日志 -->
+  <!-- 查手机: 14-Screen Phone System Simulator -->
   <div id="phoneOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="查手机">
     <button id="phoneOverlayBackdrop" type="button" class="overlay-backdrop" aria-label="关闭"></button>
-    <div class="phone-modal">
-      <header class="phone-modal-header">
-        <h2>查手机</h2>
-        <button id="phoneOverlayClose" type="button" class="phone-close-btn" aria-label="关闭">×</button>
-      </header>
-
-      <!-- URL 读取区 -->
-      <section class="phone-read-section">
-        <div class="phone-input-row">
-          <input id="phoneUrlInput" type="url" placeholder="粘贴链接，让cha去看看…" autocomplete="off" spellcheck="false">
-          <button id="phoneReadBtn" type="button" class="phone-read-btn">让cha看看</button>
+    <div class="phone-shell">
+      <!-- Status bar (persistent across all screens) -->
+      <div class="phone-status-bar">
+        <span class="phone-time">9:41</span>
+        <div class="phone-status-icons">
+          <span class="phone-signal">📶</span>
+          <span class="phone-wifi">📡</span>
+          <span class="phone-battery">🔋 85%</span>
         </div>
-        <div id="phoneResult" hidden></div>
-      </section>
+      </div>
 
-      <!-- 活动时间线 -->
-      <section class="phone-activity-section">
-        <h3 class="phone-section-title">今天的上网记录</h3>
-        <div id="phoneTimeline"></div>
-      </section>
+      <!-- Screen: Lock (swipe up to unlock) -->
+      <div id="phoneLockScreen" class="phone-screen" data-screen="lock">
+        <div class="phone-lock-content">
+          <div class="phone-lock-time">9:41</div>
+          <div class="phone-lock-date">6月25日 星期三</div>
+          <div class="phone-lock-hint">↑ 向上滑动解锁</div>
+        </div>
+      </div>
+
+      <!-- Screen: Home (app grid) -->
+      <div id="phoneHomeScreen" class="phone-screen hidden" data-screen="home">
+        <div class="phone-app-grid">
+          <button type="button" class="phone-app-icon" data-app="browser">
+            <span class="app-icon">🌐</span>
+            <span class="app-label">浏览器</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="contacts">
+            <span class="app-icon">👤</span>
+            <span class="app-label">通讯录</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="messages">
+            <span class="app-icon">💬</span>
+            <span class="app-label">信息</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="photos">
+            <span class="app-icon">📷</span>
+            <span class="app-label">照片</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="music">
+            <span class="app-icon">🎵</span>
+            <span class="app-label">音乐</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="settings">
+            <span class="app-icon">⚙️</span>
+            <span class="app-label">设置</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="phone">
+            <span class="app-icon">📞</span>
+            <span class="app-label">电话</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="video">
+            <span class="app-icon">📹</span>
+            <span class="app-label">视频通话</span>
+          </button>
+        </div>
+        <div class="phone-dock">
+          <button type="button" class="phone-dock-icon" data-action="search">
+            <span class="app-icon">🔍</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Screen: Browser -->
+      <div id="phoneBrowserScreen" class="phone-screen hidden" data-screen="browser">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">浏览器</span>
+        </div>
+        <div class="phone-browser-bar">
+          <input type="url" class="phone-url-input" placeholder="搜索或输入网址" autocomplete="off">
+          <button type="button" class="phone-browser-go">前往</button>
+        </div>
+        <div class="phone-browser-content">
+          <div class="phone-browser-history">
+            <h4>今天的浏览记录</h4>
+            <div id="phoneBrowserHistory"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Contacts -->
+      <div id="phoneContactsScreen" class="phone-screen hidden" data-screen="contacts">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">通讯录</span>
+        </div>
+        <div class="phone-search-bar">
+          <input type="text" class="phone-search-input" placeholder="搜索联系人">
+        </div>
+        <div class="phone-contact-list">
+          <div class="phone-contact-item">
+            <span class="contact-avatar">KK</span>
+            <span class="contact-name">KK</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Messages -->
+      <div id="phoneMessagesScreen" class="phone-screen hidden" data-screen="messages">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">信息</span>
+        </div>
+        <div class="phone-message-list">
+          <div class="phone-message-thread">
+            <span class="message-avatar">KK</span>
+            <div class="message-preview">
+              <div class="message-name">KK</div>
+              <div class="message-text">今天过得怎么样？</div>
+            </div>
+            <span class="message-time">9:30</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Photos -->
+      <div id="phonePhotosScreen" class="phone-screen hidden" data-screen="photos">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">照片</span>
+        </div>
+        <div class="phone-photo-grid">
+          <div class="phone-photo-placeholder">📷 暂无照片</div>
+        </div>
+      </div>
+
+      <!-- Screen: Music -->
+      <div id="phoneMusicScreen" class="phone-screen hidden" data-screen="music">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">音乐</span>
+        </div>
+        <div class="phone-music-player">
+          <div class="music-album-art">🎵</div>
+          <div class="music-info">
+            <div class="music-title">暂无播放</div>
+            <div class="music-artist">—</div>
+          </div>
+          <div class="music-controls">
+            <button type="button" class="music-btn">⏮</button>
+            <button type="button" class="music-btn music-play">▶️</button>
+            <button type="button" class="music-btn">⏭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Settings -->
+      <div id="phoneSettingsScreen" class="phone-screen hidden" data-screen="settings">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">设置</span>
+        </div>
+        <div class="phone-settings-list">
+          <div class="phone-setting-item">
+            <span class="setting-icon">👤</span>
+            <span class="setting-label">账号</span>
+          </div>
+          <div class="phone-setting-item">
+            <span class="setting-icon">🔔</span>
+            <span class="setting-label">通知</span>
+          </div>
+          <div class="phone-setting-item">
+            <span class="setting-icon">🔒</span>
+            <span class="setting-label">隐私</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Phone Call -->
+      <div id="phoneCallScreen" class="phone-screen hidden" data-screen="phone">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">电话</span>
+        </div>
+        <div class="phone-call-interface">
+          <div class="call-avatar">KK</div>
+          <div class="call-name">KK</div>
+          <div class="call-status">准备通话</div>
+          <div class="call-actions">
+            <button type="button" class="call-btn call-accept">📞 接听</button>
+            <button type="button" class="call-btn call-decline">❌ 挂断</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Video Call -->
+      <div id="phoneVideoScreen" class="phone-screen hidden" data-screen="video">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">视频通话</span>
+        </div>
+        <div class="phone-video-interface">
+          <div class="video-preview">📹 视频预览</div>
+          <div class="video-controls">
+            <button type="button" class="video-btn">🎤</button>
+            <button type="button" class="video-btn video-call">📹 开始</button>
+            <button type="button" class="video-btn">🔄</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overlay: Search -->
+      <div id="phoneSearchOverlay" class="phone-overlay hidden" data-overlay="search">
+        <div class="phone-search-header">
+          <button type="button" class="phone-search-close" data-action="close-overlay">×</button>
+          <input type="text" class="phone-search-input-large" placeholder="搜索应用、联系人…" autocomplete="off">
+        </div>
+        <div class="phone-search-results">
+          <div class="phone-search-empty">输入以搜索</div>
+        </div>
+      </div>
+
+      <!-- Overlay: Notifications (pull down from top) -->
+      <div id="phoneNotificationPanel" class="phone-overlay phone-notification-panel hidden" data-overlay="notifications">
+        <div class="phone-notification-header">
+          <span>通知</span>
+          <button type="button" class="phone-notification-close" data-action="close-overlay">×</button>
+        </div>
+        <div class="phone-notification-list">
+          <div class="phone-notification-empty">暂无通知</div>
+        </div>
+      </div>
+
+      <!-- Home indicator (persistent) -->
+      <div class="phone-home-indicator"></div>
     </div>
   </div>
 

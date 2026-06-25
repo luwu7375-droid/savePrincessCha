@@ -338,7 +338,16 @@
           throw new Error(`[${data.code || res.status}] ${data.message || data.error || "TTS failed"}`);
         }
         audioUrl = data.audio_url;
-        if (msgId && audioUrl) button.dataset.audioUrl = audioUrl;
+
+        // Handle storage cache failure gracefully
+        if (data.cache_write_failed) {
+          console.warn("TTS generated but cache upload failed; using data URL fallback");
+        }
+
+        // Cache audio URL only if it's a public URL (not a one-time data URL)
+        if (msgId && audioUrl && !data.cache_write_failed) {
+          button.dataset.audioUrl = audioUrl;
+        }
       } catch (err) {
         console.error("TTS error:", err.message, err);
         const msg = err?.message || "生成失败";
