@@ -1138,6 +1138,43 @@ async function compileMemoryContext(
     }
   }
 
+  // ── recent_web_activity: last 24h web browsing, always check ──────────────────
+  let recentWebActivityLoaded = false;
+  let recentWebActivityRecalled = false;
+  let recentWebActivityUrl: string | null = null;
+  let recentWebActivityTitle: string | null = null;
+  if (supabaseUrl && serviceRoleKey && userId && userId !== "anon") {
+    try {
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/cha_activity_log?user_id=eq.${userId}&action_type=eq.web_browse&status=eq.success&created_at=gte.${yesterday.toISOString()}&order=created_at.desc&limit=1`,
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+        },
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const activity = rows[0];
+          recentWebActivityLoaded = true;
+          recentWebActivityRecalled = true;
+          recentWebActivityUrl = activity.final_url || activity.url || null;
+          recentWebActivityTitle = activity.title || null;
+          activeProviders.push("recent_web_activity");
+          const summary = activity.summary || "";
+          const createdAt = activity.created_at || "";
+          context += `\n<recent_web_activity url="${recentWebActivityUrl || ""}" title="${recentWebActivityTitle || ""}" fetched_at="${createdAt}">\n${summary}\n</recent_web_activity>\n`;
+        }
+      }
+    } catch (err) {
+      console.error("[chat] recent_web_activity provider error:", err);
+    }
+  }
+
   // Rough token estimate: ~1 token per 3.5 Chinese chars / 4 English chars
   const tokenEstimate = Math.ceil(context.length / 3.5);
 
@@ -1220,6 +1257,10 @@ async function compileMemoryContext(
       instructions_suppressed_categories: instructionsSuppressedCategories,
       persona_memories_total_chars: personaMemoriesTotalChars,
       persona_memories_chars_budget_hit: personaMemoriesCharsBudgetHit,
+      recent_web_activity_loaded: recentWebActivityLoaded,
+      recent_web_activity_recalled: recentWebActivityRecalled,
+      recent_web_activity_url: recentWebActivityUrl,
+      recent_web_activity_title: recentWebActivityTitle,
     },
   };
 }
@@ -1250,18 +1291,6 @@ function base64EncodeUtf8(value: unknown): string {
 
 // ── Model call (with one-shot fallback) ───────────────────────────────────────
 // All model call logic imported from ../_shared/model-client.ts
-
-  return {
-    response: fallbackRes,
-    usedModel: fallback.model,
-    usedProvider: fallback.providerName,
-    fallbackUsed: true,
-    fallbackModel: fallback.model,
-    fallbackProvider: fallback.providerName,
-    fallbackReason,
-    modelCallMs: primaryMs + fallbackMs,
-  };
-}
 
 // ── Running summary (transient) ───────────────────────────────────────────────
 const RUNNING_SUMMARY_TRIGGER_MESSAGES = 30;

@@ -50,7 +50,6 @@ body {
   height: 100%;
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
   overscroll-behavior-x: none;
 }
 
@@ -62,20 +61,16 @@ body {
 
 .layout {
   position: relative;
-  width: 100%;
-  max-width: min(100%, 430px);
+  width: min(100vw, 430px);
   /* Use --app-shell-h so the shell never shrinks when the keyboard opens */
   height: min(var(--app-shell-h, 100dvh), 932px);
   overflow: hidden;
-  overflow-x: hidden;
   display: block;
   background: var(--app-bg);
   border: 1px solid rgba(30, 30, 30, 0.04);
   border-radius: 34px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.08);
   color: var(--text-main);
-  margin-left: auto;
-  margin-right: auto;
 }
 
 .sidebar,
@@ -1416,15 +1411,7 @@ body {
 
 .msg-row {
   margin: 16px 0;
-  /* 禁用消息行的文本选择和触摸菜单 */
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.msg-row * {
-  /* 禁用消息内所有子元素的选择 */
+  /* 禁用消息行的文本选择 */
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -1454,16 +1441,6 @@ body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* 图片消息额外禁用 */
-.msg-image {
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-user-drag: none;
-  pointer-events: auto;
 }
 
 .msg-stack {
@@ -1521,11 +1498,6 @@ body {
   border: 0;
   padding: 7px 0;
   background: transparent;
-  /* 确保输入框可以选择文字 */
-  -webkit-user-select: text !important;
-  user-select: text !important;
-  -webkit-touch-callout: default !important;
-}
   color: var(--text-main);
   font-size: 16px;
   line-height: 1.45;
@@ -1932,7 +1904,7 @@ body {
 
   .layout {
     width: 100%;
-    max-width: 100%;
+    max-width: 100vw;
     height: var(--app-shell-h, 100dvh);
     border: 0;
     border-radius: 0;
@@ -2043,8 +2015,7 @@ body {
 
 @media (min-width: 768px) {
   .layout {
-    width: 100%;
-    max-width: min(100%, 430px);
+    width: min(100vw, 430px);
   }
 
   .plus-panel {
@@ -2077,17 +2048,15 @@ body {
   right: 0;
   /* Bottom edge aligns to top of composer (dock-gap is the space below composer) */
   bottom: calc(var(--chat-input-height) + var(--dock-gap));
-  z-index: 30;
-  margin: 0 20px;
+  z-index: 20;
   background: var(--surface);
-  border-radius: 18px;
+  border-radius: 18px 18px 0 0;
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* Adaptive height: only as tall as content, max 46vh or 360px */
-  height: auto;
-  max-height: min(46vh, 360px);
+  /* Use --app-vh so iOS Safari never jumps when the address bar hides */
+  height: min(320px, calc(var(--app-vh, 100dvh) - 220px));
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.2s ease, transform 0.22s ease;
@@ -2114,9 +2083,9 @@ body {
 /* When emoji panel is open: give message-list enough bottom padding so the
    last message is visible above the panel. No page-level rescale. */
 .chat-shell.emoji-panel-open .message-list {
-  /* dock baseline + composer + measured panel height (adaptive, not fixed 320px) */
-  padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
-  scroll-padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
+  /* dock baseline + composer + panel height (emoji panel ≈ 320px) */
+  padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
+  scroll-padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
 }
 
 /* plus panel open: reserve dock baseline + composer + measured panel height */
@@ -2270,9 +2239,8 @@ body {
 /* ── Content areas ──────────────────────────────────────────────────────── */
 
 .emoji-content {
-  flex: 0 1 auto;
+  flex: 1;
   overflow-y: auto;
-  max-height: 260px;
   padding: 8px 10px 10px;
   overscroll-behavior: contain;
   /* Ensure results area scrolls independently above keyboard */
@@ -3409,44 +3377,26 @@ body {
 
 .phone-loading, .phone-error { font-size: 14px; color: var(--text-muted); padding: 10px 0; }
 .phone-error { color: #e57373; }
-.phone-timeline-error { font-size: 13px; color: #e57373; padding: 16px; text-align: center; }
 
 /* Timeline */
-.phone-timeline { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+.phone-timeline { display: flex; flex-direction: column; gap: 0; }
 .phone-timeline-item {
-  padding: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.14s ease, border-color 0.14s ease;
+  display: grid; grid-template-columns: 46px 12px 1fr;
+  gap: 0 8px; padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,.06));
 }
-.phone-timeline-item:hover {
-  background: var(--surface-soft);
-  border-color: rgba(30, 30, 30, 0.12);
+.phone-timeline-item:last-child { border-bottom: none; }
+.phone-timeline-time { font-size: 11px; color: var(--text-muted); padding-top: 2px; text-align: right; }
+.phone-timeline-dot {
+  width: 8px; height: 8px; border-radius: 50%; margin-top: 4px;
+  background: var(--text-muted);
 }
-.phone-timeline-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-main);
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.phone-timeline-time {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.phone-timeline-url {
-  display: block;
-  font-size: 11px;
-  color: var(--text-faint);
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.phone-timeline-item--ok .phone-timeline-dot { background: #4ade80; }
+.phone-timeline-item--err .phone-timeline-dot { background: #f87171; }
+.phone-timeline-body { min-width: 0; }
+.phone-timeline-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-timeline-url { display: block; font-size: 11px; color: var(--accent, #8b5cf6); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.phone-timeline-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .phone-timeline-empty { font-size: 13px; color: var(--text-muted); padding: 16px 0; text-align: center; }
 
 /* Chat composer hints */
@@ -4176,27 +4126,6 @@ body {
   background: rgba(30, 30, 30, 0.2);
   border-radius: 3px;
   z-index: 100;
-}
-
-.phone-stub-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 60px 20px;
-  height: 100%;
-}
-
-.stub-icon {
-  font-size: 64px;
-  opacity: 0.3;
-}
-
-.stub-text {
-  font-size: 14px;
-  color: var(--text-muted);
-  text-align: center;
 }
 
 @media (max-width: 480px) {
