@@ -36,6 +36,11 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html,
+body {
+  touch-action: manipulation;
+}
+
 body {
   font-family: "Noto Sans SC", "PingFang SC", "Helvetica Neue", sans-serif;
   font-size: 15px;
@@ -50,6 +55,7 @@ body {
 .layout {
   display: flex;
   height: 100dvh;
+  transform: none !important;
 }
 
 /* ── Sidebar ── */

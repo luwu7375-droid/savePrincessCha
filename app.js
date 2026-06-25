@@ -4351,7 +4351,15 @@ async function saveEditedMessage(newText) {
 
 messageList.addEventListener("click", (e) => {
   const img = e.target.closest("img.msg-image");
-  if (img) showLightbox(img.src);
+  if (img) {
+    showLightbox(img.src);
+    return;
+  }
+
+  // Click on message list background (not on bubbles/controls) clears keyboard
+  if (e.target === messageList) {
+    clearKeyboardState("messageList-background-click");
+  }
 });
 
 async function handleSubmit() {
@@ -4532,6 +4540,43 @@ function closeAllChatPanels() {
   _chatInputMode = "plain";
 }
 
+// ── Clear keyboard state (Section VII) ────────────────────────────────────────
+// Unified click-outside handler for keyboard dismissal. Schedules deferred blur
+// with 120-180ms delay to allow blur→focus handoff window for panel transitions.
+// Called when user clicks outside input areas or when panels close programmatically.
+let _clearKeyboardTimeout = null;
+
+function clearKeyboardState(reason = "click-outside") {
+  // Cancel any pending clear operation
+  if (_clearKeyboardTimeout) {
+    clearTimeout(_clearKeyboardTimeout);
+    _clearKeyboardTimeout = null;
+  }
+
+  // Close all panels immediately
+  closeAllChatPanels();
+
+  // Schedule deferred blur with 150ms delay (midpoint of 120-180ms spec)
+  _clearKeyboardTimeout = setTimeout(() => {
+    _clearKeyboardTimeout = null;
+
+    // Only blur if no input currently has focus (respects handoff window)
+    const activeEl = document.activeElement;
+    const isTextInput = activeEl && (
+      activeEl.tagName === "INPUT" ||
+      activeEl.tagName === "TEXTAREA" ||
+      activeEl.isContentEditable
+    );
+
+    if (!isTextInput) {
+      // Safe to blur messageInput if it still has focus
+      if (messageInput === activeEl) {
+        messageInput.blur();
+      }
+    }
+  }, 150);
+}
+
 function getChatReplyStyle()  { return localStorage.getItem(CHAT_REPLY_STYLE_KEY)  || "balanced"; }
 function getChatAutoFreq()    { return localStorage.getItem(CHAT_AUTO_FREQ_KEY)    || "off"; }
 function getChatBlockCha()    { return localStorage.getItem(CHAT_BLOCK_CHA_KEY)    === "on"; }
@@ -4673,7 +4718,10 @@ function _syncChatMoreSubsheet(id) {
   });
 
   // Overlay (backdrop) closes sheet
-  document.getElementById("chatMoreOverlay")?.addEventListener("click", closeChatMoreSheet);
+  document.getElementById("chatMoreOverlay")?.addEventListener("click", () => {
+    closeChatMoreSheet();
+    clearKeyboardState("chat-more-overlay-click");
+  });
 
   // Main list items
   document.getElementById("cmsSearchBtn")?.addEventListener("click", () => {
