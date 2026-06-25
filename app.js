@@ -1037,8 +1037,22 @@ function stripThinking(text) {
   return text
     .replace(/<think>[\s\S]*?<\/think>/g, "")
     .replace(/<think>[\s\S]*$/, "")
+    .replace(/<visible_thought>[\s\S]*?<\/visible_thought>/g, "")
+    .replace(/<visible_thought>[\s\S]*$/, "")
+    .replace(/<\/?reply>/g, "")
     .replace(/\b[A-Z][A-Z_]{2,}_END\b/g, "")
     .trim();
+}
+
+function parseVisibleThought(raw) {
+  const thoughtMatch = raw.match(/<visible_thought>([\s\S]*?)<\/visible_thought>/);
+  if (!thoughtMatch) return { thought: null, reply: stripThinking(raw) };
+  const thought = thoughtMatch[1].trim().slice(0, 60);
+  const replyMatch = raw.match(/<reply>([\s\S]*?)<\/reply>/s);
+  const reply = replyMatch
+    ? replyMatch[1].trim()
+    : stripThinking(raw.replace(/<visible_thought>[\s\S]*?<\/visible_thought>/, "").trim());
+  return { thought, reply: reply || stripThinking(raw) };
 }
 
 function base64DecodeUtf8(base64) {
@@ -1954,7 +1968,7 @@ async function requestStreamingReply(replyMode = "auto") {
     }
   }
   if (!fullReply) throw new Error("未收到模型回复");
-  const cleanReply = stripThinking(fullReply);
+  const { thought: visibleThought, reply: cleanReply } = parseVisibleThought(fullReply);
   if (cleanReply === "<NO_REPLY>") {
     removeTypingIndicator();
     if (assistantEl) assistantEl.closest(".msg-row")?.remove();
@@ -1995,6 +2009,24 @@ async function requestStreamingReply(replyMode = "auto") {
         route: localStorage.getItem("previousTopicRoute") || null,
       });
     }
+  }
+
+  // ── Visible thought bubble (webContext replies only) ──────────────────────
+  if (visibleThought && assistantEl) {
+    const thinkAvatar = document.createElement("div");
+    thinkAvatar.className = "avatar";
+    thinkAvatar.title = "Cha";
+    const thinkBubble = document.createElement("div");
+    thinkBubble.className = "message assistant cha-message message-text thinking-bubble";
+    thinkBubble.textContent = "💭 " + visibleThought;
+    const thinkStack = document.createElement("div");
+    thinkStack.className = "msg-stack";
+    thinkStack.appendChild(thinkBubble);
+    const thinkRow = document.createElement("div");
+    thinkRow.className = "msg-row assistant";
+    thinkRow.appendChild(thinkAvatar);
+    thinkRow.appendChild(thinkStack);
+    messageList.insertBefore(thinkRow, assistantEl.closest(".msg-row"));
   }
 
   const bubbles = splitBubbles(cleanReply);
