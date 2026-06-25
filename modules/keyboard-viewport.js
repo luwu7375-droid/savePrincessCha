@@ -31,15 +31,17 @@
 
     function capture() {
       const vv = window.visualViewport;
-      // Skip if keyboard is open (text input focused and viewport shrunk)
+      // Only shrink shell for chat inputs (messageInput, chatSearchInput)
+      // Other inputs (world book forms, simulator, login) keep page stable
       const active = document.activeElement;
-      const isTextInput = active && (
-        active.tagName === "INPUT" ||
-        active.tagName === "TEXTAREA" ||
-        active.isContentEditable
+      const isChatInput = active && (
+        active.id === "messageInput" ||
+        active.id === "chatSearchInput"
       );
       const inset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
-      if (isTextInput && inset > 80) return;
+      const keyboardOpen = inset > 80;
+      // Skip shell resize if keyboard is open but it's not a chat input
+      if (keyboardOpen && !isChatInput) return;
 
       const h = vv ? vv.height : window.innerHeight;
       document.documentElement.style.setProperty("--app-shell-h", `${Math.round(h)}px`);

@@ -1717,7 +1717,9 @@ body {
 }
 
 .layout.keyboard-open .bottom-tab-bar {
-  transform: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .layout.keyboard-open .plus-panel {
@@ -1725,12 +1727,12 @@ body {
 }
 
 .layout.keyboard-open .input-bar {
-  margin-bottom: calc(max(10px, var(--keyboard-inset)) + env(safe-area-inset-bottom));
+  margin-bottom: 10px;
 }
 
 .layout.keyboard-open .message-list {
-  padding-bottom: calc(86px + var(--keyboard-inset) + env(safe-area-inset-bottom));
-  scroll-padding-bottom: calc(86px + var(--keyboard-inset) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--chat-input-height) + 18px);
+  scroll-padding-bottom: calc(var(--chat-input-height) + 18px);
 }
 
 .bottom-tab {
@@ -3576,20 +3578,21 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
-  border: none;
-  color: #1c1c1e;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  color: var(--text-main);
   font-size: 24px;
   font-weight: 300;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  transition: background 0.2s, transform 0.2s;
+  box-shadow: var(--shadow-float);
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .phone-overlay-close-btn:hover {
-  background: #ffffff;
+  background: var(--surface-soft);
   transform: scale(1.1);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
 }
 
 .phone-overlay-close-btn:active {
@@ -3601,10 +3604,10 @@ body {
   width: 375px;
   height: 667px;
   max-height: 90vh;
-  background: #1c1c1e;
+  background: var(--surface);
   border-radius: 36px;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-float), 0 0 0 1px var(--border-soft);
   display: flex;
   flex-direction: column;
 }
@@ -3616,23 +3619,24 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 8px 16px;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(247, 247, 245, 0.92);
   backdrop-filter: blur(10px);
   height: 44px;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .phone-time {
   font-size: 14px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--text-main);
 }
 
 .phone-status-icons {
   display: flex;
   gap: 6px;
   font-size: 12px;
-  color: #ffffff;
+  color: var(--text-muted);
 }
 
 .phone-screen {
@@ -3641,7 +3645,7 @@ body {
   left: 0;
   right: 0;
   bottom: 34px;
-  background: #000000;
+  background: var(--app-bg);
   overflow-y: auto;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
 }
@@ -3656,29 +3660,32 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background:
+    linear-gradient(135deg, rgba(247, 247, 245, 0.6), rgba(250, 250, 248, 0.8)),
+    linear-gradient(165deg, #f0ebe3 0%, #f7f7f5 40%, #e8e6e0 100%);
 }
 
 .phone-lock-content {
   text-align: center;
-  color: #ffffff;
+  color: var(--text-main);
 }
 
 .phone-lock-time {
   font-size: 64px;
   font-weight: 300;
   margin-bottom: 8px;
+  color: var(--text-main);
 }
 
 .phone-lock-date {
   font-size: 18px;
   margin-bottom: 40px;
-  opacity: 0.9;
+  color: var(--text-muted);
 }
 
 .phone-lock-hint {
   font-size: 14px;
-  opacity: 0.7;
+  color: var(--text-faint);
 }
 
 .phone-app-grid {

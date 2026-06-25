@@ -3950,6 +3950,13 @@ function initKeyboardViewportState() {
     getChatInputMode:   () => _chatInputMode,
     setChatInputMode:   setChatInputMode,
     maintainBottomAnchor: maintainBottomAnchor,
+    onKeyboardOpen:     () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollChatToLatest();
+        });
+      });
+    },
   });
 }
 
