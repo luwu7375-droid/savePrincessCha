@@ -3870,3 +3870,49 @@ img.msg-image {
 .msg-row.msg-highlight .message {
   animation: msg-highlight-flash 1.6s ease forwards;
 }
+
+/* ── Home diary card text overflow fix ─────────────────────────────────────── */
+
+.diary-card {
+  overflow: hidden;
+}
+
+.diary-card > p {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.45;
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.diary-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.diary-note-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diary-note-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 430px) {
+  .diary-card > p {
+    -webkit-line-clamp: 3;
+  }
+}

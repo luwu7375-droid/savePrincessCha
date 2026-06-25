@@ -178,9 +178,13 @@
       if (span) span.textContent = relativeTime;
     }
 
-    // Update content (truncate private_body to 2-4 lines, ~80-160 chars)
+    // Update content (truncate private_body for home card preview)
     if (contentP) {
-      const truncated = truncateText(entry.private_body, 120);
+      // Compress whitespace and newlines to single space for preview
+      const preview = entry.private_body
+        .replace(/\s+/g, " ")
+        .trim();
+      const truncated = truncateText(preview, 80);
       contentP.textContent = truncated;
     }
 
