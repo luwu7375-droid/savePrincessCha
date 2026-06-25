@@ -5783,6 +5783,8 @@ function initV2Composer() {
   function openPanel() {
     closeStatusPanel();
     closePanel();
+    // Close emoji panel if open (mutual exclusion)
+    if (typeof window.closeEmojiPanel === "function") window.closeEmojiPanel();
     // Dismiss the soft keyboard cleanly so the plus panel takes its place,
     // preventing the composer from drifting with the keyboard-close animation.
     if (messageInput && document.activeElement === messageInput) {

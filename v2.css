@@ -2056,8 +2056,8 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* Use --app-vh so iOS Safari never jumps when the address bar hides */
-  height: min(320px, calc(var(--app-vh, 100dvh) - 220px));
+  /* Max height = available space above composer, leaving room for messages */
+  max-height: calc(var(--app-vh, 100dvh) - var(--chat-input-height) - var(--dock-gap) - 180px);
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.2s ease, transform 0.22s ease;
@@ -4145,6 +4145,27 @@ body {
   background: rgba(30, 30, 30, 0.2);
   border-radius: 3px;
   z-index: 100;
+}
+
+.phone-stub-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 20px;
+  height: 100%;
+}
+
+.stub-icon {
+  font-size: 64px;
+  opacity: 0.3;
+}
+
+.stub-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 @media (max-width: 480px) {
