@@ -825,6 +825,20 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     img.className = "msg-image";
     img.src = part.image_url.url;
     img.alt = "";
+    img.draggable = false;
+    img.setAttribute("draggable", "false");
+    img.setAttribute("loading", "lazy");
+    img.style.webkitTouchCallout = "none";
+    img.style.webkitUserSelect = "none";
+    img.style.userSelect = "none";
+
+    // 禁用图片的原生右键菜单和拖拽
+    img.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+    });
+    img.addEventListener("dragstart", (event) => {
+      event.preventDefault();
+    });
 
     const el = document.createElement("div");
     el.className = `message ${role} ${speakerClass} message-image`;
@@ -2610,6 +2624,10 @@ function closeMessageActionMenu() {
     messageActionMenu.remove();
     messageActionMenu = null;
   }
+  // 延迟重置 longPressOpened，避免菜单关闭后立即触发点击
+  setTimeout(() => {
+    longPressOpened = false;
+  }, 100);
 }
 
 function placeMessageActionMenu(menu, x, y) {
@@ -2658,12 +2676,12 @@ function showMessageActionMenu(row, x, y) {
     });
   }
 
+  // 只有 user 的最后一条消息可以编辑
   if (isUser && row === getLastMessageRow("user") && row.dataset.msgId) {
     addMessageMenuButton(menu, "编辑", () => editUserMessage(row));
   }
-  if (isAssistant && canRegenerateRow(row)) {
-    addMessageMenuButton(menu, "重新生成", () => regenerateMessage(row));
-  }
+
+  // 移除"重新生成"按钮 - 长按菜单只保留：复制/引用/编辑
 
   document.body.appendChild(menu);
   messageActionMenu = menu;
@@ -2700,12 +2718,13 @@ messageList.addEventListener("contextmenu", (e) => {
   if (!row || row.id === "typingIndicatorRow") return;
 
   e.preventDefault();
+  e.stopPropagation();
 
   // 桌面端：右键直接打开自定义菜单
   if (!isMobileMessageActions()) {
     showMessageActionMenu(row, e.clientX, e.clientY);
   }
-});
+}, { capture: true });  // 使用捕获阶段拦截
 
 messageList.addEventListener("scroll", () => {
   closeMessageActionMenu();
@@ -4374,6 +4393,14 @@ async function saveEditedMessage(newText) {
 }
 
 messageList.addEventListener("click", (e) => {
+  // 如果刚打开长按菜单，阻止其他点击操作
+  if (longPressOpened) {
+    e.preventDefault();
+    e.stopPropagation();
+    longPressOpened = false;
+    return;
+  }
+
   const img = e.target.closest("img.msg-image");
   if (img) {
     showLightbox(img.src);
