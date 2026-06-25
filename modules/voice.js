@@ -213,6 +213,12 @@
     return text.trim();
   }
 
+  function isSpeakableText(text) {
+    const cleaned = cleanTextForTTS(text);
+    // Check if there's any letter, number, or CJK character
+    return /[\p{L}\p{N}]/u.test(cleaned);
+  }
+
   // ── TTS Playback ─────────────────────────────────────────────────────────────
   function speakText(text, button, msgId) {
     const engine = getTTSEngine();
@@ -335,7 +341,8 @@
         if (msgId && audioUrl) button.dataset.audioUrl = audioUrl;
       } catch (err) {
         console.error("TTS error:", err.message, err);
-        _setButtonError(button, "生成失败，点按重试");
+        const msg = err?.message || "生成失败";
+        _setButtonError(button, msg.includes("EMPTY_VOICE_TEXT") ? "没有可朗读文本" : `生成失败：${msg}`);
         return;
       }
       button.classList.remove("tts-loading");
@@ -389,10 +396,10 @@
   // Creates a speaker button and optionally wires the bubble element itself
   // to the same playback action. Both share the same button state.
   function createSpeakerButton(messageElement, msgId) {
+    const text = messageElement.textContent || messageElement.innerText || "";
     const button = document.createElement("button");
     button.className = "speaker-btn";
     button.type = "button";
-    button.title = "朗读";
     if (msgId) button.dataset.msgId = String(msgId);
 
     button.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -400,10 +407,17 @@
       <path d="M11 5.5c.5.5 1 1.5 1 2.5s-.5 2-1 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
     </svg>`;
 
+    if (!isSpeakableText(text)) {
+      button.disabled = true;
+      button.title = "没有可朗读文本";
+      return button;
+    }
+
+    button.title = "朗读";
     button.addEventListener("click", (e) => {
       e.stopPropagation();
-      const text = messageElement.textContent || messageElement.innerText;
-      playMessageText(text, button, button.dataset.msgId || null);
+      const t = messageElement.textContent || messageElement.innerText;
+      playMessageText(t, button, button.dataset.msgId || null);
     });
 
     return button;
@@ -433,6 +447,7 @@
     getTTSConfig,
     setTTSConfig,
     detectTtsLanguage,
+    isSpeakableText,
     createSpeakerButton,
     attachVoicePlayback,
     playMessageText,

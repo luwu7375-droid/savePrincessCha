@@ -32,6 +32,23 @@ function prepareVoiceText(text: string): string {
   return paras.slice(0, 2).join("\n\n");
 }
 
+function normalizeVoiceTextForTTS(text: string, language: string): string | null {
+  // Remove extra whitespace
+  let normalized = text.replace(/\s+/g, " ").trim();
+
+  // Check if there's any speakable content (letters, numbers, CJK characters)
+  if (!/[\p{L}\p{N}]/u.test(normalized)) return null;
+
+  // Add punctuation if missing
+  const endsWithPunctuation = /[。！？.!?…]$/.test(normalized);
+  if (!endsWithPunctuation) {
+    const isCJK = ["zh", "ja", "ko"].includes(language) || /[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/.test(normalized);
+    normalized += isCJK ? "。" : ".";
+  }
+
+  return normalized;
+}
+
 function textHash(text: string): string {
   // Simple djb2 hash — good enough for cache key mismatch detection
   let h = 5381;
@@ -138,7 +155,18 @@ Deno.serve(async (req) => {
   }
 
   // ── Structured log context ──────────────────────────────────────────────────
-  const voiceText = prepareVoiceText(text);
+  const prepared = prepareVoiceText(text);
+  const voiceText = normalizeVoiceTextForTTS(prepared, language);
+
+  if (!voiceText) {
+    return jsonResp({
+      ok: false,
+      code: "EMPTY_VOICE_TEXT",
+      message: "朗读文本为空",
+      request_id,
+    }, 400);
+  }
+
   const hash = textHash(voiceText);
 
   const logCtx: Record<string, unknown> = {
