@@ -236,6 +236,94 @@
 }
 .diary-overlay-back:hover { opacity: 1; }
 
+/* ── More Menu ─────────────────────────────────────────────────────────────── */
+
+.diary-more-btn {
+  background: none;
+  border: none;
+  font-size: 1.2em;
+  cursor: pointer;
+  padding: 0.4rem 0.6rem;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.diary-more-btn:hover { opacity: 1; }
+
+.diary-more-menu {
+  position: absolute;
+  top: 3.5rem;
+  right: 1rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  min-width: 160px;
+  z-index: 10;
+}
+
+.diary-more-menu.hidden {
+  display: none;
+}
+
+.diary-more-item {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.95em;
+  transition: background 0.15s;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.diary-more-item:last-child {
+  border-bottom: none;
+}
+
+.diary-more-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* ── Toast ─────────────────────────────────────────────────────────────────── */
+
+.diary-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  z-index: 10000;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* ── Settings Pages ────────────────────────────────────────────────────────── */
+
+.v2-page--diary-settings .v2-scroll {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 1rem 3rem;
+}
+
+.v2-page--diary-settings .pill-btn {
+  background: var(--accent-color, #5b9bd5);
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.v2-page--diary-settings .pill-btn:hover {
+  opacity: 0.9;
+}
+
 .v2-page--diary-list .v2-scroll,
 .v2-page--diary-detail .v2-scroll {
   max-width: 680px;
