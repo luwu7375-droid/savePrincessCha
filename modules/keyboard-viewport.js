@@ -148,7 +148,7 @@
             if (mode !== "emojiSearch" && opts.setChatInputMode) {
               opts.setChatInputMode("keyboard");
             }
-            if (opts.maintainBottomAnchor) opts.maintainBottomAnchor("keyboard");
+            // 不在这里触发滚动 — CSS padding 自动处理偏移
           }
           if (opts.onKeyboardOpen) opts.onKeyboardOpen(inset);
         }
@@ -161,7 +161,7 @@
     if (opts.messageInput) {
       opts.messageInput.addEventListener("focus", () => {
         updateKeyboardState();
-        if (opts.maintainBottomAnchor) opts.maintainBottomAnchor("keyboard");
+        // focus 时只更新状态，不滚动
       });
       opts.messageInput.addEventListener("blur", deferredReset);
     }

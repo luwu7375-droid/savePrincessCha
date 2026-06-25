@@ -3876,9 +3876,13 @@ function isNearBottom() {
 // explicitly forced (e.g. after sending a message).
 function maintainBottomAnchor(reason) {
   if (!messageList) return;
-  const force = reason === "send" || reason === "open-panel" || reason === "keyboard";
+
+  // keyboard 不触发滚动，交给 CSS padding
+  if (reason === "keyboard") return;
+
+  const force = reason === "send" || reason === "open-panel";
   if (force || isNearBottom()) {
-    scrollChatToLatest();
+    requestAnimationFrame(() => scrollChatToLatest());
   }
 }
 
