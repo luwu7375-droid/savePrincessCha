@@ -1323,6 +1323,32 @@ body {
   object-fit: contain;
 }
 
+/* ── Composer icon buttons: unified resting/hover/active states ── */
+.input-bar .ghost-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  opacity: 0.42;
+  transition: opacity 0.14s ease, background 0.14s ease;
+}
+
+.input-bar .ghost-icon-btn:hover {
+  opacity: 0.72;
+  background: rgba(30, 30, 30, 0.05);
+}
+
+.input-bar .ghost-icon-btn:active {
+  opacity: 1;
+  background: rgba(30, 30, 30, 0.09);
+}
+
+/* img icons (emoji): force black so opacity controls visible weight */
+.input-bar .ghost-icon-btn img {
+  width: 20px;
+  height: 20px;
+  filter: brightness(0);
+}
+
 .message-list {
   /* Only scrollable region in the chat skeleton */
   flex: 1;
