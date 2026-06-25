@@ -21,7 +21,61 @@
   const VOICE_TTS_ENGINE = "voice_tts_engine";
   const VOICE_TTS_RATE = "voice_tts_rate";
   const VOICE_TTS_VOLUME = "voice_tts_volume";
-  const VOICE_ELEVENLABS_VOICE_ID = "voice_elevenlabs_voice_id";
+  const VOICE_ELEVENLABS_VOICE_ID = "voice_elevenlabs_voice_id"; // legacy
+  const VOICE_TTS_CONFIG = "voice_tts_config";
+
+  // ── TTS Config (provider + voice profiles) ───────────────────────────────────
+  const DEFAULT_TTS_CONFIG = {
+    provider: "elevenlabs",
+    profiles: {
+      default: { voice_id: "", model_id: "eleven_v3" },
+      zh:      { voice_id: "", model_id: "eleven_v3" },
+      en:      { voice_id: "", model_id: "eleven_v3" },
+      ja:      { voice_id: "", model_id: "eleven_v3" },
+    },
+  };
+
+  function getTTSConfig() {
+    try {
+      const raw = localStorage.getItem(VOICE_TTS_CONFIG);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // Ensure all expected keys exist (merge with defaults)
+        const cfg = { ...DEFAULT_TTS_CONFIG, ...parsed };
+        cfg.profiles = { ...DEFAULT_TTS_CONFIG.profiles, ...parsed.profiles };
+        for (const lang of Object.keys(cfg.profiles)) {
+          cfg.profiles[lang] = { ...DEFAULT_TTS_CONFIG.profiles.default, ...cfg.profiles[lang] };
+        }
+        return cfg;
+      }
+    } catch (_) { /* fall through */ }
+    return JSON.parse(JSON.stringify(DEFAULT_TTS_CONFIG));
+  }
+
+  function setTTSConfig(updates) {
+    const current = getTTSConfig();
+    const next = { ...current, ...updates };
+    if (updates.profiles) {
+      next.profiles = { ...current.profiles };
+      for (const [lang, profile] of Object.entries(updates.profiles)) {
+        next.profiles[lang] = { ...current.profiles[lang], ...profile };
+      }
+    }
+    localStorage.setItem(VOICE_TTS_CONFIG, JSON.stringify(next));
+  }
+
+  // ── Language Detection ────────────────────────────────────────────────────────
+  function detectTtsLanguage(text, language_hint) {
+    if (language_hint && language_hint !== "default") return language_hint;
+    if (!text) return "default";
+    // Japanese kana detection (hiragana/katakana)
+    if (/[\u3040-\u309f\u30a0-\u30ff]/.test(text)) return "ja";
+    // CJK unified ideographs → Chinese
+    if (/[\u4e00-\u9fff]/.test(text)) return "zh";
+    // Korean
+    if (/[\uac00-\ud7af\u1100-\u11ff]/.test(text)) return "ko";
+    return "en";
+  }
 
   // ── Init ─────────────────────────────────────────────────────────────────────
   function initVoice() {
@@ -101,6 +155,10 @@
 
   // ── TTS Helpers ──────────────────────────────────────────────────────────────
   function getTTSEngine() {
+    const cfg = getTTSConfig();
+    if (cfg.provider && cfg.provider !== "elevenlabs") return cfg.provider;
+    if (cfg.provider === "elevenlabs") return "elevenlabs";
+    // Legacy fallback
     return localStorage.getItem(VOICE_TTS_ENGINE) || "system";
   }
 
@@ -115,7 +173,8 @@
   }
 
   function setTTSEngine(engine) {
-    localStorage.setItem(VOICE_TTS_ENGINE, engine);
+    localStorage.setItem(VOICE_TTS_ENGINE, engine); // keep legacy key in sync
+    setTTSConfig({ provider: engine });
   }
 
   function setTTSRate(rate) {

@@ -1,4 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { generateSpeech as elevenLabsGenerate } from "./providers/elevenlabs.ts";
+import { generateSpeech as minimaxGenerate } from "./providers/minimax.ts";
+import { generateSpeech as localHttpGenerate } from "./providers/localHttp.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,15 +9,14 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const SUPPORTED_PROVIDERS = ["elevenlabs", "minimax", "local_http"] as const;
+type SupportedProvider = typeof SUPPORTED_PROVIDERS[number];
+
 function jsonResp(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-function detectLang(text: string): "zh" | "en" {
-  return /[\u4e00-\u9fff]/.test(text) ? "zh" : "en";
 }
 
 function prepareVoiceText(text: string): string {
@@ -30,31 +32,52 @@ function prepareVoiceText(text: string): string {
   return paras.slice(0, 2).join("\n\n");
 }
 
+function textHash(text: string): string {
+  // Simple djb2 hash — good enough for cache key mismatch detection
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) + h) ^ text.charCodeAt(i);
+    h = h >>> 0;
+  }
+  return h.toString(16);
+}
+
+function audioToDataUrl(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((b) => (binary += String.fromCharCode(b)));
+  return `data:audio/mpeg;base64,${btoa(binary)}`;
+}
+
+interface VoiceProfile {
+  provider?: string;
+  voice_id: string;
+  model_id?: string;
+  settings?: Record<string, unknown>;
+}
+
+interface RequestBody {
+  message_id?: number | null;
+  text?: string;
+  language_hint?: string | null;
+  provider?: string | null;
+  voice_profile?: VoiceProfile | null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: corsHeaders });
 
   const request_id = crypto.randomUUID();
 
-  // ── Env vars check ──────────────────────────────────────────────────────────
+  // ── Env: infra secrets (never exposed to client) ────────────────────────────
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const ELEVENLABS_KEY = Deno.env.get("ELEVENLABS_API_KEY") ?? "";
-  const VOICE_ZH = Deno.env.get("VOICE_ID_G_ZH") ?? "";
-  const VOICE_EN = Deno.env.get("VOICE_ID_G_EN") ?? "";
+  const MINIMAX_KEY = Deno.env.get("MINIMAX_API_KEY") ?? "";
 
-  const missing: string[] = [];
-  if (!SUPABASE_URL) missing.push("SUPABASE_URL");
-  if (!SERVICE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (!ELEVENLABS_KEY) missing.push("ELEVENLABS_API_KEY");
-  if (!VOICE_ZH) missing.push("VOICE_ID_G_ZH");
-  if (!VOICE_EN) missing.push("VOICE_ID_G_EN");
-
-  if (missing.length > 0) {
-    return jsonResp(
-      { ok: false, code: "MISSING_TTS_SECRET", message: `missing: ${missing[0]}`, request_id },
-      500,
-    );
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    return jsonResp({ ok: false, code: "MISSING_TTS_SECRET", message: "missing: SUPABASE infra config", request_id }, 500);
   }
 
   const DB_HEADERS = {
@@ -64,36 +87,70 @@ Deno.serve(async (req) => {
   };
 
   // ── Parse body ──────────────────────────────────────────────────────────────
-  let message_id: number | null = null;
-  let text: string;
+  let body: RequestBody;
   try {
-    const body = await req.json();
-    message_id = body.message_id ?? null;
-    text = body.text ?? "";
+    body = await req.json();
   } catch {
     return jsonResp({ ok: false, code: "INVALID_JSON", message: "Invalid JSON body", request_id }, 400);
   }
 
-  if (!text.trim()) {
+  const message_id = body.message_id ?? null;
+  const text = (body.text ?? "").trim();
+  const language_hint = body.language_hint ?? null;
+  const provider = (body.provider ?? "elevenlabs") as SupportedProvider;
+  const voice_profile = body.voice_profile ?? null;
+
+  if (!text) {
     return jsonResp({ ok: false, code: "MISSING_TEXT", message: "text is required", request_id }, 400);
   }
 
-  const lang = detectLang(text);
-  const voiceId = lang === "en" ? VOICE_EN : VOICE_ZH;
-  const voiceProfile = lang === "en" ? "G2en" : "G2zh";
+  // ── Validate provider ───────────────────────────────────────────────────────
+  if (!SUPPORTED_PROVIDERS.includes(provider as SupportedProvider)) {
+    return jsonResp({
+      ok: false,
+      code: "UNSUPPORTED_TTS_PROVIDER",
+      message: `provider "${provider}" is not supported`,
+      request_id,
+    }, 400);
+  }
+
+  // ── Validate voice profile ──────────────────────────────────────────────────
+  const voice_id = voice_profile?.voice_id ?? "";
+  const model_id = voice_profile?.model_id ?? "eleven_v3";
+  const voice_settings = voice_profile?.settings;
+  const language = language_hint ?? "default";
+
+  if (!voice_id) {
+    return jsonResp({
+      ok: false,
+      code: "MISSING_VOICE_ID",
+      message: `voice_id is required for provider "${provider}"`,
+      request_id,
+    }, 400);
+  }
+
+  // ── Validate provider API key ───────────────────────────────────────────────
+  if (provider === "elevenlabs" && !ELEVENLABS_KEY) {
+    return jsonResp({ ok: false, code: "MISSING_TTS_SECRET", message: "missing: ELEVENLABS_API_KEY", request_id }, 500);
+  }
+  if (provider === "minimax" && !MINIMAX_KEY) {
+    return jsonResp({ ok: false, code: "PROVIDER_NOT_CONFIGURED", message: "MiniMax API key is not set", request_id }, 500);
+  }
 
   // ── Structured log context ──────────────────────────────────────────────────
+  const voiceText = prepareVoiceText(text);
+  const hash = textHash(voiceText);
+
   const logCtx: Record<string, unknown> = {
     request_id,
-    provider: "elevenlabs",
+    provider,
+    language,
+    voice_id: voice_id.slice(0, 8) + "…", // partial id only
+    model_id,
     text_length: text.length,
-    language_detected: lang,
-    voice_profile: voiceProfile,
-    has_elevenlabs_key: !!ELEVENLABS_KEY,
-    has_voice_id_zh: !!VOICE_ZH,
-    has_voice_id_en: !!VOICE_EN,
+    text_hash: hash,
     cached: false,
-    elevenlabs_status: null,
+    provider_status: null,
     storage_upload_status: null,
     audio_url_type: null,
     error_code: null,
@@ -109,17 +166,34 @@ Deno.serve(async (req) => {
   if (message_id) {
     try {
       const cacheRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/message_audio?message_id=eq.${message_id}&select=audio_url`,
+        `${SUPABASE_URL}/rest/v1/message_audio?message_id=eq.${message_id}&select=audio_url,provider,language,voice_id,model_id,text_hash`,
         { headers: DB_HEADERS },
       );
-      const rows = await cacheRes.json() as Array<{ audio_url: string }>;
-      if (rows?.[0]?.audio_url) {
+      const rows = await cacheRes.json() as Array<{
+        audio_url: string;
+        provider: string;
+        language: string;
+        voice_id: string;
+        model_id: string;
+        text_hash: string;
+      }>;
+      const row = rows?.[0];
+      if (
+        row?.audio_url &&
+        row.provider === provider &&
+        row.language === language &&
+        row.voice_id === voice_id &&
+        row.model_id === model_id &&
+        row.text_hash === hash
+      ) {
         finalize({ cached: true, audio_url_type: "public" });
         return jsonResp({
           ok: true,
-          audio_url: rows[0].audio_url,
-          provider: "elevenlabs",
-          voice_profile: voiceProfile,
+          audio_url: row.audio_url,
+          provider,
+          language,
+          voice_id,
+          model_id,
           cached: true,
         });
       }
@@ -128,74 +202,56 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── ElevenLabs request ──────────────────────────────────────────────────────
-  const voiceText = prepareVoiceText(text);
-  let elRes: Response;
+  // ── Generate audio via provider ─────────────────────────────────────────────
+  let audioBuffer: ArrayBuffer;
+  let providerStatus: number;
+
   try {
-    elRes = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
-      {
-        method: "POST",
-        headers: { "xi-api-key": ELEVENLABS_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: voiceText,
-          model_id: "eleven_v3",
-          voice_settings: {
-            stability: 0.44,
-            similarity_boost: 0.78,
-            style: 0.32,
-            use_speaker_boost: true,
-            speed: 1.0,
-          },
-        }),
-      },
-    );
+    let result;
+    if (provider === "elevenlabs") {
+      result = await elevenLabsGenerate(ELEVENLABS_KEY, {
+        text: voiceText,
+        voice_id,
+        model_id,
+        settings: voice_settings as Record<string, number | boolean>,
+      });
+    } else if (provider === "minimax") {
+      result = await minimaxGenerate(MINIMAX_KEY, { text: voiceText, voice_id, model_id });
+    } else {
+      result = await localHttpGenerate("", { text: voiceText, voice_id, model_id });
+    }
+
+    providerStatus = result.providerStatus;
+    logCtx.provider_status = providerStatus;
+
+    if (result.rawProviderError) {
+      finalize({ error_code: "PROVIDER_ERROR", error_message: result.rawProviderError });
+      return jsonResp({ ok: false, code: "PROVIDER_ERROR", message: result.rawProviderError, request_id }, 502);
+    }
+
+    audioBuffer = result.audioBuffer;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    finalize({ error_code: "ELEVENLABS_NETWORK_ERROR", error_message: msg });
-    return jsonResp({ ok: false, code: "ELEVENLABS_NETWORK_ERROR", message: msg, request_id }, 502);
+    finalize({ error_code: "PROVIDER_ERROR", error_message: msg });
+    return jsonResp({ ok: false, code: "PROVIDER_ERROR", message: msg, request_id }, 502);
   }
 
-  logCtx.elevenlabs_status = elRes.status;
-
-  if (!elRes.ok) {
-    const errText = (await elRes.text()).slice(0, 500);
-    finalize({ error_code: "ELEVENLABS_ERROR", error_message: errText });
-    return jsonResp({ ok: false, code: "ELEVENLABS_ERROR", message: errText, request_id }, 502);
-  }
-
-  const ct = elRes.headers.get("content-type") ?? "";
-  if (!ct.includes("audio")) {
-    const body = (await elRes.text()).slice(0, 500);
-    finalize({ error_code: "ELEVENLABS_BAD_CONTENT_TYPE", error_message: `content-type: ${ct}; body: ${body}` });
-    return jsonResp({
-      ok: false,
-      code: "ELEVENLABS_BAD_CONTENT_TYPE",
-      message: `Unexpected content-type: ${ct}`,
-      request_id,
-    }, 502);
-  }
-
-  const audioBuffer = await elRes.arrayBuffer();
-
-  // ── No message_id → data URL fallback ──────────────────────────────────────
+  // ── No message_id → data URL (no cache) ──────────────────────────────���─────
   if (!message_id) {
-    const bytes = new Uint8Array(audioBuffer);
-    let binary = "";
-    bytes.forEach((b) => (binary += String.fromCharCode(b)));
-    const b64 = btoa(binary);
     finalize({ audio_url_type: "data" });
     return jsonResp({
       ok: true,
-      audio_url: `data:audio/mpeg;base64,${b64}`,
-      provider: "elevenlabs",
-      voice_profile: voiceProfile,
+      audio_url: audioToDataUrl(audioBuffer),
+      provider,
+      language,
+      voice_id,
+      model_id,
       cached: false,
     });
   }
 
   // ── Upload to Storage ───────────────────────────────────────────────────────
-  const storagePath = `${message_id}.mp3`;
+  const storagePath = `${provider}/${language}/${voice_id.slice(0, 8)}/${message_id}_${hash}.mp3`;
   const uploadRes = await fetch(
     `${SUPABASE_URL}/storage/v1/object/message-audio/${storagePath}`,
     {
@@ -219,19 +275,25 @@ Deno.serve(async (req) => {
 
   const audio_url = `${SUPABASE_URL}/storage/v1/object/public/message-audio/${storagePath}`;
 
-  // ── Save to cache table ─────────────────────────────────────────────────────
+  // ── Upsert cache row (delete old entry for this message_id first, then insert) ─
+  await fetch(
+    `${SUPABASE_URL}/rest/v1/message_audio?message_id=eq.${message_id}`,
+    { method: "DELETE", headers: DB_HEADERS },
+  );
   await fetch(`${SUPABASE_URL}/rest/v1/message_audio`, {
     method: "POST",
     headers: { ...DB_HEADERS, "Prefer": "return=minimal" },
-    body: JSON.stringify({ message_id, audio_url }),
+    body: JSON.stringify({ message_id, audio_url, provider, language, voice_id, model_id, text_hash: hash }),
   });
 
   finalize({ audio_url_type: "public" });
   return jsonResp({
     ok: true,
     audio_url,
-    provider: "elevenlabs",
-    voice_profile: voiceProfile,
+    provider,
+    language,
+    voice_id,
+    model_id,
     cached: false,
   });
 });
