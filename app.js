@@ -5579,9 +5579,8 @@ function initV2Composer() {
       panel.remove();
       panel = null;
       plusButton.classList.remove("active");
-      if (_chatInputMode === "plain") {
-        // already plain, no-op
-      } else {
+      document.querySelector(".chat-shell")?.classList.remove("plus-panel-open");
+      if (_chatInputMode !== "plain") {
         _chatInputMode = "plain";
       }
       maintainBottomAnchor("close-panel");
@@ -5678,7 +5677,10 @@ function initV2Composer() {
     });
     panel.appendChild(games);
 
-    inputBar.parentNode.insertBefore(panel, inputBar);
+    // 浮模式：append 到 chat-shell，加 plus-panel-open class（和 emoji 一致）
+    const chatShell = document.querySelector(".chat-shell");
+    (chatShell || inputBar.parentNode).appendChild(panel);
+    chatShell?.classList.add("plus-panel-open");
     plusButton.classList.add("active");
     setChatInputMode("plain"); // plus-panel is not a keyboard-replacement state
     requestAnimationFrame(() => {

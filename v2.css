@@ -1531,23 +1531,29 @@ body {
 }
 
 .plus-panel {
-  position: relative;
-  z-index: 10;
-  flex-shrink: 0;
-  margin: 0 20px 14px;
+  /* 浮模式：和 emoji-panel 一致，浮在 composer 上方，不挤压布局 */
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* bottom 对齐 emoji-panel 的算法 */
+  bottom: calc(var(--bottom-nav-height) + var(--bottom-nav-gap) + env(safe-area-inset-bottom) + 18px + 54px);
+  z-index: 20;
+  margin: 0 20px;
   padding: 12px;
-  border-radius: var(--radius-card);
+  border-radius: 18px;
   background: var(--surface);
   border: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-float);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.08);
   opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transform: translateY(12px);
+  transition: opacity 0.2s ease, transform 0.22s ease;
+  pointer-events: none;
 }
 
 .plus-panel.open {
   opacity: 1;
   transform: translateY(0);
+  pointer-events: auto;
 }
 
 .plus-panel-grid {
@@ -2040,6 +2046,12 @@ body {
 .chat-shell.emoji-panel-open .message-list {
   padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
   scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + min(320px, calc(var(--app-vh, 100dvh) - 220px)));
+}
+
+/* plus panel 打开时，message-list 留出面板空间（和 emoji 一致） */
+.chat-shell.plus-panel-open .message-list {
+  padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + 220px);
+  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + 220px);
 }
 
 /* ── Emoji search: exclusive overlay ─────────────────────────────────────────
