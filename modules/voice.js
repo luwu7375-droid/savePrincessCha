@@ -7,6 +7,7 @@
 
   // ── TTS State ────────────────────────────────────────────────────────────────
   let currentUtterance = null;
+  let currentAudio = null;
   let currentPlayingButton = null;
   let currentSelectedRow = null;
   let ttsSupported = false;
@@ -147,88 +148,158 @@
   }
 
   // ── TTS Playback ─────────────────────────────────────────────────────────────
-  function speakText(text, button) {
-    if (!ttsSupported) return;
-
-    // Get the message row
-    const row = button?.closest(".msg-row");
-
-    // If clicking the same button, stop and deselect
-    if (currentUtterance && currentPlayingButton === button) {
-      stopSpeaking();
+  function speakText(text, button, msgId) {
+    const engine = getTTSEngine();
+    if (engine === "elevenlabs") {
+      speakElevenLabs(cleanTextForTTS(text), button, msgId);
       return;
     }
 
-    // Stop any current speech and deselect previous row
+    if (!ttsSupported) return;
+    const row = button?.closest(".msg-row");
+
+    if (currentUtterance && currentPlayingButton === button) { stopSpeaking(); return; }
     stopSpeaking();
 
     const cleanText = cleanTextForTTS(text);
     if (!cleanText) return;
 
-    const engine = getTTSEngine();
-
-    if (engine === "system") {
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.rate = getTTSRate();
-      utterance.volume = getTTSVolume();
-
-      utterance.onstart = () => {
-        currentUtterance = utterance;
-        currentPlayingButton = button;
-        currentSelectedRow = row;
-        button?.classList.add("speaking");
-        row?.classList.add("msg-row-selected");
-      };
-
-      utterance.onend = () => {
-        currentUtterance = null;
-        currentPlayingButton = null;
-        button?.classList.remove("speaking");
-        row?.classList.remove("msg-row-selected");
-        currentSelectedRow = null;
-      };
-
-      utterance.onerror = () => {
-        currentUtterance = null;
-        currentPlayingButton = null;
-        button?.classList.remove("speaking");
-        row?.classList.remove("msg-row-selected");
-        currentSelectedRow = null;
-      };
-
-      window.speechSynthesis.speak(utterance);
-    } else if (engine === "elevenlabs") {
-      // TODO: ElevenLabs integration (future)
-      console.warn("ElevenLabs TTS not yet implemented");
-    }
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = getTTSRate();
+    utterance.volume = getTTSVolume();
+    utterance.onstart = () => {
+      currentUtterance = utterance;
+      currentPlayingButton = button;
+      currentSelectedRow = row;
+      button?.classList.add("speaking");
+      row?.classList.add("msg-row-selected");
+    };
+    const onDone = () => {
+      currentUtterance = null;
+      currentPlayingButton = null;
+      button?.classList.remove("speaking");
+      row?.classList.remove("msg-row-selected");
+      currentSelectedRow = null;
+    };
+    utterance.onend = onDone;
+    utterance.onerror = onDone;
+    window.speechSynthesis.speak(utterance);
   }
 
   function stopSpeaking() {
-    if (!ttsSupported) return;
-
     if (currentUtterance) {
-      window.speechSynthesis.cancel();
+      window.speechSynthesis?.cancel();
       currentUtterance = null;
     }
-
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio = null;
+    }
     if (currentPlayingButton) {
       currentPlayingButton.classList.remove("speaking");
       currentPlayingButton = null;
     }
-
     if (currentSelectedRow) {
       currentSelectedRow.classList.remove("msg-row-selected");
       currentSelectedRow = null;
     }
   }
 
+  // ── ElevenLabs TTS ───────────────────────────────────────────────────────────
+  function getTTSApiEndpoint() {
+    const cfg = window.SAVE_PRINCESS_CONFIG || {};
+    const url = cfg.SUPABASE_URL;
+    return (url && url !== "YOUR_KEY_HERE") ? `${url}/functions/v1/tts` : null;
+  }
+
+  function getTTSAnonKey() {
+    const cfg = window.SAVE_PRINCESS_CONFIG || {};
+    const key = cfg.SUPABASE_ANON_KEY;
+    return (key && key !== "YOUR_KEY_HERE") ? key : null;
+  }
+
+  async function speakElevenLabs(text, button, msgId) {
+    const row = button?.closest(".msg-row");
+
+    if (currentPlayingButton === button && currentAudio) {
+      stopSpeaking();
+      return;
+    }
+    stopSpeaking();
+
+    let audioUrl = button.dataset.audioUrl;
+
+    if (!audioUrl) {
+      const endpoint = getTTSApiEndpoint();
+      const anonKey = getTTSAnonKey();
+      if (!endpoint) { console.warn("TTS endpoint not configured"); return; }
+
+      button.classList.add("tts-loading");
+      button.disabled = true;
+
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(anonKey ? { "Authorization": `Bearer ${anonKey}`, "apikey": anonKey } : {}),
+          },
+          body: JSON.stringify({ message_id: msgId ? Number(msgId) : null, text }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        audioUrl = data.audio_url;
+        if (msgId && audioUrl) button.dataset.audioUrl = audioUrl;
+      } catch (err) {
+        console.error("TTS fetch error:", err);
+        button.classList.remove("tts-loading");
+        button.disabled = false;
+        button.classList.add("tts-error");
+        button.title = "生成失败，点按重试";
+        return;
+      }
+      button.classList.remove("tts-loading");
+      button.disabled = false;
+    }
+
+    if (!audioUrl) return;
+
+    const audio = new Audio(audioUrl);
+    currentAudio = audio;
+    currentPlayingButton = button;
+    currentSelectedRow = row;
+    button.classList.add("speaking");
+    button.classList.remove("tts-error");
+    button.title = "停止";
+    row?.classList.add("msg-row-selected");
+
+    const onDone = () => {
+      if (currentAudio !== audio) return;
+      currentAudio = null;
+      currentPlayingButton = null;
+      currentSelectedRow = null;
+      button.classList.remove("speaking");
+      button.title = "朗读";
+      row?.classList.remove("msg-row-selected");
+    };
+
+    audio.onended = onDone;
+    audio.onerror = () => {
+      onDone();
+      button.classList.add("tts-error");
+      button.title = "播放失败，点按重试";
+      delete button.dataset.audioUrl;
+    };
+    audio.play().catch(onDone);
+  }
+
   // ── Speaker Button Creation ──────────────────────────────────────────────────
-  function createSpeakerButton(messageElement) {
+  function createSpeakerButton(messageElement, msgId) {
     const button = document.createElement("button");
     button.className = "speaker-btn";
     button.type = "button";
     button.title = "朗读";
-    button.disabled = !ttsSupported;
+    if (msgId) button.dataset.msgId = String(msgId);
 
     button.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M8 3L5 6H2v4h3l3 3V3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -238,7 +309,7 @@
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const text = messageElement.textContent || messageElement.innerText;
-      speakText(text, button);
+      speakText(text, button, button.dataset.msgId || null);
     });
 
     return button;

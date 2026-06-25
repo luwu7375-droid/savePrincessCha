@@ -1669,11 +1669,7 @@ body {
 }
 
 .layout.keyboard-open .bottom-tab-bar {
-  display: none;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(12px);
+  transform: none;
 }
 
 .layout.keyboard-open .plus-panel {
