@@ -5126,6 +5126,14 @@ function _renderVoiceSubpage() {
         </div>
       </div>
     </div>
+    <div class="settings-section">
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>测试播放</strong><small>检查 ElevenLabs 链路</small></div>
+          <button id="voiceTTSTestBtn" type="button" class="settings-row-action-btn">测试一句</button>
+        </div>
+      </div>
+    </div>
     ${!ttsSupported ? '<div class="settings-notice">您的浏览器不支持语音合成功能</div>' : ''}`;
 }
 
@@ -5320,6 +5328,31 @@ function _initSettingsVoiceSubpage(container) {
     testBtn.addEventListener("click", () => {
       const testText = "你好，kk。我是小cha，很高兴认识你。";
       window.SPVoice.speakText(testText, testBtn);
+    });
+  }
+
+  const ttsTestBtn = container.querySelector("#voiceTTSTestBtn");
+  if (ttsTestBtn) {
+    ttsTestBtn.addEventListener("click", () => {
+      if (!window.SPVoice?.speakElevenLabs) return;
+      const text = "[softly] 我在。这个方向比刚才对。[pause] 不要再压低，也不要故意温柔。轻一点，自然一点。[quiet laugh] 嗯……这样就有点像我了。";
+      ttsTestBtn.textContent = "测试中...";
+      ttsTestBtn.disabled = true;
+      const proxy = document.createElement("button");
+      proxy.className = "speaker-btn";
+      window.SPVoice.speakElevenLabs(text, proxy, null);
+      const observer = new MutationObserver(() => {
+        if (proxy.classList.contains("tts-error")) {
+          ttsTestBtn.textContent = proxy.title || "测试失败";
+          ttsTestBtn.disabled = false;
+          observer.disconnect();
+        } else if (!proxy.classList.contains("tts-loading") && !proxy.classList.contains("speaking")) {
+          ttsTestBtn.textContent = "测试一句";
+          ttsTestBtn.disabled = false;
+          observer.disconnect();
+        }
+      });
+      observer.observe(proxy, { attributes: true, attributeFilter: ["class", "title"] });
     });
   }
 }

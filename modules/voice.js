@@ -126,6 +126,14 @@
     localStorage.setItem(VOICE_TTS_VOLUME, volume);
   }
 
+  // ── Button Error State ───────────────────────────────────────────────────────
+  function _setButtonError(button, msg) {
+    button.classList.remove("tts-loading");
+    button.disabled = false;
+    button.classList.add("tts-error");
+    button.title = msg;
+  }
+
   // ── Text Cleaning for TTS ────────────────────────────────────────────────────
   function cleanTextForTTS(html) {
     // Remove ||| separators
@@ -232,7 +240,7 @@
     if (!audioUrl) {
       const endpoint = getTTSApiEndpoint();
       const anonKey = getTTSAnonKey();
-      if (!endpoint) { console.warn("TTS endpoint not configured"); return; }
+      if (!endpoint || !anonKey) { _setButtonError(button, "TTS 未配置"); return; }
 
       button.classList.add("tts-loading");
       button.disabled = true;
@@ -246,16 +254,15 @@
           },
           body: JSON.stringify({ message_id: msgId ? Number(msgId) : null, text }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(`[${data.code || res.status}] ${data.message || data.error || "TTS failed"}`);
+        }
         audioUrl = data.audio_url;
         if (msgId && audioUrl) button.dataset.audioUrl = audioUrl;
       } catch (err) {
-        console.error("TTS fetch error:", err);
-        button.classList.remove("tts-loading");
-        button.disabled = false;
-        button.classList.add("tts-error");
-        button.title = "生成失败，点按重试";
+        console.error("TTS error:", err.message, err);
+        _setButtonError(button, "生成失败，点按重试");
         return;
       }
       button.classList.remove("tts-loading");
@@ -326,6 +333,7 @@
     setTTSVolume,
     createSpeakerButton,
     speakText,
+    speakElevenLabs,
     stopSpeaking,
     isTTSSupported: () => ttsSupported,
 
