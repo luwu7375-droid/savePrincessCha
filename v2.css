@@ -427,10 +427,30 @@ body {
   padding: 10px;
   color: var(--text-muted);
   font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diary-note-main {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diary-note-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .diary-note span {
-  float: right;
+  /* legacy fallback — structured HTML uses .diary-note-main/.diary-note-action */
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .today-card {
