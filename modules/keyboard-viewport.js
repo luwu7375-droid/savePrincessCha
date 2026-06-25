@@ -51,10 +51,8 @@
     const shell = document.querySelector(".layout");
     if (shell) shell.classList.toggle("keyboard-open", keyboardOpen);
 
-    // Pin horizontal viewport (iOS can drift left on focus).
-    if (window.scrollX !== 0 || (vv && vv.offsetLeft !== 0)) {
-      window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
-    }
+    // Pin horizontal viewport (iOS can drift left on focus/blur).
+    pinHorizontal();
 
     if (keyboardOpen && active === _opts.messageInput) {
       const mode = _opts.getChatInputMode ? _opts.getChatInputMode() : null;
@@ -63,6 +61,25 @@
       }
       if (_opts.onKeyboardOpen) _opts.onKeyboardOpen(inset);
     }
+  }
+
+  // ── Horizontal pin ─────────────────────────────────────────────────────────
+  // iOS Safari can shift the page left when a focused input scrolls into view,
+  // and sometimes fails to restore it after the keyboard closes (the page sits
+  // a few % to the left). Force every horizontal scroll offset back to 0.
+  function pinHorizontal() {
+    const vv = window.visualViewport;
+    const drifted =
+      window.scrollX !== 0 ||
+      (vv && vv.offsetLeft !== 0) ||
+      (document.scrollingElement && document.scrollingElement.scrollLeft !== 0) ||
+      document.documentElement.scrollLeft !== 0 ||
+      document.body.scrollLeft !== 0;
+    if (!drifted) return;
+    window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollLeft = 0;
+    if (document.scrollingElement) document.scrollingElement.scrollLeft = 0;
   }
 
   function schedule() {
@@ -100,8 +117,10 @@
     vv.addEventListener("scroll", schedule);
 
     const reset = () => {
-      setTimeout(schedule, 60);
-      setTimeout(schedule, 250);
+      // Re-evaluate state and re-pin horizontally at several moments, because
+      // iOS restores the viewport over a few hundred ms after blur.
+      pinHorizontal();
+      [60, 160, 300, 500].forEach((t) => setTimeout(() => { pinHorizontal(); schedule(); }, t));
     };
 
     if (_opts.messageInput) {
@@ -118,6 +137,10 @@
       _opts.chatSearchInput.addEventListener("focus", schedule);
       _opts.chatSearchInput.addEventListener("blur", reset);
     }
+
+    // Safety net: any time the window regains focus or page is shown, re-pin.
+    window.addEventListener("focus", pinHorizontal);
+    window.addEventListener("pageshow", pinHorizontal);
 
     schedule();
   }

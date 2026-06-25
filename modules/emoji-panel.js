@@ -315,11 +315,18 @@
 
     // Dismiss the soft keyboard cleanly so the emoji panel takes its place.
     // Without this the keyboard lingers and --kb animates, dragging the
-    // composer with it. Blur first, then the panel anchors to the stable dock.
+    // composer with it. Blur first, then force a clean non-keyboard state so
+    // the composer anchors to the stable dock baseline (not --kb+10).
     const _msgInput = document.getElementById("messageInput");
     if (_msgInput && document.activeElement === _msgInput) {
       _msgInput.blur();
     }
+    // Force-clear keyboard state immediately — do not wait for the async
+    // visualViewport resize, which would briefly leave --dock-gap = --kb+10
+    // and drop the composer onto the bottom-tab bar.
+    document.querySelector(".layout")?.classList.remove("keyboard-open");
+    document.documentElement.style.setProperty("--kb", "0px");
+    document.documentElement.style.setProperty("--keyboard-inset", "0px");
 
     // Enforce mutual exclusion via state machine
     if (typeof window.setChatInputMode === "function") window.setChatInputMode("emoji");
