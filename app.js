@@ -5622,6 +5622,8 @@ function initV2Composer() {
       panel = null;
       plusButton.classList.remove("active");
       document.querySelector(".chat-shell")?.classList.remove("plus-panel-open");
+      // 清理动态注入的面板高度变量
+      document.documentElement.style.removeProperty('--plus-panel-h');
       if (_chatInputMode !== "plain") {
         _chatInputMode = "plain";
       }
@@ -5725,11 +5727,21 @@ function initV2Composer() {
     chatShell?.classList.add("plus-panel-open");
     plusButton.classList.add("active");
     setChatInputMode("plain"); // plus-panel is not a keyboard-replacement state
+
+    // 记录打开前是否在底部
+    const wasNearBottom = isNearBottom();
+
     requestAnimationFrame(() => {
       panel.classList.add("open");
-      // 不强制滚动：浮模式下 composer 不动，message-list 靠 padding 自然留白
-      // 只有当用户原本就在底部时才轻微跟随
-      if (isNearBottom()) {
+
+      // 测量面板实际高度，注入 CSS 变量用于 padding 计算
+      const panelHeight = panel.offsetHeight;
+      if (panelHeight > 0) {
+        document.documentElement.style.setProperty('--plus-panel-h', `${panelHeight + 12}px`);
+      }
+
+      // 只在原本就在底部时才跟随滚动
+      if (wasNearBottom) {
         scrollChatToLatest();
       }
     });

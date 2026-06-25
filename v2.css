@@ -1506,6 +1506,8 @@ body {
 /* + 按钮 active：只旋转变 ✕，不加方框背景（composer ghost icon 风格） */
 #composerMenuBtn.active {
   color: oklch(62% 0.18 248);
+  border-color: transparent !important;
+  background: transparent !important;
   transform: rotate(45deg);
 }
 
@@ -2052,9 +2054,9 @@ body {
 
 /* plus panel 打开时，message-list 留出面板空间（和 emoji 一致） */
 .chat-shell.plus-panel-open .message-list {
-  /* 300px ≈ plus 面板实际高度（3列入口 + 游戏模式标题 + 4个游戏格子）*/
-  padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + 300px);
-  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + 300px);
+  /* 动态匹配 plus 面板实际高度，JS 实测后注入 --plus-panel-h */
+  padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + var(--plus-panel-h, 250px));
+  scroll-padding-bottom: calc(var(--chat-bottom-space) + var(--keyboard-inset) + var(--plus-panel-h, 250px));
 }
 
 /* ── Emoji search: exclusive overlay ─────────────────────────────────────────
