@@ -1556,11 +1556,7 @@ body {
   gap: 8px;
 }
 
-@media (max-width: 380px) {
-  .plus-panel-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+/* 删掉 2 列 override，竖排后 4 列在 375px 也 OK */
 
 .plus-panel-item,
 .plus-panel-game {
@@ -1574,14 +1570,23 @@ body {
 }
 
 .plus-panel-item {
-  min-height: 48px;
+  min-height: 76px;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;       /* 竖排：icon 上，文字下 */
   align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 8px 12px;
-  text-align: left;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 4px;
+  text-align: center;
+}
+
+/* 文字容器（包 strong + small 的那个 span） */
+.plus-panel-item > span:last-child {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
 }
 
 .plus-panel-item:hover,
@@ -1624,23 +1629,19 @@ body {
   object-fit: contain;
 }
 
-.plus-panel-item strong,
-.plus-panel-item small {
-  display: inline;
+.plus-panel-item strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
-.plus-panel-item strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-
+/* 竖排 4 列放不下副标题，隐藏 */
 .plus-panel-item small {
-  color: var(--text-muted);
-  font-size: 11px;
-  margin-left: 4px;
+  display: none;
 }
 
 .plus-panel-title {
@@ -1897,8 +1898,8 @@ body {
   }
 
   .plus-panel-item {
-    min-height: 44px;
-    padding: 7px 10px;
+    min-height: 70px;
+    padding: 8px 4px;
   }
 
   .plus-panel-icon {
