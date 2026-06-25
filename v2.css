@@ -1030,7 +1030,7 @@ body {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   display: grid;
-  grid-template-columns: 48px max-content 44px 1fr 44px 44px;
+  grid-template-columns: 48px max-content 44px 1fr auto auto;
   gap: 4px;
   align-items: center;
 }
@@ -1049,6 +1049,12 @@ body {
   color: var(--text-main);
   margin: 0;
   cursor: pointer;
+}
+
+#chatSearchButton,
+#chatMoreBtn {
+  flex: 0 0 auto;
+  position: static;
 }
 
 .chat-status {

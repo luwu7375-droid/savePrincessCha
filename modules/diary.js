@@ -352,8 +352,15 @@
 
   function navigateToDiaryList() {
     const sc = window.supabaseClient;
-    if (!sc) return;
     const overlay = _getDiaryOverlay();
+
+    if (!sc) {
+      overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p class="diary-error" style="padding:2rem;color:var(--text-muted)">日记服务还没准备好，请稍后重试</p></div>';
+      overlay.classList.remove('hidden');
+      console.warn('[diary] navigateToDiaryList: supabaseClient not available');
+      return;
+    }
+
     overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">加载中…</p></div>';
     overlay.classList.remove('hidden');
 
@@ -372,8 +379,15 @@
 
   function navigateToDiaryDetail(entryId) {
     const sc = window.supabaseClient;
-    if (!sc) return;
     const overlay = _getDiaryOverlay();
+
+    if (!sc) {
+      overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p class="diary-error" style="padding:2rem;color:var(--text-muted)">日记服务还没准备好，请稍后重试</p></div>';
+      overlay.classList.remove('hidden');
+      console.warn('[diary] navigateToDiaryDetail: supabaseClient not available');
+      return;
+    }
+
     overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">加载中…</p></div>';
     overlay.classList.remove('hidden');
 
