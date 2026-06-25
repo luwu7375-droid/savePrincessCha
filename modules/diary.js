@@ -171,22 +171,11 @@
 
     // Update want_to_share if present
     if (diaryNote && entry.want_to_share) {
-      const wantToShareHTML = `<span style="opacity: 0.6; font-size: 0.9em;">想说：${escapeHtml(entry.want_to_share)}</span>`;
-      diaryNote.innerHTML = wantToShareHTML + '<span>翻开日记 →</span>';
+      diaryNote.innerHTML = `<span class="diary-note-main" style="opacity:.6;font-size:.9em">想说：${escapeHtml(entry.want_to_share)}</span><span class="diary-note-action" style="white-space:nowrap">翻开 →</span>`;
     }
 
-    // Store entry ID for navigation
+    // Store entry ID for navigation (v2-shell click handler reads this)
     diaryCard.dataset.diaryId = entry.id;
-
-    // Bind click handler (only once)
-    if (!diaryCard.dataset.clickBound) {
-      diaryCard.addEventListener('click', () => {
-        if (diaryCard.dataset.diaryId) {
-          navigateToDiaryDetail(diaryCard.dataset.diaryId);
-        }
-      });
-      diaryCard.dataset.clickBound = 'true';
-    }
   }
 
   /**
@@ -385,17 +374,25 @@
     const sc = window.supabaseClient;
     if (!sc) return;
     const overlay = _getDiaryOverlay();
+    overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">加载中…</p></div>';
+    overlay.classList.remove('hidden');
 
     fetchDiaryEntryById(sc, entryId)
       .then(entry => {
-        if (!entry) return;
+        if (!entry) {
+          overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">日记不存在</p></div>';
+          return;
+        }
         const page = renderDiaryDetailPage(entry);
         page.classList.add('v2-active');
         overlay.innerHTML = '';
         overlay.appendChild(page);
         overlay.querySelector('#diaryBackBtn')?.addEventListener('click', navigateToDiaryList);
       })
-      .catch(err => console.error('Failed to load diary detail:', err));
+      .catch(err => {
+        console.error('Failed to load diary detail:', err);
+        overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">加载失败，请重试</p></div>';
+      });
   }
 
   // ── Utilities ──────────────────────────────────────────────────────────────
