@@ -20,3 +20,9 @@ supabase/.temp/
 # Python 字节码
 __pycache__/
 *.pyc
+
+# Node / Playwright
+node_modules/
+package-lock.json
+test-results/
+playwright-report/
