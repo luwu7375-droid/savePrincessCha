@@ -63,23 +63,69 @@
     }
   }
 
-  // ── Horizontal pin ─────────────────────────────────────────────────────────
+  // ── Horizontal viewport drift reset ────────────────────────────────────────
   // iOS Safari can shift the page left when a focused input scrolls into view,
   // and sometimes fails to restore it after the keyboard closes (the page sits
   // a few % to the left). Force every horizontal scroll offset back to 0.
-  function pinHorizontal() {
+  // Also clear any inline style drift on .layout itself.
+  function resetHorizontalViewportDrift(reason = "unknown") {
     const vv = window.visualViewport;
-    const drifted =
-      window.scrollX !== 0 ||
-      (vv && vv.offsetLeft !== 0) ||
-      (document.scrollingElement && document.scrollingElement.scrollLeft !== 0) ||
-      document.documentElement.scrollLeft !== 0 ||
-      document.body.scrollLeft !== 0;
-    if (!drifted) return;
-    window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
+    const scrollingEl = document.scrollingElement || document.documentElement;
+    const layout = document.querySelector(".layout");
+
+    // 1. Clear browser horizontal scroll
+    if (window.scrollX !== 0) {
+      window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
+    }
+    if (scrollingEl) scrollingEl.scrollLeft = 0;
     document.documentElement.scrollLeft = 0;
     document.body.scrollLeft = 0;
-    if (document.scrollingElement) document.scrollingElement.scrollLeft = 0;
+
+    // 2. Clear any residual inline horizontal styles on .layout
+    if (layout) {
+      layout.style.left = "";
+      layout.style.right = "";
+      layout.style.marginLeft = "";
+      layout.style.marginRight = "";
+      // Remove translateX from inline transform if present (but preserve other transforms)
+      const inlineTransform = layout.style.transform || "";
+      if (/translateX|translate3d\(/.test(inlineTransform)) {
+        layout.style.transform = "";
+      }
+    }
+
+    // 3. Force recheck next frame
+    requestAnimationFrame(() => {
+      if (window.scrollX !== 0) window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
+      if (scrollingEl) scrollingEl.scrollLeft = 0;
+      document.documentElement.scrollLeft = 0;
+      document.body.scrollLeft = 0;
+    });
+
+    if (window.DEBUG_LAYOUT) {
+      console.info("[viewport] reset horizontal drift", {
+        reason,
+        scrollX: window.scrollX,
+        vvOffsetLeft: vv?.offsetLeft ?? null,
+        docScrollLeft: document.documentElement.scrollLeft,
+        bodyScrollLeft: document.body.scrollLeft,
+      });
+    }
+  }
+
+  // Legacy alias for compatibility
+  function pinHorizontal() {
+    resetHorizontalViewportDrift("pin");
+  }
+
+  // ── Reset with delayed sequence ────────────────────────────────────────────
+  // iOS viewport restoration is async and can take several hundred ms.
+  // Call reset multiple times to catch the drift at different phases.
+  function resetHorizontalSoon(reason) {
+    resetHorizontalViewportDrift(reason);
+    [50, 150, 300, 600].forEach((t) => {
+      setTimeout(() => resetHorizontalViewportDrift(`${reason}:${t}`), t);
+    });
   }
 
   function schedule() {
@@ -119,8 +165,8 @@
     const reset = () => {
       // Re-evaluate state and re-pin horizontally at several moments, because
       // iOS restores the viewport over a few hundred ms after blur.
-      pinHorizontal();
-      [60, 160, 300, 500].forEach((t) => setTimeout(() => { pinHorizontal(); schedule(); }, t));
+      resetHorizontalSoon("blur");
+      schedule();
     };
 
     if (_opts.messageInput) {
@@ -139,8 +185,16 @@
     }
 
     // Safety net: any time the window regains focus or page is shown, re-pin.
-    window.addEventListener("focus", pinHorizontal);
-    window.addEventListener("pageshow", pinHorizontal);
+    window.addEventListener("focus", () => resetHorizontalSoon("window-focus"));
+    window.addEventListener("pageshow", () => resetHorizontalSoon("pageshow"));
+    window.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        resetHorizontalSoon("visibility-visible");
+      }
+    });
+    window.addEventListener("orientationchange", () => {
+      setTimeout(() => resetHorizontalSoon("orientationchange"), 300);
+    });
 
     schedule();
   }
@@ -149,5 +203,7 @@
     initStableShellHeight,
     initVisualVh,
     initKeyboardViewportState,
+    resetHorizontalViewportDrift,
+    resetHorizontalSoon,
   };
 })();

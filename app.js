@@ -4410,6 +4410,10 @@ messageList.addEventListener("click", (e) => {
   // Click on message list background (not on bubbles/controls) clears keyboard
   if (e.target === messageList) {
     clearKeyboardState("messageList-background-click");
+    // Reset horizontal viewport drift after blank click
+    if (window.SPKeyboardViewport?.resetHorizontalSoon) {
+      window.SPKeyboardViewport.resetHorizontalSoon("blank-click");
+    }
   }
 });
 
@@ -4606,6 +4610,11 @@ function clearKeyboardState(reason = "click-outside") {
 
   // Close all panels immediately
   closeAllChatPanels();
+
+  // Reset horizontal viewport drift immediately
+  if (window.SPKeyboardViewport?.resetHorizontalSoon) {
+    window.SPKeyboardViewport.resetHorizontalSoon(`clear-keyboard:${reason}`);
+  }
 
   // Schedule deferred blur with 150ms delay (midpoint of 120-180ms spec)
   _clearKeyboardTimeout = setTimeout(() => {
