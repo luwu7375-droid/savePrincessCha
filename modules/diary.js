@@ -68,12 +68,15 @@
   /**
    * Fetch single diary entry by ID
    */
-  async function fetchDiaryEntryById(supabaseClient, entryId) {
+  async function fetchDiaryEntryById(supabaseClient, entryId, userId = 'default') {
     try {
       const { data, error } = await supabaseClient
         .from('xiaocha_diary_entries')
         .select('*')
         .eq('id', entryId)
+        .eq('user_id', userId)
+        .eq('checker_pass', true)
+        .in('status', ['checked', 'draft'])
         .single();
 
       if (error) {
@@ -86,6 +89,18 @@
       console.error('Error fetching diary entry:', err);
       return null;
     }
+  }
+
+  // ── Runtime Helper ─────────────────────────────────────────────────────────
+
+  /**
+   * Get unified diary runtime context
+   */
+  function getDiaryRuntime() {
+    return {
+      supabaseClient: window.supabaseClient || null,
+      userId: window.currentUserId || 'default',
+    };
   }
 
   /**
@@ -265,6 +280,33 @@
   }
 
   /**
+   * Build readable diary body by naturally combining fields
+   */
+  function buildDiaryReadableBody(entry) {
+    const parts = [];
+
+    if (entry.private_body) {
+      parts.push(entry.private_body.trim());
+    }
+
+    const tail = [];
+    if (entry.felt_sense) tail.push(entry.felt_sense.trim());
+    if (entry.stuck_point) tail.push(entry.stuck_point.trim());
+    if (entry.insight) tail.push(entry.insight.trim());
+    if (entry.changed) tail.push(entry.changed.trim());
+
+    if (tail.length) {
+      parts.push(tail.join('\n\n'));
+    }
+
+    if (entry.want_to_share) {
+      parts.push('明天见到 kk 的时候，也许会想顺嘴说：' + entry.want_to_share.trim());
+    }
+
+    return parts.filter(Boolean).join('\n\n');
+  }
+
+  /**
    * Render diary detail page
    */
   function renderDiaryDetailPage(entry) {
@@ -286,52 +328,17 @@
 
     scroll.appendChild(header);
 
-    // Main body
+    // Main body - natural diary format
     const body = document.createElement('article');
     body.className = 'diary-detail-body soft-card';
 
-    const privateBody = document.createElement('div');
-    privateBody.className = 'diary-private-body';
-    privateBody.textContent = entry.private_body;
+    const diaryContent = document.createElement('div');
+    diaryContent.className = 'diary-private-body';
+    diaryContent.style.whiteSpace = 'pre-wrap';
+    diaryContent.textContent = buildDiaryReadableBody(entry);
 
-    body.appendChild(privateBody);
-
-    // Want to share section
-    if (entry.want_to_share) {
-      const wantToShare = document.createElement('div');
-      wantToShare.className = 'diary-want-to-share';
-      wantToShare.innerHTML = `
-        <p class="diary-section-label">明天也许想说</p>
-        <p>${escapeHtml(entry.want_to_share)}</p>
-      `;
-      body.appendChild(wantToShare);
-    }
-
+    body.appendChild(diaryContent);
     scroll.appendChild(body);
-
-    // Reflection fields (collapsed/light cards)
-    const reflectionFields = [];
-    if (entry.felt_sense) reflectionFields.push({ label: '感受', content: entry.felt_sense });
-    if (entry.stuck_point) reflectionFields.push({ label: '卡住的地方', content: entry.stuck_point });
-    if (entry.insight) reflectionFields.push({ label: '隐约理解到', content: entry.insight });
-    if (entry.changed) reflectionFields.push({ label: '会怎么不同', content: entry.changed });
-
-    if (reflectionFields.length > 0) {
-      const reflectionContainer = document.createElement('div');
-      reflectionContainer.className = 'diary-reflection-fields';
-
-      reflectionFields.forEach(field => {
-        const fieldCard = document.createElement('div');
-        fieldCard.className = 'diary-reflection-card soft-card';
-        fieldCard.innerHTML = `
-          <p class="diary-section-label">${field.label}</p>
-          <p>${escapeHtml(field.content)}</p>
-        `;
-        reflectionContainer.appendChild(fieldCard);
-      });
-
-      scroll.appendChild(reflectionContainer);
-    }
 
     container.appendChild(scroll);
     return container;
@@ -351,10 +358,10 @@
   }
 
   function navigateToDiaryList() {
-    const sc = window.supabaseClient;
+    const runtime = getDiaryRuntime();
     const overlay = _getDiaryOverlay();
 
-    if (!sc) {
+    if (!runtime.supabaseClient) {
       overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p class="diary-error" style="padding:2rem;color:var(--text-muted)">日记服务还没准备好，请稍后重试</p></div>';
       overlay.classList.remove('hidden');
       console.warn('[diary] navigateToDiaryList: supabaseClient not available');
@@ -364,7 +371,7 @@
     overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">加载中…</p></div>';
     overlay.classList.remove('hidden');
 
-    fetchDiaryEntries(sc, window.currentUserId || 'default')
+    fetchDiaryEntries(runtime.supabaseClient, runtime.userId)
       .then(({ entries, total }) => {
         const page = renderDiaryListPage(entries, total);
         page.classList.add('v2-active');
@@ -378,10 +385,10 @@
   }
 
   function navigateToDiaryDetail(entryId) {
-    const sc = window.supabaseClient;
+    const runtime = getDiaryRuntime();
     const overlay = _getDiaryOverlay();
 
-    if (!sc) {
+    if (!runtime.supabaseClient) {
       overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p class="diary-error" style="padding:2rem;color:var(--text-muted)">日记服务还没准备好，请稍后重试</p></div>';
       overlay.classList.remove('hidden');
       console.warn('[diary] navigateToDiaryDetail: supabaseClient not available');
@@ -391,10 +398,10 @@
     overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">加载中…</p></div>';
     overlay.classList.remove('hidden');
 
-    fetchDiaryEntryById(sc, entryId)
+    fetchDiaryEntryById(runtime.supabaseClient, entryId, runtime.userId)
       .then(entry => {
         if (!entry) {
-          overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">日记不存在</p></div>';
+          overlay.innerHTML = '<div class="v2-scroll diary-overlay-scroll"><p style="padding:2rem;opacity:.5">日记不存在或不可见</p></div>';
           return;
         }
         const page = renderDiaryDetailPage(entry);
