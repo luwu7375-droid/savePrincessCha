@@ -297,10 +297,24 @@
       button.title = "播放失败，点按重试";
       delete button.dataset.audioUrl;
     };
-    audio.play().catch(onDone);
+    audio.play().catch((err) => {
+      console.error("TTS audio playback error", err);
+      onDone();
+      button.classList.add("tts-error");
+      button.title = "播放失败，点按重试";
+      delete button.dataset.audioUrl;
+    });
   }
 
-  // ── Speaker Button Creation ──────────────────────────────────────────────────
+  // ── Unified playback entry ────────────────────────────────────────────────────
+  // Use this from app.js instead of calling speakElevenLabs directly.
+  function playMessageText(text, button, msgId) {
+    speakText(text, button, msgId);
+  }
+
+  // ── Speaker Button + Bubble Playback ─────────────────────────────────────────
+  // Creates a speaker button and optionally wires the bubble element itself
+  // to the same playback action. Both share the same button state.
   function createSpeakerButton(messageElement, msgId) {
     const button = document.createElement("button");
     button.className = "speaker-btn";
@@ -316,10 +330,22 @@
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const text = messageElement.textContent || messageElement.innerText;
-      speakText(text, button, button.dataset.msgId || null);
+      playMessageText(text, button, button.dataset.msgId || null);
     });
 
     return button;
+  }
+
+  // Attaches playback to both a speaker button and the bubble element.
+  // Clicking either triggers play/pause via the shared button state.
+  function attachVoicePlayback(el, speakerBtn, msgId) {
+    el.addEventListener("click", (e) => {
+      // Ignore clicks on interactive/structural child elements
+      if (e.target.closest("a, button, img, blockquote, .quote-block, .msg-actions, .more-menu, .edit-area")) return;
+      e.stopPropagation();
+      const text = el.textContent || el.innerText;
+      playMessageText(text, speakerBtn, msgId);
+    });
   }
 
   // ── Export ───────────────────────────────────────────────────────────────────
@@ -332,6 +358,8 @@
     setTTSRate,
     setTTSVolume,
     createSpeakerButton,
+    attachVoicePlayback,
+    playMessageText,
     speakText,
     speakElevenLabs,
     stopSpeaking,

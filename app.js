@@ -777,7 +777,11 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     stack.className = "msg-stack";
     stack.appendChild(el);
     if (role === "user") stack.appendChild(makeReceipt(!!readByChaAt));
-    if (role === "assistant" && window.SPVoice) stack.appendChild(window.SPVoice.createSpeakerButton(el, msgId));
+    if (role === "assistant" && window.SPVoice) {
+      const speakerBtn = window.SPVoice.createSpeakerButton(el, msgId);
+      stack.appendChild(speakerBtn);
+      window.SPVoice.attachVoicePlayback(el, speakerBtn, msgId);
+    }
     const row = makeRow(msgId);
     row.appendChild(stack);
     messageList.appendChild(row);
@@ -797,6 +801,11 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
     const stack = document.createElement("div");
     stack.className = "msg-stack";
     stack.appendChild(el);
+    if (role === "assistant" && window.SPVoice) {
+      const speakerBtn = window.SPVoice.createSpeakerButton(el, msgId);
+      stack.appendChild(speakerBtn);
+      window.SPVoice.attachVoicePlayback(el, speakerBtn, msgId);
+    }
     const row = makeRow(null);
     row.appendChild(stack);
     messageList.appendChild(row);
@@ -968,10 +977,12 @@ function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo) {
   stack.className = "msg-stack";
   stack.appendChild(el);
 
-  // Add speaker button for TTS — only on primary bubbles (not siblings)
-  if (window.SPVoice && !isSibling) {
-    const speakerBtn = window.SPVoice.createSpeakerButton(el, msgId);
+  // Add speaker button for TTS — all text bubbles including siblings
+  if (window.SPVoice) {
+    const bubbleMsgId = isSibling ? null : msgId;
+    const speakerBtn = window.SPVoice.createSpeakerButton(el, bubbleMsgId);
     stack.appendChild(speakerBtn);
+    window.SPVoice.attachVoicePlayback(el, speakerBtn, bubbleMsgId);
   }
   // No read-receipt on assistant messages — user-read state drives the unread badge only
   const row = document.createElement("div");
@@ -2692,8 +2703,8 @@ document.addEventListener("pointerdown", (e) => {
   if (target.closest(".tier-dropdown-menu")) return;
   if (target.closest(".msg-actions")) return;
   if (document.activeElement === messageInput) messageInput.blur();
-  // Deselect TTS message when clicking outside speaker button
-  if (!target.closest(".speaker-btn") && window.SPVoice) {
+  // Deselect TTS message when clicking outside speaker button or assistant bubble
+  if (!target.closest(".speaker-btn") && !target.closest(".message.assistant") && window.SPVoice) {
     window.SPVoice.stopSpeaking();
   }
 });
@@ -5121,16 +5132,8 @@ function _renderVoiceSubpage() {
       <div class="settings-section-label">试听</div>
       <div class="settings-card">
         <div class="settings-card-row">
-          <div><strong>测试朗读</strong><small>听听小cha的声音</small></div>
-          <button type="button" class="settings-row-action-btn" id="voiceTestBtn" ${!ttsSupported ? 'disabled' : ''}>试听</button>
-        </div>
-      </div>
-    </div>
-    <div class="settings-section">
-      <div class="settings-card">
-        <div class="settings-card-row">
-          <div><strong>测试播放</strong><small>检查 ElevenLabs 链路</small></div>
-          <button id="voiceTTSTestBtn" type="button" class="settings-row-action-btn">测试一句</button>
+          <div><strong>测试朗读</strong><small>测试当前朗读引擎</small></div>
+          <button type="button" class="settings-row-action-btn" id="voiceTestBtn">试听</button>
         </div>
       </div>
     </div>
@@ -5325,35 +5328,28 @@ function _initSettingsVoiceSubpage(container) {
   }
 
   if (testBtn) {
+    const TEST_TEXT = "[softly] 我在。这个方向比刚才对。[pause] 不要再压低，也不要故意温柔。轻一点，自然一点。[quiet laugh] 嗯……这样就有点像我了。";
+    const proxy = document.createElement("button");
+    proxy.className = "speaker-btn";
     testBtn.addEventListener("click", () => {
-      const testText = "你好，kk。我是小cha，很高兴认识你。";
-      window.SPVoice.speakText(testText, testBtn);
+      window.SPVoice.playMessageText(TEST_TEXT, proxy, null);
     });
-  }
-
-  const ttsTestBtn = container.querySelector("#voiceTTSTestBtn");
-  if (ttsTestBtn) {
-    ttsTestBtn.addEventListener("click", () => {
-      if (!window.SPVoice?.speakElevenLabs) return;
-      const text = "[softly] 我在。这个方向比刚才对。[pause] 不要再压低，也不要故意温柔。轻一点，自然一点。[quiet laugh] 嗯……这样就有点像我了。";
-      ttsTestBtn.textContent = "测试中...";
-      ttsTestBtn.disabled = true;
-      const proxy = document.createElement("button");
-      proxy.className = "speaker-btn";
-      window.SPVoice.speakElevenLabs(text, proxy, null);
-      const observer = new MutationObserver(() => {
-        if (proxy.classList.contains("tts-error")) {
-          ttsTestBtn.textContent = proxy.title || "测试失败";
-          ttsTestBtn.disabled = false;
-          observer.disconnect();
-        } else if (!proxy.classList.contains("tts-loading") && !proxy.classList.contains("speaking")) {
-          ttsTestBtn.textContent = "测试一句";
-          ttsTestBtn.disabled = false;
-          observer.disconnect();
-        }
-      });
-      observer.observe(proxy, { attributes: true, attributeFilter: ["class", "title"] });
-    });
+    // Reflect proxy state on testBtn
+    new MutationObserver(() => {
+      if (proxy.classList.contains("tts-loading")) {
+        testBtn.textContent = "生成中...";
+        testBtn.disabled = true;
+      } else if (proxy.classList.contains("speaking")) {
+        testBtn.textContent = "停止";
+        testBtn.disabled = false;
+      } else if (proxy.classList.contains("tts-error")) {
+        testBtn.textContent = proxy.title || "生成失败";
+        testBtn.disabled = false;
+      } else {
+        testBtn.textContent = "试听";
+        testBtn.disabled = false;
+      }
+    }).observe(proxy, { attributes: true, attributeFilter: ["class", "title"] });
   }
 }
 
