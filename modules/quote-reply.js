@@ -259,6 +259,7 @@ function showLegacyDataNotice() {
     makeQuoteBlock,
     scrollToQuotedMessage,
     getMessageQuotePreview,
+    setLoading,
   };
 
   // ── Legacy global aliases (for backward compatibility) ────────────────────
@@ -267,6 +268,7 @@ function showLegacyDataNotice() {
   window.getMessageQuotePreview = getMessageQuotePreview;
   window.setReplyDraft = setReplyDraft;
   window.clearReplyDraft = clearReplyDraft;
+  window.setLoading = setLoading;
   window.renderReplyPreview = renderReplyPreview;
 
 })();
