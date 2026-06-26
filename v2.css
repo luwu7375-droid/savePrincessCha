@@ -1407,7 +1407,7 @@ body {
   /* Only scrollable region in the chat skeleton */
   flex: 1;
   min-height: 0;
-  padding: 18px 20px calc(var(--chat-input-height) + var(--bottom-nav-height) + 20px);
+  padding: 18px 20px calc(var(--chat-input-height) + 20px);
   background: transparent;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2110,7 +2110,7 @@ body {
    last message is visible above the panel. No page-level rescale. */
 .chat-shell.emoji-panel-open .message-list {
   /* dock baseline + composer + measured panel height (adaptive, not fixed 320px) */
-  padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
+  padding-bottom: calc(20px + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
 }
 
 /* Hide bottom-tab when emoji panel is open to prevent z-index conflicts */
@@ -2122,7 +2122,7 @@ body {
 
 /* plus panel open: reserve dock baseline + composer + measured panel height */
 .chat-shell.plus-panel-open .message-list {
-  padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--plus-panel-h, 250px));
+  padding-bottom: calc(20px + var(--chat-input-height) + var(--plus-panel-h, 250px));
 }
 
 /* ── Emoji search: exclusive overlay ─────────────────────────────────────────
