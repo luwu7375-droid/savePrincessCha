@@ -1057,13 +1057,6 @@ body {
   flex: 0 0 auto;
 }
 
-/* online dot positioned next to avatar */
-.top-bar .online-dot-hitbox {
-  flex: 0 0 auto;
-  margin-left: -12px; /* Overlap slightly with avatar */
-  margin-right: 4px;
-}
-
 /* title 吃掉所有剩余空间，但允许收缩防止挤压 more */
 .top-bar h1 {
   flex: 1 1 auto;
@@ -1079,6 +1072,12 @@ body {
   color: var(--text-main);
   margin: 0;
   cursor: pointer;
+}
+
+/* online dot positioned after title (to the right of name) */
+.top-bar .online-dot-hitbox {
+  flex: 0 0 auto;
+  margin-left: -4px; /* Slight overlap with title */
 }
 
 /* Remove old positioning rule for online-dot-hitbox after title */

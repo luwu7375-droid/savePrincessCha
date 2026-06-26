@@ -18,12 +18,14 @@ function createSupabaseClient() {
 
 const supabaseClient = createSupabaseClient();
 const welcomeMessage = "欢迎回家，kk。";
-let currentUserId = "";
 
-// Expose runtime context for diary module
+// Expose runtime context for modules
 if (supabaseClient) {
   window.supabaseClient = supabaseClient;
 }
+// currentUserId is set by auth.js
+window.currentUserId = window.currentUserId || "";
+
 const _VALID_TIERS_INIT = ["instant", "general", "advanced"];
 const _storedTier = localStorage.getItem("modelTier");
 let currentModelTier = _VALID_TIERS_INIT.includes(_storedTier) ? _storedTier : "general";
@@ -660,7 +662,7 @@ function createStorageUploader(options = {}) {
 
   async function open(extra = {}) {
     const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
-    const userId = extra.userId || user?.id || currentUserId;
+    const userId = extra.userId || user?.id || window.currentUserId;
     if (!userId) {
       const err = new Error("user_id required for upload");
       if (typeof onError === "function") onError(err);
@@ -3528,7 +3530,7 @@ async function handleSubmit() {
     let storagePath = null;
     if (snapshot) {
       const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
-      const uid = user?.id || currentUserId;
+      const uid = user?.id || window.currentUserId;
       storagePath = await uploadImageToStorage(snapshot.dataUrl, uid, getActiveConversationId());
       if (storagePath === null) {
         setChatStatus("图片上传失败，消息未发送，请重试");
@@ -4117,7 +4119,7 @@ async function renderRecentMemoryDebug() {
   if (!panel) return;
   panel.innerHTML = '<div class="mc-debug-placeholder">最近记忆元数据加载中...</div>';
   try {
-    const userId = currentUserId || "";
+    const userId = window.currentUserId || "";
     const resp = await memoryFetch(`?type=recent&userId=${encodeURIComponent(userId)}`);
     if (!resp.ok) {
       panel.innerHTML = `<div class="mc-debug-placeholder">最近记忆元数据不可用：HTTP ${resp.status}</div>`;
@@ -4629,7 +4631,7 @@ function renderMemoryCenterDebug(log) {
 async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessageId, conversationId, route }) {
   const endpoint = getMemoryEndpoint();
   if (!endpoint) return;
-  if (!currentUserId) return;
+  if (!window.currentUserId) return;
   if (!userMessage || !assistantMessage) return;
   // Guard: warn if userMessage looks wrong (empty after trim, or suspiciously short)
   const trimmedUser = userMessage.trim();
@@ -4655,7 +4657,7 @@ async function triggerVaultAfterChat({ userMessage, assistantMessage, userMessag
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({
-        userId: currentUserId,
+        userId: window.currentUserId,
         conversationId: conversationId || null,
         userMessage,
         assistantMessage,
@@ -5056,7 +5058,7 @@ async function mcBridgeFetchRecent() {
   state.loadingRecent = true;
   state.recentError = "";
   try {
-    const userId = currentUserId || "";
+    const userId = window.currentUserId || "";
     const data = await fetchMemoryCenterJson(`?type=recent&userId=${encodeURIComponent(userId)}`);
     state.recentSource = data.source || "";
     state.recentRows = Array.isArray(data.rows) ? data.rows : [];
@@ -6111,7 +6113,7 @@ function renderRecentMemoryUpdatesOptimistic(items) {
 
 async function renderRecentMemoryUpdates() {
   try {
-    const userId = currentUserId || "";
+    const userId = window.currentUserId || "";
     const data = await fetchMemoryCenterJson(`?type=recent&userId=${encodeURIComponent(userId)}`);
     memoryCenterV2State.recentSource = data.source || "";
     memoryCenterV2State.recentRows = Array.isArray(data.rows) ? data.rows : [];
@@ -6190,7 +6192,7 @@ if (_SW_DEV_HOST) {
 // Update Home diary card on page load
 window.addEventListener("load", () => {
   if (supabaseClient && window.SPDiary) {
-    window.SPDiary.updateHomeDiaryCard(supabaseClient, currentUserId || 'default')
+    window.SPDiary.updateHomeDiaryCard(supabaseClient, window.currentUserId || 'default')
       .catch(err => console.error('Failed to update diary card:', err));
   }
 });
