@@ -79,9 +79,7 @@
 
   // ── Hide Login and Initialize App ──────────────────────────────────────────
   async function hideLoginAndInit(session) {
-    console.log('[auth] hideLoginAndInit called, session:', session);
     window.currentUserId = session?.user?.id || "";
-    console.log('[auth] set currentUserId to:', window.currentUserId);
     loginOverlay.classList.add("hidden");
 
     if (logoutBtn) {
@@ -132,15 +130,12 @@
 
   // ── Auth State Change Listener ──────────────────────────────────────────────
   function initAuthListener() {
-    console.log('[auth] initAuthListener called, supabaseClient:', window.supabaseClient);
     if (!window.supabaseClient) {
-      console.warn('[auth] supabaseClient not ready, retrying in 100ms...');
       setTimeout(initAuthListener, 100);
       return;
     }
 
     window.supabaseClient.auth.onAuthStateChange((event, session) => {
-      console.log('[auth] auth state changed:', event, session);
       if (event === "SIGNED_IN" && session) {
         hideLoginAndInit(session);
       }
@@ -148,7 +143,6 @@
 
     // Check initial session on page load
     window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
-      console.log('[auth] initial session check:', session);
       if (session) {
         hideLoginAndInit(session);
       }
