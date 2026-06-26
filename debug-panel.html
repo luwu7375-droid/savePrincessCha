@@ -87,6 +87,8 @@
   <div class="status" id="status">准备就绪</div>
 
   <button onclick="runDebug()">📊 运行诊断</button>
+  <button onclick="startMonitoring()">🎬 开始监控 (10次/秒)</button>
+  <button onclick="stopMonitoring()">⏹️ 停止监控</button>
   <button onclick="copyToClipboard()">📋 复制数据</button>
   <button onclick="clearDebug()">🗑️ 清空</button>
 
@@ -94,6 +96,62 @@
 
   <script>
     let lastData = null;
+    let monitoringInterval = null;
+    let captureHistory = [];
+
+    function startMonitoring() {
+      const status = document.getElementById('status');
+      if (monitoringInterval) {
+        alert('监控已在运行中');
+        return;
+      }
+
+      captureHistory = [];
+      status.textContent = '🎬 监控中... 请在主页面点击输入框';
+
+      monitoringInterval = setInterval(() => {
+        if (typeof window.opener?.__debugHorizontalAlignment === 'function') {
+          const result = window.opener.__debugHorizontalAlignment();
+          captureHistory.push({
+            timestamp: Date.now(),
+            centerOffset: result.centerOffset,
+            data: result.data
+          });
+
+          // 只保留最近 50 条
+          if (captureHistory.length > 50) {
+            captureHistory.shift();
+          }
+
+          // 如果发现偏移，立即显示并停止
+          if (Math.abs(result.centerOffset) > 1) {
+            displayResult(result);
+            stopMonitoring();
+            status.textContent = '❌ 检测到偏移: ' + result.centerOffset + 'px - 已停止监控';
+            lastData = {
+              captureTime: new Date().toLocaleTimeString(),
+              ...result,
+              history: captureHistory
+            };
+          }
+        }
+      }, 100); // 10次/秒
+    }
+
+    function stopMonitoring() {
+      if (monitoringInterval) {
+        clearInterval(monitoringInterval);
+        monitoringInterval = null;
+        const status = document.getElementById('status');
+        status.textContent = '⏹️ 监控已停止 - 共捕获 ' + captureHistory.length + ' 个样本';
+
+        // 显示历史最大偏移
+        if (captureHistory.length > 0) {
+          const maxOffset = Math.max(...captureHistory.map(h => Math.abs(h.centerOffset)));
+          status.textContent += ' - 最大偏移: ' + maxOffset.toFixed(2) + 'px';
+        }
+      }
+    }
 
     function runDebug() {
       const status = document.getElementById('status');
@@ -236,7 +294,18 @@
       document.getElementById('result').innerHTML = '';
       document.getElementById('status').textContent = '准备就绪';
       lastData = null;
+      captureHistory = [];
+      if (monitoringInterval) {
+        stopMonitoring();
+      }
     }
+
+    // 页面关闭时停止监控
+    window.addEventListener('beforeunload', () => {
+      if (monitoringInterval) {
+        clearInterval(monitoringInterval);
+      }
+    });
   </script>
 </body>
 </html>
