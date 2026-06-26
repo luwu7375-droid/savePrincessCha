@@ -1922,9 +1922,12 @@ body {
     border: 0;
     border-radius: 0;
     box-shadow: none;
-    /* Compensate for visualViewport.offsetLeft drift on iOS Safari.
-       This transform only applies when --vv-offset-left is non-zero. */
-    transform: translateX(calc(-1 * var(--vv-offset-left, 0px)));
+    /* Compensate for iOS Safari zoom when focusing input fields.
+       iOS zooms the viewport (even with maximum-scale=1.0), causing the visual
+       width to shrink and clipping content on the right. We scale down the
+       layout to fit within the zoomed viewport. */
+    transform: scale(var(--viewport-scale-compensation, 1));
+    transform-origin: top left;
   }
 
   .v2-scroll {

@@ -98,13 +98,33 @@
       return;
     }
 
+    // Screen center point
+    const screenCenterX = Math.round(window.innerWidth / 2 * 100) / 100;
+
+    // Calculate center points
+    const topBarCenter = Math.round((topBar.getBoundingClientRect().left + topBar.getBoundingClientRect().right) / 2 * 100) / 100;
+    const inputBarCenter = Math.round((inputBar.getBoundingClientRect().left + inputBar.getBoundingClientRect().right) / 2 * 100) / 100;
+    const layoutCenter = Math.round((layout.getBoundingClientRect().left + layout.getBoundingClientRect().right) / 2 * 100) / 100;
+
+    // Get CSS variable values
+    const cssVvOffsetLeft = getComputedStyle(root).getPropertyValue('--vv-offset-left').trim();
+    const cssKb = getComputedStyle(root).getPropertyValue('--kb').trim();
+
     const data = {
+      screen: {
+        innerWidth: window.innerWidth,
+        centerX: screenCenterX,
+      },
       visualViewport: {
         offsetLeft: vv?.offsetLeft ?? 0,
         offsetTop: vv?.offsetTop ?? 0,
         width: vv?.width ?? window.innerWidth,
         height: vv?.height ?? window.innerHeight,
         scale: vv?.scale ?? 1,
+      },
+      cssVariables: {
+        vvOffsetLeft: cssVvOffsetLeft || '0px',
+        kb: cssKb || '0px',
       },
       window: {
         innerWidth: window.innerWidth,
@@ -116,6 +136,8 @@
         left: Math.round(layout.getBoundingClientRect().left * 100) / 100,
         right: Math.round(layout.getBoundingClientRect().right * 100) / 100,
         width: Math.round(layout.getBoundingClientRect().width * 100) / 100,
+        centerX: layoutCenter,
+        offsetFromScreenCenter: Math.round((layoutCenter - screenCenterX) * 100) / 100,
         computedWidth: getComputedStyle(layout).width,
         transform: getComputedStyle(layout).transform,
         position: getComputedStyle(layout).position,
@@ -130,7 +152,8 @@
         left: Math.round(topBar.getBoundingClientRect().left * 100) / 100,
         right: Math.round(topBar.getBoundingClientRect().right * 100) / 100,
         width: Math.round(topBar.getBoundingClientRect().width * 100) / 100,
-        centerX: Math.round((topBar.getBoundingClientRect().left + topBar.getBoundingClientRect().right) / 2 * 100) / 100,
+        centerX: topBarCenter,
+        offsetFromScreenCenter: Math.round((topBarCenter - screenCenterX) * 100) / 100,
       },
       messageList: {
         left: Math.round(messageList.getBoundingClientRect().left * 100) / 100,
@@ -142,7 +165,8 @@
         left: Math.round(inputBar.getBoundingClientRect().left * 100) / 100,
         right: Math.round(inputBar.getBoundingClientRect().right * 100) / 100,
         width: Math.round(inputBar.getBoundingClientRect().width * 100) / 100,
-        centerX: Math.round((inputBar.getBoundingClientRect().left + inputBar.getBoundingClientRect().right) / 2 * 100) / 100,
+        centerX: inputBarCenter,
+        offsetFromScreenCenter: Math.round((inputBarCenter - screenCenterX) * 100) / 100,
         marginLeft: getComputedStyle(inputBar).marginLeft,
         marginRight: getComputedStyle(inputBar).marginRight,
         computedWidth: getComputedStyle(inputBar).width,
@@ -151,21 +175,74 @@
       },
     };
 
-    const topBarCenter = (topBar.getBoundingClientRect().left + topBar.getBoundingClientRect().right) / 2;
-    const inputBarCenter = (inputBar.getBoundingClientRect().left + inputBar.getBoundingClientRect().right) / 2;
-    const centerOffset = Math.round((inputBarCenter - topBarCenter) * 100) / 100;
+    // Relative alignment (elements to each other)
+    const relativeCenterOffset = Math.round((inputBarCenter - topBarCenter) * 100) / 100;
+
+    // Absolute alignment (elements to screen center)
+    const layoutAbsoluteOffset = Math.round((layoutCenter - screenCenterX) * 100) / 100;
+    const topBarAbsoluteOffset = Math.round((topBarCenter - screenCenterX) * 100) / 100;
+    const inputBarAbsoluteOffset = Math.round((inputBarCenter - screenCenterX) * 100) / 100;
+
+    // Right edge overflow check
+    const layoutRightOverflow = Math.round((layout.getBoundingClientRect().right - window.innerWidth) * 100) / 100;
+    const topBarRightOverflow = Math.round((topBar.getBoundingClientRect().right - window.innerWidth) * 100) / 100;
+    const inputBarRightOverflow = Math.round((inputBar.getBoundingClientRect().right - window.innerWidth) * 100) / 100;
 
     console.group("🔍 Horizontal Alignment Debug");
     console.table(data);
-    console.warn(`⚠️  Center offset: ${centerOffset}px (inputBar - topBar)`);
-    if (Math.abs(centerOffset) > 1) {
-      console.error(`❌ Horizontal misalignment detected: ${centerOffset}px`);
-    } else {
-      console.log("✅ Elements are horizontally aligned");
+    console.group("📊 Alignment Analysis");
+    console.log(`Screen center: ${screenCenterX}px`);
+    console.log(`\n--- Relative Alignment (元素之间) ---`);
+    console.log(`inputBar center - topBar center: ${relativeCenterOffset}px`);
+    console.log(`\n--- Absolute Alignment (相对屏幕中心) ---`);
+    console.log(`layout center offset: ${layoutAbsoluteOffset}px`);
+    console.log(`topBar center offset: ${topBarAbsoluteOffset}px`);
+    console.log(`inputBar center offset: ${inputBarAbsoluteOffset}px`);
+    console.log(`\n--- Right Edge Overflow (右侧溢出检测) ---`);
+    console.log(`layout.right - screen.width: ${layoutRightOverflow}px ${layoutRightOverflow > 0 ? '❌ 溢出!' : '✅'}`);
+    console.log(`topBar.right - screen.width: ${topBarRightOverflow}px ${topBarRightOverflow > 0 ? '❌ 溢出!' : '✅'}`);
+    console.log(`inputBar.right - screen.width: ${inputBarRightOverflow}px ${inputBarRightOverflow > 0 ? '❌ 溢出!' : '✅'}`);
+    console.log(`\n--- CSS Variables ---`);
+    console.log(`--vv-offset-left: ${cssVvOffsetLeft}`);
+    console.log(`--kb: ${cssKb}`);
+    console.log(`visualViewport.offsetLeft: ${vv?.offsetLeft ?? 0}px`);
+    console.groupEnd();
+
+    if (Math.abs(relativeCenterOffset) > 1) {
+      console.error(`❌ Relative misalignment: ${relativeCenterOffset}px`);
+    }
+    if (Math.abs(layoutAbsoluteOffset) > 1) {
+      console.error(`❌ Layout not centered: ${layoutAbsoluteOffset}px offset from screen center`);
+    }
+    if (layoutRightOverflow > 0 || topBarRightOverflow > 0 || inputBarRightOverflow > 0) {
+      console.error(`❌ Content overflow detected on right edge`);
+    }
+    if (Math.abs(relativeCenterOffset) <= 1 && Math.abs(layoutAbsoluteOffset) <= 1 && layoutRightOverflow <= 0) {
+      console.log("✅ All elements properly aligned");
     }
     console.groupEnd();
 
-    return { data, centerOffset };
+    return {
+      data,
+      analysis: {
+        screenCenterX,
+        relativeCenterOffset,
+        absoluteOffsets: {
+          layout: layoutAbsoluteOffset,
+          topBar: topBarAbsoluteOffset,
+          inputBar: inputBarAbsoluteOffset,
+        },
+        rightOverflow: {
+          layout: layoutRightOverflow,
+          topBar: topBarRightOverflow,
+          inputBar: inputBarRightOverflow,
+        },
+        cssVariables: {
+          vvOffsetLeft: cssVvOffsetLeft,
+          kb: cssKb,
+        },
+      },
+    };
   };
 
 
@@ -206,17 +283,15 @@
   }
 
   // ── Horizontal viewport drift reset ────────────────────────────────────────
-  // iOS Safari can shift the page left when a focused input scrolls into view,
-  // and sometimes fails to restore it after the keyboard closes (the page sits
-  // a few % to the left). Force every horizontal scroll offset back to 0.
-  // Also clear any inline style drift on .layout itself.
+  // iOS Safari zooms the page when focusing input fields (even with maximum-scale=1.0).
+  // This causes visualViewport width to shrink, clipping content on the right edge.
+  // We detect the scale change and compensate by adjusting the layout width.
   function resetHorizontalViewportDrift(reason = "unknown") {
     const vv = window.visualViewport;
     const scrollingEl = document.scrollingElement || document.documentElement;
     const layout = document.querySelector(".layout");
-    const offsetLeft = vv?.offsetLeft || 0;
 
-    // 1. Clear browser horizontal scroll (ONLY if non-zero to avoid unnecessary ops)
+    // 1. Clear browser horizontal scroll
     if (window.scrollX !== 0) {
       window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
     }
@@ -224,42 +299,50 @@
     if (document.documentElement.scrollLeft !== 0) document.documentElement.scrollLeft = 0;
     if (document.body.scrollLeft !== 0) document.body.scrollLeft = 0;
 
-    // 2. Clear any residual inline horizontal styles on .layout
+    // 2. Detect iOS zoom (scale change) and compensate
+    const scale = vv?.scale || 1;
+    const isZoomed = Math.abs(scale - 1) > 0.01; // threshold for detecting zoom
+
+    if (isZoomed && vv) {
+      // iOS has zoomed the viewport. Calculate the actual visual width.
+      const visualWidth = vv.width;
+      const documentWidth = document.documentElement.clientWidth;
+      const widthDiff = documentWidth - visualWidth;
+
+      // Compensate by scaling down the layout to fit within the zoomed viewport
+      const scaleCompensation = visualWidth / documentWidth;
+      root.style.setProperty("--viewport-scale", scale.toFixed(6));
+      root.style.setProperty("--viewport-scale-compensation", scaleCompensation.toFixed(6));
+
+      if (window.DEBUG_LAYOUT) {
+        console.info("[viewport] iOS zoom detected", {
+          reason,
+          scale,
+          visualWidth,
+          documentWidth,
+          widthDiff,
+          scaleCompensation,
+        });
+      }
+    } else {
+      // No zoom, clear compensation
+      root.style.setProperty("--viewport-scale", "1");
+      root.style.setProperty("--viewport-scale-compensation", "1");
+    }
+
+    // 3. Clear any residual inline horizontal styles on .layout
     if (layout) {
       layout.style.left = "";
       layout.style.right = "";
       layout.style.marginLeft = "";
       layout.style.marginRight = "";
-      // Remove translateX from inline transform if present (but preserve other transforms)
-      const inlineTransform = layout.style.transform || "";
-      if (/translateX|translate3d\(/.test(inlineTransform)) {
-        layout.style.transform = "";
-      }
     }
 
-    // 3. Record visualViewport offsetLeft for potential CSS compensation
-    root.style.setProperty("--vv-offset-left", `${Math.round(offsetLeft)}px`);
-
-    // 4. Force recheck next frame (only if there's actual drift)
-    if (window.scrollX !== 0 || offsetLeft !== 0) {
+    // 4. Force recheck next frame if there's actual drift
+    if (window.scrollX !== 0 || isZoomed) {
       requestAnimationFrame(() => {
         if (window.scrollX !== 0) window.scrollTo({ left: 0, top: window.scrollY, behavior: "auto" });
         if (scrollingEl && scrollingEl.scrollLeft !== 0) scrollingEl.scrollLeft = 0;
-        if (document.documentElement.scrollLeft !== 0) document.documentElement.scrollLeft = 0;
-        if (document.body.scrollLeft !== 0) document.body.scrollLeft = 0;
-      });
-    }
-
-    if (window.DEBUG_LAYOUT) {
-      console.info("[viewport] reset horizontal drift", {
-        reason,
-        scrollX: window.scrollX,
-        vvOffsetLeft: offsetLeft,
-        docScrollLeft: document.documentElement.scrollLeft,
-        bodyScrollLeft: document.body.scrollLeft,
-        innerWidth: window.innerWidth,
-        docClientWidth: document.documentElement.clientWidth,
-        bodyScrollWidth: document.body.scrollWidth,
       });
     }
   }

@@ -112,10 +112,15 @@
       monitoringInterval = setInterval(() => {
         if (typeof window.opener?.__debugHorizontalAlignment === 'function') {
           const result = window.opener.__debugHorizontalAlignment();
+          const analysis = result.analysis || {};
+
           captureHistory.push({
             timestamp: Date.now(),
-            centerOffset: result.centerOffset,
-            data: result.data
+            relativeCenterOffset: analysis.relativeCenterOffset || 0,
+            layoutAbsoluteOffset: analysis.absoluteOffsets?.layout || 0,
+            rightOverflow: analysis.rightOverflow?.layout || 0,
+            data: result.data,
+            analysis: analysis
           });
 
           // 只保留最近 50 条
@@ -123,11 +128,19 @@
             captureHistory.shift();
           }
 
-          // 如果发现偏移，立即显示并停止
-          if (Math.abs(result.centerOffset) > 1) {
+          // 如果发现问题，立即显示并停止
+          const hasRelativeOffset = Math.abs(analysis.relativeCenterOffset || 0) > 1;
+          const hasAbsoluteOffset = Math.abs(analysis.absoluteOffsets?.layout || 0) > 1;
+          const hasOverflow = (analysis.rightOverflow?.layout || 0) > 0;
+
+          if (hasRelativeOffset || hasAbsoluteOffset || hasOverflow) {
             displayResult(result);
             stopMonitoring();
-            status.textContent = '❌ 检测到偏移: ' + result.centerOffset + 'px - 已停止监控';
+            let issues = [];
+            if (hasRelativeOffset) issues.push('相对偏移');
+            if (hasAbsoluteOffset) issues.push('绝对偏移');
+            if (hasOverflow) issues.push('右侧溢出');
+            status.textContent = '❌ 检测到问题: ' + issues.join(', ') + ' - 已停止监控';
             lastData = {
               captureTime: new Date().toLocaleTimeString(),
               ...result,
@@ -147,8 +160,14 @@
 
         // 显示历史最大偏移
         if (captureHistory.length > 0) {
-          const maxOffset = Math.max(...captureHistory.map(h => Math.abs(h.centerOffset)));
-          status.textContent += ' - 最大偏移: ' + maxOffset.toFixed(2) + 'px';
+          const maxRelativeOffset = Math.max(...captureHistory.map(h => Math.abs(h.relativeCenterOffset || 0)));
+          const maxAbsoluteOffset = Math.max(...captureHistory.map(h => Math.abs(h.layoutAbsoluteOffset || 0)));
+          const maxOverflow = Math.max(...captureHistory.map(h => h.rightOverflow || 0));
+          status.textContent += ' - 最大相对偏移: ' + maxRelativeOffset.toFixed(2) + 'px';
+          status.textContent += ' - 最大绝对偏移: ' + maxAbsoluteOffset.toFixed(2) + 'px';
+          if (maxOverflow > 0) {
+            status.textContent += ' - 最大溢出: ' + maxOverflow.toFixed(2) + 'px';
+          }
         }
       }
     }
@@ -172,16 +191,46 @@
 
     function displayResult(result) {
       const container = document.getElementById('result');
-      const { data, centerOffset } = result;
+      const { data, analysis } = result;
 
       let html = '';
 
-      // Center offset
-      const offsetClass = Math.abs(centerOffset) > 1 ? 'bad' : 'good';
-      const offsetEmoji = Math.abs(centerOffset) > 1 ? '❌' : '✅';
+      // 关键指标摘要
+      const relativeOk = Math.abs(analysis.relativeCenterOffset) <= 1;
+      const layoutCenteredOk = Math.abs(analysis.absoluteOffsets.layout) <= 1;
+      const noOverflow = analysis.rightOverflow.layout <= 0 && analysis.rightOverflow.topBar <= 0 && analysis.rightOverflow.inputBar <= 0;
+
+      const allOk = relativeOk && layoutCenteredOk && noOverflow;
+      const offsetClass = allOk ? 'good' : 'bad';
+      const offsetEmoji = allOk ? '✅' : '❌';
+
       html += `<div class="center-offset ${offsetClass}">
-        ${offsetEmoji} 中心点偏差: ${centerOffset}px
+        ${offsetEmoji} ${allOk ? '对齐正常' : '检测到问题'}
       </div>`;
+
+      // 诊断摘要
+      html += '<div class="debug-section"><h3>🔍 诊断摘要</h3>';
+      html += makeRow('屏幕宽度', data.screen.innerWidth + 'px');
+      html += makeRow('屏幕中心', analysis.screenCenterX + 'px', 'highlight');
+      html += makeRow('相对偏移 (inputBar-topBar)', analysis.relativeCenterOffset + 'px', relativeOk ? '' : 'highlight');
+      html += makeRow('.layout 居中偏移', analysis.absoluteOffsets.layout + 'px', layoutCenteredOk ? '' : 'highlight');
+      html += makeRow('.topBar 居中偏移', analysis.absoluteOffsets.topBar + 'px');
+      html += makeRow('.inputBar 居中偏移', analysis.absoluteOffsets.inputBar + 'px');
+      html += '</div>';
+
+      // 右侧溢出检测
+      html += '<div class="debug-section"><h3>⚠️ 右侧溢出检测</h3>';
+      html += makeRow('.layout 右溢出', analysis.rightOverflow.layout + 'px', analysis.rightOverflow.layout > 0 ? 'highlight' : '');
+      html += makeRow('.topBar 右溢出', analysis.rightOverflow.topBar + 'px', analysis.rightOverflow.topBar > 0 ? 'highlight' : '');
+      html += makeRow('.inputBar 右溢出', analysis.rightOverflow.inputBar + 'px', analysis.rightOverflow.inputBar > 0 ? 'highlight' : '');
+      html += '</div>';
+
+      // CSS 变量
+      html += '<div class="debug-section"><h3>🎨 CSS 变量</h3>';
+      html += makeRow('--vv-offset-left', analysis.cssVariables.vvOffsetLeft, analysis.cssVariables.vvOffsetLeft !== '0px' ? 'highlight' : '');
+      html += makeRow('--kb', analysis.cssVariables.kb);
+      html += makeRow('visualViewport.offsetLeft', data.visualViewport.offsetLeft + 'px', data.visualViewport.offsetLeft !== 0 ? 'highlight' : '');
+      html += '</div>';
 
       // Visual Viewport
       html += '<div class="debug-section"><h3>📱 Visual Viewport</h3>';
@@ -201,9 +250,11 @@
 
       // Layout
       html += '<div class="debug-section"><h3>📦 .layout</h3>';
-      html += makeRow('left', data.layout.left);
+      html += makeRow('left', data.layout.left, data.layout.left < -1 ? 'highlight' : '');
       html += makeRow('right', data.layout.right);
       html += makeRow('width', data.layout.width);
+      html += makeRow('centerX', data.layout.centerX, 'highlight');
+      html += makeRow('offsetFromCenter', data.layout.offsetFromScreenCenter + 'px', Math.abs(data.layout.offsetFromScreenCenter) > 1 ? 'highlight' : '');
       html += makeRow('transform', data.layout.transform);
       html += makeRow('position', data.layout.position);
       html += '</div>';
@@ -221,6 +272,7 @@
       html += makeRow('right', data.topBar.right);
       html += makeRow('width', data.topBar.width);
       html += makeRow('centerX', data.topBar.centerX, 'highlight');
+      html += makeRow('offsetFromCenter', data.topBar.offsetFromScreenCenter + 'px');
       html += '</div>';
 
       // Message List
@@ -237,6 +289,7 @@
       html += makeRow('right', data.inputBar.right);
       html += makeRow('width', data.inputBar.width);
       html += makeRow('centerX', data.inputBar.centerX, 'highlight');
+      html += makeRow('offsetFromCenter', data.inputBar.offsetFromScreenCenter + 'px');
       html += makeRow('marginLeft', data.inputBar.marginLeft);
       html += makeRow('marginRight', data.inputBar.marginRight);
       html += makeRow('maxWidth', data.inputBar.maxWidth);
