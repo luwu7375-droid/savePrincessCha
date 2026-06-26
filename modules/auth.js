@@ -79,7 +79,9 @@
 
   // ── Hide Login and Initialize App ──────────────────────────────────────────
   async function hideLoginAndInit(session) {
+    console.log('[auth] hideLoginAndInit called, session:', session);
     window.currentUserId = session?.user?.id || "";
+    console.log('[auth] set currentUserId to:', window.currentUserId);
     loginOverlay.classList.add("hidden");
 
     if (logoutBtn) {
