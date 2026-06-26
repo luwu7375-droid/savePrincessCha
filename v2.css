@@ -1407,11 +1407,11 @@ body {
   /* Only scrollable region in the chat skeleton */
   flex: 1;
   min-height: 0;
-  padding: 18px 20px calc(var(--chat-input-height) + var(--dock-gap));
+  padding: 18px 20px calc(var(--chat-input-height) + var(--bottom-nav-height) + 20px);
   background: transparent;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scroll-padding-bottom: calc(var(--chat-input-height) + var(--dock-gap));
+  scroll-padding-bottom: calc(var(--chat-input-height) + var(--bottom-nav-height) + 20px);
 }
 
 .msg-row {
@@ -1484,7 +1484,7 @@ body {
   position: relative;
   z-index: 11;
   flex-shrink: 0;
-  margin: 0 20px var(--dock-gap);
+  margin: 0 20px calc(var(--bottom-nav-height) + 20px);
   padding: 6px 10px 6px 18px;
   min-height: 54px;
   border-radius: var(--radius-input);
@@ -1574,7 +1574,7 @@ body {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(var(--chat-input-height) + var(--dock-gap));
+  bottom: calc(var(--chat-input-height) + var(--bottom-nav-height) + 20px);
   z-index: 20;
   margin: 0 20px;
   padding: 12px;
@@ -1753,6 +1753,10 @@ body {
    sync, with no per-element margin jumps. */
 .layout.keyboard-open {
   --dock-gap: calc(var(--kb) + 10px);
+}
+
+.layout.keyboard-open .input-bar {
+  margin-bottom: var(--dock-gap);
 }
 
 .layout.keyboard-open .message-list {
@@ -2071,7 +2075,7 @@ body {
   left: 0;
   right: 0;
   /* Bottom edge aligns to top of composer (dock-gap is the space below composer) */
-  bottom: calc(var(--chat-input-height) + var(--dock-gap));
+  bottom: calc(var(--chat-input-height) + var(--bottom-nav-height) + 20px);
   z-index: 20;
   background: var(--surface);
   border-radius: 18px 18px 0 0;
@@ -2108,8 +2112,8 @@ body {
    last message is visible above the panel. No page-level rescale. */
 .chat-shell.emoji-panel-open .message-list {
   /* dock baseline + composer + measured panel height (adaptive, not fixed 320px) */
-  padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
-  scroll-padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
+  padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
+  scroll-padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
 }
 
 /* Hide bottom-tab when emoji panel is open to prevent z-index conflicts */
@@ -2121,8 +2125,8 @@ body {
 
 /* plus panel open: reserve dock baseline + composer + measured panel height */
 .chat-shell.plus-panel-open .message-list {
-  padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + var(--plus-panel-h, 250px));
-  scroll-padding-bottom: calc(var(--dock-gap) + var(--chat-input-height) + var(--plus-panel-h, 250px));
+  padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--plus-panel-h, 250px));
+  scroll-padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--plus-panel-h, 250px));
 }
 
 /* ── Emoji search: exclusive overlay ─────────────────────────────────────────
