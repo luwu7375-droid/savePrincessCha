@@ -1805,6 +1805,12 @@ function getWebApiEndpoint() {
   return getConfigValue("WEB_API_ENDPOINT", "YOUR_WEB_API_ENDPOINT");
 }
 
+// Export for use in settings page
+window.getMemoryEndpoint = getMemoryEndpoint;
+window.getMemoryToken = function() {
+  return sessionStorage.getItem("memory_admin_token") || "";
+};
+
 // ── Web context injection ──────────────────────────────────────────────────────
 // Set by phone.js "在聊天里讲给KK"; consumed once by the next callChatAPI call.
 let _pendingWebContext = null;
@@ -1819,10 +1825,6 @@ window.injectWebContextToChat = function ({ summary, sourceUrl, title }) {
     hint.removeAttribute("hidden");
   }
 };
-
-function getMemoryToken() {
-  return sessionStorage.getItem("memory_admin_token") || "";
-}
 
 async function getAuthHeaders() {
   if (!supabaseClient) return {};

@@ -761,21 +761,48 @@ window._saveMemoryToken = function() {
   const val = document.getElementById("_memTokenInput")?.value?.trim();
   if (val) sessionStorage.setItem("memory_admin_token", val);
   else sessionStorage.removeItem("memory_admin_token");
-  document.getElementById("_memTokenStatus").textContent = val ? "hasToken=true" : "hasToken=false";
-  document.getElementById("_memTokenInput").value = "";
+  const statusEl = document.getElementById("_memTokenStatus");
+  if (statusEl) statusEl.textContent = val ? "hasToken=true" : "hasToken=false";
+  const inputEl = document.getElementById("_memTokenInput");
+  if (inputEl) inputEl.value = "";
+  // Show confirmation toast
+  if (typeof showToast === 'function') {
+    showToast(val ? "Token 已保存" : "Token 已清除");
+  }
 };
 window._testMemoryEndpoint = async function() {
-  const endpoint = getMemoryEndpoint();
-  const token = getMemoryToken();
+  const endpoint = typeof getMemoryEndpoint === 'function' ? getMemoryEndpoint() : null;
+  const token = sessionStorage.getItem("memory_admin_token") || "";
   const btn = document.getElementById("_memTestBtn");
-  if (!endpoint) { btn.textContent = "❌ 无 endpoint"; return; }
-  if (!token) { btn.textContent = "❌ 无 token"; return; }
+  if (!btn) return;
+
+  if (!endpoint) {
+    btn.textContent = "❌ 无 endpoint";
+    if (typeof showToast === 'function') showToast("记忆 API 端点未配置");
+    return;
+  }
+  if (!token) {
+    btn.textContent = "❌ 无 token";
+    if (typeof showToast === 'function') showToast("请先保存 Token");
+    return;
+  }
+
   btn.textContent = "请求中…";
+  btn.disabled = true;
+
   try {
-    const res = await fetch(endpoint + "?type=audit", { headers: { "Authorization": "Bearer " + token } });
+    const res = await fetch(endpoint + "?type=audit", {
+      headers: { "Authorization": "Bearer " + token }
+    });
     btn.textContent = res.ok ? `✅ ${res.status}` : `❌ ${res.status}`;
+    if (typeof showToast === 'function') {
+      showToast(res.ok ? "记忆端点连接成功" : `连接失败: ${res.status}`);
+    }
   } catch(e) {
     btn.textContent = "❌ 网络错误";
+    if (typeof showToast === 'function') showToast("网络错误: " + e.message);
+  } finally {
+    btn.disabled = false;
   }
 };
 
