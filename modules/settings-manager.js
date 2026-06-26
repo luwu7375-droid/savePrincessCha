@@ -144,10 +144,13 @@ function _renderApiSubpage() {
 
   Object.entries(MODEL_ROLES).forEach(([roleId, role]) => {
     const currentMapping = mapping[roleId];
-    const providerLabel = currentMapping?.providerGroup ?
-      (PROVIDER_GROUPS[currentMapping.providerGroup]?.name || currentMapping.providerGroup) :
+
+    // Only show current mapping if the provider still exists
+    const hasValidProvider = currentMapping?.providerGroup && PROVIDER_GROUPS[currentMapping.providerGroup];
+    const providerLabel = hasValidProvider ?
+      PROVIDER_GROUPS[currentMapping.providerGroup].name :
       "未选择";
-    const modelLabel = currentMapping?.model || "未选择";
+    const modelLabel = hasValidProvider ? (currentMapping.model || "未选择") : "未选择";
 
     rolesMappingHtml += `
       <div class="settings-card-row">
@@ -158,12 +161,12 @@ function _renderApiSubpage() {
         <select class="settings-select" data-role="${roleId}" data-type="provider">
           <option value="">选择通道</option>
           ${Object.entries(PROVIDER_GROUPS).map(([gid, g]) =>
-            `<option value="${gid}"${currentMapping?.providerGroup === gid ? ' selected' : ''}>${g.name}</option>`
+            `<option value="${gid}"${hasValidProvider && currentMapping.providerGroup === gid ? ' selected' : ''}>${g.name}</option>`
           ).join('')}
         </select>
-        <select class="settings-select" data-role="${roleId}" data-type="model" ${!currentMapping?.providerGroup ? 'disabled' : ''}>
+        <select class="settings-select" data-role="${roleId}" data-type="model" ${!hasValidProvider ? 'disabled' : ''}>
           <option value="">选择模型</option>
-          ${currentMapping?.providerGroup && PROVIDER_GROUPS[currentMapping.providerGroup]?.models ?
+          ${hasValidProvider && PROVIDER_GROUPS[currentMapping.providerGroup]?.models ?
             PROVIDER_GROUPS[currentMapping.providerGroup].models.map(m =>
               `<option value="${m}"${currentMapping?.model === m ? ' selected' : ''}>${m}</option>`
             ).join('') :
@@ -482,51 +485,44 @@ function _showCustomProviderDialog(providerId = null) {
   const isEdit = !!existingProvider;
 
   const dialogHtml = `
-    <div class="overlay" id="customProviderOverlay" style="z-index:100;">
-      <div class="modal" style="max-width:420px;">
-        <div class="modal-header">
-          <span>${isEdit ? '编辑' : '添加'}自定义通道</span>
-          <button type="button" id="closeProviderDialog">✕</button>
+    <div class="overlay" id="customProviderOverlay" style="z-index:100;background:rgba(0,0,0,0.4);">
+      <div class="modal" style="max-width:420px;background:#fff;color:#202020;border:1px solid rgba(30,30,30,0.08);box-shadow:0 12px 40px rgba(0,0,0,0.12);">
+        <div class="modal-header" style="border-bottom:1px solid rgba(30,30,30,0.08);">
+          <span style="color:#202020;">${isEdit ? '编辑' : '添加'}自定义通道</span>
+          <button type="button" id="closeProviderDialog" style="color:#8E8E8E;">✕</button>
         </div>
         <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:12px;">
           <div>
-            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">通道 ID</label>
-            <input type="text" id="providerIdInput" placeholder="例如: custom-openai"
-              value="${existingProvider?.id || ''}"
-              ${isEdit ? 'disabled' : ''}
-              style="width:100%;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
-          </div>
-          <div>
-            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">通道名称</label>
+            <label style="display:block;font-size:12px;color:#8E8E8E;margin-bottom:4px;">通道名称</label>
             <input type="text" id="providerNameInput" placeholder="例如: 自定义 OpenAI"
               value="${existingProvider?.name || ''}"
-              style="width:100%;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
+              style="width:100%;padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;font-size:14px;">
           </div>
           <div>
-            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">API 端点</label>
+            <label style="display:block;font-size:12px;color:#8E8E8E;margin-bottom:4px;">API 端点</label>
             <input type="url" id="providerEndpointInput" placeholder="https://api.openai.com/v1"
               value="${existingProvider?.endpoint || ''}"
-              style="width:100%;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
+              style="width:100%;padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;font-size:14px;">
           </div>
           <div>
-            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">API Key</label>
+            <label style="display:block;font-size:12px;color:#8E8E8E;margin-bottom:4px;">API Key</label>
             <input type="password" id="providerKeyInput" placeholder="sk-..."
               value="${existingProvider?.apiKey || ''}"
-              style="width:100%;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
+              style="width:100%;padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;font-size:14px;">
           </div>
           <div>
-            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">支持的模型</label>
+            <label style="display:block;font-size:12px;color:#8E8E8E;margin-bottom:4px;">支持的模型</label>
             <div style="display:flex;gap:8px;">
               <input type="text" id="providerModelsInput" placeholder="点击右侧按钮自动获取"
                 value="${existingProvider?.models?.join(', ') || ''}"
-                style="flex:1;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
-              <button type="button" id="fetchModelsBtn" style="padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);cursor:pointer;white-space:nowrap;font-size:13px;">获取模型</button>
+                style="flex:1;padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;font-size:14px;">
+              <button type="button" id="fetchModelsBtn" style="padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;cursor:pointer;white-space:nowrap;font-size:13px;">获取模型</button>
             </div>
-            <div id="fetchModelsStatus" style="font-size:11px;color:var(--text-muted);margin-top:4px;"></div>
+            <div id="fetchModelsStatus" style="font-size:11px;color:#8E8E8E;margin-top:4px;"></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:8px;">
-            <button type="button" id="cancelProviderDialog" style="flex:1;padding:10px;border:1px solid var(--border-soft);border-radius:8px;background:transparent;color:var(--text-main);cursor:pointer;">取消</button>
-            <button type="button" id="saveProviderDialog" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--active);color:white;cursor:pointer;">保存</button>
+            <button type="button" id="cancelProviderDialog" style="flex:1;padding:10px;border:1px solid rgba(30,30,30,0.18);border-radius:8px;background:transparent;color:#202020;cursor:pointer;">取消</button>
+            <button type="button" id="saveProviderDialog" style="flex:1;padding:10px;border:none;border-radius:8px;background:#202020;color:white;cursor:pointer;">保存</button>
           </div>
         </div>
       </div>
@@ -630,13 +626,12 @@ function _showCustomProviderDialog(providerId = null) {
   });
 
   saveBtn.addEventListener('click', () => {
-    const id = document.getElementById('providerIdInput').value.trim();
     const name = document.getElementById('providerNameInput').value.trim();
     const endpoint = document.getElementById('providerEndpointInput').value.trim();
     const apiKey = document.getElementById('providerKeyInput').value.trim();
     const modelsStr = document.getElementById('providerModelsInput').value.trim();
 
-    if (!id || !name || !endpoint || !apiKey) {
+    if (!name || !endpoint || !apiKey) {
       if (typeof showToast === 'function') {
         showToast('请填写所有必填字段');
       } else {
@@ -644,6 +639,12 @@ function _showCustomProviderDialog(providerId = null) {
       }
       return;
     }
+
+    // Auto-generate provider ID from name or use existing ID when editing
+    const id = providerId || name.toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
+      .replace(/^-+|-+$/g, '') || `custom-${Date.now()}`;
 
     if (!modelsStr) {
       if (typeof showToast === 'function') {
