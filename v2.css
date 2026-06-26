@@ -1411,7 +1411,6 @@ body {
   background: transparent;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scroll-padding-bottom: calc(var(--chat-input-height) + var(--bottom-nav-height) + 20px);
 }
 
 .msg-row {
@@ -1763,7 +1762,6 @@ body {
   /* Reserve composer height + the dock gap so the last message rests just
      above the composer, never hidden by it. */
   padding-bottom: calc(var(--chat-input-height) + var(--dock-gap));
-  scroll-padding-bottom: calc(var(--chat-input-height) + var(--dock-gap));
 }
 
 .bottom-tab {
@@ -2113,7 +2111,6 @@ body {
 .chat-shell.emoji-panel-open .message-list {
   /* dock baseline + composer + measured panel height (adaptive, not fixed 320px) */
   padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
-  scroll-padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
 }
 
 /* Hide bottom-tab when emoji panel is open to prevent z-index conflicts */
@@ -2126,7 +2123,6 @@ body {
 /* plus panel open: reserve dock baseline + composer + measured panel height */
 .chat-shell.plus-panel-open .message-list {
   padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--plus-panel-h, 250px));
-  scroll-padding-bottom: calc(var(--bottom-nav-height) + 20px + var(--chat-input-height) + var(--plus-panel-h, 250px));
 }
 
 /* ── Emoji search: exclusive overlay ─────────────────────────────────────────
