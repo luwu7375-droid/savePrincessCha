@@ -4066,7 +4066,11 @@ function insertTextAtCursor(text) {
 function scrollChatToLatest(behavior = "auto") {
   if (!messageList) return;
   requestAnimationFrame(() => {
-    messageList.scrollTo({ top: messageList.scrollHeight, behavior });
+    // Force layout recalc to ensure padding changes are applied before measuring scrollHeight
+    messageList.offsetHeight;
+    requestAnimationFrame(() => {
+      messageList.scrollTo({ top: messageList.scrollHeight, behavior });
+    });
   });
 }
 
