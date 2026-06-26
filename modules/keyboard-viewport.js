@@ -84,6 +84,91 @@
     return snap;
   };
 
+  // ── Diagnostic: Complete horizontal alignment analysis ──────────────────────
+  window.__debugHorizontalAlignment = () => {
+    const vv = window.visualViewport;
+    const layout = document.querySelector(".layout");
+    const chatShell = document.querySelector(".chat-shell");
+    const topBar = document.querySelector(".top-bar");
+    const messageList = document.querySelector(".message-list");
+    const inputBar = document.querySelector(".input-bar");
+
+    if (!layout || !chatShell || !topBar || !messageList || !inputBar) {
+      console.error("One or more elements not found");
+      return;
+    }
+
+    const data = {
+      visualViewport: {
+        offsetLeft: vv?.offsetLeft ?? 0,
+        offsetTop: vv?.offsetTop ?? 0,
+        width: vv?.width ?? window.innerWidth,
+        height: vv?.height ?? window.innerHeight,
+        scale: vv?.scale ?? 1,
+      },
+      window: {
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+      },
+      layout: {
+        left: Math.round(layout.getBoundingClientRect().left * 100) / 100,
+        right: Math.round(layout.getBoundingClientRect().right * 100) / 100,
+        width: Math.round(layout.getBoundingClientRect().width * 100) / 100,
+        computedWidth: getComputedStyle(layout).width,
+        transform: getComputedStyle(layout).transform,
+        position: getComputedStyle(layout).position,
+      },
+      chatShell: {
+        left: Math.round(chatShell.getBoundingClientRect().left * 100) / 100,
+        right: Math.round(chatShell.getBoundingClientRect().right * 100) / 100,
+        width: Math.round(chatShell.getBoundingClientRect().width * 100) / 100,
+        computedWidth: getComputedStyle(chatShell).width,
+      },
+      topBar: {
+        left: Math.round(topBar.getBoundingClientRect().left * 100) / 100,
+        right: Math.round(topBar.getBoundingClientRect().right * 100) / 100,
+        width: Math.round(topBar.getBoundingClientRect().width * 100) / 100,
+        centerX: Math.round((topBar.getBoundingClientRect().left + topBar.getBoundingClientRect().right) / 2 * 100) / 100,
+      },
+      messageList: {
+        left: Math.round(messageList.getBoundingClientRect().left * 100) / 100,
+        right: Math.round(messageList.getBoundingClientRect().right * 100) / 100,
+        width: Math.round(messageList.getBoundingClientRect().width * 100) / 100,
+        centerX: Math.round((messageList.getBoundingClientRect().left + messageList.getBoundingClientRect().right) / 2 * 100) / 100,
+      },
+      inputBar: {
+        left: Math.round(inputBar.getBoundingClientRect().left * 100) / 100,
+        right: Math.round(inputBar.getBoundingClientRect().right * 100) / 100,
+        width: Math.round(inputBar.getBoundingClientRect().width * 100) / 100,
+        centerX: Math.round((inputBar.getBoundingClientRect().left + inputBar.getBoundingClientRect().right) / 2 * 100) / 100,
+        marginLeft: getComputedStyle(inputBar).marginLeft,
+        marginRight: getComputedStyle(inputBar).marginRight,
+        computedWidth: getComputedStyle(inputBar).width,
+        maxWidth: getComputedStyle(inputBar).maxWidth,
+        position: getComputedStyle(inputBar).position,
+      },
+    };
+
+    const topBarCenter = (topBar.getBoundingClientRect().left + topBar.getBoundingClientRect().right) / 2;
+    const inputBarCenter = (inputBar.getBoundingClientRect().left + inputBar.getBoundingClientRect().right) / 2;
+    const centerOffset = Math.round((inputBarCenter - topBarCenter) * 100) / 100;
+
+    console.group("🔍 Horizontal Alignment Debug");
+    console.table(data);
+    console.warn(`⚠️  Center offset: ${centerOffset}px (inputBar - topBar)`);
+    if (Math.abs(centerOffset) > 1) {
+      console.error(`❌ Horizontal misalignment detected: ${centerOffset}px`);
+    } else {
+      console.log("✅ Elements are horizontally aligned");
+    }
+    console.groupEnd();
+
+    return { data, centerOffset };
+  };
+
+
   function currentInset() {
     const vv = window.visualViewport;
     if (!vv) return 0;
