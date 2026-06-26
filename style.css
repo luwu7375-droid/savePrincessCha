@@ -1256,7 +1256,7 @@ body {
 
   .mobile-only { display: inline-flex; }
 
-  .message-list { padding: 12px 10px calc(var(--chat-input-height) + 20px); }
+  .message-list { padding: 12px 10px calc(var(--chat-input-height) + 12px); }
   .layout.keyboard-open .message-list { padding: 12px 10px calc(var(--chat-input-height) + var(--dock-gap)); }
   .msg-stack { max-width: 82vw; }
   .message {
