@@ -111,27 +111,31 @@ function renderSettingsSubpage(type) {
 
 function _renderApiSubpage() {
   const mapping = getModelRoleMapping();
-  const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
 
-  // Build provider status section
-  let providerStatusHtml = '<div class="settings-section"><div class="settings-section-label">通道状态</div><div class="settings-card">';
+  // Build provider status section - all providers show edit button now
+  let providerStatusHtml = '<div class="settings-section"><div class="settings-section-label">通道管理</div><div class="settings-card">';
 
-  Object.entries(PROVIDER_GROUPS).forEach(([groupId, group]) => {
-    const isCustom = customProviders[groupId];
-    const statusText = isCustom ? '自定义配置' : '由环境变量配置';
-    const statusClass = isCustom ? '' : 'settings-row-value--muted';
-
+  if (Object.keys(PROVIDER_GROUPS).length === 0) {
     providerStatusHtml += `
       <div class="settings-card-row">
-        <div><strong>${group.name}</strong><small>${group.description}</small></div>
-        <span class="settings-row-value ${statusClass}">${statusText}</span>
-        ${isCustom ? '<button type="button" class="settings-row-action-btn settings-row-action-btn--sm" data-edit-provider="' + groupId + '">编辑</button>' : ''}
+        <div style="text-align:center;color:var(--text-muted);padding:20px 0;">
+          <p style="margin:0 0 8px;">暂无配置的通道</p>
+          <small>点击下方按钮添加第一个通道</small>
+        </div>
       </div>`;
-  });
+  } else {
+    Object.entries(PROVIDER_GROUPS).forEach(([groupId, group]) => {
+      providerStatusHtml += `
+        <div class="settings-card-row">
+          <div><strong>${group.name}</strong><small>${group.description || '自定义通道'}</small></div>
+          <button type="button" class="settings-row-action-btn settings-row-action-btn--sm" data-edit-provider="${groupId}">编辑</button>
+        </div>`;
+    });
+  }
 
   providerStatusHtml += `
     <div class="settings-card-row">
-      <button type="button" class="settings-row-action-btn" id="addCustomProviderBtn">+ 添加自定义通道</button>
+      <button type="button" class="settings-row-action-btn" id="addCustomProviderBtn">+ 添加通道</button>
     </div>
   </div></div>`;
 
@@ -170,7 +174,7 @@ function _renderApiSubpage() {
 
   rolesMappingHtml += '</div></div>';
 
-  // Build actions section
+  // Build actions section with test results area
   const actionsHtml = `
     <div class="settings-section">
       <div class="settings-card">
@@ -179,9 +183,12 @@ function _renderApiSubpage() {
         </div>
         <div class="settings-card-row">
           <button type="button" class="settings-row-action-btn" id="testModelRoleMappingBtn">测试当前配置</button>
-          <span class="settings-row-value" id="testModelRoleMappingStatus"></span>
         </div>
       </div>
+    </div>
+    <div class="settings-section" id="testResultsSection" style="display:none;">
+      <div class="settings-section-label">测试结果</div>
+      <div id="testResultsContainer"></div>
     </div>`;
 
   return providerStatusHtml + rolesMappingHtml + actionsHtml;
@@ -785,54 +792,111 @@ function _initSettingsApiSubpage(container) {
 
   // Handle test button
   const testBtn = container.querySelector('#testModelRoleMappingBtn');
-  const testStatus = container.querySelector('#testModelRoleMappingStatus');
-  if (testBtn && testStatus) {
+  const testResultsSection = container.querySelector('#testResultsSection');
+  const testResultsContainer = container.querySelector('#testResultsContainer');
+
+  if (testBtn && testResultsSection && testResultsContainer) {
     testBtn.addEventListener('click', async () => {
       testBtn.disabled = true;
-      testStatus.textContent = '测试中…';
+      testBtn.textContent = '测试中…';
+
+      // Show results section and clear previous results
+      testResultsSection.style.display = 'block';
+      testResultsContainer.innerHTML = '';
 
       const mapping = getModelRoleMapping();
-      const results = [];
       let allPassed = true;
 
       // Test each configured role by making a real API call
       for (const [roleId, role] of Object.entries(MODEL_ROLES)) {
         const config = mapping[roleId];
+
+        // Create result card
+        const card = document.createElement('div');
+        card.className = 'settings-card';
+        card.style.marginBottom = '8px';
+
+        let statusIcon = '⚠️';
+        let statusText = '未配置';
+        let statusColor = 'var(--text-muted)';
+        let detailText = '';
+
         if (!config || !config.providerGroup || !config.model) {
-          results.push(`${role.label}：⚠️ 未配置`);
-          continue;
-        }
+          detailText = '请先配置该角色的通道和模型';
+        } else {
+          statusIcon = '⏳';
+          statusText = '测试中…';
+          statusColor = 'var(--text-muted)';
 
-        try {
-          // Make a minimal test request
-          const testMessages = [{ role: "user", content: "test" }];
-          const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              messages: testMessages,
-              provider: config.providerGroup,
-              model: config.model,
-              stream: false,
-              max_tokens: 5
-            })
-          });
+          card.innerHTML = `
+            <div class="settings-card-row">
+              <div style="flex:1;">
+                <strong>${role.label}</strong>
+                <small style="display:block;margin-top:2px;">${PROVIDER_GROUPS[config.providerGroup]?.name || config.providerGroup} · ${config.model}</small>
+              </div>
+              <div style="text-align:right;">
+                <span style="font-size:20px;">${statusIcon}</span>
+                <small style="display:block;color:${statusColor};margin-top:2px;">${statusText}</small>
+              </div>
+            </div>`;
 
-          if (response.ok) {
-            results.push(`${role.label}：✅ 正常`);
-          } else {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            results.push(`${role.label}：❌ ${response.status}`);
+          testResultsContainer.appendChild(card);
+
+          try {
+            const testMessages = [{ role: "user", content: "test" }];
+            const response = await fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: testMessages,
+                provider: config.providerGroup,
+                model: config.model,
+                stream: false,
+                max_tokens: 5
+              })
+            });
+
+            if (response.ok) {
+              statusIcon = '✅';
+              statusText = '测试通过';
+              statusColor = '#4CAF50';
+              detailText = '连接正常，模型响应成功';
+            } else {
+              statusIcon = '❌';
+              statusText = `失败 (${response.status})`;
+              statusColor = '#e57373';
+              detailText = response.statusText || '请检查通道配置和 API Key';
+              allPassed = false;
+            }
+          } catch (error) {
+            statusIcon = '❌';
+            statusText = '网络错误';
+            statusColor = '#e57373';
+            detailText = error.message || '无法连接到服务器';
             allPassed = false;
           }
-        } catch (error) {
-          results.push(`${role.label}：❌ 网络错误`);
-          allPassed = false;
+        }
+
+        card.innerHTML = `
+          <div class="settings-card-row">
+            <div style="flex:1;">
+              <strong>${role.label}</strong>
+              <small style="display:block;margin-top:2px;color:var(--text-muted);">${config && config.providerGroup ? `${PROVIDER_GROUPS[config.providerGroup]?.name || config.providerGroup} · ${config.model}` : '未配置'}</small>
+              ${detailText ? `<small style="display:block;margin-top:4px;color:${statusColor};">${detailText}</small>` : ''}
+            </div>
+            <div style="text-align:right;">
+              <span style="font-size:20px;">${statusIcon}</span>
+              <small style="display:block;color:${statusColor};margin-top:2px;font-weight:500;">${statusText}</small>
+            </div>
+          </div>`;
+
+        if (!testResultsContainer.contains(card)) {
+          testResultsContainer.appendChild(card);
         }
       }
 
-      testStatus.textContent = results.join(' / ');
       testBtn.disabled = false;
+      testBtn.textContent = '测试当前配置';
 
       if (typeof showToast === 'function') {
         showToast(allPassed ? '所有配置测试通过' : '部分配置测试失败');

@@ -35,53 +35,8 @@ if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", 
 // ── Provider Groups & Model Role Mapping ──────────────────────────────────────
 
 // Provider groups configuration
-const PROVIDER_GROUPS = {
-  "55api-claude": {
-    name: "55api Claude",
-    description: "55api Claude 分组",
-    provider: "fiftyfive",
-    keyType: "claude",
-    models: [
-      "claude-3-5-sonnet-20241022",
-      "claude-3-5-sonnet-20240620",
-      "claude-3-opus-20240229"
-    ]
-  },
-  "55api-openai": {
-    name: "55api OpenAI",
-    description: "55api OpenAI 分组",
-    provider: "fiftyfive",
-    keyType: "gpt",
-    models: [
-      "gpt-4o",
-      "gpt-4o-mini",
-      "gpt-4-turbo"
-    ]
-  },
-  "55api-gemini": {
-    name: "55api Gemini",
-    description: "55api Gemini 分组",
-    provider: "fiftyfive",
-    keyType: "gemini",
-    models: [
-      "gemini-2.0-flash-exp",
-      "gemini-1.5-pro",
-      "gemini-1.5-flash"
-    ]
-  },
-  "fuka": {
-    name: "Fuka 中转站",
-    description: "Fuka 统一通道",
-    provider: "fuka",
-    keyType: "fuka",
-    models: [
-      "[浣溪沙]gpt-5.5①",
-      "[浣溪沙]gpt-5.5②",
-      "[鸢尾花]claude-sonnet-4-20250514",
-      "[百香果]gpt-4.5-turbo"
-    ]
-  }
-};
+// All providers now managed through UI - no hardcoded providers
+const PROVIDER_GROUPS = {};
 
 // Load custom providers from localStorage
 (function loadCustomProviders() {
