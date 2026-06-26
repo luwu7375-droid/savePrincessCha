@@ -873,6 +873,9 @@
       document.write('<script src="modules/auth.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/worldbook.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/settings-manager.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Phase 2 refactored modules
+      document.write('<script src="modules/conversation-manager.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/quote-reply.js?v=' + v + '" charset="utf-8"><\/script>');
       // debug-overlay: only load in dev builds or when ?debug is in URL
       if (window.location.search.indexOf('debug') !== -1 || (window.SAVE_PRINCESS_BUILD || '').indexOf('dev') !== -1) {
         document.write('<script src="modules/debug-overlay.js?v=' + v + '" charset="utf-8"><\/script>');
