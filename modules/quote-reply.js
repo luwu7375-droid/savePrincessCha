@@ -260,6 +260,9 @@ function showLegacyDataNotice() {
     scrollToQuotedMessage,
     getMessageQuotePreview,
     setLoading,
+    addAssistantBubbles,
+    insertBubblesAnimated,
+    renderWelcomeMessage,
   };
 
   // ── Legacy global aliases (for backward compatibility) ────────────────────
@@ -269,6 +272,9 @@ function showLegacyDataNotice() {
   window.setReplyDraft = setReplyDraft;
   window.clearReplyDraft = clearReplyDraft;
   window.setLoading = setLoading;
+  window.addAssistantBubbles = addAssistantBubbles;
+  window.insertBubblesAnimated = insertBubblesAnimated;
+  window.renderWelcomeMessage = renderWelcomeMessage;
   window.renderReplyPreview = renderReplyPreview;
 
 })();
