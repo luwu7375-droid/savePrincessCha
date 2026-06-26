@@ -163,7 +163,7 @@ function _renderApiSubpage() {
         </select>
         <select class="settings-select" data-role="${roleId}" data-type="model" ${!currentMapping?.providerGroup ? 'disabled' : ''}>
           <option value="">选择模型</option>
-          ${currentMapping?.providerGroup ?
+          ${currentMapping?.providerGroup && PROVIDER_GROUPS[currentMapping.providerGroup]?.models ?
             PROVIDER_GROUPS[currentMapping.providerGroup].models.map(m =>
               `<option value="${m}"${currentMapping?.model === m ? ' selected' : ''}>${m}</option>`
             ).join('') :
