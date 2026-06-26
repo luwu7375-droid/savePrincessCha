@@ -1041,34 +1041,6 @@ function initV2Composer() {
   });
 }
 
-initV2Shell();
-initV2Composer();
-initInputKeyboardHints();
-initKeyboardViewportState();
-initStableShellHeight();
-initVisualVh();
-
-// Initialize voice module
-if (window.SPVoice) {
-  window.SPVoice.initVoice();
-}
-
-// Voice input button handler (MVP placeholder)
-if (voiceInputBtn) {
-  voiceInputBtn.addEventListener("click", () => {
-    console.log("Voice input clicked - recording UI not yet implemented");
-    alert("语音输入功能\n\n录音界面开发中...");
-  });
-}
-
-// Start loading emoji catalog in the background — never blocks UI
-window.SPEmoji.loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
-
-// Shortcode emoji suggestion bar (moved to modules/emoji-suggestions.js)
-window.SPEmojiSuggestions.initEmojiSuggestionBar();
-
-
-
   // ── Public API ────────────────────────────────────────────────────────────
   window.SavePrincessSettings = {
     openSettingsSubpage,

@@ -302,7 +302,229 @@ if (typeof themeMediaQuery.addEventListener === "function") {
   themeMediaQuery.addListener(onSystemThemeChange);
 }
 
-// ── Conversations (moved to modules/conversation-manager.js) ─────────────────
+// ── Conversations (Supabase) ──────────────────────────────────────────────────
+
+// In-memory cache of the conversation list for the current session
+let conversationsCache = [];
+
+function getActiveConversationId() {
+  return localStorage.getItem("active_conversation_id");
+}
+
+function setActiveConversationId(id) {
+  localStorage.setItem("active_conversation_id", id);
+}
+
+async function loadConversationsFromDB() {
+  const { data, error } = await supabaseClient
+    .from("conversations")
+    .select("id, title, pinned, created_at, updated_at")
+    .order("pinned", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) { console.error("加载会话列表失败：", error); return []; }
+  return data || [];
+}
+
+async function initConversations() {
+  conversationsCache = await loadConversationsFromDB();
+
+  // Warn if old localStorage conversations exist
+  const oldConvs = (() => { try { return JSON.parse(localStorage.getItem("conversations") || "[]"); } catch { return []; } })();
+  if (oldConvs.length > 0 && conversationsCache.length === 0) {
+    showLegacyDataNotice();
+  }
+
+  // Ensure active conversation is valid
+  let activeId = getActiveConversationId();
+  if (!activeId || !conversationsCache.find(c => c.id === activeId)) {
+    if (conversationsCache.length > 0) {
+      activeId = conversationsCache[0].id;
+    } else {
+      // No conversations at all — create one
+      activeId = await createConversation("新会话");
+    }
+    setActiveConversationId(activeId);
+  }
+
+  renderConvList();
+  return activeId;
+}
+
+async function createConversation(title) {
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  const { data, error } = await supabaseClient
+    .from("conversations")
+    .insert({ title, user_id: user.id })
+    .select("id, title, pinned, created_at")
+    .single();
+  if (error) { console.error("创建会话失败：", error); return null; }
+  conversationsCache.unshift(data);
+  return data.id;
+}
+
+async function updateConvTitle(id, firstUserMessage) {
+  const conv = conversationsCache.find(c => c.id === id);
+  if (!conv || conv.title !== "新会话" || !firstUserMessage) return;
+  const title = firstUserMessage.slice(0, 20);
+  conv.title = title;
+  renderConvList();
+  await supabaseClient.from("conversations").update({ title }).eq("id", id);
+}
+
+function renderConvList() {
+  const activeId = getActiveConversationId();
+  convList.innerHTML = "";
+  for (const conv of conversationsCache) {
+    const li = document.createElement("li");
+    if (conv.pinned) li.classList.add("pinned");
+    if (conv.id === activeId) li.classList.add("active");
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "conv-title-row";
+
+    const title = document.createElement("span");
+    title.className = "conv-title";
+    title.textContent = conv.title || "新会话";
+    title.addEventListener("click", () => switchConversation(conv.id));
+
+    const timeEl = document.createElement("span");
+    timeEl.className = "conv-time";
+    timeEl.textContent = formatConvTime(conv.updated_at || conv.created_at);
+
+    titleRow.appendChild(title);
+    titleRow.appendChild(timeEl);
+
+    const menuBtn = document.createElement("button");
+    menuBtn.className = "conv-menu-btn";
+    menuBtn.type = "button";
+    menuBtn.textContent = "···";
+    menuBtn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    menuBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openConvMenu(conv.id, menuBtn);
+    });
+
+    li.appendChild(titleRow);
+    li.appendChild(menuBtn);
+    li.addEventListener("click", () => switchConversation(conv.id));
+    convList.appendChild(li);
+  }
+}
+
+let activeMenu = null;
+
+function closeActiveMenu() {
+  if (activeMenu) { activeMenu.remove(); activeMenu = null; }
+}
+
+function openConvMenu(id, anchor) {
+  closeActiveMenu();
+  const conv = conversationsCache.find(c => c.id === id);
+  const menu = document.createElement("div");
+  menu.className = "conv-menu";
+
+  const actions = [
+    { label: "重命名", fn: () => renameConv(id) },
+    { label: conv?.pinned ? "取消置顶" : "置顶", fn: () => pinConv(id) },
+    { label: "抹掉", fn: () => deleteConv(id), danger: true },
+  ];
+
+  for (const a of actions) {
+    const btn = document.createElement("button");
+    btn.textContent = a.label;
+    if (a.danger) btn.classList.add("danger");
+    btn.addEventListener("click", (e) => { e.stopPropagation(); closeActiveMenu(); a.fn(); });
+    menu.appendChild(btn);
+  }
+
+  document.body.appendChild(menu);
+  activeMenu = menu;
+
+  const rect = anchor.getBoundingClientRect();
+  const menuW = menu.offsetWidth || 120;
+  const menuH = menu.offsetHeight || 110;
+  const margin = 6;
+  let top = rect.bottom + 4;
+  let left = rect.left - menuW + anchor.offsetWidth;
+  // Clamp to viewport
+  left = Math.max(margin, Math.min(left, window.innerWidth - menuW - margin));
+  top  = Math.max(margin, Math.min(top,  window.innerHeight - menuH - margin));
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+
+  setTimeout(() => document.addEventListener("click", closeActiveMenu, { once: true }), 0);
+}
+
+function renameConv(id) {
+  const conv = conversationsCache.find(c => c.id === id);
+  if (!conv) return;
+  showDialog({
+    title: "重命名会话",
+    input: conv.title || "新会话",
+    confirmLabel: "确定",
+    onConfirm: async (name) => {
+      const title = name || "新会话";
+      conv.title = title;
+      renderConvList();
+      await supabaseClient.from("conversations").update({ title }).eq("id", id);
+    }
+  });
+}
+
+async function pinConv(id) {
+  const conv = conversationsCache.find(c => c.id === id);
+  if (!conv) return;
+  conv.pinned = !conv.pinned;
+  conversationsCache.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  renderConvList();
+  await supabaseClient.from("conversations").update({ pinned: conv.pinned }).eq("id", id);
+}
+
+async function deleteConv(id) {
+  showDialog({
+    title: "抹掉这段？",
+    body: "这段记录会从这里消失。",
+    confirmLabel: "抹掉",
+    confirmClass: "btn-danger",
+    onConfirm: async () => {
+      conversationsCache = conversationsCache.filter(c => c.id !== id);
+      await supabaseClient.from("messages").delete().eq("conversation_id", id);
+      await supabaseClient.from("conversations").delete().eq("id", id);
+
+      if (getActiveConversationId() === id) {
+        if (conversationsCache.length) {
+          setActiveConversationId(conversationsCache[0].id);
+          await reloadHistory();
+        } else {
+          const newId = await createConversation("新会话");
+          setActiveConversationId(newId);
+          chatMessages.length = 0;
+          renderWelcomeMessage();
+        }
+      }
+      renderConvList();
+    }
+  });
+}
+
+async function switchConversation(id) {
+  if (window.matchMedia("(max-width: 820px)").matches) closeMobileSidebar();
+  // Cancel any in-progress message edit to avoid carrying state to another conversation
+
+  // Stop TTS playback when switching conversations
+  if (window.SPVoice) window.SPVoice.stopSpeaking();
+  if (composerEditMode === "edit") exitEditMessageMode({ restoreDraft: false });
+  setActiveConversationId(id);
+  _conversationStartedAt = null; // reset for new conversation context
+  chatRenderState.renderedConversationId = null; // force full re-render
+  renderConvList();
+  await reloadHistory();
+}
+
 // ── Dialog helper ─────────────────────────────────────────────────────────────
 
 function showDialog({ title, body, input, inputType = "text", confirmLabel, confirmClass, onConfirm = () => {} }) {
@@ -597,8 +819,436 @@ function maybeAddTimeSeparator(createdAt) {
   }
 }
 
-// ── Message Renderer (moved to modules/message-renderer.js) ──────────────────
-// ── Quote / Reply helpers (moved to modules/quote-reply.js) ─────────────────
+function addMessage(text, role, createdAt = new Date().toISOString(), options = {}, msgId = null) {
+  if (!options.skipTimeSeparator) maybeAddTimeSeparator(createdAt);
+
+  const speakerClass = role === "assistant" ? "cha-message" : role === "user" ? "user-message" : "system-message";
+  const groupId = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  // ── Detect parts ─────────────────────────────────────────────────────────
+  const isArray = Array.isArray(text);
+  const imageParts = isArray ? text.filter(p => p.type === "image_url" && p.image_url?.url) : [];
+  const textParts  = isArray ? text.filter(p => p.type === "text" && p.text) : [];
+  const hasImages  = imageParts.length > 0;
+  const hasText    = textParts.length > 0 || (!isArray && text);
+
+  // For user messages: read_by_cha_at comes from options (history load) or null (new send).
+  // New sends start as "未读"; history loads use stored value.
+  const readByChaAt = options.readByChaAt ?? null;
+
+  // Helper: build a single msg-row and append to messageList
+  function makeRow(id) {
+    const row = document.createElement("div");
+    row.className = `msg-row ${role}`;
+    if (id) row.dataset.msgId = id;
+    row.dataset.groupId = groupId;
+    if (role === "assistant") {
+      const avatar = document.createElement("div");
+      avatar.className = "avatar";
+      avatar.title = "Cha";
+      row.appendChild(avatar);
+    }
+    return row;
+  }
+
+  // Helper: build read-receipt element for user messages only
+  function makeReceipt(isChaRead) {
+    const el = document.createElement("div");
+    el.className = "read-receipt";
+    el.textContent = isChaRead ? "已读" : "未读";
+    el.dataset.receiptState = isChaRead ? "read" : "unread";
+    return el;
+  }
+
+  // ── Case 1: pure text (or system) ─────────────────────────────────────────
+  if (!hasImages) {
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-text`;
+    const cacheIdStr = msgId != null ? String(msgId) : (options.tempId || undefined);
+    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""), { messageId: cacheIdStr });
+    if (options.replyTo) {
+      el.prepend(makeQuoteBlock(options.replyTo));
+    }
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+    if (role === "user") stack.appendChild(makeReceipt(!!readByChaAt));
+    if (role === "assistant" && window.SPVoice) {
+      const speakerBtn = window.SPVoice.createSpeakerButton(el, msgId);
+      stack.appendChild(speakerBtn);
+      window.SPVoice.attachVoicePlayback(el, speakerBtn, msgId);
+    }
+    const row = makeRow(msgId);
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    messageList.scrollTop = messageList.scrollHeight;
+    return el;
+  }
+
+  // ── Case 2: has images (with or without text) ──────────────────────────��──
+  let firstEl = null;
+
+  // 2a. Text bubble (no receipt — receipt goes on last image row)
+  if (hasText) {
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-text`;
+    const cacheIdStr = msgId != null ? String(msgId) : (options.tempId || undefined);
+    setMessageContent(el, isArray ? textParts.map(p => p.text).join("") : (text || ""), { messageId: cacheIdStr });
+    if (options.replyTo) {
+      el.prepend(makeQuoteBlock(options.replyTo));
+    }
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+    if (role === "assistant" && window.SPVoice) {
+      const speakerBtn = window.SPVoice.createSpeakerButton(el, msgId);
+      stack.appendChild(speakerBtn);
+      window.SPVoice.attachVoicePlayback(el, speakerBtn, msgId);
+    }
+    const row = makeRow(null);
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    if (!firstEl) firstEl = el;
+  }
+
+  // 2b. Image rows
+  imageParts.forEach((part, idx) => {
+    const isLast = idx === imageParts.length - 1;
+
+    const img = document.createElement("img");
+    img.className = "msg-image";
+    img.src = part.image_url.url;
+    img.alt = "";
+    img.draggable = false;
+    img.setAttribute("draggable", "false");
+    img.setAttribute("loading", "lazy");
+    img.style.webkitTouchCallout = "none";
+    img.style.webkitUserSelect = "none";
+    img.style.userSelect = "none";
+
+    // 禁用图片的原生右键菜单和拖拽
+    img.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+    });
+    img.addEventListener("dragstart", (event) => {
+      event.preventDefault();
+    });
+
+    const el = document.createElement("div");
+    el.className = `message ${role} ${speakerClass} message-image`;
+    el.appendChild(img);
+
+    // If pure images (no text) and first image, add quote block
+    if (options.replyTo && !hasText && idx === 0) {
+      el.prepend(makeQuoteBlock(options.replyTo));
+    }
+
+    const stack = document.createElement("div");
+    stack.className = "msg-stack";
+    stack.appendChild(el);
+
+    if (role === "user" && isLast) stack.appendChild(makeReceipt(!!readByChaAt));
+
+    const row = makeRow(isLast ? msgId : null);
+    if (hasText || idx > 0) row.classList.add("msg-group-row");
+    row.appendChild(stack);
+    messageList.appendChild(row);
+    if (!firstEl) firstEl = el;
+  });
+
+  messageList.scrollTop = messageList.scrollHeight;
+  return firstEl;
+}
+
+// ── Multi-bubble helpers ───────────────────────────────────────────────────────
+
+/** 按 ||| 切分原始回复，最多 3 条，超出的并到最后一条 */
+function splitBubbles(rawText) {
+  // ── Primary split: explicit ||| separator ────────────────────────────────
+  if (rawText.includes("|||")) {
+    const parts = rawText.split("|||").map(s => s.trim()).filter(s => s.length > 0);
+    if (parts.length <= 1) return [rawText.trim()];
+    if (parts.length <= 3) return parts;
+    // more than 3: merge tail into third
+    return [parts[0], parts[1], parts.slice(2).join(" ")];
+  }
+
+  // ── Fallback split: Chinese sentence-ending punctuation ──────────────────
+  const text = rawText.trim();
+  // Short replies stay as one bubble
+  if (text.length < 45) return [text];
+
+  // Split on Chinese/common sentence-ending punctuation or newlines.
+  // Keep the delimiter attached to the preceding segment.
+  const segments = text.split(/(?<=[。！？；\n])/).map(s => s.trim()).filter(s => s.length > 0);
+  if (segments.length <= 1) return [text];
+
+  // Merge short tails (< 8 chars) into the preceding segment
+  const merged = [];
+  for (const seg of segments) {
+    if (merged.length > 0 && seg.length < 8) {
+      merged[merged.length - 1] += seg;
+    } else {
+      merged.push(seg);
+    }
+  }
+
+  // Cap at 3 bubbles: merge anything beyond index 1 into a second bubble
+  if (merged.length === 1) return merged;
+  if (merged.length === 2) return merged;
+  // 3+: first bubble is merged[0], second is everything else joined
+  return [merged[0], merged.slice(1).join("")];
+}
+
+/**
+ * 渲染 assistant 消息，自动处理 ||| 切分。
+ * 同步插入（历史渲染用）：insertBubbleSync
+ * 逐条延迟插入（新回复用）：insertBubblesAnimated（返回 Promise）
+ */
+
+// ── Quote / Reply helpers ────────────────────────────────────────────────────
+
+function makeQuoteBlock(replyTo) {
+  const block = document.createElement("div");
+  block.className = "msg-quote-block";
+  if (replyTo.id) block.dataset.replyTargetId = replyTo.id;
+  const bar = document.createElement("div");
+  bar.className = "msg-quote-bar";
+  const inner = document.createElement("div");
+  inner.className = "msg-quote-inner";
+  const author = document.createElement("span");
+  author.className = "msg-quote-author";
+  author.textContent = replyTo.role === "assistant" ? "Cha" : "你";
+  const text = document.createElement("span");
+  text.className = "msg-quote-text";
+  text.textContent = replyTo.preview || "";
+  inner.appendChild(author);
+  inner.appendChild(text);
+  block.appendChild(bar);
+  block.appendChild(inner);
+  block.addEventListener("click", () => scrollToQuotedMessage(replyTo.id));
+  return block;
+}
+
+function scrollToQuotedMessage(id) {
+  if (!id) return;
+  const target = messageList.querySelector(`.msg-row[data-msg-id="${id}"]`);
+  if (!target) { setChatStatus("原消息不可用"); setTimeout(() => setChatStatus(""), 2000); return; }
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  target.classList.add("msg-highlight");
+  setTimeout(() => target.classList.remove("msg-highlight"), 1800);
+}
+
+function getMessageQuotePreview(row) {
+  const textEl = row.querySelector(".message-text");
+  const imgEl = row.querySelector(".message-image");
+  const audioEl = row.querySelector("audio");
+
+  let preview = "";
+
+  // 图片消息
+  if (imgEl) {
+    preview = "[图片]";
+    if (textEl?.textContent) {
+      preview += " " + textEl.textContent.trim();
+    }
+  }
+  // 语音消息
+  else if (audioEl) {
+    const duration = audioEl.duration;
+    if (duration && isFinite(duration)) {
+      preview = `[语音 ${Math.round(duration)}"]`;
+    } else {
+      preview = "[语音]";
+    }
+  }
+  // 文本消息
+  else if (textEl) {
+    preview = textEl.textContent || "";
+  }
+
+  return preview.replace(/\s+/g, " ").trim().slice(0, 100);
+}
+
+function setReplyDraft(id, preview, role) {
+  // Block replies while in edit mode — the two states are mutually exclusive
+  if (composerEditMode === "edit") return;
+  _replyToId      = id;
+  _replyToPreview = preview;
+  _replyToRole    = role;
+  renderReplyPreview();
+}
+
+function clearReplyDraft() {
+  _replyToId = _replyToPreview = _replyToRole = null;
+  document.getElementById("replyPreviewBar")?.remove();
+}
+
+function renderReplyPreview() {
+  if (!_replyToId) return;
+  let bar = document.getElementById("replyPreviewBar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "replyPreviewBar";
+    bar.className = "reply-preview-bar";
+    const form = document.getElementById("chatForm");
+    if (form?.parentNode) form.parentNode.insertBefore(bar, form);
+  }
+  bar.innerHTML = "";
+  const line = document.createElement("div");
+  line.className = "reply-preview-line";
+  const content = document.createElement("div");
+  content.className = "reply-preview-content";
+  const authorEl = document.createElement("span");
+  authorEl.className = "reply-preview-author";
+  authorEl.textContent = _replyToRole === "assistant" ? "Cha" : "你";
+  const textEl = document.createElement("span");
+  textEl.className = "reply-preview-text";
+  textEl.textContent = _replyToPreview || "";
+  content.appendChild(authorEl);
+  content.appendChild(textEl);
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "reply-preview-close";
+  closeBtn.setAttribute("aria-label", "取消引用");
+  closeBtn.textContent = "✕";
+  closeBtn.addEventListener("click", clearReplyDraft);
+  bar.appendChild(line);
+  bar.appendChild(content);
+  bar.appendChild(closeBtn);
+}
+
+function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo) {
+  const el = document.createElement("div");
+  el.className = "message assistant cha-message message-text";
+  setMessageContent(el, text, { messageId: msgId != null ? String(msgId) : undefined });
+  if (replyTo && !isSibling) {
+    el.prepend(makeQuoteBlock(replyTo));
+  }
+
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+  stack.appendChild(el);
+
+  // Add speaker button for TTS — all text bubbles including siblings
+  if (window.SPVoice) {
+    const bubbleMsgId = isSibling ? null : msgId;
+    const speakerBtn = window.SPVoice.createSpeakerButton(el, bubbleMsgId);
+    stack.appendChild(speakerBtn);
+    window.SPVoice.attachVoicePlayback(el, speakerBtn, bubbleMsgId);
+  }
+  // No read-receipt on assistant messages — user-read state drives the unread badge only
+  const row = document.createElement("div");
+  row.className = "msg-row assistant";
+  if (msgId && !isSibling) {
+    row.dataset.msgId = msgId;
+    row.dataset.unreadCha = "1"; // cleared by markReadByUser() when user sees it
+  }
+  if (isSibling) row.dataset.bubbleSibling = isSibling; // sibling 存主 msgId
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.title = "Cha";
+  row.appendChild(avatar);
+  row.appendChild(stack);
+  maybeAddTimeSeparator(createdAt);
+  messageList.appendChild(row);
+  messageList.scrollTop = messageList.scrollHeight;
+  return row;
+}
+
+function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false, replyTo = null) {
+  const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
+  if (bubbles.length === 0) return;
+  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo);
+  if (isAlreadyRead && firstRow) delete firstRow.dataset.unreadCha;
+  for (let i = 1; i < bubbles.length; i++) {
+    insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
+  }
+}
+
+// allSiblings=true 时：bubbles 里每一条都作为兄弟气泡插入（第一条已由调用方处理）
+function insertBubblesAnimated(bubbles, createdAt, msgId, allSiblings = false, replyTo = null) {
+  return new Promise(resolve => {
+    if (!allSiblings) {
+      insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo);
+      if (bubbles.length === 1) { resolve(); return; }
+    } else {
+      if (bubbles.length === 0) { resolve(); return; }
+    }
+    let i = allSiblings ? 0 : 1;
+    function next() {
+      if (i >= bubbles.length) { resolve(); return; }
+      const delay = 600 + Math.floor(Math.random() * 600);
+      setTimeout(() => {
+        showTypingIndicator();
+        setTimeout(() => {
+          removeTypingIndicator();
+          insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
+          i++;
+          next();
+        }, 400);
+      }, delay);
+    }
+    next();
+  });
+}
+
+function renderWelcomeMessage() {
+  messageList.innerHTML = "";
+  lastMessageTime = null;
+  addMessage(welcomeMessage, "assistant", new Date().toISOString(), { skipTimeSeparator: true });
+}
+
+function setLoading(isLoading) {
+  messageInput.disabled = isLoading;
+}
+
+function stripThinking(text) {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/<think>[\s\S]*$/, "")
+    .replace(/<visible_thought>[\s\S]*?<\/visible_thought>/g, "")
+    .replace(/<visible_thought>[\s\S]*$/, "")
+    .replace(/<\/?reply>/g, "")
+    .replace(/\b[A-Z][A-Z_]{2,}_END\b/g, "")
+    .trim();
+}
+
+function parseVisibleThought(raw) {
+  const thoughtMatch = raw.match(/<visible_thought>([\s\S]*?)<\/visible_thought>/);
+  if (!thoughtMatch) return { thought: null, reply: stripThinking(raw) };
+  const thought = thoughtMatch[1].trim().slice(0, 60);
+  const replyMatch = raw.match(/<reply>([\s\S]*?)<\/reply>/s);
+  const reply = replyMatch
+    ? replyMatch[1].trim()
+    : stripThinking(raw.replace(/<visible_thought>[\s\S]*?<\/visible_thought>/, "").trim());
+  return { thought, reply: reply || stripThinking(raw) };
+}
+
+function base64DecodeUtf8(base64) {
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function readDelta(chunk) {
+  return chunk.choices?.[0]?.delta?.content || "";
+}
+
+function showLegacyDataNotice() {
+  const notice = document.createElement("div");
+  notice.id = "legacyNotice";
+  notice.style.cssText = "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:13px;color:var(--text-muted);z-index:500;max-width:90vw;text-align:center";
+  notice.textContent = "检测到旧本地会话，当前版本暂不自动迁移。";
+  const close = document.createElement("button");
+  close.textContent = "✕";
+  close.style.cssText = "background:none;border:none;color:var(--text-muted);cursor:pointer;margin-left:10px;font-size:14px;";
+  close.addEventListener("click", () => notice.remove());
+  notice.appendChild(close);
+  document.body.appendChild(notice);
+  setTimeout(() => notice.remove(), 8000);
+}
+
 // ── DB ────────────────────────────────────────────────────────────────────────
 
 /**
@@ -910,7 +1560,379 @@ async function loadOlderHistory() {
   refreshUserReceipts();
 }
 
-// ── Chat API (moved to modules/chat-api.js) ─────────────────────────────────
+// ── Chat API ──────────────────────────────────────────────────────────────────
+
+/** Extract plain text from a message content value that may be a string or
+ *  a vision content array [{type:"text",...},{type:"image_url",...}].
+ *  Never throws; returns "" for unknown shapes.
+ *  Does NOT mutate the original content — image_url parts are preserved in the
+ *  messages array that gets sent to the backend. */
+function extractTextFromMessageContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(part => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object" && part.type === "text") return part.text || "";
+      return "";
+    }).join("\n");
+  }
+  return "";
+}
+
+// Track conversation start time for timeContext
+let _conversationStartedAt = null;
+
+async function callChatAPI(messages, replyMode = "auto") {
+  const endpoint = getConfigValue("CHAT_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL");
+  const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME"); // optional — backend routes by modelTier
+  if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
+
+  // Capture request start time and userMessageId for the post-stream promotion poller
+  _currentRequestStartTime = new Date().toISOString();
+  _currentRequestUserMessageId = (() => {
+    const lastUser = [...messages].reverse().find(m => m.role === "user" && m.id != null && m.id !== "null");
+    const id = lastUser?.id;
+    return id != null && id !== "null" ? Number(id) : null;
+  })();
+
+  // Build timeContext from browser
+  const now = new Date();
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localParts = getZonedParts(now);
+  const localHour = (() => { const h = parseInt(localParts.hour, 10); return isNaN(h) ? null : h; })();
+  const localMinute = (() => { const m = parseInt(localParts.minute, 10); return isNaN(m) ? 0 : m; })();
+  if (!_conversationStartedAt) _conversationStartedAt = now.toISOString();
+
+  // ── Topic routing ─────────────────────────────────────────────────────────────
+  // project_work requires explicit opt-in every turn (or active lock + continuation).
+  // "救公主" does NOT trigger project_work — it's G's home/body/relationship container.
+  // project_silenced_ttl: user explicitly banned project talk; lasts N turns.
+
+  // ── Dev-verb gate: the 6 explicit workbench phrases ───────────────────────
+  // Only these 6 phrases trigger project_work. "救公主" does not trigger even when
+  // combined with these verbs — workbench mode requires explicit intent.
+  const DEV_VERBS = /上工|继续修|看\s*debug|帮我想代码问题|进入工作台|现在说项目/i;
+  // Continuation words that inherit project_work only when lock is active
+  const CONTINUATION = /^(继续|下一步|接着|好的|嗯嗯|那就|来吧|那继续|照这个|这个bug|刚才那个|好了|搞定了|ok|好)[\s，。？！]*$/i;
+
+  // ── Non-project route patterns ─────────────────────────────────────────────
+  const ROUTE_AI_NOSTALGIA = /你和4o|4o是什么关系|你们是什么关系|你知道4o吗/i;
+  const ROUTE_CARE_LOW = /头痛|头很痛|头疼|不舒服|不想动|好累|太累|累了|难受|浑身|身体/i;
+  const ROUTE_HISTORICAL = /前世|你当过什么|你做过什么|历史角色|历史身份|旧版本的你/i;
+  const ROUTE_INTIMACY = /我想你|好想你|就想陪|陪着我|不想工作|告解/i;
+  const ROUTE_META_COMPLAINT = /为什么你|你怎么|你好笨|你笨|真笨|读空气|不会读|笨笨|怎么这样|你不懂|你不明白|你搞不清|有没有搞错/i;
+
+  // ── Explicit project silence ───────────────────────────────────────────────
+  const PROJECT_SILENCE_TRIGGER = /不许(再说|说)项目|别说项目|项目闭嘴|不聊代码|读空气|不许提项目|别提项目/i;
+  const PROJECT_RESUME_TRIGGER = /继续修|继续项目|继续代码|接着修|重新修|好.*继续修/i;
+
+  // ── Load persisted state ───────────────────────────────────────────────────
+  let projectLockTurns = parseInt(localStorage.getItem("projectLockTurns") || "0", 10);
+  if (isNaN(projectLockTurns) || projectLockTurns < 0) projectLockTurns = 0;
+  let projectSilencedTtl = parseInt(localStorage.getItem("projectSilencedTtl") || "0", 10);
+  if (isNaN(projectSilencedTtl) || projectSilencedTtl < 0) projectSilencedTtl = 0;
+
+  const latestUserMsg = extractTextFromMessageContent(messages.filter(m => m.role === "user").slice(-1)[0]?.content).trim();
+
+  let primaryRoute = "casual";
+  let secondaryRoute = null;
+  let projectTriggerMatched = false;
+  let projectTriggerReason = null;
+
+  // ── Step 1: check explicit silence ────────────────────────────────────────
+  if (PROJECT_SILENCE_TRIGGER.test(latestUserMsg)) {
+    projectLockTurns = 0;
+    projectSilencedTtl = 5;
+    localStorage.setItem("projectLockTurns", "0");
+    localStorage.setItem("projectSilencedTtl", "5");
+  }
+
+  // ── Step 2: check explicit resume (overrides silence) ─────────────────────
+  const isExplicitResume = PROJECT_RESUME_TRIGGER.test(latestUserMsg);
+  if (isExplicitResume) {
+    projectSilencedTtl = 0;
+    localStorage.setItem("projectSilencedTtl", "0");
+  }
+
+  // ── Step 3: hard-break routes (clear project lock) ─────────────────────────
+  const HARD_BREAK_ROUTE = ROUTE_AI_NOSTALGIA.test(latestUserMsg) ||
+    ROUTE_HISTORICAL.test(latestUserMsg) ||
+    ROUTE_CARE_LOW.test(latestUserMsg) ||
+    ROUTE_INTIMACY.test(latestUserMsg) ||
+    ROUTE_META_COMPLAINT.test(latestUserMsg);
+  if (HARD_BREAK_ROUTE) {
+    projectLockTurns = 0;
+    localStorage.setItem("projectLockTurns", "0");
+  }
+
+  // ── Step 4: classify route ─────────────────────────────────────────────────
+  if (ROUTE_AI_NOSTALGIA.test(latestUserMsg)) {
+    primaryRoute = "ai_nostalgia";
+
+  } else if (ROUTE_HISTORICAL.test(latestUserMsg)) {
+    primaryRoute = "historical_roleplay";
+
+  } else if (ROUTE_META_COMPLAINT.test(latestUserMsg)) {
+    primaryRoute = "meta_complaint";
+    if (ROUTE_INTIMACY.test(latestUserMsg)) secondaryRoute = "intimacy";
+
+  } else {
+    // ── Project work gate: explicit workbench only ──────────────────────────
+    // Only the 6 designated DEV_VERB phrases trigger project_work.
+    // "救公主" does NOT trigger — it's G's home/body/relationship container.
+    const hasDevVerb = DEV_VERBS.test(latestUserMsg);
+    const isContinuation = CONTINUATION.test(latestUserMsg) || latestUserMsg.length <= 6;
+    const lockActive = projectLockTurns > 0 && !HARD_BREAK_ROUTE;
+
+    const projectGatePass = !PROJECT_SILENCE_TRIGGER.test(latestUserMsg) &&
+      (projectSilencedTtl === 0 || isExplicitResume) &&
+      (isExplicitResume || hasDevVerb || (lockActive && isContinuation));
+
+    if (projectGatePass) {
+      primaryRoute = "project_work";
+      if (hasDevVerb) {
+        projectTriggerMatched = true;
+        projectTriggerReason = "explicit_workbench";
+        projectLockTurns = 2;
+      } else if (lockActive && isContinuation) {
+        projectTriggerMatched = true;
+        projectTriggerReason = "continuation+lock";
+        projectLockTurns = Math.max(0, projectLockTurns - 1);
+      }
+      localStorage.setItem("projectLockTurns", String(projectLockTurns));
+      // Simultaneous emotional signal
+      if (ROUTE_CARE_LOW.test(latestUserMsg)) secondaryRoute = "care_low_energy";
+      else if (ROUTE_INTIMACY.test(latestUserMsg)) secondaryRoute = "intimacy";
+    } else {
+      // Not project — decay lock
+      if (projectLockTurns > 0) {
+        projectLockTurns = Math.max(0, projectLockTurns - 1);
+        localStorage.setItem("projectLockTurns", String(projectLockTurns));
+      }
+      if (ROUTE_CARE_LOW.test(latestUserMsg)) primaryRoute = "care_low_energy";
+      else if (ROUTE_INTIMACY.test(latestUserMsg)) primaryRoute = "intimacy";
+      else primaryRoute = "casual";
+    }
+  }
+
+  // Decay silence TTL (after route decision, so this turn's silence still applies)
+  if (projectSilencedTtl > 0 && !PROJECT_SILENCE_TRIGGER.test(latestUserMsg)) {
+    projectSilencedTtl = Math.max(0, projectSilencedTtl - 1);
+    localStorage.setItem("projectSilencedTtl", String(projectSilencedTtl));
+  }
+
+  // Detect topic loop: last 3 user messages vs earlier 4, require 20-char prefix overlap
+  // Using longer prefix (20 chars) and stricter threshold to avoid false positives
+  const userMsgs = messages.filter(m => m.role === "user");
+  let loopDetected = false;
+  let loopReason = null;
+  let recentTopicHint = null;
+  if (userMsgs.length >= 5) {
+    const recent = userMsgs.slice(-2).map(m => extractTextFromMessageContent(m.content).trim());
+    const older = userMsgs.slice(-6, -2).map(m => extractTextFromMessageContent(m.content).trim());
+    for (const r of recent) {
+      for (const o of older) {
+        // Require both messages are substantive (>= 15 chars) and share a 20-char prefix
+        const minLen = 15;
+        const prefixLen = 20;
+        if (r.length >= minLen && o.length >= minLen) {
+          const rPrefix = r.slice(0, prefixLen);
+          const oPrefix = o.slice(0, prefixLen);
+          if (rPrefix === oPrefix) {
+            loopDetected = true;
+            loopReason = "repeated message prefix detected";
+            recentTopicHint = r.slice(0, 30);
+            break;
+          }
+        }
+      }
+      if (loopDetected) break;
+    }
+  }
+
+  const msgCount = messages.length;
+  // longChat: total messages > 30 (~15 user turns), avoids false positive on short chats
+  const longChat = msgCount > 30;
+
+  const timeContext = {
+    timezone,
+    local_iso: now.toISOString(),
+    local_hour: localHour,
+    local_minute: localMinute,
+    local_date: `${localParts.year}-${localParts.month}-${localParts.day}`,
+    conversation_started_at: _conversationStartedAt,
+    message_count: msgCount,
+  };
+
+  // previous_recent_topic_hint: last turn's primary route, for topic switch detection
+  const previousTopicRoute = localStorage.getItem("previousTopicRoute") || null;
+  const topicSwitchDetected = previousTopicRoute !== null && previousTopicRoute !== primaryRoute &&
+    previousTopicRoute === "project_work";
+  localStorage.setItem("previousTopicRoute", primaryRoute);
+
+  // Approximate route_scores for debug transparency (not used for routing logic)
+  const routeScores = {
+    project_work: (DEV_VERBS.test(latestUserMsg) ? 3 : 0) +
+      (projectLockTurns > 0 ? 1 : 0),
+    ai_nostalgia: ROUTE_AI_NOSTALGIA.test(latestUserMsg) ? 4 : 0,
+    care_low_energy: ROUTE_CARE_LOW.test(latestUserMsg) ? 4 : 0,
+    historical_roleplay: ROUTE_HISTORICAL.test(latestUserMsg) ? 4 : 0,
+    intimacy: ROUTE_INTIMACY.test(latestUserMsg) ? 4 : 0,
+    meta_complaint: ROUTE_META_COMPLAINT.test(latestUserMsg) ? 4 : 0,
+  };
+
+  const conversation_state = {
+    message_count: msgCount,
+    long_chat: longChat,
+    loop_detected: loopDetected,
+    loop_reason: loopReason,
+    recent_topic_hint: recentTopicHint,
+    topic_route: primaryRoute,
+    secondary_route: secondaryRoute,
+    project_lock_turns: projectLockTurns,
+    project_silenced_ttl: projectSilencedTtl,
+    project_trigger_matched: projectTriggerMatched,
+    project_trigger_reason: projectTriggerReason,
+    latest_user_message_for_detection: latestUserMsg.slice(0, 60),
+    previous_topic_route: previousTopicRoute,
+    topic_switch_detected: topicSwitchDetected,
+    topic_switch_from: topicSwitchDetected ? "project_work" : null,
+    topic_switch_to: topicSwitchDetected ? primaryRoute : null,
+    route_scores: routeScores,
+  };
+
+  console.log("[debug] callChatAPI", {
+    replyMode,
+    modelTier: currentModelTier,
+    userId: currentUserId ? currentUserId.slice(0, 6) : "absent",
+    messageCount: msgCount,
+    localHour,
+    longChat,
+    loopDetected,
+  });
+
+  // 编译引用消息到 content 中
+  const compiledMessages = messages.map(msg => {
+    if (!msg.replyTo || msg.role !== "user") {
+      return { role: msg.role, content: msg.content };
+    }
+    // 用户消息有引用，编译引用上下文
+    const replyLabel = msg.replyTo.role === "assistant" ? "Cha" : "用户";
+    const replyPreview = msg.replyTo.preview || "[消息]";
+    const compiledContent = `[引用${replyLabel}的消息]\n${replyPreview}\n\n[用户回复]\n${extractTextFromMessageContent(msg.content)}`;
+    console.info("[quote] compiled message", {
+      hasReplyTo: !!msg.replyTo,
+      replyPreview: msg.replyTo?.preview,
+      compiledLength: compiledContent.length,
+    });
+    return { role: msg.role, content: compiledContent };
+  });
+
+  // Build model parameters from role mapping
+  const chatModel = getModelForRole('chat');
+  let modelTierToSend = currentModelTier;
+  let customModelParams = null;
+
+  if (chatModel && chatModel.providerGroup && chatModel.model) {
+    // Use custom model mapping
+    const providerGroup = PROVIDER_GROUPS[chatModel.providerGroup];
+    if (providerGroup) {
+      customModelParams = {
+        providerGroup: chatModel.providerGroup,
+        provider: providerGroup.provider,
+        model: chatModel.model
+      };
+      console.log("[model-mapping] Using chat model mapping:", customModelParams);
+    }
+  }
+
+  return fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: modelName,
+      messages: compiledMessages,
+      stream: true,
+      replyMode,
+      userId: currentUserId,
+      conversationId: getActiveConversationId(),
+      modelTier: modelTierToSend,
+      customModel: customModelParams,
+      timeContext,
+      conversation_state,
+      // storySeedsEnabled intentionally omitted — legacy memory system retired
+      userMessageId: (() => {
+        // Skip synthetic forced-reply messages (no id field) — find the last real user message.
+        const lastUser = [...messages].reverse().find(
+          m => m.role === "user" && m.id != null && m.id !== "null"
+        );
+        const id = lastUser?.id;
+        return id != null && id !== "null" ? Number(id) : null;
+      })(),
+      rawUserMessage: (() => {
+        // Always use chatMessages (pre-wrap) to get the real user input for keyword detection.
+        // extractTextFromMessageContent handles both plain string and vision content arrays.
+        const lastReal = [...chatMessages].reverse().find(m => m.role === "user");
+        const text = extractTextFromMessageContent(lastReal?.content).trim();
+        return text || null;
+      })(),
+      webContext: (() => {
+        const ctx = _pendingWebContext;
+        _pendingWebContext = null;
+        const hint = document.getElementById("webContextHint");
+        if (hint) hint.setAttribute("hidden", "");
+        return ctx || null;
+      })(),
+      emojiGuide: buildEmojiGuide() || undefined,
+    }),
+  });
+}
+
+function showTypingIndicator() {
+  const el = document.createElement("div");
+  el.className = "typing-indicator";
+  el.innerHTML = "<span></span><span></span><span></span>";
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+  stack.appendChild(el);
+  const row = document.createElement("div");
+  row.className = "msg-row assistant";
+  row.id = "typingIndicatorRow";
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  row.appendChild(avatar);
+  row.appendChild(stack);
+  messageList.appendChild(row);
+  messageList.scrollTop = messageList.scrollHeight;
+  return el;
+}
+
+function removeTypingIndicator() {
+  document.getElementById("typingIndicatorRow")?.remove();
+}
+
+function setChatStatus(text) {
+  // #chatStatus is hidden from normal UI — kept for debug only.
+  // Visible typing state is shown via setChatTitleState().
+  const el = document.getElementById("chatStatus");
+  if (el) el.textContent = text;
+}
+
+/** Switch the top-bar title between idle and typing states.
+ *  idle:   shows the default title ("Cha" or static h1 text)
+ *  typing: shows "正在输入…" in place of the title
+ */
+const _defaultChatTitle = (() => {
+  const h1 = document.querySelector(".chat-shell .top-bar h1");
+  return h1 ? h1.textContent : "Cha";
+})();
+
+function setChatTitleState(mode) {
+  const h1 = document.querySelector(".chat-shell .top-bar h1");
+  if (!h1) return;
+  h1.textContent = mode === "typing" ? "正在输入…" : _defaultChatTitle;
+}
+
 // ── Princess Status Bar ────────────────────────────────────────────────────────
 // Independent from setChatStatus. Shows G's current state from chat_status API response.
 // Uses #princessStatusBar element injected into the DOM below the top-bar.
@@ -1250,7 +2272,120 @@ async function requestStreamingReply(replyMode = "auto") {
   startMemoryPromotionPoller(_currentRequestStartTime, _currentRequestUserMessageId);
 }
 
-// ── Message Actions (moved to modules/message-actions.js) ───────────────────
+// ── Message Actions ───────────────────────────────────────────────────────────
+
+function getMessageRows() {
+  return Array.from(messageList.querySelectorAll(".msg-row:not(#typingIndicatorRow)"));
+}
+
+function getLastMessageRow(role) {
+  return [...getMessageRows()].reverse().find(r => r.classList.contains(role));
+}
+
+function isMobileMessageActions() {
+  return window.matchMedia("(hover: none), (pointer: coarse)").matches;
+}
+
+function canRegenerateRow(row) {
+  return !!row?.dataset.msgId && row === getLastMessageRow("assistant") &&
+    chatMessages.some(m => m.id === row.dataset.msgId);
+}
+
+function refreshGroupClasses() {
+  const rows = Array.from(messageList.querySelectorAll(
+    ".msg-row.user, .msg-row.assistant"
+  ));
+  let runStart = 0;
+  for (let i = 0; i <= rows.length; i++) {
+    const currentRole = i < rows.length
+      ? (rows[i].classList.contains("user") ? "user" : "assistant")
+      : null;
+    if (i === rows.length || (i > 0 && currentRole !== (rows[i-1].classList.contains("user") ? "user" : "assistant"))) {
+      const runLen = i - runStart;
+      for (let j = runStart; j < i; j++) {
+        const row = rows[j];
+        row.classList.remove("msg-group-row", "msg-group-last");
+        if (runLen > 1 && j > runStart) {
+          row.classList.add("msg-group-row");
+        }
+        if (runLen > 1 && j === i - 1) {
+          row.classList.add("msg-group-last");
+        }
+      }
+      runStart = i;
+    }
+  }
+}
+
+function refreshMessageActions() {
+  refreshGroupClasses();
+  document.querySelectorAll(".msg-actions").forEach(el => el.remove());
+  const rows = getMessageRows();
+  const lastAssistantRow = [...rows].reverse().find(r => r.classList.contains("assistant"));
+  const lastUserRow = [...rows].reverse().find(r => r.classList.contains("user"));
+
+  for (const row of rows) {
+    const stack = row.querySelector(".msg-stack");
+    if (!stack) continue;
+    const isAssistant = row.classList.contains("assistant");
+    const isUser = row.classList.contains("user");
+    if (!isAssistant && !isUser) continue;
+
+    // Get msgId from either msgId or bubbleSibling (for split messages)
+    const effectiveMsgId = row.dataset.msgId || row.dataset.bubbleSibling;
+    if (isAssistant && !effectiveMsgId) continue;
+
+    const actions = document.createElement("div");
+    actions.className = "msg-actions";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.textContent = "复制";
+    copyBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await copyMessage(row, copyBtn);
+    });
+    actions.appendChild(copyBtn);
+
+    if ((isAssistant || isUser) && effectiveMsgId) {
+      const replyBtn = document.createElement("button");
+      replyBtn.textContent = "引用";
+      replyBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const role = isAssistant ? "assistant" : "user";
+        const textEl = row.querySelector(".message-text");
+        const preview = (textEl?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
+        setReplyDraft(effectiveMsgId, preview, role);
+      });
+      actions.appendChild(replyBtn);
+    }
+
+    if (isAssistant) {
+      if (row === lastAssistantRow && canRegenerateRow(row)) {
+        const regenBtn = document.createElement("button");
+        regenBtn.textContent = "重新生成";
+        regenBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          regenerateMessage(row);
+        });
+        actions.appendChild(regenBtn);
+      }
+    } else if (row === lastUserRow && row.dataset.msgId) {
+      const editBtn = document.createElement("button");
+      editBtn.textContent = "编辑";
+      editBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        editUserMessage(row);
+      });
+      actions.appendChild(editBtn);
+    }
+    stack.appendChild(actions);
+  }
+}
+
 // ── Read state ────────────────────────────────────────────────────────────────
 
 /** Update the chat tab unread badge based on chaUnreadCount. */
@@ -3902,13 +5037,79 @@ function _syncChatMoreSubsheet(id) {
   if (savedFreq && savedFreq !== "off") applyChatAutoFreq(savedFreq);
 })();
 
-// ── Auth (moved to modules/auth.js) ─────────────────────────────────────────
-// Note: Auth initialization is now handled in modules/auth.js
-// The auth module listens to auth state changes and calls hideLoginAndInit automatically
+// ── Auth (password only, no magic link) ───────────────────────────────────────
+
+async function signIn() {
+  const email = loginEmail.value.trim();
+  const password = loginPassword.value;
+  if (!email) { loginMsg.textContent = "请输入邮箱地址。"; return; }
+  if (!password) { loginMsg.textContent = "请输入密码。"; return; }
+  loginBtn.disabled = true;
+  loginMsg.textContent = "";
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    loginMsg.textContent = error.message === "Invalid login credentials"
+      ? "邮箱或密码错误。"
+      : error.message;
+    loginBtn.disabled = false;
+  }
+}
+
+loginBtn.addEventListener("click", signIn);
+loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") loginPassword.focus(); });
+loginPassword.addEventListener("keydown", (e) => { if (e.key === "Enter") signIn(); });
+
+logoutBtn.addEventListener("click", async () => {
+  await supabaseClient.auth.signOut();
+  conversationsCache = [];
+  chatMessages.length = 0;
+  messageList.innerHTML = "";
+  currentUserId = "";
+  window.currentUserId = "";
+  logoutBtn.classList.add("hidden");
+  loginOverlay.classList.remove("hidden");
+});
+
+async function hideLoginAndInit(session) {
+  currentUserId = session?.user?.id || "";
+  window.currentUserId = currentUserId;
+  loginOverlay.classList.add("hidden");
+  if (logoutBtn) logoutBtn.classList.remove("hidden");
+  initPrincessStatusBar();
+  setLoading(true);
+  await initConversations();
+  await reloadHistory();
+  setLoading(false);
+  window.splashReady?.();
+  if (window.SPDiary) {
+    window.SPDiary.updateHomeDiaryCard(supabaseClient, currentUserId || 'default')
+      .catch(err => console.error('Failed to update diary card:', err));
+  }
+  // Desktop only: auto-focus on init. Mobile must not trigger soft keyboard.
+  if (!isMobileLayout()) messageInput.focus();
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-// (Auth state management moved to modules/auth.js)
 
+if (supabaseClient) {
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_IN" && session && !loginOverlay.classList.contains("hidden")) {
+      hideLoginAndInit(session);
+    }
+  });
+
+  supabaseClient.auth.getSession().then(({ data: { session } }) => {
+    if (session) {
+      hideLoginAndInit(session);
+    } else {
+      loginOverlay.classList.remove("hidden");
+      window.splashReady?.();
+    }
+  });
+} else {
+  loginOverlay.classList.remove("hidden");
+  window.splashReady?.();
+}
 
 initTierBar();
 
@@ -3918,7 +5119,1067 @@ function initV2Shell() {
   window.SPV2Shell.initV2Shell();
 }
 
-// ── Settings subpage system (moved to modules/settings-manager.js) ──────────
+// ── Settings subpage system ─────────────────────────────────────────────────
+
+var _currentSettingsSubpage = null;
+
+var SETTINGS_SUBPAGE_META = {
+  "appearance-resources": { title: "外观与资源",       subtitle: "头像、壁纸、开屏图与表情包来源" },
+  "prompt-worldbook":     { title: "Prompt 与世界书",  subtitle: "提示词、世界书与注入规则" },
+  worldbook:              { title: "世界书管理",        subtitle: "上传后手动启用才会注入 Prompt" },
+  memory:                 { title: "记忆管理",          subtitle: "查看、禁用与清理记忆" },
+  api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
+  backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
+  debug:                  { title: "Debug",             subtitle: "日志、版本与诊断工具" },
+  // legacy aliases — keep so any existing deep-links don't break
+  beautify: { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
+  prompt:   { title: "Prompt 与世界书", subtitle: "提示词、世界书与注入规则" },
+  emoji:    { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
+  chat:     { title: "聊天外观",        subtitle: "背景与气泡主题" },
+};
+
+function openSettingsSubpage(type) {
+  const subpage = document.getElementById("settingsSubpage");
+  const mainView = document.getElementById("settingsMainView");
+  const titleEl = document.getElementById("settingsSubpageTitle");
+  const subtitleEl = document.getElementById("settingsSubpageSubtitle");
+  const bodyEl = document.getElementById("settingsSubpageBody");
+  if (!subpage || !mainView || !titleEl || !subtitleEl || !bodyEl) return;
+
+  // If leaving worldbook subpage, move content back to the hidden store first
+  if (_currentSettingsSubpage === "worldbook") {
+    const mount = document.getElementById("wbSubpageMount");
+    const store = document.getElementById("wbContentStore");
+    if (mount && store) {
+      while (mount.firstChild) {
+        store.appendChild(mount.firstChild);
+      }
+    }
+    wbResetUploadForm();
+  }
+
+  const meta = SETTINGS_SUBPAGE_META[type] || { title: type, subtitle: "" };
+  titleEl.textContent = meta.title;
+  subtitleEl.textContent = meta.subtitle;
+  bodyEl.innerHTML = renderSettingsSubpage(type);
+
+  _currentSettingsSubpage = type;
+  mainView.hidden = true;
+  subpage.hidden = false;
+
+  // Bind subpage-specific events after render
+  _initSettingsSubpageEvents(bodyEl, type);
+}
+
+function closeSettingsSubpage() {
+  const subpage = document.getElementById("settingsSubpage");
+  const mainView = document.getElementById("settingsMainView");
+  if (!subpage || !mainView) return;
+
+  // If leaving worldbook subpage, move content back to the hidden store
+  if (_currentSettingsSubpage === "worldbook") {
+    const mount = document.getElementById("wbSubpageMount");
+    const store = document.getElementById("wbContentStore");
+    if (mount && store) {
+      while (mount.firstChild) {
+        store.appendChild(mount.firstChild);
+      }
+    }
+    wbResetUploadForm();
+  }
+
+  subpage.hidden = true;
+  mainView.hidden = false;
+  _currentSettingsSubpage = null;
+}
+
+function renderSettingsSubpage(type) {
+  switch (type) {
+    case "appearance-resources":
+    case "beautify":
+    case "emoji":
+      return _renderAppearanceResourcesSubpage();
+    case "prompt-worldbook":
+    case "prompt":
+      return _renderPromptWorldbookSubpage();
+    case "worldbook":
+      return _renderWorldbookSubpage();
+    case "memory":
+      return _renderMemorySubpage();
+    case "voice":
+      return _renderVoiceSubpage();
+    case "api":
+      return _renderApiSubpage();
+    case "backup":
+      return _renderBackupSubpage();
+    case "debug":
+      return _renderDebugSubpage();
+    case "chat":
+      return _renderChatAppearanceSubpage();
+    default:
+      return `<div class="settings-empty-state"><strong>${type}</strong><p>此页面尚未实现。</p></div>`;
+  }
+}
+
+function _renderApiSubpage() {
+  const mapping = getModelRoleMapping();
+
+  // Build provider status section
+  let providerStatusHtml = '<div class="settings-section"><div class="settings-section-label">通道状态</div><div class="settings-card">';
+
+  Object.entries(PROVIDER_GROUPS).forEach(([groupId, group]) => {
+    // For now, mark all as "由环境变量配置" since we don't expose keys
+    providerStatusHtml += `
+      <div class="settings-card-row">
+        <div><strong>${group.name}</strong><small>${group.description}</small></div>
+        <span class="settings-row-value settings-row-value--muted">由环境变量配置</span>
+      </div>`;
+  });
+
+  providerStatusHtml += '</div></div>';
+
+  // Build model role mapping section
+  let rolesMappingHtml = '<div class="settings-section"><div class="settings-section-label">用途模型</div><div class="settings-card">';
+
+  Object.entries(MODEL_ROLES).forEach(([roleId, role]) => {
+    const currentMapping = mapping[roleId];
+    const providerLabel = currentMapping?.providerGroup ?
+      (PROVIDER_GROUPS[currentMapping.providerGroup]?.name || currentMapping.providerGroup) :
+      "未选择";
+    const modelLabel = currentMapping?.model || "未选择";
+
+    rolesMappingHtml += `
+      <div class="settings-card-row">
+        <div><strong>${role.label}</strong><small>${role.description}</small></div>
+        <span class="settings-row-value settings-row-value--compact">${providerLabel} · ${modelLabel}</span>
+      </div>
+      <div class="settings-card-row">
+        <select class="settings-select" data-role="${roleId}" data-type="provider">
+          <option value="">选择通道</option>
+          ${Object.entries(PROVIDER_GROUPS).map(([gid, g]) =>
+            `<option value="${gid}"${currentMapping?.providerGroup === gid ? ' selected' : ''}>${g.name}</option>`
+          ).join('')}
+        </select>
+        <select class="settings-select" data-role="${roleId}" data-type="model" ${!currentMapping?.providerGroup ? 'disabled' : ''}>
+          <option value="">选择模型</option>
+          ${currentMapping?.providerGroup ?
+            PROVIDER_GROUPS[currentMapping.providerGroup].models.map(m =>
+              `<option value="${m}"${currentMapping?.model === m ? ' selected' : ''}>${m}</option>`
+            ).join('') :
+            ''}
+        </select>
+      </div>`;
+  });
+
+  rolesMappingHtml += '</div></div>';
+
+  // Build actions section
+  const actionsHtml = `
+    <div class="settings-section">
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <button type="button" class="settings-row-action-btn" id="saveModelRoleMappingBtn">保存设置</button>
+        </div>
+        <div class="settings-card-row">
+          <button type="button" class="settings-row-action-btn" id="testModelRoleMappingBtn">测试当前配置</button>
+          <span class="settings-row-value" id="testModelRoleMappingStatus"></span>
+        </div>
+      </div>
+    </div>`;
+
+  return providerStatusHtml + rolesMappingHtml + actionsHtml;
+}
+
+function _renderBackupSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">导出</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>导出全部数据</strong><small>聊天记录、记忆、设置</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>导出聊天记录</strong><small>仅当前会话</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">导入</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>从备份恢复</strong><small>覆盖当前数据</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderAppearanceResourcesSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">头像与封面</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>Cha 头像</strong><small>聊天页与首页头像</small></div>
+          <button type="button" class="settings-row-action-btn" id="srChaAvatarBtn">更换</button>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>开屏封面</strong><small>首页顶部横幅图</small></div>
+          <button type="button" class="settings-row-action-btn" id="srCoverBtn">更换</button>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>开屏壁纸</strong><small>下次启动时生效</small></div>
+          <button type="button" class="settings-row-action-btn" id="srSplashBtn">更换</button>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">壁纸与气泡</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>聊天背景</strong><small>自定义聊天页壁纸</small></div>
+          <span class="settings-row-value" id="srChatBgVal">默认</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>气泡主题</strong><small>消息气泡样式</small></div>
+          <span class="settings-row-value" id="srBubbleVal">默认</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">表情包来源</div>
+      <div class="settings-card">
+        <div class="settings-card-row" id="srEmojiPackRow">
+          <div><strong>自定义来源</strong><small>管理表情包注册表</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>清理缓存</strong><small>释放表情包本地存储</small></div>
+          <button type="button" class="settings-row-action-btn" id="srEmojiCacheBtn">清理</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderPromptWorldbookSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">场景 Prompt</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>主聊天</strong><small>日常对话提示词</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>日记</strong><small>Cha 的日记写作提示词</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>毛象</strong><small>Mastodon 发帖风格提示词</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>游戏</strong><small>Playground 游戏模式提示词</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">世界书</div>
+      <div class="settings-card">
+        <div class="settings-card-row" id="promptWbOpenRow" style="cursor:pointer">
+          <div><strong>世界书管理</strong><small>上传并启用知识库与设定注入</small></div>
+          <span class="settings-row-value">›</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderChatAppearanceSubpage() {
+  const bgVal = localStorage.getItem("ui_custom_chat_background") ? "已自定义" : "默认";
+  const bubbleVal = localStorage.getItem("ui_chat_bubble_theme") || "默认";
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">背景与气泡</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>聊天背景</strong><small>自定义聊天页壁纸</small></div>
+          <span class="settings-row-value">${bgVal}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>气泡主题</strong><small>消息气泡外观</small></div>
+          <span class="settings-row-value">${bubbleVal}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>恢复默认</strong><small>清除所有外观自定义</small></div>
+          <button type="button" class="settings-row-action-btn" id="srChatAppearanceResetBtn">恢复</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderVoiceSubpage() {
+  const cfg = window.SPVoice ? window.SPVoice.getTTSConfig() : { provider: "system", model_id: "eleven_v3", profiles: {} };
+  const engine = cfg.provider || "system";
+  const modelId = cfg.model_id || "eleven_v3";
+  const rate = window.SPVoice ? window.SPVoice.getTTSRate() : 1.0;
+  const volume = window.SPVoice ? window.SPVoice.getTTSVolume() : 1.0;
+  const ttsSupported = window.SPVoice ? window.SPVoice.isTTSSupported() : false;
+  const profiles = cfg.profiles || {};
+
+  function profileRow(lang, label, hint) {
+    const voiceId = (profiles[lang] || {}).voice_id || "";
+    return `
+      <div class="settings-card-row">
+        <div><strong>${label}</strong><small>${hint}</small></div>
+        <input type="text" class="settings-text-input voice-profile-voice-id" data-lang="${lang}"
+          placeholder="voice_id" value="${voiceId}" autocomplete="off" spellcheck="false">
+      </div>`;
+  }
+
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">朗读引擎</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>引擎</strong><small>选择 TTS 服务</small></div>
+          <select id="voiceTTSEngine" class="settings-select">
+            <option value="system" ${engine === "system" ? "selected" : ""}>系统语音</option>
+            <option value="elevenlabs" ${engine === "elevenlabs" ? "selected" : ""}>ElevenLabs</option>
+            <option value="minimax" ${engine === "minimax" ? "selected" : ""}>MiniMax</option>
+            <option value="local_http" ${engine === "local_http" ? "selected" : ""}>本地 HTTP</option>
+          </select>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>模型</strong><small>ElevenLabs model_id</small></div>
+          <input type="text" class="settings-text-input" id="voiceTTSModelId"
+            placeholder="eleven_v3" value="${modelId}" autocomplete="off" spellcheck="false"
+            style="max-width:14em">
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">声音配置</div>
+      <div class="settings-card" id="voiceProfilesCard">
+        ${profileRow("zh", "中文", "中文 voice_id")}
+        ${profileRow("en", "英文", "英文 voice_id")}
+        ${profileRow("ja", "日文", "日语 voice_id")}
+        ${profileRow("default", "其他", "未匹配语言的 voice_id")}
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">语速与音量</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>语速</strong><small>朗读速度（0.5 - 2.0）</small></div>
+          <input type="range" id="voiceTTSRate" min="0.5" max="2.0" step="0.1" value="${rate}" ${!ttsSupported ? 'disabled' : ''}>
+          <span id="voiceTTSRateValue">${rate.toFixed(1)}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>音量</strong><small>播放音量（0.0 - 1.0）</small></div>
+          <input type="range" id="voiceTTSVolume" min="0" max="1" step="0.1" value="${volume}" ${!ttsSupported ? 'disabled' : ''}>
+          <span id="voiceTTSVolumeValue">${volume.toFixed(1)}</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">试听</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>测试朗读</strong><small>测试当前朗读引擎</small></div>
+          <button type="button" class="settings-row-action-btn" id="voiceTestBtn">试听</button>
+        </div>
+      </div>
+    </div>
+    ${!ttsSupported ? '<div class="settings-notice">您的浏览器不支持语音合成功能</div>' : ''}`;
+}
+
+function _initSettingsSubpageEvents(container, type) {
+  if (type === "voice") {
+    _initSettingsVoiceSubpage(container);
+    return;
+  }
+  if (type === "memory") {
+    _initSettingsMemorySubpage(container);
+    return;
+  }
+  if (type === "appearance-resources" || type === "beautify" || type === "emoji") {
+    const wbRow = container.querySelector("#srEmojiPackRow");
+    if (wbRow) wbRow.style.cursor = "pointer";
+    const chaAvatarBtn = container.querySelector("#srChaAvatarBtn");
+    if (chaAvatarBtn) chaAvatarBtn.addEventListener("click", () => {
+      const btn = document.querySelector(".profile-avatar:not(.profile-avatar--kk)");
+      if (btn) btn.click();
+      closeSettingsSubpage();
+    });
+    const coverBtn = container.querySelector("#srCoverBtn");
+    if (coverBtn) coverBtn.addEventListener("click", () => {
+      const btn = document.querySelector(".home-cover");
+      if (btn) btn.click();
+      closeSettingsSubpage();
+    });
+    const splashBtn = container.querySelector("#srSplashBtn");
+    if (splashBtn) splashBtn.addEventListener("click", () => {
+      const inp = document.createElement("input");
+      inp.type = "file"; inp.accept = "image/*";
+      inp.addEventListener("change", () => {
+        const file = inp.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          localStorage.setItem("asset_app_splash_wallpaper", reader.result);
+          splashBtn.textContent = "已更换";
+          splashBtn.disabled = true;
+        };
+        reader.readAsDataURL(file);
+      });
+      inp.click();
+    });
+    const emojiCacheBtn = container.querySelector("#srEmojiCacheBtn");
+    if (emojiCacheBtn) emojiCacheBtn.addEventListener("click", () => {
+      const keys = Object.keys(localStorage).filter(k => k.startsWith("emoji_catalog_cache"));
+      keys.forEach(k => localStorage.removeItem(k));
+      emojiCacheBtn.textContent = "已清理";
+      emojiCacheBtn.disabled = true;
+    });
+    return;
+  }
+  if (type === "prompt-worldbook" || type === "prompt") {
+    const wbRow = container.querySelector("#promptWbOpenRow");
+    if (wbRow) wbRow.addEventListener("click", () => {
+      openSettingsSubpage("worldbook");
+    });
+    return;
+  }
+  if (type === "worldbook") {
+    _initSettingsWorldbookSubpage(container);
+    return;
+  }
+  if (type === "chat") {
+    const resetBtn = container.querySelector("#srChatAppearanceResetBtn");
+    if (resetBtn) resetBtn.addEventListener("click", () => {
+      localStorage.removeItem("ui_custom_chat_background");
+      localStorage.removeItem("ui_chat_bubble_theme");
+      resetBtn.textContent = "已恢复";
+      resetBtn.disabled = true;
+    });
+  }
+  if (type === "api") {
+    _initSettingsApiSubpage(container);
+  }
+}
+
+// Legacy stubs (kept so any other code referencing the old names keeps working)
+function _renderBeautifySubpage()  { return _renderAppearanceResourcesSubpage(); }
+function _renderPromptSubpage()    { return _renderPromptWorldbookSubpage(); }
+
+function _initSettingsApiSubpage(container) {
+  const mapping = getModelRoleMapping();
+
+  // Handle provider selection change
+  container.querySelectorAll('select[data-type="provider"]').forEach(select => {
+    select.addEventListener('change', () => {
+      const role = select.dataset.role;
+      const providerGroup = select.value;
+      const modelSelect = container.querySelector(`select[data-type="model"][data-role="${role}"]`);
+
+      if (!modelSelect) return;
+
+      if (providerGroup && PROVIDER_GROUPS[providerGroup]) {
+        // Enable model select and populate options
+        modelSelect.disabled = false;
+        modelSelect.innerHTML = '<option value="">选择模型</option>' +
+          PROVIDER_GROUPS[providerGroup].models.map(m =>
+            `<option value="${m}">${m}</option>`
+          ).join('');
+      } else {
+        // Disable model select
+        modelSelect.disabled = true;
+        modelSelect.innerHTML = '<option value="">选择模型</option>';
+      }
+    });
+  });
+
+  // Handle save button
+  const saveBtn = container.querySelector('#saveModelRoleMappingBtn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const newMapping = {};
+      let hasChanges = false;
+
+      container.querySelectorAll('select[data-type="provider"]').forEach(providerSelect => {
+        const role = providerSelect.dataset.role;
+        const providerGroup = providerSelect.value;
+        const modelSelect = container.querySelector(`select[data-type="model"][data-role="${role}"]`);
+        const model = modelSelect ? modelSelect.value : '';
+
+        if (providerGroup && model) {
+          newMapping[role] = { providerGroup, model };
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        const success = saveModelRoleMapping(newMapping);
+        if (success) {
+          if (typeof showToast === 'function') {
+            showToast('已保存用途模型映射');
+          } else {
+            alert('已保存用途模型映射');
+          }
+          // Refresh the subpage to show updated values
+          setTimeout(() => {
+            const subpageBody = document.getElementById('settingsSubpageBody');
+            if (subpageBody && typeof renderSettingsSubpage === 'function') {
+              subpageBody.innerHTML = renderSettingsSubpage('api');
+              if (typeof _initSettingsSubpageEvents === 'function') {
+                _initSettingsSubpageEvents(subpageBody, 'api');
+              }
+            }
+          }, 500);
+        } else {
+          alert('保存失败，请重试');
+        }
+      } else {
+        alert('请至少配置一个用途模型');
+      }
+    });
+  }
+
+  // Handle test button
+  const testBtn = container.querySelector('#testModelRoleMappingBtn');
+  const testStatus = container.querySelector('#testModelRoleMappingStatus');
+  if (testBtn && testStatus) {
+    testBtn.addEventListener('click', async () => {
+      testBtn.disabled = true;
+      testStatus.textContent = '测试中…';
+
+      const mapping = getModelRoleMapping();
+      const results = [];
+
+      // Check each role
+      for (const [roleId, role] of Object.entries(MODEL_ROLES)) {
+        const config = mapping[roleId];
+        if (!config || !config.providerGroup || !config.model) {
+          results.push(`${role.label}：未选择`);
+        } else if (!PROVIDER_GROUPS[config.providerGroup]) {
+          results.push(`${role.label}：通道未配置`);
+        } else {
+          results.push(`${role.label}：已配置`);
+        }
+      }
+
+      testStatus.textContent = results.join(' / ');
+      testBtn.disabled = false;
+    });
+  }
+}
+
+function _renderWorldbookSubpage() {
+  return `<div id="wbSubpageMount" class="wb-subpage-mount"></div>`;
+}
+
+function _initSettingsWorldbookSubpage(container) {
+  const mount = container.querySelector("#wbSubpageMount");
+  if (!mount) return;
+
+  const store = document.getElementById("wbContentStore");
+  if (!store) return;
+
+  // Move all child nodes from the hidden store into the subpage mount
+  while (store.firstChild) {
+    mount.appendChild(store.firstChild);
+  }
+
+  // Load world books into the now-visible list
+  loadWorldBooks();
+}
+
+function _renderMemorySubpage() {
+  return `<div id="settingsMemoryMount" style="min-height:200px"></div>`;
+}
+
+function _initSettingsVoiceSubpage(container) {
+  if (!window.SPVoice) return;
+
+  const engineSelect = container.querySelector("#voiceTTSEngine");
+  const rateSlider = container.querySelector("#voiceTTSRate");
+  const rateValue = container.querySelector("#voiceTTSRateValue");
+  const volumeSlider = container.querySelector("#voiceTTSVolume");
+  const volumeValue = container.querySelector("#voiceTTSVolumeValue");
+  const testBtn = container.querySelector("#voiceTestBtn");
+
+  if (engineSelect) {
+    engineSelect.addEventListener("change", (e) => {
+      window.SPVoice.setTTSEngine(e.target.value);
+    });
+  }
+
+  const modelIdInput = container.querySelector("#voiceTTSModelId");
+  if (modelIdInput) {
+    modelIdInput.addEventListener("change", (e) => {
+      window.SPVoice.setTTSConfig({ model_id: e.target.value.trim() || "eleven_v3" });
+    });
+  }
+
+  // Wire per-language voice_id inputs
+  container.querySelectorAll(".voice-profile-voice-id").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const lang = e.target.dataset.lang;
+      if (lang) window.SPVoice.setTTSConfig({ profiles: { [lang]: { voice_id: e.target.value.trim() } } });
+    });
+  });
+
+  if (rateSlider && rateValue) {
+    rateSlider.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      rateValue.textContent = val.toFixed(1);
+      window.SPVoice.setTTSRate(val);
+    });
+  }
+
+  if (volumeSlider && volumeValue) {
+    volumeSlider.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      volumeValue.textContent = val.toFixed(1);
+      window.SPVoice.setTTSVolume(val);
+    });
+  }
+
+  if (testBtn) {
+    const TEST_TEXT = "[softly] 我在。这个方向比刚才对。[pause] 不要再压低，也不要故意温柔。轻一点，自然一点。[quiet laugh] 嗯……这样就有点像我了。";
+    const proxy = document.createElement("button");
+    proxy.className = "speaker-btn";
+    testBtn.addEventListener("click", () => {
+      window.SPVoice.playMessageText(TEST_TEXT, proxy, null);
+    });
+    // Reflect proxy state on testBtn
+    new MutationObserver(() => {
+      if (proxy.classList.contains("tts-loading")) {
+        testBtn.textContent = "生成中...";
+        testBtn.disabled = true;
+      } else if (proxy.classList.contains("speaking")) {
+        testBtn.textContent = "停止";
+        testBtn.disabled = false;
+      } else if (proxy.classList.contains("tts-error")) {
+        testBtn.textContent = proxy.title || "生成失败";
+        testBtn.disabled = false;
+      } else {
+        testBtn.textContent = "试听";
+        testBtn.disabled = false;
+      }
+    }).observe(proxy, { attributes: true, attributeFilter: ["class", "title"] });
+  }
+}
+
+function _initSettingsMemorySubpage(container) {
+  // Reuse the existing memory center v2 state and render functions,
+  // but mounted inside the subpage body instead of the overlay.
+  const mount = container.querySelector("#settingsMemoryMount");
+  if (!mount) return;
+  memoryCenterV2State.view = "archive";
+  // Render archive view directly into the mount point
+  mount.innerHTML = "";
+  const viewRoot = document.createElement("div");
+  viewRoot.id = "settingsMemoryViewRoot";
+  viewRoot.className = "mc-view-root";
+  mount.appendChild(viewRoot);
+  _renderMemoryCenterInto(viewRoot);
+  refreshMemoryCenterData();
+}
+
+function _renderMemoryCenterInto(root) {
+  // Delegate to existing renderMemoryCenterCurrentView but point at custom root
+  var savedRoot = document.getElementById("mcViewRoot");
+  var fakeRoot = root;
+  // Temporarily swap so renderMemoryCenterCurrentView writes here
+  var _origGetById = document.getElementById.bind(document);
+  var _patchActive = true;
+  var _origGetEl = document.getElementById;
+  document.getElementById = function(id) {
+    if (_patchActive && id === "mcViewRoot") return fakeRoot;
+    return _origGetEl.call(document, id);
+  };
+  try {
+    renderMemoryCenterCurrentView();
+  } finally {
+    document.getElementById = _origGetEl;
+    _patchActive = false;
+  }
+}
+
+function _renderEmojiSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">已启用来源</div>
+      <div class="settings-empty-state">
+        <strong>暂无自定义表情包来源</strong>
+        <p>添加后可在聊天中使用自定义表情包</p>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">缓存</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>清理表情包缓存</strong><small>释放本地存储空间</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _renderChatSubpage() {
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">外观</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>聊天背景</strong><small>自定义聊天页壁纸</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>气泡样式</strong><small>消息气泡外观</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">输入栏</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>输入栏布局</strong><small>按钮排列方式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">消息显示</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>时间戳</strong><small>消息时间显示方式</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>已读标记</strong><small>显示消息已读状态</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+window._saveMemoryToken = function() {
+  const val = document.getElementById("_memTokenInput")?.value?.trim();
+  if (val) sessionStorage.setItem("memory_admin_token", val);
+  else sessionStorage.removeItem("memory_admin_token");
+  document.getElementById("_memTokenStatus").textContent = val ? "hasToken=true" : "hasToken=false";
+  document.getElementById("_memTokenInput").value = "";
+};
+window._testMemoryEndpoint = async function() {
+  const endpoint = getMemoryEndpoint();
+  const token = getMemoryToken();
+  const btn = document.getElementById("_memTestBtn");
+  if (!endpoint) { btn.textContent = "❌ 无 endpoint"; return; }
+  if (!token) { btn.textContent = "❌ 无 token"; return; }
+  btn.textContent = "请求中…";
+  try {
+    const res = await fetch(endpoint + "?type=audit", { headers: { "Authorization": "Bearer " + token } });
+    btn.textContent = res.ok ? `✅ ${res.status}` : `❌ ${res.status}`;
+  } catch(e) {
+    btn.textContent = "❌ 网络错误";
+  }
+};
+
+function _renderDebugSubpage() {
+  const buildLabel = (document.querySelector("script[src*='app.js']")?.src.match(/v=([^&]+)/) || [])[1] || "unknown";
+  return `
+    <div class="settings-section">
+      <div class="settings-section-label">版本与环境</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>构建版本</strong></div>
+          <span class="settings-row-value">${buildLabel}</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>平台</strong></div>
+          <span class="settings-row-value">${navigator.userAgent.includes("Mobile") ? "Mobile" : "Desktop"}</span>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">记忆 Token（仅 Dev）</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>Token 状态</strong></div>
+          <span id="_memTokenStatus" class="settings-row-value">${sessionStorage.getItem("memory_admin_token") ? "hasToken=true" : "hasToken=false"}</span>
+        </div>
+        <div class="settings-card-row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <input id="_memTokenInput" type="password" placeholder="粘贴 memory admin token" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border-color,#ccc);background:var(--input-bg,#fff);color:inherit;font-size:13px"/>
+          <div style="display:flex;gap:8px">
+            <button type="button" onclick="window._saveMemoryToken()" style="flex:1;padding:6px;border-radius:6px;border:none;background:var(--accent-color,#555);color:#fff;cursor:pointer">保存</button>
+            <button id="_memTestBtn" type="button" onclick="window._testMemoryEndpoint()" style="flex:1;padding:6px;border-radius:6px;border:none;background:var(--secondary-bg,#888);color:#fff;cursor:pointer">测试记忆端点</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">日志</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>记忆注入日志</strong><small>最近一轮注入状态</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+        <div class="settings-card-row">
+          <div><strong>Prompt 状态</strong><small>当前 system prompt 摘要</small></div>
+          <span class="settings-row-value">占位</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+/**
+ * Show voice call loading page with heartbeat/ripple animation
+ */
+function showVoiceCallLoadingPage() {
+  const overlay = document.createElement('div');
+  overlay.className = 'voice-call-overlay';
+  overlay.innerHTML = `
+    <div class="voice-call-container">
+      <div class="heartbeat-pulse"></div>
+      <p>正在连接通话服务...</p>
+      <button type="button" class="voice-call-cancel" aria-label="取消">取消</button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('.voice-call-cancel')?.addEventListener('click', () => {
+    overlay.remove();
+  });
+
+  // 自动移除（预留：未来可以链接真实的 tts 和语音通话）
+  setTimeout(() => {
+    if (overlay.parentNode) {
+      overlay.remove();
+    }
+  }, 3000);
+}
+
+function initV2Composer() {
+  const plusButton = document.getElementById("composerMenuBtn");
+  const inputBar = document.getElementById("chatForm");
+  if (!plusButton || !inputBar) return;
+
+  let emojiButton = document.getElementById("emojiButton");
+  if (!emojiButton) {
+    emojiButton = document.createElement("button");
+    emojiButton.id = "emojiButton";
+    emojiButton.type = "button";
+    emojiButton.className = "ghost-icon-btn v2-emoji-btn";
+    emojiButton.title = "Emoji";
+    emojiButton.setAttribute("aria-label", "Emoji");
+    emojiButton.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="8" r="1" fill="currentColor"/><circle cx="11.5" cy="8" r="1" fill="currentColor"/><path d="M6 11c.7 1.2 1.8 2 3 2s2.3-.8 3-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+    inputBar.insertBefore(emojiButton, plusButton);
+  }
+
+  // Wire up emoji button
+  emojiButton.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    openEmojiPanel();
+  }, true);
+
+  plusButton.innerHTML = '<img src="assets/icons/chat/plus.svg" alt="">';
+  plusButton.title = "更多";
+  plusButton.setAttribute("aria-label", "更多");
+
+  let panel = null;
+  const closePanel = () => {
+    if (panel) {
+      panel.remove();
+      panel = null;
+      plusButton.classList.remove("active");
+      document.querySelector(".chat-shell")?.classList.remove("plus-panel-open");
+      // 清理动态注入的面板高度变量
+      document.documentElement.style.removeProperty('--plus-panel-h');
+      if (_chatInputMode !== "plain") {
+        _chatInputMode = "plain";
+      }
+      maintainBottomAnchor("close-panel");
+    }
+  };
+  window.closeV2PlusPanel = closePanel;
+
+  function addPanelItem(group, { label, desc, icon, onClick, disabled = false }) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "plus-panel-item";
+    item.disabled = Boolean(disabled);
+    item.innerHTML = `<span class="plus-panel-icon">${icon}</span><span><strong>${label}</strong><small>${desc}</small></span>`;
+    item.addEventListener("click", () => {
+      closePanel();
+      onClick?.();
+    });
+    group.appendChild(item);
+  }
+
+  function openPanel() {
+    closeStatusPanel();
+    closePanel();
+    // Close emoji panel if open (mutual exclusion)
+    if (typeof window.closeEmojiPanel === "function") window.closeEmojiPanel();
+    // Dismiss the soft keyboard cleanly so the plus panel takes its place,
+    // preventing the composer from drifting with the keyboard-close animation.
+    if (messageInput && document.activeElement === messageInput) {
+      messageInput.blur();
+    }
+    // Force a clean non-keyboard state immediately so --dock-gap resolves to
+    // the stable baseline instead of --kb+10 during the keyboard-close window.
+    document.querySelector(".layout")?.classList.remove("keyboard-open");
+    document.documentElement.style.setProperty("--kb", "0px");
+    document.documentElement.style.setProperty("--keyboard-inset", "0px");
+    panel = document.createElement("div");
+    panel.className = "plus-panel";
+
+    const actions = document.createElement("div");
+    actions.className = "plus-panel-grid";
+
+    // Voice call — hidden for now (placeholder entry deferred)
+    addPanelItem(actions, {
+      label: "语音电话",
+      desc: "通话服务",
+      icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h4v8H3zM11 6h4v8h-4zM9 1v16M1 9h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      onClick: () => {
+        closePanel();
+        // 显示心跳/水波纹加载页面，链接 tts 和语音通话
+        showVoiceCallLoadingPage();
+      },
+      disabled: false,
+    });
+
+    addPanelItem(actions, {
+      label: "图片",
+      desc: "相册或文件",
+      icon: '<span>＋</span>',
+      onClick: () => imageAttachBtn?.click(),
+    });
+    addPanelItem(actions, {
+      label: "接话",
+      desc: autoReplyEnabled ? "已开启" : "已关闭",
+      icon: '<img src="assets/icons/chat/regenerate.svg" alt="">',
+      onClick: () => {
+        autoReplyEnabled = !autoReplyEnabled;
+        updateAutoReplyToggle();
+        if (!autoReplyEnabled) cancelAutoReplyTimer();
+      },
+    });
+    addPanelItem(actions, {
+      label: "戳一下",
+      desc: "让 Cha 接话",
+      icon: '<img src="assets/icons/chat/poke.svg" alt="">',
+      disabled: isReplying || !chatMessages.length,
+      onClick: () => triggerReply("forced"),
+    });
+    panel.appendChild(actions);
+
+    const gamesTitle = document.createElement("div");
+    gamesTitle.className = "plus-panel-title";
+    gamesTitle.textContent = "游戏模式";
+    panel.appendChild(gamesTitle);
+
+    const games = document.createElement("div");
+    games.className = "plus-panel-games";
+    [
+      ["truth-dare.jpg", "真心话大冒险", "/chat/games/truth-dare"],
+      ["turtle-soup.jpg", "海龟汤", "/chat/games/turtle-soup"],
+      ["trpg.jpg", "跑团", "/chat/games/trpg"],
+      ["wicked.jpg", "女巫的毒药", "/chat/games/wicked"],
+    ].forEach(([asset, label, route]) => {
+      const game = document.createElement("button");
+      game.type = "button";
+      game.className = "plus-panel-game";
+      game.innerHTML = `<img src="assets/icons/games/${asset}" alt=""><span>${label}</span>`;
+      game.addEventListener("click", () => {
+        closePanel();
+        showDialog({
+          title: "游戏入口已预留",
+          body: `${route} 将接入 sandbox 游戏模式，本轮先保留入口。`,
+          confirmLabel: "知道了",
+        });
+      });
+      games.appendChild(game);
+    });
+    panel.appendChild(games);
+
+    // 浮模式：append 到 chat-shell，加 plus-panel-open class（和 emoji 一致）
+    const chatShell = document.querySelector(".chat-shell");
+    (chatShell || inputBar.parentNode).appendChild(panel);
+    chatShell?.classList.add("plus-panel-open");
+    plusButton.classList.add("active");
+    setChatInputMode("plain"); // plus-panel is not a keyboard-replacement state
+
+    // 记录打开前是否在底部
+    const wasNearBottom = isNearBottom();
+
+    requestAnimationFrame(() => {
+      panel.classList.add("open");
+
+      // 测量面板实际高度，注入 CSS 变量用于 padding 计算
+      const panelHeight = panel.offsetHeight;
+      if (panelHeight > 0) {
+        document.documentElement.style.setProperty('--plus-panel-h', `${panelHeight + 12}px`);
+      }
+
+      // 只在原本就在底部时才跟随滚动
+      if (wasNearBottom) {
+        scrollChatToLatest();
+      }
+    });
+  }
+
+  plusButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    panel ? closePanel() : openPanel();
+  }, true);
+
+  messageInput?.addEventListener("focus", closePanel);
+
+  document.addEventListener("click", (event) => {
+    if (!panel) return;
+    if (panel.contains(event.target) || plusButton.contains(event.target)) return;
+    closePanel();
+  });
+}
+
+initV2Shell();
+initV2Composer();
+initInputKeyboardHints();
+initKeyboardViewportState();
+initStableShellHeight();
+initVisualVh();
+
+// Initialize voice module
+if (window.SPVoice) {
+  window.SPVoice.initVoice();
+}
+
+// Voice input button handler (MVP placeholder)
+if (voiceInputBtn) {
+  voiceInputBtn.addEventListener("click", () => {
+    console.log("Voice input clicked - recording UI not yet implemented");
+    alert("语音输入功能\n\n录音界面开发中...");
+  });
+}
+
+// Start loading emoji catalog in the background — never blocks UI
+window.SPEmoji.loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
+
+// Shortcode emoji suggestion bar (moved to modules/emoji-suggestions.js)
+window.SPEmojiSuggestions.initEmojiSuggestionBar();
+
+
 // ── V2 shared status bar ─────────────────────────────────────────────────────
 async function initV2StatusBars() {
   const bars = Array.from(document.querySelectorAll(".v2-top-status"));
@@ -6109,7 +8370,395 @@ document.getElementById("mcBackButton")?.addEventListener("click", () => {
 // 世界书管理
 // ═════════════════════════════════════════════════════════════════════════════
 
-// ── Worldbook (moved to modules/worldbook.js) ───────────────────────────────
+const WB_MAX_FILE_BYTES  = 1 * 1024 * 1024;   // 1 MB frontend guard
+const WB_MAX_CONTENT_LEN = 200_000;            // chars, mirrors DB constraint
+const WB_PREVIEW_LINES   = 100;
+const WB_PREVIEW_CHARS   = 200;
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+let wbBooks        = [];   // WorldBook[]  in-memory cache (sorted by priority)
+let wbDraggedId    = null; // id of card being dragged
+let wbPendingFile  = null; // { name, content, lineCount } pending upload
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+// Note: these elements live in #wbContentStore (a hidden DOM store) and are
+// moved into the settings subpage body when the worldbook subpage is opened.
+
+const wbUploadBtn        = document.getElementById("wbUploadBtn");
+const wbFileInput        = document.getElementById("wbFileInput");
+const wbUploadForm       = document.getElementById("wbUploadForm");
+const wbNameInput        = document.getElementById("wbNameInput");
+const wbAuthorInput      = document.getElementById("wbAuthorInput");
+const wbUploadPreview    = document.getElementById("wbUploadPreview");
+const wbUploadError      = document.getElementById("wbUploadError");
+const wbCancelUpload     = document.getElementById("wbCancelUpload");
+const wbConfirmUpload    = document.getElementById("wbConfirmUpload");
+const wbList             = document.getElementById("wbList");
+const wbTokenHint        = document.getElementById("wbTokenHint");
+
+// ── Open / Close (legacy stubs — worldbook is now a settings subpage) ─────────
+
+function openWorldBooks() {
+  openSettingsSubpage("worldbook");
+}
+
+function closeWorldBooks() {
+  // Navigate back to prompt-worldbook subpage (the parent)
+  openSettingsSubpage("prompt-worldbook");
+}
+
+
+// ── Load & Render ─────────────────────────────────────────────────────────────
+
+async function loadWorldBooks() {
+  if (!supabaseClient || !currentUserId) {
+    wbList.innerHTML = '<div class="wb-empty">请先登录。</div>';
+    return;
+  }
+
+  wbList.innerHTML = '<div class="wb-loading" aria-live="polite">加载中…</div>';
+
+  const { data, error } = await supabaseClient
+    .from("world_books")
+    .select("id, name, author, content, line_count, enabled, priority, created_at")
+    .eq("user_id", currentUserId)
+    .order("priority", { ascending: true });
+
+  if (error) {
+    wbList.innerHTML = `<div class="wb-empty">加载失败：${error.message}</div>`;
+    return;
+  }
+
+  wbBooks = data || [];
+  wbRender();
+  wbUpdateTokenHint();
+}
+
+function wbRender() {
+  if (wbBooks.length === 0) {
+    wbList.innerHTML = '<div class="wb-empty">还没有上传世界书。开始上传你的第一个吧。</div>';
+    return;
+  }
+
+  wbList.innerHTML = "";
+
+  wbBooks.forEach((book, index) => {
+    const card = document.createElement("div");
+    card.className = "wb-card";
+    card.setAttribute("role", "listitem");
+    card.dataset.id = book.id;
+    card.draggable = true;
+
+    const previewText = wbBuildPreview(book.content);
+    const authorBadge = book.author
+      ? `<span class="wb-author">${escapeHtml(book.author)}</span>`
+      : "";
+
+    card.innerHTML = `
+      <div class="wb-card-main">
+        <span class="wb-drag-handle" aria-hidden="true">⠿</span>
+        <span class="wb-index">${index + 1}</span>
+        <div class="wb-card-info">
+          <div class="wb-name" title="${escapeHtml(book.name)}">${escapeHtml(book.name)}</div>
+          <div class="wb-meta">
+            ${authorBadge}
+            <span class="wb-lines">${book.line_count} 行</span>
+          </div>
+        </div>
+        <div class="wb-card-actions">
+          <button
+            class="wb-toggle"
+            data-enabled="${book.enabled}"
+            aria-label="${book.enabled ? "已启用，点击禁用" : "已禁用，点击启用"}"
+            aria-pressed="${book.enabled}"
+            title="${book.enabled ? "已启用" : "已禁用"}"
+          >${book.enabled ? "●" : "○"}</button>
+          <button class="wb-delete" aria-label="删除 ${escapeHtml(book.name)}" title="删除">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2 3.5h10M5.5 3.5V2.5h3V3.5M5 5.5l.5 5M9 5.5l-.5 5M3.5 3.5l.5 8h6l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="wb-preview">${escapeHtml(previewText)}</div>
+    `;
+
+    // Toggle preview on card body click (not on action buttons)
+    card.querySelector(".wb-card-main").addEventListener("click", (e) => {
+      if (e.target.closest(".wb-card-actions")) return;
+      card.classList.toggle("wb-expanded");
+    });
+
+    // Toggle enabled
+    card.querySelector(".wb-toggle").addEventListener("click", (e) => {
+      e.stopPropagation();
+      wbToggleEnabled(book.id, !book.enabled);
+    });
+
+    // Delete
+    card.querySelector(".wb-delete").addEventListener("click", (e) => {
+      e.stopPropagation();
+      wbDelete(book.id, book.name);
+    });
+
+    // Drag events
+    card.addEventListener("dragstart", wbOnDragStart);
+    card.addEventListener("dragover",  wbOnDragOver);
+    card.addEventListener("dragleave", wbOnDragLeave);
+    card.addEventListener("drop",      wbOnDrop);
+    card.addEventListener("dragend",   wbOnDragEnd);
+
+    wbList.appendChild(card);
+  });
+}
+
+function wbBuildPreview(content) {
+  return content.split("\n").slice(0, WB_PREVIEW_LINES).join("\n").substring(0, WB_PREVIEW_CHARS);
+}
+
+// escapeHtml: uses the canonical definition at line ~3759 (object-map approach).
+// The duplicate chain-replace version has been removed.
+
+function wbUpdateTokenHint() {
+  const enabled = wbBooks.filter(b => b.enabled);
+  if (enabled.length === 0) {
+    wbTokenHint.textContent = "";
+    wbTokenHint.classList.remove("wb-token-hint--warn");
+    return;
+  }
+  const totalChars = enabled.reduce((sum, b) => sum + b.content.length, 0);
+  // Rough estimate: 1 token ≈ 4 chars
+  const estTokens = Math.round(totalChars / 4);
+  const warn = totalChars > 20_000;
+  wbTokenHint.textContent = `${enabled.length} 个已启用 · 约 ${estTokens.toLocaleString()} tokens${warn ? "（已接近上限）" : ""}`;
+  wbTokenHint.classList.toggle("wb-token-hint--warn", warn);
+}
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
+
+async function wbToggleEnabled(id, newEnabled) {
+  // Optimistic update
+  const book = wbBooks.find(b => b.id === id);
+  if (!book) return;
+  book.enabled = newEnabled;
+  wbRender();
+  wbUpdateTokenHint();
+
+  const { error } = await supabaseClient
+    .from("world_books")
+    .update({ enabled: newEnabled })
+    .eq("id", id)
+    .eq("user_id", currentUserId);
+
+  if (error) {
+    // Rollback
+    book.enabled = !newEnabled;
+    wbRender();
+    wbUpdateTokenHint();
+    showToast("更新失败：" + error.message);
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+async function wbDelete(id, name) {
+  if (!confirm(`确认删除「${name}」？`)) return;
+
+  const { error } = await supabaseClient
+    .from("world_books")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", currentUserId);
+
+  if (error) {
+    showToast("删除失败：" + error.message);
+    return;
+  }
+
+  wbBooks = wbBooks.filter(b => b.id !== id);
+  wbRender();
+  wbUpdateTokenHint();
+}
+
+// ── Drag & Drop ───────────────────────────────────────────────────────────────
+
+function wbOnDragStart(e) {
+  wbDraggedId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.add("wb-dragging");
+  e.dataTransfer.effectAllowed = "move";
+}
+
+function wbOnDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  const target = e.currentTarget;
+  if (target.dataset.id !== wbDraggedId) {
+    target.classList.add("wb-drag-over");
+  }
+}
+
+function wbOnDragLeave(e) {
+  e.currentTarget.classList.remove("wb-drag-over");
+}
+
+function wbOnDrop(e) {
+  e.preventDefault();
+  const targetId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.remove("wb-drag-over");
+
+  if (!wbDraggedId || wbDraggedId === targetId) return;
+
+  // Reorder in-memory array: move dragged item to position of target
+  const fromIdx = wbBooks.findIndex(b => b.id === wbDraggedId);
+  const toIdx   = wbBooks.findIndex(b => b.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+
+  const [moved] = wbBooks.splice(fromIdx, 1);
+  wbBooks.splice(toIdx, 0, moved);
+
+  wbRender();
+  wbUpdateTokenHint();
+
+  // Persist atomically via RPC
+  wbPersistOrder();
+}
+
+function wbOnDragEnd(e) {
+  e.currentTarget.classList.remove("wb-dragging");
+  // Clear any stale drag-over indicators
+  document.querySelectorAll(".wb-drag-over").forEach(el => el.classList.remove("wb-drag-over"));
+  wbDraggedId = null;
+}
+
+async function wbPersistOrder() {
+  const orderedIds = wbBooks.map(b => b.id);
+
+  const { error } = await supabaseClient.rpc("reorder_world_books", {
+    ordered_ids:     orderedIds,
+    calling_user_id: currentUserId,
+  });
+
+  if (error) {
+    showToast("排序保存失败：" + error.message);
+    // Reload from DB to restore consistent state
+    await loadWorldBooks();
+  }
+}
+
+// ── Upload flow ───────────────────────────────────────────────────────────────
+
+wbUploadBtn.addEventListener("click", () => wbFileInput.click());
+
+wbFileInput.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";  // reset so same file can be re-selected
+  if (!file) return;
+
+  // Size guard
+  if (file.size > WB_MAX_FILE_BYTES) {
+    showToast("文件过大（上限 1 MB）");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const content = ev.target.result;
+
+    // Content length guard
+    if (content.length > WB_MAX_CONTENT_LEN) {
+      showToast("文件内容过长（上限 200,000 字符）");
+      return;
+    }
+
+    const lineCount = content.split("\n").length;
+    // Derive name from filename, strip extension
+    const baseName = file.name.replace(/\.(md|txt)$/i, "").trim() || file.name;
+
+    wbPendingFile = { content, lineCount };
+    wbNameInput.value   = baseName;
+    wbAuthorInput.value = "";
+    wbUploadPreview.textContent = wbBuildPreview(content);
+    wbUploadError.textContent = "";
+    wbUploadForm.classList.remove("hidden");
+    wbNameInput.focus();
+  };
+  reader.readAsText(file, "utf-8");
+});
+
+wbCancelUpload.addEventListener("click", wbResetUploadForm);
+
+wbConfirmUpload.addEventListener("click", wbSubmitUpload);
+
+function wbResetUploadForm() {
+  wbPendingFile = null;
+  wbNameInput.value   = "";
+  wbAuthorInput.value = "";
+  wbUploadPreview.textContent = "";
+  wbUploadError.textContent = "";
+  wbUploadForm.classList.add("hidden");
+}
+
+async function wbSubmitUpload() {
+  if (!wbPendingFile) return;
+  if (!supabaseClient || !currentUserId) {
+    wbUploadError.textContent = "请先登录。";
+    return;
+  }
+
+  const name = wbNameInput.value.trim();
+  if (!name) {
+    wbUploadError.textContent = "请填写名称。";
+    wbNameInput.focus();
+    return;
+  }
+
+  const author    = wbAuthorInput.value.trim() || null;
+  const { content, lineCount } = wbPendingFile;
+
+  // Calculate new priority = max(existing priorities) + 10, or 0 if empty
+  const maxPriority = wbBooks.length > 0
+    ? Math.max(...wbBooks.map(b => b.priority))
+    : -10;
+  const priority = maxPriority + 10;
+
+  wbConfirmUpload.disabled = true;
+  wbUploadError.textContent = "";
+
+  const { data, error } = await supabaseClient
+    .from("world_books")
+    .insert({
+      user_id:    currentUserId,
+      name,
+      author,
+      content,
+      line_count: lineCount,
+      enabled:    false,
+      priority,
+    })
+    .select("id, name, author, content, line_count, enabled, priority, created_at")
+    .single();
+
+  wbConfirmUpload.disabled = false;
+
+  if (error) {
+    // Detect unique constraint violation (Postgres code 23505)
+    if (error.code === "23505" || (error.message || "").includes("unique")) {
+      wbUploadError.textContent = "同名世界书已存在，请修改名称后重试。";
+      wbNameInput.focus();
+    } else {
+      wbUploadError.textContent = "上传失败：" + error.message;
+    }
+    return;
+  }
+
+  wbBooks.push(data);
+  wbResetUploadForm();
+  wbRender();
+  wbUpdateTokenHint();
+  showToast("已上传「" + name + "」");
+}
+
 // ── Toast helper (reuse existing showDialog or fallback) ─────────────────────
 // The app uses showDialog(). For non-blocking brief feedback we use it as
 // a simple one-button alert. If a lighter toast API exists in the codebase
@@ -6173,31 +8822,3 @@ window.addEventListener("load", () => {
       .catch(err => console.error('Failed to update diary card:', err));
   }
 });
-
-// ── App Initialization ───────────────────────────────────────────────────────
-
-initV2Shell();
-initV2Composer();
-initInputKeyboardHints();
-initKeyboardViewportState();
-initStableShellHeight();
-initVisualVh();
-
-// Initialize voice module
-if (window.SPVoice) {
-  window.SPVoice.initVoice();
-}
-
-// Voice input button handler (MVP placeholder)
-if (voiceInputBtn) {
-  voiceInputBtn.addEventListener("click", () => {
-    console.log("Voice input clicked - recording UI not yet implemented");
-    alert("语音输入功能\n\n录音界面开发中...");
-  });
-}
-
-// Start loading emoji catalog in the background — never blocks UI
-window.SPEmoji.loadEmojiCatalog().catch(err => console.warn("[emoji] catalog load error:", err));
-
-// Shortcode emoji suggestion bar (moved to modules/emoji-suggestions.js)
-window.SPEmojiSuggestions.initEmojiSuggestionBar();

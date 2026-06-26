@@ -128,6 +128,7 @@ function refreshMessageActions() {
     getLastMessageRow,
     canRegenerateRow,
     refreshGroupClasses,
+    refreshMessageActions,
   };
 
   // ── Legacy global aliases (for backward compatibility) ────────────────────
@@ -135,6 +136,7 @@ function refreshMessageActions() {
   window.getLastMessageRow = getLastMessageRow;
   window.canRegenerateRow = canRegenerateRow;
   window.refreshGroupClasses = refreshGroupClasses;
+  window.refreshMessageActions = refreshMessageActions;
   window.isMobileMessageActions = isMobileMessageActions;
 
 })();
