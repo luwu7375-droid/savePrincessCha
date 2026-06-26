@@ -83,6 +83,24 @@ const PROVIDER_GROUPS = {
   }
 };
 
+// Load custom providers from localStorage
+(function loadCustomProviders() {
+  try {
+    const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+    Object.entries(customProviders).forEach(([id, config]) => {
+      PROVIDER_GROUPS[id] = {
+        name: config.name,
+        endpoint: config.endpoint,
+        models: config.models,
+        description: config.description || '自定义配置',
+        requiresAuth: true
+      };
+    });
+  } catch (err) {
+    console.error('Failed to load custom providers:', err);
+  }
+})();
+
 // Model role definitions
 const MODEL_ROLES = {
   chat: { label: "对话模型", description: "主聊天回复" },

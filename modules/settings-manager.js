@@ -111,20 +111,29 @@ function renderSettingsSubpage(type) {
 
 function _renderApiSubpage() {
   const mapping = getModelRoleMapping();
+  const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
 
   // Build provider status section
   let providerStatusHtml = '<div class="settings-section"><div class="settings-section-label">通道状态</div><div class="settings-card">';
 
   Object.entries(PROVIDER_GROUPS).forEach(([groupId, group]) => {
-    // For now, mark all as "由环境变量配置" since we don't expose keys
+    const isCustom = customProviders[groupId];
+    const statusText = isCustom ? '自定义配置' : '由环境变量配置';
+    const statusClass = isCustom ? '' : 'settings-row-value--muted';
+
     providerStatusHtml += `
       <div class="settings-card-row">
         <div><strong>${group.name}</strong><small>${group.description}</small></div>
-        <span class="settings-row-value settings-row-value--muted">由环境变量配置</span>
+        <span class="settings-row-value ${statusClass}">${statusText}</span>
+        ${isCustom ? '<button type="button" class="settings-row-action-btn settings-row-action-btn--sm" data-edit-provider="' + groupId + '">编辑</button>' : ''}
       </div>`;
   });
 
-  providerStatusHtml += '</div></div>';
+  providerStatusHtml += `
+    <div class="settings-card-row">
+      <button type="button" class="settings-row-action-btn" id="addCustomProviderBtn">+ 添加自定义通道</button>
+    </div>
+  </div></div>`;
 
   // Build model role mapping section
   let rolesMappingHtml = '<div class="settings-section"><div class="settings-section-label">用途模型</div><div class="settings-card">';
@@ -459,12 +468,250 @@ function _initSettingsSubpageEvents(container, type) {
   }
 }
 
+// Custom provider management
+function _showCustomProviderDialog(providerId = null) {
+  const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+  const existingProvider = providerId ? customProviders[providerId] : null;
+  const isEdit = !!existingProvider;
+
+  const dialogHtml = `
+    <div class="overlay" id="customProviderOverlay" style="z-index:100;">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+          <span>${isEdit ? '编辑' : '添加'}自定义通道</span>
+          <button type="button" id="closeProviderDialog">✕</button>
+        </div>
+        <div style="padding:12px 18px 18px;display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">通道 ID</label>
+            <input type="text" id="providerIdInput" placeholder="例如: custom-openai"
+              value="${existingProvider?.id || ''}"
+              ${isEdit ? 'disabled' : ''}
+              style="width:100%;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">通道名称</label>
+            <input type="text" id="providerNameInput" placeholder="例如: 自定义 OpenAI"
+              value="${existingProvider?.name || ''}"
+              style="width:100%;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">API 端点</label>
+            <input type="url" id="providerEndpointInput" placeholder="https://api.openai.com/v1"
+              value="${existingProvider?.endpoint || ''}"
+              style="width:100%;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">API Key</label>
+            <input type="password" id="providerKeyInput" placeholder="sk-..."
+              value="${existingProvider?.apiKey || ''}"
+              style="width:100%;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">支持的模型</label>
+            <div style="display:flex;gap:8px;">
+              <input type="text" id="providerModelsInput" placeholder="点击右侧按钮自动获取"
+                value="${existingProvider?.models?.join(', ') || ''}"
+                style="flex:1;padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);font-size:14px;">
+              <button type="button" id="fetchModelsBtn" style="padding:8px 12px;border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);color:var(--text-main);cursor:pointer;white-space:nowrap;font-size:13px;">获取模型</button>
+            </div>
+            <div id="fetchModelsStatus" style="font-size:11px;color:var(--text-muted);margin-top:4px;"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button type="button" id="cancelProviderDialog" style="flex:1;padding:10px;border:1px solid var(--border-soft);border-radius:8px;background:transparent;color:var(--text-main);cursor:pointer;">取消</button>
+            <button type="button" id="saveProviderDialog" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--active);color:white;cursor:pointer;">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', dialogHtml);
+
+  const overlay = document.getElementById('customProviderOverlay');
+  const closeBtn = document.getElementById('closeProviderDialog');
+  const cancelBtn = document.getElementById('cancelProviderDialog');
+  const saveBtn = document.getElementById('saveProviderDialog');
+  const fetchModelsBtn = document.getElementById('fetchModelsBtn');
+  const fetchModelsStatus = document.getElementById('fetchModelsStatus');
+
+  const closeDialog = () => overlay.remove();
+
+  closeBtn.addEventListener('click', closeDialog);
+  cancelBtn.addEventListener('click', closeDialog);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeDialog();
+  });
+
+  // Fetch models from upstream API
+  fetchModelsBtn.addEventListener('click', async () => {
+    const endpoint = document.getElementById('providerEndpointInput').value.trim();
+    const apiKey = document.getElementById('providerKeyInput').value.trim();
+    const modelsInput = document.getElementById('providerModelsInput');
+
+    if (!endpoint) {
+      fetchModelsStatus.textContent = '请先填写 API 端点';
+      fetchModelsStatus.style.color = '#e57373';
+      return;
+    }
+    if (!apiKey) {
+      fetchModelsStatus.textContent = '请先填写 API Key';
+      fetchModelsStatus.style.color = '#e57373';
+      return;
+    }
+
+    fetchModelsBtn.disabled = true;
+    fetchModelsBtn.textContent = '获取中…';
+    fetchModelsStatus.textContent = '正在连接上游 API...';
+    fetchModelsStatus.style.color = 'var(--text-muted)';
+
+    try {
+      // Normalize endpoint - ensure it ends with /v1 or add /models path
+      let modelsEndpoint = endpoint.replace(/\/$/, '');
+      if (!modelsEndpoint.endsWith('/v1')) {
+        modelsEndpoint += '/v1';
+      }
+      modelsEndpoint += '/models';
+
+      const response = await fetch(modelsEndpoint, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Parse OpenAI-compatible response: { data: [{ id: "model-name", ... }] }
+      if (!data.data || !Array.isArray(data.data)) {
+        throw new Error('返回数据格式不符合 OpenAI API 规范');
+      }
+
+      const modelIds = data.data.map(m => m.id).filter(id => id);
+
+      if (modelIds.length === 0) {
+        throw new Error('未找到任何模型');
+      }
+
+      // Fill the models input with fetched model names
+      modelsInput.value = modelIds.join(', ');
+
+      fetchModelsStatus.textContent = `成功获取 ${modelIds.length} 个模型`;
+      fetchModelsStatus.style.color = '#4CAF50';
+
+      if (typeof showToast === 'function') {
+        showToast(`已获取 ${modelIds.length} 个模型`);
+      }
+
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+      fetchModelsStatus.textContent = `获取失败: ${error.message}`;
+      fetchModelsStatus.style.color = '#e57373';
+
+      if (typeof showToast === 'function') {
+        showToast('获取模型列表失败');
+      }
+    } finally {
+      fetchModelsBtn.disabled = false;
+      fetchModelsBtn.textContent = '获取模型';
+    }
+  });
+
+  saveBtn.addEventListener('click', () => {
+    const id = document.getElementById('providerIdInput').value.trim();
+    const name = document.getElementById('providerNameInput').value.trim();
+    const endpoint = document.getElementById('providerEndpointInput').value.trim();
+    const apiKey = document.getElementById('providerKeyInput').value.trim();
+    const modelsStr = document.getElementById('providerModelsInput').value.trim();
+
+    if (!id || !name || !endpoint || !apiKey) {
+      if (typeof showToast === 'function') {
+        showToast('请填写所有必填字段');
+      } else {
+        alert('请填写所有必填字段');
+      }
+      return;
+    }
+
+    if (!modelsStr) {
+      if (typeof showToast === 'function') {
+        showToast('请点击"获取模型"按钮自动获取，或手动输入模型名称（逗号分隔）');
+      } else {
+        alert('请点击"获取模型"按钮自动获取，或手动输入模型名称（逗号分隔）');
+      }
+      return;
+    }
+
+    const models = modelsStr.split(',').map(m => m.trim()).filter(m => m);
+    if (models.length === 0) {
+      if (typeof showToast === 'function') {
+        showToast('请至少添加一个模型');
+      } else {
+        alert('请至少添加一个模型');
+      }
+      return;
+    }
+
+    const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+    customProviders[id] = { id, name, endpoint, apiKey, models, description: '自定义配置' };
+    localStorage.setItem('custom_providers', JSON.stringify(customProviders));
+
+    // Update global PROVIDER_GROUPS
+    if (!window.PROVIDER_GROUPS) window.PROVIDER_GROUPS = {};
+    window.PROVIDER_GROUPS[id] = {
+      name,
+      endpoint,
+      models,
+      description: '自定义配置',
+      requiresAuth: true
+    };
+
+    if (typeof showToast === 'function') {
+      showToast(isEdit ? '通道已更新' : '通道已添加');
+    }
+
+    closeDialog();
+
+    // Refresh the API settings page
+    setTimeout(() => {
+      const subpageBody = document.getElementById('settingsSubpageBody');
+      if (subpageBody && typeof renderSettingsSubpage === 'function') {
+        subpageBody.innerHTML = renderSettingsSubpage('api');
+        if (typeof _initSettingsSubpageEvents === 'function') {
+          _initSettingsSubpageEvents(subpageBody, 'api');
+        }
+      }
+    }, 100);
+  });
+}
+
 // Legacy stubs (kept so any other code referencing the old names keeps working)
 function _renderBeautifySubpage()  { return _renderAppearanceResourcesSubpage(); }
 function _renderPromptSubpage()    { return _renderPromptWorldbookSubpage(); }
 
 function _initSettingsApiSubpage(container) {
   const mapping = getModelRoleMapping();
+
+  // Handle add custom provider button
+  const addProviderBtn = container.querySelector('#addCustomProviderBtn');
+  if (addProviderBtn) {
+    addProviderBtn.addEventListener('click', () => {
+      _showCustomProviderDialog();
+    });
+  }
+
+  // Handle edit provider buttons
+  container.querySelectorAll('[data-edit-provider]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const providerId = btn.dataset.editProvider;
+      _showCustomProviderDialog(providerId);
+    });
+  });
 
   // Handle provider selection change
   container.querySelectorAll('select[data-type="provider"]').forEach(select => {
@@ -546,21 +793,50 @@ function _initSettingsApiSubpage(container) {
 
       const mapping = getModelRoleMapping();
       const results = [];
+      let allPassed = true;
 
-      // Check each role
+      // Test each configured role by making a real API call
       for (const [roleId, role] of Object.entries(MODEL_ROLES)) {
         const config = mapping[roleId];
         if (!config || !config.providerGroup || !config.model) {
-          results.push(`${role.label}：未选择`);
-        } else if (!PROVIDER_GROUPS[config.providerGroup]) {
-          results.push(`${role.label}：通道未配置`);
-        } else {
-          results.push(`${role.label}：已配置`);
+          results.push(`${role.label}：⚠️ 未配置`);
+          continue;
+        }
+
+        try {
+          // Make a minimal test request
+          const testMessages = [{ role: "user", content: "test" }];
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: testMessages,
+              provider: config.providerGroup,
+              model: config.model,
+              stream: false,
+              max_tokens: 5
+            })
+          });
+
+          if (response.ok) {
+            results.push(`${role.label}：✅ 正常`);
+          } else {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            results.push(`${role.label}：❌ ${response.status}`);
+            allPassed = false;
+          }
+        } catch (error) {
+          results.push(`${role.label}：❌ 网络错误`);
+          allPassed = false;
         }
       }
 
       testStatus.textContent = results.join(' / ');
       testBtn.disabled = false;
+
+      if (typeof showToast === 'function') {
+        showToast(allPassed ? '所有配置测试通过' : '部分配置测试失败');
+      }
     });
   }
 }

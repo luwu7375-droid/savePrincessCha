@@ -2947,6 +2947,12 @@ body {
   white-space: nowrap;
 }
 
+.settings-row-action-btn--sm {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .settings-row-action-btn:active {
   background: rgba(30, 30, 30, 0.06);
 }
