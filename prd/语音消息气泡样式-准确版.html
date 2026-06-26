@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>语音消息气泡样式 - 准确版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a1a;
+            padding: 40px 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .section {
+            margin-bottom: 60px;
+        }
+
+        .section-title {
+            color: #888;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .message-group {
+            margin-bottom: 40px;
+        }
+
+        .message-label {
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 12px;
+            padding-left: 12px;
+        }
+
+        /* 消息气泡容器 */
+        .bubble-container {
+            display: flex;
+            margin-bottom: 12px;
+            align-items: flex-end;
+        }
+
+        .bubble-container.cha {
+            justify-content: flex-end;
+        }
+
+        /* 语音气泡基础样式 */
+        .voice-bubble {
+            background: linear-gradient(135deg, #4A90E2 0%, #357ABD 100%);
+            border-radius: 20px;
+            padding: 12px 16px;
+            max-width: 280px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            position: relative;
+        }
+
+        .voice-bubble.cha {
+            background: linear-gradient(135deg, #F0F0F0 0%, #E8E8E8 100%);
+            color: #1a1a1a;
+        }
+
+        .voice-bubble.kk {
+            background: linear-gradient(135deg, #4A90E2 0%, #357ABD 100%);
+            color: white;
+        }
+
+        /* 播放按钮 */
+        .play-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .voice-bubble.kk .play-btn {
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .voice-bubble.cha .play-btn {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .play-btn:hover {
+            background: rgba(255, 255, 255, 1);
+        }
+
+        .play-icon {
+            width: 0;
+            height: 0;
+            border-left: 10px solid #4A90E2;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            margin-left: 2px;
+        }
+
+        .voice-bubble.cha .play-icon {
+            border-left-color: #666;
+        }
+
+        .pause-icon {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pause-icon::before,
+        .pause-icon::after {
+            content: '';
+            width: 3px;
+            height: 12px;
+            background: #4A90E2;
+            border-radius: 1px;
+        }
+
+        .voice-bubble.cha .pause-icon::before,
+        .voice-bubble.cha .pause-icon::after {
+            background: #666;
+        }
+
+        /* 波形容器 */
+        .waveform-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            height: 24px;
+            min-width: 60px;
+            position: relative;
+        }
+
+        /* 波形条 */
+        .waveform-bar {
+            width: 2px;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 1px;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .voice-bubble.cha .waveform-bar {
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        /* 播放进度：细线 */
+        .progress-indicator {
+            position: absolute;
+            width: 2px;
+            height: 24px;
+            background: #4A90E2;
+            border-radius: 1px;
+            top: 0;
+            z-index: 10;
+        }
+
+        .voice-bubble.cha .progress-indicator {
+            background: rgba(74, 144, 226, 0.8);
+        }
+
+        /* 时间显示 */
+        .time-display {
+            font-size: 12px;
+            font-weight: 500;
+            min-width: 30px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .voice-bubble.kk .time-display {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .voice-bubble.cha .time-display {
+            color: rgba(0, 0, 0, 0.6);
+        }
+
+        /* 转文字显示 */
+        .transcribed-text {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+
+        .voice-bubble.kk .transcribed-text {
+            background: rgba(0, 0, 0, 0.2);
+            color: white;
+        }
+
+        .voice-bubble.cha .transcribed-text {
+            background: rgba(0, 0, 0, 0.08);
+            color: #1a1a1a;
+        }
+
+        /* 未读提示红点 - 气泡居中位置 */
+        .unread-indicator {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #FF4444;
+            border-radius: 50%;
+            border: 2px solid #1a1a1a;
+            right: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 20;
+        }
+
+        /* 时间和进度显示 */
+        .time-progress-display {
+            font-size: 11px;
+            font-weight: 500;
+            opacity: 0.8;
+        }
+
+        .description {
+            color: #999;
+            font-size: 12px;
+            margin-bottom: 20px;
+            padding: 0 12px;
+            line-height: 1.5;
+        }
+
+        h1 {
+            color: #fff;
+            margin-bottom: 40px;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>语音消息气泡样式 - 准确版</h1>
+
+        <!-- KK 发送的语音 -->
+        <div class="section">
+            <div class="section-title">KK 发送的语音消息（蓝色气泡）</div>
+
+            <!-- 未播放状态 -->
+            <div class="message-group">
+                <div class="message-label">未播放状态</div>
+                <div class="description">显示完整时长，波形灰显</div>
+                <div class="bubble-container kk">
+                    <div class="voice-bubble kk">
+                        <div class="play-btn">
+                            <div class="play-icon"></div>
+                        </div>
+                        <div class="waveform-container">
+                            <div class="waveform-bar" style="height: 6px;"></div>
+                            <div class="waveform-bar" style="height: 10px;"></div>
+                            <div class="waveform-bar" style="height: 8px;"></div>
+                            <div class="waveform-bar" style="height: 12px;"></div>
+                            <div class="waveform-bar" style="height: 7px;"></div>
+                            <div class="waveform-bar" style="height: 11px;"></div>
+                            <div class="waveform-bar" style="height: 9px;"></div>
+                        </div>
+                        <div class="time-display">11"</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 播放中状态 -->
+            <div class="message-group">
+                <div class="message-label">播放中状态</div>
+                <div class="description">细线停在正在播放的波形条上，显示当前时间 / 总时长</div>
+                <div class="bubble-container kk">
+                    <div class="voice-bubble kk">
+                        <div class="play-btn">
+                            <div class="pause-icon"></div>
+                        </div>
+                        <div class="waveform-container">
+                            <div class="waveform-bar" style="height: 6px;"></div>
+                            <div class="waveform-bar" style="height: 10px;"></div>
+                            <div class="progress-indicator" style="left: 8px;"></div>
+                            <div class="waveform-bar" style="height: 8px;"></div>
+                            <div class="waveform-bar" style="height: 12px;"></div>
+                            <div class="waveform-bar" style="height: 7px;"></div>
+                            <div class="waveform-bar" style="height: 11px;"></div>
+                            <div class="waveform-bar" style="height: 9px;"></div>
+                        </div>
+                        <div class="time-display time-progress-display">1" / 11"</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 播放中状态 2 -->
+            <div class="message-group">
+                <div class="message-label">播放中状态（进度更新）</div>
+                <div class="description">细线随着播放位置移动</div>
+                <div class="bubble-container kk">
+                    <div class="voice-bubble kk">
+                        <div class="play-btn">
+                            <div class="pause-icon"></div>
+                        </div>
+                        <div class="waveform-container">
+                            <div class="waveform-bar" style="height: 6px;"></div>
+                            <div class="waveform-bar" style="height: 10px;"></div>
+                            <div class="waveform-bar" style="height: 8px;"></div>
+                            <div class="waveform-bar" style="height: 12px;"></div>
+                            <div class="progress-indicator" style="left: 36px;"></div>
+                            <div class="waveform-bar" style="height: 7px;"></div>
+                            <div class="waveform-bar" style="height: 11px;"></div>
+                            <div class="waveform-bar" style="height: 9px;"></div>
+                        </div>
+                        <div class="time-display time-progress-display">4" / 11"</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 暂停状态 -->
+            <div class="message-group">
+                <div class="message-label">暂停状态</div>
+                <div class="description">暂停后从该位置继续（不从头开始），细线保持在暂停位置</div>
+                <div class="bubble-container kk">
+                    <div class="voice-bubble kk">
+                        <div class="play-btn">
+                            <div class="play-icon"></div>
+                        </div>
+                        <div class="waveform-container">
+                            <div class="waveform-bar" style="height: 6px;"></div>
+                            <div class="waveform-bar" style="height: 10px;"></div>
+                            <div class="waveform-bar" style="height: 8px;"></div>
+                            <div class="progress-indicator" style="left: 20px;"></div>
+                            <div class="waveform-bar" style="height: 12px;"></div>
+                            <div class="waveform-bar" style="height: 7px;"></div>
+                            <div class="waveform-bar" style="height: 11px;"></div>
+                            <div class="waveform-bar" style="height: 9px;"></div>
+                        </div>
+                        <div class="time-display time-progress-display">4" / 11"</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 转文字显示 -->
+            <div class="message-group">
+                <div class="message-label">转文字后的样式</div>
+                <div class="description">转文字结果显示在语音气泡下方</div>
+                <div class="bubble-container kk">
+                    <div>
+                        <div class="voice-bubble kk" style="margin-bottom: 8px;">
+                            <div class="play-btn">
+                                <div class="play-icon"></div>
+                            </div>
+                            <div class="waveform-container">
+                                <div class="waveform-bar" style="height: 6px;"></div>
+                                <div class="waveform-bar" style="height: 10px;"></div>
+                                <div class="waveform-bar" style="height: 8px;"></div>
+                                <div class="waveform-bar" style="height: 12px;"></div>
+                                <div class="waveform-bar" style="height: 7px;"></div>
+                                <div class="waveform-bar" style="height: 11px;"></div>
+                                <div class="waveform-bar" style="height: 9px;"></div>
+                            </div>
+                            <div class="time-display">11"</div>
+                        </div>
+                        <div class="transcribed-text" style="color: white; max-width: 280px;">最近有点累...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cha 发送的语音 -->
+        <div class="section">
+            <div class="section-title">Cha 发送的语音消息（灰色气泡 + 未读红点）</div>
+
+            <!-- 未播放状态 + 未读红点 -->
+            <div class="message-group">
+                <div class="message-label">未播放状态 + 未读红点</div>
+                <div class="description">红点在气泡右侧居中位置，仅 Cha 消息有</div>
+                <div class="bubble-container cha">
+                    <div class="voice-bubble cha" style="position: relative;">
+                        <div class="unread-indicator"></div>
+                        <div class="play-btn">
+                            <div class="play-icon"></div>
+                        </div>
+                        <div class="waveform-container">
+                            <div class="waveform-bar" style="height: 6px;"></div>
+                            <div class="waveform-bar" style="height: 10px;"></div>
+                            <div class="waveform-bar" style="height: 8px;"></div>
+                            <div class="waveform-bar" style="height: 12px;"></div>
+                            <div class="waveform-bar" style="height: 7px;"></div>
+                            <div class="waveform-bar" style="height: 11px;"></div>
+                            <div class="waveform-bar" style="height: 9px;"></div>
+                        </div>
+                        <div class="time-display">4"</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 播放中状态 -->
+            <div class="message-group">
+                <div class="message-label">播放中状态</div>
+                <div class="description">细线显示播放进度，红点已读后消失</div>
+                <div class="bubble-container cha">
+                    <div class="voice-bubble cha">
+                        <div class="play-btn">
+                            <div class="pause-icon"></div>
+                        </div>
+                        <div class="waveform-container">
+                            <div class="waveform-bar" style="height: 6px;"></div>
+                            <div class="waveform-bar" style="height: 10px;"></div>
+                            <div class="waveform-bar" style="height: 8px;"></div>
+                            <div class="progress-indicator" style="left: 20px;"></div>
+                            <div class="waveform-bar" style="height: 12px;"></div>
+                            <div class="waveform-bar" style="height: 7px;"></div>
+                            <div class="waveform-bar" style="height: 11px;"></div>
+                            <div class="waveform-bar" style="height: 9px;"></div>
+                        </div>
+                        <div class="time-display time-progress-display">2" / 4"</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 转文字显示 -->
+            <div class="message-group">
+                <div class="message-label">转文字后的样式</div>
+                <div class="description">转文字结果显示在气泡下方</div>
+                <div class="bubble-container cha">
+                    <div>
+                        <div class="voice-bubble cha" style="margin-bottom: 8px;">
+                            <div class="play-btn">
+                                <div class="play-icon"></div>
+                            </div>
+                            <div class="waveform-container">
+                                <div class="waveform-bar" style="height: 6px;"></div>
+                                <div class="waveform-bar" style="height: 10px;"></div>
+                                <div class="waveform-bar" style="height: 8px;"></div>
+                                <div class="waveform-bar" style="height: 12px;"></div>
+                                <div class="waveform-bar" style="height: 7px;"></div>
+                                <div class="waveform-bar" style="height: 11px;"></div>
+                                <div class="waveform-bar" style="height: 9px;"></div>
+                            </div>
+                            <div class="time-display">4"</div>
+                        </div>
+                        <div class="transcribed-text" style="color: #1a1a1a; max-width: 280px;">终于下班了，我真的要死掉了。</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 交互说明 -->
+        <div class="section">
+            <div class="section-title">交互说明</div>
+            <div style="background: #2a2a2a; padding: 20px; border-radius: 12px; color: #ccc; line-height: 1.8; font-size: 14px;">
+                <p style="margin-bottom: 12px;"><strong>播放/暂停：</strong></p>
+                <ul style="margin-left: 20px; margin-bottom: 16px;">
+                    <li>点击整个气泡都可以播放/暂停</li>
+                    <li>未播放显示三角形按钮</li>
+                    <li>播放中显示暂停按钮</li>
+                </ul>
+
+                <p style="margin-bottom: 12px;"><strong>进度条（关键）：</strong></p>
+                <ul style="margin-left: 20px; margin-bottom: 16px;">
+                    <li>不是宽的蓝色条，而是细竖线</li>
+                    <li>细线停在正在播放的波形条位置</li>
+                    <li>可以拖拽细线到任意位置</li>
+                    <li>显示"当前时间 / 总时长"</li>
+                </ul>
+
+                <p style="margin-bottom: 12px;"><strong>暂停后继续：</strong></p>
+                <ul style="margin-left: 20px; margin-bottom: 16px;">
+                    <li>暂停后细线停在那个位置</li>
+                    <li>再次点击播放从暂停位置继续</li>
+                </ul>
+
+                <p style="margin-bottom: 12px;"><strong>未读提示（关键）：</strong></p>
+                <ul style="margin-left: 20px; margin-bottom: 16px;">
+                    <li>红点在气泡右侧居中位置</li>
+                    <li>仅 Cha 消息有红点</li>
+                    <li>KK 消息没有红点</li>
+                    <li>点击消息后红点消失</li>
+                </ul>
+
+                <p style="margin-bottom: 12px;"><strong>转文字：</strong></p>
+                <ul style="margin-left: 20px;">
+                    <li>长按语音 → 点击"转文字"</li>
+                    <li>结果显示在气泡下方</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
