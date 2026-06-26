@@ -131,12 +131,12 @@
   // ── Auth State Change Listener ──────────────────────────────────────────────
   if (window.supabaseClient) {
     window.supabaseClient.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session && !loginOverlay.classList.contains("hidden")) {
+      if (event === "SIGNED_IN" && session) {
         hideLoginAndInit(session);
       }
     });
 
-    // Check initial session
+    // Check initial session on page load
     window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         hideLoginAndInit(session);
