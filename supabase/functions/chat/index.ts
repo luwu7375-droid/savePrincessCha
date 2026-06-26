@@ -18,13 +18,11 @@ import {
   callModelWithFallback,
   callModelText,
 } from "../_shared/model-client.ts";
+import { makeCorsHeaders } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+const corsHeaders = makeCorsHeaders({
   "Access-Control-Expose-Headers": "x-save-princess-memory-debug, x-memory-cache-hit, x-model-tier, x-provider, x-model, x-fallback-used, x-fallback-reason, x-save-princess-function-version, x-chat-status, x-memory-promoted",
-};
+});
 
 type TimeContext = {
   timezone?: string;

@@ -313,24 +313,24 @@
     _emojiPanelOpen = true;
     _emojiPanelMode = "browse";
 
+    // Enforce mutual exclusion via state machine BEFORE blur.
+    // This prevents the keyboard-viewport blur handler from racing with us —
+    // it only resets to "plain" when mode is "keyboard", so by setting "emoji"
+    // first, the blur handler becomes a no-op.
+    if (typeof window.setChatInputMode === "function") window.setChatInputMode("emoji");
+    if (typeof window.closeV2PlusPanel === "function") window.closeV2PlusPanel();
+
     // Dismiss the soft keyboard cleanly so the emoji panel takes its place.
-    // Without this the keyboard lingers and --kb animates, dragging the
-    // composer with it. Blur first, then force a clean non-keyboard state so
-    // the composer anchors to the stable dock baseline (not --kb+10).
     const _msgInput = document.getElementById("messageInput");
     if (_msgInput && document.activeElement === _msgInput) {
       _msgInput.blur();
     }
-    // Force-clear keyboard state immediately — do not wait for the async
+    // Force-clear keyboard CSS immediately — do not wait for the async
     // visualViewport resize, which would briefly leave --dock-gap = --kb+10
     // and drop the composer onto the bottom-tab bar.
     document.querySelector(".layout")?.classList.remove("keyboard-open");
     document.documentElement.style.setProperty("--kb", "0px");
     document.documentElement.style.setProperty("--keyboard-inset", "0px");
-
-    // Enforce mutual exclusion via state machine
-    if (typeof window.setChatInputMode === "function") window.setChatInputMode("emoji");
-    if (typeof window.closeV2PlusPanel === "function") window.closeV2PlusPanel();
 
     const panel = document.createElement("div");
     panel.id = "emojiPanel";
@@ -477,6 +477,7 @@
   }
 
   function closeEmojiPanel() {
+    if (!_emojiPanelOpen) return; // prevent double-close from state machine recursion
     _emojiPanelOpen = false;
     _emojiPanelMode = "browse";
     const panel = document.getElementById("emojiPanel");
@@ -489,10 +490,9 @@
       setTimeout(() => panel.remove(), 350);
     }
     document.getElementById("emojiButton")?.classList.remove("active");
-    // Reset state machine only if we own the current mode
-    if (typeof window._chatInputMode !== "undefined" &&
-        (window._chatInputMode === "emoji" || window._chatInputMode === "emojiSearch")) {
-      window._chatInputMode = "plain";
+    // Reset state machine via the proper setter to ensure side effects fire
+    if (typeof window.setChatInputMode === "function") {
+      window.setChatInputMode("plain");
     }
     if (typeof window.maintainBottomAnchor === "function") {
       window.maintainBottomAnchor("close-panel");

@@ -1,11 +1,12 @@
 import { runAutoMemoryVault, promoteAutoMemoryCandidates } from "../chat/auto_memory_vault.ts";
+import { makeCorsHeaders } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+const corsHeaders = makeCorsHeaders({
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-memory-admin-token",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-};
+});
 
+// Local json wrapper that uses this function's extended CORS headers
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,

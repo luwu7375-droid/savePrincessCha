@@ -1,11 +1,11 @@
 import { APP_SETTINGS_SINGLETON_ID } from "../_shared/app_settings_types.ts";
 import type { SchedulerJobName, SchedulerRunStatus } from "../_shared/scheduler_types.ts";
+import { makeCorsHeaders } from "../_shared/cors.ts";
+import { json } from "../_shared/response-helpers.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+const corsHeaders = makeCorsHeaders({
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+});
 
 type AppSettingsForScheduler = {
   tool_web_explore_enabled: boolean;
@@ -23,13 +23,6 @@ type JobResult = {
 
 const SCHEDULER_VERSION = "pg2-v1";
 const JOBS: SchedulerJobName[] = ["web_explore", "dream_nightly"];
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
 
 function dbHeaders(serviceRoleKey: string) {
   return {

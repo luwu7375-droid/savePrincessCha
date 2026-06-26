@@ -125,19 +125,27 @@
   // ── Reset with delayed sequence ────────────────────────────────────────────
   // iOS viewport restoration is async and can take several hundred ms.
   // Call reset multiple times to catch the drift at different phases.
+  // Debounced: cancels pending timers from a previous invocation.
+  let _resetSoonTimers = [];
   function resetHorizontalSoon(reason) {
+    _resetSoonTimers.forEach(clearTimeout);
+    _resetSoonTimers = [];
     resetHorizontalViewportDrift(reason);
     [50, 150, 300, 600].forEach((t) => {
-      setTimeout(() => resetHorizontalViewportDrift(`${reason}:${t}`), t);
+      _resetSoonTimers.push(setTimeout(() => resetHorizontalViewportDrift(`${reason}:${t}`), t));
     });
   }
 
   // ── Reset during focus with tighter sequence ───────────────────────────────
   // Focus triggers immediate drift. Use aggressive sequence to catch it early.
+  // Debounced: cancels pending timers from a previous invocation.
+  let _resetFocusTimers = [];
   function resetHorizontalDuringFocus(reason) {
+    _resetFocusTimers.forEach(clearTimeout);
+    _resetFocusTimers = [];
     resetHorizontalViewportDrift(reason);
     [16, 50, 100, 180, 300, 500, 800].forEach((t) => {
-      setTimeout(() => resetHorizontalViewportDrift(`${reason}:${t}`), t);
+      _resetFocusTimers.push(setTimeout(() => resetHorizontalViewportDrift(`${reason}:${t}`), t));
     });
   }
 

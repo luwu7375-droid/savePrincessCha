@@ -1071,6 +1071,8 @@ function getMessageQuotePreview(row) {
 }
 
 function setReplyDraft(id, preview, role) {
+  // Block replies while in edit mode — the two states are mutually exclusive
+  if (composerEditMode === "edit") return;
   _replyToId      = id;
   _replyToPreview = preview;
   _replyToRole    = role;
@@ -3931,6 +3933,7 @@ newConvButton.addEventListener("click", async () => {
 let idleTimer = null;
 let statusTimer = null;
 let isReplying = false;
+Object.defineProperty(window, "isReplying", { get: () => isReplying });
 let autoReplyEnabled = false;
 
 const forceReplyBtn = document.getElementById("forceReplyBtn");
@@ -3943,6 +3946,14 @@ function enterEditMessageMode(row, msgId, originalText) {
   editingMessageId = msgId;
   editingMessageRow = row;
   editingOriginalText = originalText;
+
+  // ── Mutual exclusion: clear reply/attachment state ──
+  // Edit mode is incompatible with pending replies and image attachments.
+  clearReplyDraft();
+  if (pendingImage) {
+    pendingImage = null;
+    updateAttachmentCard();
+  }
 
   messageInput.value = originalText;
   autoResizeTextarea(messageInput);
@@ -4322,6 +4333,8 @@ const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif
 
 async function handleImageFile(file) {
   if (!file) return;
+  // Block image attachment while in edit mode
+  if (composerEditMode === "edit") return;
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
     pendingImage = { dataUrl: null, loading: false, error: "仅支持 JPEG、PNG、WebP、GIF 格式。", file: null };
     updateAttachmentCard();
@@ -4497,6 +4510,8 @@ async function saveEditedMessage(newText) {
   setMessageContent(row.querySelector(".message"), newText, { messageId: String(msgId) });
 
   // Remove all subsequent messages and retrigger reply
+  // Stop TTS in case one of the messages being deleted is currently playing
+  if (window.SPVoice) window.SPVoice.stopSpeaking();
   const afterIdx = idx + 1;
   const toRemove = chatMessages.slice(afterIdx);
   chatMessages.splice(afterIdx);
@@ -4635,6 +4650,8 @@ async function handleSubmit() {
         chatMessages.pop();
         getMsgRows().forEach(r => r.remove());
         invalidateRenderCache(tempId);
+        // Restore reply state so the user doesn't lose their reply context
+        if (replyId) setReplyDraft(replyId, replyPreview, replyRole);
         return;
       }
     }
@@ -4799,6 +4816,8 @@ function openChatMoreSheet() {
 function closeChatMoreSheet() {
   const sheet = document.getElementById("chatMoreSheet");
   if (!sheet) return;
+  // Sync state machine — use direct assignment to avoid recursion since
+  // setChatInputMode("plain") would call closeChatMoreSheet() again.
   if (_chatInputMode === "more") _chatInputMode = "plain";
   _chatMoreSheetOpen = false;
   _chatMoreSubsheetOpen = null;
@@ -6645,113 +6664,9 @@ function buildRecentMemoryItem({ content, title: titleProp, summary: summaryProp
   return item;
 }
 
-/**
- * @param {Array<{id: string, content: string, promoted_at: string}>} items
- */
-function renderRecentMemoryUpdatesOptimistic(items) {
-  const container = document.getElementById("mcRecentUpdates");
-  if (!container || !items || items.length === 0) return;
-  container.innerHTML = "";
-  items.slice(0, 3).forEach((item) =>
-    container.appendChild(buildRecentMemoryItem({
-      content: item.content,
-      title: item.title || null,
-      summary: item.summary || null,
-      label: "自动记忆",
-      category: item.category || item.candidate_type || "",
-      timestamp: item.promoted_at || Date.now(),
-      sourcePreview: null,
-      memoryId: null,
-      confidence: item.confidence ?? null,
-      sensitivity: item.sensitivity ?? null,
-      sourceMsgIds: item.source_msg_ids ?? null,
-    }))
-  );
-}
-
-/**
- * 查询并渲染最近 3 条自动沉淀的记忆（source_msg_ids IS NOT NULL）。
- */
-async function renderRecentMemoryUpdates() {
-  const container = document.getElementById("mcRecentUpdates");
-  if (!container) return;
-  const hasOptimistic = container.querySelector(".mc-recent-item") !== null;
-  if (!hasOptimistic) {
-    container.innerHTML = `<div class="mc-recent-loading">加载中…</div>`;
-  }
-
-  if (!supabaseClient) {
-    if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有当前记忆。聊天后，小钗会把候选记忆放进这里。</div>`;
-    return;
-  }
-
-  try {
-    // ── via Edge Function (service role, bypasses RLS) ─────────────────────
-    const userId = currentUserId || "";
-    const resp = await memoryFetch(`?type=recent&userId=${encodeURIComponent(userId)}`);
-    if (!resp.ok) throw new Error(`recent fetch failed: ${resp.status}`);
-    const { source, rows } = await resp.json();
-    console.log("[recentMem] source:", source, "rows:", rows?.length, rows);
-
-    if (rows && rows.length > 0) {
-      container.innerHTML = "";
-      if (source === "memories") {
-        rows.forEach((mem) =>
-          container.appendChild(buildRecentMemoryItem({
-            content: mem.content,
-            title: mem.title || null,
-            summary: mem.summary || null,
-            label: "已写入记忆",
-            category: mem.category || "",
-            timestamp: mem.created_at,
-            sourcePreview: mem.source_preview || null,
-            memoryId: mem.id,
-            confidence: mem.confidence ?? null,
-            sensitivity: mem.sensitivity ?? null,
-            sourceMsgIds: mem.source_msg_ids ?? null,
-          }))
-        );
-      } else {
-        const LABEL_MAP = {
-          promoted: "候选已记忆", approved: "已确认", new: "候选记忆",
-          candidate: "候选记忆", pending: "待处理", project: "项目", fact: "事实",
-        };
-        rows.forEach((c) =>
-          container.appendChild(buildRecentMemoryItem({
-            content: c.content,
-            title: c.title || null,
-            summary: c.summary || null,
-            label: LABEL_MAP[c.status] || "候选记忆",
-            category: c.candidate_type || "",
-            timestamp: c.created_at,
-            sourcePreview: c.source_preview || null,
-            memoryId: null,
-            confidence: c.confidence ?? null,
-            sensitivity: c.sensitivity ?? null,
-            sourceMsgIds: c.source_msg_ids ?? null,
-          }))
-        );
-      }
-      return;
-    }
-
-    // ── Both empty ─────────────────────────────────────────────────────────
-    if (hasOptimistic) {
-      const syncHint = container.querySelector(".mc-recent-sync-hint");
-      if (!syncHint) {
-        const hint = document.createElement("div");
-        hint.className = "mc-recent-sync-hint mc-recent-empty";
-        hint.textContent = "同步中…";
-        container.appendChild(hint);
-      }
-    } else {
-      container.innerHTML = `<div class="mc-recent-empty">还没有当前记忆。聊天后，小钗会把候选记忆放进这里。</div>`;
-    }
-  } catch (err) {
-    console.error("[recentMem] error:", err);
-    if (!hasOptimistic) container.innerHTML = `<div class="mc-recent-empty">还没有当前记忆。聊天后，小钗会把候选记忆放进这里。</div>`;
-  }
-}
+// NOTE: renderRecentMemoryUpdatesOptimistic and renderRecentMemoryUpdates are
+// defined in the Memory Center V2 section below (line ~8430). The V1 versions
+// that used buildRecentMemoryItem have been removed to eliminate duplicate definitions.
 
 /**
  * 用 lastMemoryDebug 更新 Core Profile / Timeline Archive 卡片的动态状态行。
@@ -8602,14 +8517,8 @@ function wbBuildPreview(content) {
   return content.split("\n").slice(0, WB_PREVIEW_LINES).join("\n").substring(0, WB_PREVIEW_CHARS);
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// escapeHtml: uses the canonical definition at line ~3759 (object-map approach).
+// The duplicate chain-replace version has been removed.
 
 function wbUpdateTokenHint() {
   const enabled = wbBooks.filter(b => b.enabled);

@@ -563,6 +563,12 @@
    * Handle "现在生成一篇"
    */
   async function handleGenerateNow() {
+    // Don't trigger diary generation while Cha is composing a reply —
+    // avoids competing LLM requests.
+    if (window.isReplying) {
+      showToast('Cha 正在回复中，稍后再试');
+      return;
+    }
     showToast('正在生成日记…');
 
     try {

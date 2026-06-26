@@ -17,16 +17,12 @@
 //       body := '{}') AS request_id;$$
 //   );
 
+import { corsHeaders } from "../_shared/cors.ts";
+
 const FUNCTION_VERSION = "decay-v1";
 const DECAY_LAMBDA = 0.05;       // 5% per day
 const ARCHIVE_THRESHOLD = 0.3;   // below this → archived
 const BATCH_SIZE = 100;           // rows per DB page
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
 
 type L2Row = {
   id: string;

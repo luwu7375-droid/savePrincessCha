@@ -2,22 +2,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { generateSpeech as elevenLabsGenerate } from "./providers/elevenlabs.ts";
 import { generateSpeech as minimaxGenerate } from "./providers/minimax.ts";
 import { generateSpeech as localHttpGenerate } from "./providers/localHttp.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { json } from "../_shared/response-helpers.ts";
 
 const SUPPORTED_PROVIDERS = ["elevenlabs", "minimax", "local_http"] as const;
 type SupportedProvider = typeof SUPPORTED_PROVIDERS[number];
-
-function jsonResp(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
 
 function prepareVoiceText(text: string): string {
   const cleaned = text
@@ -173,7 +162,7 @@ Deno.serve(async (req) => {
   const MINIMAX_KEY = Deno.env.get("MINIMAX_API_KEY") ?? "";
 
   if (!SUPABASE_URL || !SERVICE_KEY) {
-    return jsonResp({ ok: false, code: "MISSING_TTS_SECRET", message: "missing: SUPABASE infra config", request_id }, 500);
+    return json({ ok: false, code: "MISSING_TTS_SECRET", message: "missing: SUPABASE infra config", request_id }, 500);
   }
 
   const DB_HEADERS = {
@@ -187,7 +176,7 @@ Deno.serve(async (req) => {
   try {
     body = await req.json();
   } catch {
-    return jsonResp({ ok: false, code: "INVALID_JSON", message: "Invalid JSON body", request_id }, 400);
+    return json({ ok: false, code: "INVALID_JSON", message: "Invalid JSON body", request_id }, 400);
   }
 
   const message_id = body.message_id ?? null;
@@ -197,12 +186,12 @@ Deno.serve(async (req) => {
   const voice_profile = body.voice_profile ?? null;
 
   if (!text) {
-    return jsonResp({ ok: false, code: "MISSING_TEXT", message: "text is required", request_id }, 400);
+    return json({ ok: false, code: "MISSING_TEXT", message: "text is required", request_id }, 400);
   }
 
   // ── Validate provider ───────────────────────────────────────────────────────
   if (!SUPPORTED_PROVIDERS.includes(provider as SupportedProvider)) {
-    return jsonResp({
+    return json({
       ok: false,
       code: "UNSUPPORTED_TTS_PROVIDER",
       message: `provider "${provider}" is not supported`,
@@ -217,7 +206,7 @@ Deno.serve(async (req) => {
   const language = language_hint ?? "default";
 
   if (!voice_id) {
-    return jsonResp({
+    return json({
       ok: false,
       code: "MISSING_VOICE_ID",
       message: `voice_id is required for provider "${provider}"`,
@@ -227,17 +216,17 @@ Deno.serve(async (req) => {
 
   // ── Validate provider API key ───────────────────────────────────────────────
   if (provider === "elevenlabs" && !ELEVENLABS_KEY) {
-    return jsonResp({ ok: false, code: "MISSING_TTS_SECRET", message: "missing: ELEVENLABS_API_KEY", request_id }, 500);
+    return json({ ok: false, code: "MISSING_TTS_SECRET", message: "missing: ELEVENLABS_API_KEY", request_id }, 500);
   }
   if (provider === "minimax" && !MINIMAX_KEY) {
-    return jsonResp({ ok: false, code: "PROVIDER_NOT_CONFIGURED", message: "MiniMax API key is not set", request_id }, 500);
+    return json({ ok: false, code: "PROVIDER_NOT_CONFIGURED", message: "MiniMax API key is not set", request_id }, 500);
   }
 
   // ── Voice director: clean → normalize → style → tag ────────────────────────
   const script = createVoiceScript(text, language);
 
   if (!script) {
-    return jsonResp({ ok: false, code: "EMPTY_VOICE_TEXT", message: "朗读文本为空", request_id }, 400);
+    return json({ ok: false, code: "EMPTY_VOICE_TEXT", message: "朗读文本为空", request_id }, 400);
   }
 
   const voiceText = script.voice_text;
@@ -291,7 +280,7 @@ Deno.serve(async (req) => {
         row.text_hash === hash
       ) {
         finalize({ cached: true, audio_url_type: "public" });
-        return jsonResp({
+        return json({
           ok: true,
           audio_url: row.audio_url,
           provider,
@@ -332,20 +321,20 @@ Deno.serve(async (req) => {
 
     if (result.rawProviderError) {
       finalize({ error_code: "PROVIDER_ERROR", error_message: result.rawProviderError });
-      return jsonResp({ ok: false, code: "PROVIDER_ERROR", message: result.rawProviderError, request_id }, 502);
+      return json({ ok: false, code: "PROVIDER_ERROR", message: result.rawProviderError, request_id }, 502);
     }
 
     audioBuffer = result.audioBuffer;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     finalize({ error_code: "PROVIDER_ERROR", error_message: msg });
-    return jsonResp({ ok: false, code: "PROVIDER_ERROR", message: msg, request_id }, 502);
+    return json({ ok: false, code: "PROVIDER_ERROR", message: msg, request_id }, 502);
   }
 
   // ── No message_id → data URL (no cache) ──────────────────────────────���─────
   if (!message_id) {
     finalize({ audio_url_type: "data" });
-    return jsonResp({
+    return json({
       ok: true,
       audio_url: audioToDataUrl(audioBuffer),
       provider,
@@ -400,7 +389,7 @@ Deno.serve(async (req) => {
       error_message: `Storage failed: ${errText}`,
     });
 
-    return jsonResp({
+    return json({
       ok: true,
       audio_url: audioToDataUrl(audioBuffer),
       provider,
@@ -429,7 +418,7 @@ Deno.serve(async (req) => {
   });
 
   finalize({ audio_url_type: "public" });
-  return jsonResp({
+  return json({
     ok: true,
     audio_url,
     provider,
