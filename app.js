@@ -3853,12 +3853,6 @@ chatSearchButton?.addEventListener("click", openChatSearchSheet);
 chatSearchClose?.addEventListener("click", () => closeChatSearchSheet({ clear: true }));
 chatSearchOverlay?.addEventListener("click", () => closeChatSearchSheet({ clear: true }));
 
-// Debug panel button
-const debugPanelBtn = document.getElementById("debugPanelBtn");
-debugPanelBtn?.addEventListener("click", () => {
-  window.open("debug-panel.html", "_blank", "width=400,height=800");
-});
-
 chatSearchInput?.addEventListener("input", () => renderChatSearchResults(chatSearchInput.value));
 chatSearchInput?.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeChatSearchSheet({ clear: true });

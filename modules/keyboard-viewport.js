@@ -27,225 +27,6 @@
     return !!el && CHAT_INPUT_IDS.indexOf(el.id) !== -1;
   }
 
-  // ── Diagnostic snapshot function ──────────────────────────────────────────────
-  // Captures complete viewport state to diagnose iOS Safari left drift on input focus.
-  // Call at key moments: before-focus, after-focus, vv-resize, vv-scroll, blur, blank-click
-  function getViewportDriftSnapshot(reason = "unknown") {
-    const vv = window.visualViewport;
-    const layout = document.querySelector(".layout");
-    const input = document.getElementById("messageInput");
-    const inputBar = document.getElementById("chatForm");
-    const scrollingEl = document.scrollingElement || document.documentElement;
-
-    return {
-      reason,
-      ts: Date.now(),
-      windowInnerWidth: window.innerWidth,
-      documentClientWidth: document.documentElement.clientWidth,
-      bodyClientWidth: document.body.clientWidth,
-      bodyScrollWidth: document.body.scrollWidth,
-      docScrollWidth: document.documentElement.scrollWidth,
-      scrollX: window.scrollX,
-      scrollingLeft: scrollingEl?.scrollLeft ?? null,
-      docScrollLeft: document.documentElement.scrollLeft,
-      bodyScrollLeft: document.body.scrollLeft,
-      visualViewport: vv ? {
-        width: vv.width,
-        height: vv.height,
-        offsetLeft: vv.offsetLeft,
-        offsetTop: vv.offsetTop,
-        scale: vv.scale,
-      } : null,
-      layoutRect: layout ? (layout.getBoundingClientRect().toJSON?.() || {
-        left: layout.getBoundingClientRect().left,
-        right: layout.getBoundingClientRect().right,
-        width: layout.getBoundingClientRect().width,
-        top: layout.getBoundingClientRect().top,
-      }) : null,
-      inputBarRect: inputBar ? {
-        left: inputBar.getBoundingClientRect().left,
-        right: inputBar.getBoundingClientRect().right,
-        width: inputBar.getBoundingClientRect().width,
-      } : null,
-      inputRect: input ? {
-        left: input.getBoundingClientRect().left,
-        right: input.getBoundingClientRect().right,
-        width: input.getBoundingClientRect().width,
-      } : null,
-      activeElement: document.activeElement?.id || document.activeElement?.tagName,
-    };
-  }
-
-  // Expose for manual console inspection
-  window.__dumpViewportDrift = (reason = "manual") => {
-    const snap = getViewportDriftSnapshot(reason);
-    console.table(snap);
-    console.info("[viewport-drift]", snap);
-    return snap;
-  };
-
-  // ── Diagnostic: Complete horizontal alignment analysis ──────────────────────
-  window.__debugHorizontalAlignment = () => {
-    const vv = window.visualViewport;
-    const layout = document.querySelector(".layout");
-    const chatShell = document.querySelector(".chat-shell");
-    const topBar = document.querySelector(".top-bar");
-    const messageList = document.querySelector(".message-list");
-    const inputBar = document.querySelector(".input-bar");
-
-    if (!layout || !chatShell || !topBar || !messageList || !inputBar) {
-      console.error("One or more elements not found");
-      return;
-    }
-
-    // Screen center point
-    const screenCenterX = Math.round(window.innerWidth / 2 * 100) / 100;
-
-    // Calculate center points
-    const topBarCenter = Math.round((topBar.getBoundingClientRect().left + topBar.getBoundingClientRect().right) / 2 * 100) / 100;
-    const inputBarCenter = Math.round((inputBar.getBoundingClientRect().left + inputBar.getBoundingClientRect().right) / 2 * 100) / 100;
-    const layoutCenter = Math.round((layout.getBoundingClientRect().left + layout.getBoundingClientRect().right) / 2 * 100) / 100;
-
-    // Get CSS variable values
-    const cssVvOffsetLeft = getComputedStyle(root).getPropertyValue('--vv-offset-left').trim();
-    const cssKb = getComputedStyle(root).getPropertyValue('--kb').trim();
-
-    const data = {
-      screen: {
-        innerWidth: window.innerWidth,
-        centerX: screenCenterX,
-      },
-      visualViewport: {
-        offsetLeft: vv?.offsetLeft ?? 0,
-        offsetTop: vv?.offsetTop ?? 0,
-        width: vv?.width ?? window.innerWidth,
-        height: vv?.height ?? window.innerHeight,
-        scale: vv?.scale ?? 1,
-      },
-      cssVariables: {
-        vvOffsetLeft: cssVvOffsetLeft || '0px',
-        kb: cssKb || '0px',
-      },
-      window: {
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-        scrollX: window.scrollX,
-        scrollY: window.scrollY,
-      },
-      layout: {
-        left: Math.round(layout.getBoundingClientRect().left * 100) / 100,
-        right: Math.round(layout.getBoundingClientRect().right * 100) / 100,
-        width: Math.round(layout.getBoundingClientRect().width * 100) / 100,
-        centerX: layoutCenter,
-        offsetFromScreenCenter: Math.round((layoutCenter - screenCenterX) * 100) / 100,
-        computedWidth: getComputedStyle(layout).width,
-        transform: getComputedStyle(layout).transform,
-        position: getComputedStyle(layout).position,
-      },
-      chatShell: {
-        left: Math.round(chatShell.getBoundingClientRect().left * 100) / 100,
-        right: Math.round(chatShell.getBoundingClientRect().right * 100) / 100,
-        width: Math.round(chatShell.getBoundingClientRect().width * 100) / 100,
-        computedWidth: getComputedStyle(chatShell).width,
-      },
-      topBar: {
-        left: Math.round(topBar.getBoundingClientRect().left * 100) / 100,
-        right: Math.round(topBar.getBoundingClientRect().right * 100) / 100,
-        width: Math.round(topBar.getBoundingClientRect().width * 100) / 100,
-        centerX: topBarCenter,
-        offsetFromScreenCenter: Math.round((topBarCenter - screenCenterX) * 100) / 100,
-      },
-      messageList: {
-        left: Math.round(messageList.getBoundingClientRect().left * 100) / 100,
-        right: Math.round(messageList.getBoundingClientRect().right * 100) / 100,
-        width: Math.round(messageList.getBoundingClientRect().width * 100) / 100,
-        centerX: Math.round((messageList.getBoundingClientRect().left + messageList.getBoundingClientRect().right) / 2 * 100) / 100,
-      },
-      inputBar: {
-        left: Math.round(inputBar.getBoundingClientRect().left * 100) / 100,
-        right: Math.round(inputBar.getBoundingClientRect().right * 100) / 100,
-        width: Math.round(inputBar.getBoundingClientRect().width * 100) / 100,
-        centerX: inputBarCenter,
-        offsetFromScreenCenter: Math.round((inputBarCenter - screenCenterX) * 100) / 100,
-        marginLeft: getComputedStyle(inputBar).marginLeft,
-        marginRight: getComputedStyle(inputBar).marginRight,
-        computedWidth: getComputedStyle(inputBar).width,
-        maxWidth: getComputedStyle(inputBar).maxWidth,
-        position: getComputedStyle(inputBar).position,
-      },
-    };
-
-    // Relative alignment (elements to each other)
-    const relativeCenterOffset = Math.round((inputBarCenter - topBarCenter) * 100) / 100;
-
-    // Absolute alignment (elements to screen center)
-    const layoutAbsoluteOffset = Math.round((layoutCenter - screenCenterX) * 100) / 100;
-    const topBarAbsoluteOffset = Math.round((topBarCenter - screenCenterX) * 100) / 100;
-    const inputBarAbsoluteOffset = Math.round((inputBarCenter - screenCenterX) * 100) / 100;
-
-    // Right edge overflow check
-    const layoutRightOverflow = Math.round((layout.getBoundingClientRect().right - window.innerWidth) * 100) / 100;
-    const topBarRightOverflow = Math.round((topBar.getBoundingClientRect().right - window.innerWidth) * 100) / 100;
-    const inputBarRightOverflow = Math.round((inputBar.getBoundingClientRect().right - window.innerWidth) * 100) / 100;
-
-    console.group("🔍 Horizontal Alignment Debug");
-    console.table(data);
-    console.group("📊 Alignment Analysis");
-    console.log(`Screen center: ${screenCenterX}px`);
-    console.log(`\n--- Relative Alignment (元素之间) ---`);
-    console.log(`inputBar center - topBar center: ${relativeCenterOffset}px`);
-    console.log(`\n--- Absolute Alignment (相对屏幕中心) ---`);
-    console.log(`layout center offset: ${layoutAbsoluteOffset}px`);
-    console.log(`topBar center offset: ${topBarAbsoluteOffset}px`);
-    console.log(`inputBar center offset: ${inputBarAbsoluteOffset}px`);
-    console.log(`\n--- Right Edge Overflow (右侧溢出检测) ---`);
-    console.log(`layout.right - screen.width: ${layoutRightOverflow}px ${layoutRightOverflow > 0 ? '❌ 溢出!' : '✅'}`);
-    console.log(`topBar.right - screen.width: ${topBarRightOverflow}px ${topBarRightOverflow > 0 ? '❌ 溢出!' : '✅'}`);
-    console.log(`inputBar.right - screen.width: ${inputBarRightOverflow}px ${inputBarRightOverflow > 0 ? '❌ 溢出!' : '✅'}`);
-    console.log(`\n--- CSS Variables ---`);
-    console.log(`--vv-offset-left: ${cssVvOffsetLeft}`);
-    console.log(`--kb: ${cssKb}`);
-    console.log(`visualViewport.offsetLeft: ${vv?.offsetLeft ?? 0}px`);
-    console.groupEnd();
-
-    if (Math.abs(relativeCenterOffset) > 1) {
-      console.error(`❌ Relative misalignment: ${relativeCenterOffset}px`);
-    }
-    if (Math.abs(layoutAbsoluteOffset) > 1) {
-      console.error(`❌ Layout not centered: ${layoutAbsoluteOffset}px offset from screen center`);
-    }
-    if (layoutRightOverflow > 0 || topBarRightOverflow > 0 || inputBarRightOverflow > 0) {
-      console.error(`❌ Content overflow detected on right edge`);
-    }
-    if (Math.abs(relativeCenterOffset) <= 1 && Math.abs(layoutAbsoluteOffset) <= 1 && layoutRightOverflow <= 0) {
-      console.log("✅ All elements properly aligned");
-    }
-    console.groupEnd();
-
-    return {
-      data,
-      analysis: {
-        screenCenterX,
-        relativeCenterOffset,
-        absoluteOffsets: {
-          layout: layoutAbsoluteOffset,
-          topBar: topBarAbsoluteOffset,
-          inputBar: inputBarAbsoluteOffset,
-        },
-        rightOverflow: {
-          layout: layoutRightOverflow,
-          topBar: topBarRightOverflow,
-          inputBar: inputBarRightOverflow,
-        },
-        cssVariables: {
-          vvOffsetLeft: cssVvOffsetLeft,
-          kb: cssKb,
-        },
-      },
-    };
-  };
-
-
   function currentInset() {
     const vv = window.visualViewport;
     if (!vv) return 0;
@@ -392,7 +173,6 @@
 
     const vv = window.visualViewport;
     vv.addEventListener("resize", () => {
-      console.info("[viewport-drift vv resize]", getViewportDriftSnapshot("vv-resize"));
       schedule();
       // If chat input is focused during resize, also reset horizontal drift
       const active = document.activeElement;
@@ -401,7 +181,6 @@
       }
     });
     vv.addEventListener("scroll", () => {
-      console.info("[viewport-drift vv scroll]", getViewportDriftSnapshot("vv-scroll"));
       schedule();
       // If chat input is focused during scroll, also reset horizontal drift
       const active = document.activeElement;
@@ -419,20 +198,11 @@
 
     if (_opts.messageInput) {
       _opts.messageInput.addEventListener("focus", () => {
-        // DIAGNOSTIC: Capture state before any action
-        console.info("[viewport-drift before focus]", getViewportDriftSnapshot("before-focus"));
-
         // Reset horizontal drift IMMEDIATELY on focus, before keyboard animates
         resetHorizontalDuringFocus("messageInput-focus");
         schedule();
-
-        // DIAGNOSTIC: Capture state after reset (async to catch post-layout)
-        setTimeout(() => {
-          console.info("[viewport-drift after focus]", getViewportDriftSnapshot("after-focus"));
-        }, 0);
       });
       _opts.messageInput.addEventListener("blur", () => {
-        console.info("[viewport-drift blur]", getViewportDriftSnapshot("blur"));
         if (_opts.getChatInputMode && _opts.getChatInputMode() === "keyboard") {
           if (_opts.setChatInputMode) _opts.setChatInputMode("plain");
         }
