@@ -7,6 +7,11 @@
 (function() {
   "use strict";
 
+  // Initialize currentUserId globally before any other code runs
+  if (!window.currentUserId) {
+    window.currentUserId = "";
+  }
+
   // ── DOM refs ────────────────────────────────────────────────────────────────
   const loginOverlay      = document.getElementById("loginOverlay");
   const loginEmail        = document.getElementById("loginEmail");
