@@ -1067,6 +1067,20 @@ function closeStatusPanel() {
   document.getElementById("statusPanel")?.classList.add("hidden");
 }
 
+// Set status dot state: "online" (green), "busy" (yellow/orange), "error" (red)
+function setStatusDotState(state = "online") {
+  const dot = document.querySelector(".online-dot");
+  if (!dot) return;
+
+  dot.classList.remove("status-busy", "status-error");
+  if (state === "busy") {
+    dot.classList.add("status-busy");
+  } else if (state === "error") {
+    dot.classList.add("status-error");
+  }
+  // "online" state is the default (no additional class needed)
+}
+
 async function requestStreamingReply(replyMode = "auto") {
   const messages = replyMode === "forced"
     ? [...chatMessages, { role: "user", content: "用户轻轻戳了你一下。请自然接一句，不要提到\u300c戳一下\u300d\u3001\u300c继续推进\u300d\u3001\u300c不要重复\u300d\u3001\u300c复读\u300d这些机制词。不要主动切项目，优先延续上一条真实用户消息的情绪和语境。" }]
@@ -3115,11 +3129,16 @@ async function triggerReply(replyMode) {
   setChatTitleState("typing");
   showTypingIndicator();
   setReplyingState(true);
+  setStatusDotState("busy"); // Set to busy state while replying
   try {
     await requestStreamingReply(replyMode);
+    setStatusDotState("online"); // Return to online after success
   } catch (error) {
     removeTypingIndicator();
     addMessage(`回复失败：${error.message}`, "assistant");
+    setStatusDotState("error"); // Set to error state on failure
+    // Automatically return to online after 5 seconds
+    setTimeout(() => setStatusDotState("online"), 5000);
   } finally {
     setChatTitleState("idle");
     setReplyingState(false);

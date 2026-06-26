@@ -1120,14 +1120,43 @@ body {
   transition: transform 0.12s ease, box-shadow 0.14s ease;
 }
 
+/* Status dot color states */
+.online-dot.status-busy {
+  background: #FFA726; /* Orange/Yellow for busy */
+  box-shadow: 0 0 0 3px rgba(255, 167, 38, 0.12);
+}
+
+.online-dot.status-error {
+  background: #EF5350; /* Red for error */
+  box-shadow: 0 0 0 3px rgba(239, 83, 80, 0.12);
+}
+
 .online-dot-hitbox:hover,
 .online-dot-hitbox:active {
   background: rgba(76, 175, 80, 0.1);
 }
 
+.online-dot-hitbox:hover .online-dot.status-busy,
+.online-dot-hitbox:active .online-dot.status-busy {
+  background: rgba(255, 167, 38, 0.1);
+}
+
+.online-dot-hitbox:hover .online-dot.status-error,
+.online-dot-hitbox:active .online-dot.status-error {
+  background: rgba(239, 83, 80, 0.1);
+}
+
 .online-dot-hitbox:active .online-dot {
   transform: scale(1.25);
   box-shadow: 0 0 0 7px rgba(76, 175, 80, 0.14);
+}
+
+.online-dot-hitbox:active .online-dot.status-busy {
+  box-shadow: 0 0 0 7px rgba(255, 167, 38, 0.14);
+}
+
+.online-dot-hitbox:active .online-dot.status-error {
+  box-shadow: 0 0 0 7px rgba(239, 83, 80, 0.14);
 }
 
 .online-dot-hitbox:focus-visible {
