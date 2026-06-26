@@ -869,7 +869,10 @@
       document.write('<script src="modules/diary-generation.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/phone.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/voice.js?v=' + v + '" charset="utf-8"><\/script>');
-      document.write('<script src="modules/debug-overlay.js?v=' + v + '" charset="utf-8"><\/script>');
+      // debug-overlay: only load in dev builds or when ?debug is in URL
+      if (window.location.search.indexOf('debug') !== -1 || (window.SAVE_PRINCESS_BUILD || '').indexOf('dev') !== -1) {
+        document.write('<script src="modules/debug-overlay.js?v=' + v + '" charset="utf-8"><\/script>');
+      }
       document.write('<script src="app.js?v=' + v + '" charset="utf-8"><\/script>');
     })();
   </script>
