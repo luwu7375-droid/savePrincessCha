@@ -313,17 +313,6 @@
       const scaleCompensation = visualWidth / documentWidth;
       root.style.setProperty("--viewport-scale", scale.toFixed(6));
       root.style.setProperty("--viewport-scale-compensation", scaleCompensation.toFixed(6));
-
-      if (window.DEBUG_LAYOUT) {
-        console.info("[viewport] iOS zoom detected", {
-          reason,
-          scale,
-          visualWidth,
-          documentWidth,
-          widthDiff,
-          scaleCompensation,
-        });
-      }
     } else {
       // No zoom, clear compensation
       root.style.setProperty("--viewport-scale", "1");
