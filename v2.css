@@ -1483,7 +1483,7 @@ body {
   position: relative;
   z-index: 11;
   flex-shrink: 0;
-  margin: 0 20px 20px;
+  margin: 0 20px calc(var(--bottom-nav-height) + 20px);
   padding: 6px 10px 6px 18px;
   min-height: 54px;
   border-radius: var(--radius-input);
