@@ -1057,6 +1057,13 @@ body {
   flex: 0 0 auto;
 }
 
+/* online dot positioned next to avatar */
+.top-bar .online-dot-hitbox {
+  flex: 0 0 auto;
+  margin-left: -12px; /* Overlap slightly with avatar */
+  margin-right: 4px;
+}
+
 /* title 吃掉所有剩余空间，但允许收缩防止挤压 more */
 .top-bar h1 {
   flex: 1 1 auto;
@@ -1074,10 +1081,7 @@ body {
   cursor: pointer;
 }
 
-/* online dot 紧跟在 title 后面 */
-.top-bar .online-dot-hitbox {
-  flex: 0 0 auto;
-}
+/* Remove old positioning rule for online-dot-hitbox after title */
 
 /* more 按钮强制推到最右 */
 #chatMoreBtn {
