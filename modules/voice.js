@@ -305,7 +305,13 @@
     if (!audioUrl) {
       const endpoint = getTTSApiEndpoint();
       const anonKey = getTTSAnonKey();
-      if (!endpoint || !anonKey) { _setButtonError(button, "TTS 未配置"); return; }
+      if (!endpoint || !anonKey) {
+        _setButtonError(button, "TTS 未配置");
+        if (typeof showToast === 'function') {
+          showToast("TTS 服务未配置");
+        }
+        return;
+      }
 
       button.classList.add("tts-loading");
       button.disabled = true;
@@ -351,7 +357,12 @@
       } catch (err) {
         console.error("TTS error:", err.message, err);
         const msg = err?.message || "生成失败";
-        _setButtonError(button, msg.includes("EMPTY_VOICE_TEXT") ? "没有可朗读文本" : `生成失败：${msg}`);
+        const errorMsg = msg.includes("EMPTY_VOICE_TEXT") ? "没有可朗读文本" : `生成失败：${msg}`;
+        _setButtonError(button, errorMsg);
+        // Show toast notification for TTS failures
+        if (typeof showToast === 'function') {
+          showToast(errorMsg);
+        }
         return;
       }
       button.classList.remove("tts-loading");
@@ -385,6 +396,10 @@
       button.classList.add("tts-error");
       button.title = "播放失败，点按重试";
       delete button.dataset.audioUrl;
+      // Show toast notification for playback failures
+      if (typeof showToast === 'function') {
+        showToast("音频播放失败");
+      }
     };
     audio.play().catch((err) => {
       console.error("TTS audio playback error", err);
@@ -392,6 +407,10 @@
       button.classList.add("tts-error");
       button.title = "播放失败，点按重试";
       delete button.dataset.audioUrl;
+      // Show toast notification for playback failures
+      if (typeof showToast === 'function') {
+        showToast("音频播放失败");
+      }
     });
   }
 
