@@ -131,8 +131,16 @@
   }
 
   // ── Auth State Change Listener ──────────────────────────────────────────────
-  if (window.supabaseClient) {
+  function initAuthListener() {
+    console.log('[auth] initAuthListener called, supabaseClient:', window.supabaseClient);
+    if (!window.supabaseClient) {
+      console.warn('[auth] supabaseClient not ready, retrying in 100ms...');
+      setTimeout(initAuthListener, 100);
+      return;
+    }
+
     window.supabaseClient.auth.onAuthStateChange((event, session) => {
+      console.log('[auth] auth state changed:', event, session);
       if (event === "SIGNED_IN" && session) {
         hideLoginAndInit(session);
       }
@@ -140,11 +148,15 @@
 
     // Check initial session on page load
     window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      console.log('[auth] initial session check:', session);
       if (session) {
         hideLoginAndInit(session);
       }
     });
   }
+
+  // Start auth listener (will retry if supabaseClient not ready)
+  initAuthListener();
 
   // ── Public API ──────────────────────────────────────────────────────────────
   window.SavePrincessAuth = {
