@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: req.headers.get("Authorization")! } } },
     );
 
-    const body: DiaryGenerationRequest = await req.json();
+    const body = await req.json() as DiaryGenerationRequest & { custom_system_prompt?: string };
     const {
       userId = "default",
       conversationId,
@@ -108,6 +108,7 @@ Deno.serve(async (req) => {
       cha_status = "",
       diary_length = "normal",
       debug = false,
+      custom_system_prompt,
     } = body;
 
     if (!source_events || source_events.length === 0) {
@@ -138,9 +139,12 @@ content: ${evt.content}
       .replace("{{diary_length}}", diary_length);
 
     // Call model for diary generation (purpose: diary)
+    const diaryMessages: unknown[] = custom_system_prompt
+      ? [{ role: "system", content: custom_system_prompt }, { role: "user", content: diaryPrompt }]
+      : [{ role: "user", content: diaryPrompt }];
     const diaryCallResult = await callModelTextWithFallback(
       providers,
-      [{ role: "user", content: diaryPrompt }],
+      diaryMessages,
       { maxTokens: 2000, temperature: 0.7, purpose: "diary" },
     );
 

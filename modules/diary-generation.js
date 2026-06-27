@@ -46,12 +46,26 @@
       reliability: 'experienced'
     }));
 
+    // Fetch enabled worldbook entries for scene context
+    let sceneContext = '聊天结束后';
+    const { data: wbEntries } = await supabaseClient
+      .from('world_books')
+      .select('name, content')
+      .eq('user_id', userId)
+      .eq('enabled', true)
+      .order('priority', { ascending: false });
+
+    if (wbEntries && wbEntries.length > 0) {
+      const wbText = wbEntries.map(e => `[${e.name}]\n${e.content}`).join('\n\n');
+      sceneContext = `${sceneContext}\n\n[设定参考]\n${wbText}`;
+    }
+
     // Generate diary
     const result = await window.SPDiary.generateDiary(supabaseClient, {
       userId,
       conversationId,
       sourceEvents,
-      sceneContext: '聊天结束后',
+      sceneContext,
       chaStatus: '独处',
       diaryLength: 'normal',
       debug: false

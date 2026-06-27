@@ -589,10 +589,10 @@
         const result = await window.SPDiaryGeneration.generateDiaryFromRecentChat(20);
         if (result.success && result.saved) {
           showToast('日记写好了');
-          // Refresh the diary list after a short delay
-          setTimeout(() => {
-            navigateToDiaryList();
-          }, 1500);
+          setTimeout(() => { navigateToDiaryList(); }, 1500);
+        } else if (result.success && !result.saved) {
+          const prob = result.checker?.problems?.[0];
+          showToast(prob ? `检查未通过：${prob}` : '日记未通过检查，未保存');
         } else {
           throw new Error('生成失败');
         }
