@@ -239,7 +239,11 @@
           if (!file) return;
           var reader = new FileReader();
           reader.onload = function () {
-            localStorage.setItem("asset_" + slot, reader.result);
+            try {
+              localStorage.setItem("asset_" + slot, reader.result);
+            } catch (e) {
+              if (typeof showToast === "function") showToast("图片太大，无法持久化保存");
+            }
             _applyAsset(slot, reader.result);
           };
           reader.readAsDataURL(file);

@@ -242,6 +242,10 @@ function _renderAppearanceResourcesSubpage() {
           <button type="button" class="settings-row-action-btn" id="srChaAvatarBtn">更换</button>
         </div>
         <div class="settings-card-row">
+          <div><strong>KK 头像</strong><small>首页 KK 头像</small></div>
+          <button type="button" class="settings-row-action-btn" id="srKKAvatarBtn">更换</button>
+        </div>
+        <div class="settings-card-row">
           <div><strong>开屏封面</strong><small>首页顶部横幅图</small></div>
           <button type="button" class="settings-row-action-btn" id="srCoverBtn">更换</button>
         </div>
@@ -447,6 +451,11 @@ function _initSettingsSubpageEvents(container, type) {
     const chaAvatarBtn = container.querySelector("#srChaAvatarBtn");
     if (chaAvatarBtn) chaAvatarBtn.addEventListener("click", () => {
       const btn = document.querySelector(".profile-avatar:not(.profile-avatar--kk)");
+      if (btn) btn.click();
+    });
+    const kkAvatarBtn = container.querySelector("#srKKAvatarBtn");
+    if (kkAvatarBtn) kkAvatarBtn.addEventListener("click", () => {
+      const btn = document.querySelector(".profile-avatar.profile-avatar--kk");
       if (btn) btn.click();
     });
     const coverBtn = container.querySelector("#srCoverBtn");
