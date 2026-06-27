@@ -3555,6 +3555,7 @@ img.msg-image {
   user-select: none;
   transition: opacity 0.15s, border-color 0.15s;
   position: relative;
+  touch-action: pan-y;
 }
 
 .wb-card:active { cursor: grabbing; }
