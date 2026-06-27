@@ -440,6 +440,34 @@ function _initSettingsSubpageEvents(container, type) {
     _initSettingsMemorySubpage(container);
     return;
   }
+  if (type === "debug") {
+    function _renderMemDebugLog() {
+      const el = container.querySelector("#_memDebugLog");
+      if (!el) return;
+      let debug = null;
+      try {
+        debug = window.lastMemoryDebug || JSON.parse(localStorage.getItem("lastMemoryDebug") || "null");
+      } catch (_) {}
+      if (!debug) { el.textContent = "暂无数据（下次收到 Cha 回复后刷新）"; return; }
+      const LABELS = {
+        persona_memories: "长期记忆", mastodon_profile: "用户画像",
+        writing_memory: "写作记忆", project_memory: "项目记忆",
+        relationship_context: "关系上下文", life_context: "生活上下文",
+      };
+      const lines = [];
+      if (debug.injected) {
+        Object.entries(debug.injected).forEach(([k, v]) => {
+          if (v) lines.push(`✅ ${LABELS[k] || k}`);
+        });
+      }
+      if (debug.persona_memories_count != null) lines.push(`记忆条数：${debug.persona_memories_count}`);
+      if (debug.mastodon_profile_chars) lines.push(`用户画像：${debug.mastodon_profile_chars} chars`);
+      el.textContent = lines.length ? lines.join("\n") : JSON.stringify(debug, null, 2).slice(0, 400);
+    }
+    _renderMemDebugLog();
+    container.querySelector("#_memDebugRefreshBtn")?.addEventListener("click", _renderMemDebugLog);
+    return;
+  }
   if (type === "appearance-resources" || type === "beautify" || type === "emoji") {
     const wbRow = container.querySelector("#srEmojiPackRow");
     if (wbRow) {
@@ -1271,12 +1299,9 @@ function _renderDebugSubpage() {
       <div class="settings-card">
         <div class="settings-card-row">
           <div><strong>记忆注入日志</strong><small>最近一轮注入状态</small></div>
-          <span class="settings-row-value">占位</span>
+          <button type="button" class="settings-row-action-btn" id="_memDebugRefreshBtn" style="font-size:12px">刷新</button>
         </div>
-        <div class="settings-card-row">
-          <div><strong>Prompt 状态</strong><small>当前 system prompt 摘要</small></div>
-          <span class="settings-row-value">占位</span>
-        </div>
+        <div id="_memDebugLog" style="padding:8px 0;font-size:12px;color:var(--text-muted);word-break:break-all">—</div>
       </div>
     </div>`;
 }
