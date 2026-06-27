@@ -569,9 +569,13 @@ function _showCustomProviderDialog(providerId = null) {
     fetchModelsStatus.style.color = 'var(--text-muted)';
 
     try {
-      // Normalize endpoint - ensure it ends with /v1 or add /models path
-      let modelsEndpoint = endpoint.replace(/\/$/, '');
-      if (!modelsEndpoint.endsWith('/v1')) {
+      // Normalize endpoint to get /models URL
+      // Accepted inputs: https://api.x.com/v1, https://api.x.com/v1/, https://api.x.com
+      let modelsEndpoint = endpoint.replace(/\/+$/, '');
+      // Strip /chat/completions or /completions if user pasted a chat endpoint
+      modelsEndpoint = modelsEndpoint.replace(/\/chat\/completions$/, '').replace(/\/completions$/, '');
+      // Ensure /v1 path
+      if (!modelsEndpoint.match(/\/v\d+$/)) {
         modelsEndpoint += '/v1';
       }
       modelsEndpoint += '/models';
@@ -579,8 +583,7 @@ function _showCustomProviderDialog(providerId = null) {
       const response = await fetch(modelsEndpoint, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${apiKey}`
         }
       });
 
