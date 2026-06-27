@@ -851,34 +851,54 @@ function _initSettingsApiSubpage(container) {
           testResultsContainer.appendChild(card);
 
           try {
-            const testMessages = [{ role: "user", content: "test" }];
-            const response = await fetch('/api/chat', {
+            // Resolve provider endpoint and apiKey from custom_providers
+            const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+            const providerData = customProviders[config.providerGroup];
+
+            if (!providerData || !providerData.endpoint || !providerData.apiKey) {
+              throw new Error('通道配置不完整（缺少 endpoint 或 apiKey）');
+            }
+
+            // Proxy through edge function to avoid CORS
+            const supabaseUrl = window.supabaseClient?.supabaseUrl || 'https://zbpbkyzisamleqspijnr.supabase.co';
+            const proxyUrl = `${supabaseUrl}/functions/v1/chat-test`;
+
+            const response = await fetch(proxyUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                messages: testMessages,
-                provider: config.providerGroup,
-                model: config.model,
-                stream: false,
-                max_tokens: 5
+                endpoint: providerData.endpoint,
+                apiKey: providerData.apiKey,
+                model: config.model
               })
             });
 
-            if (response.ok) {
+            if (!response.ok) {
+              throw new Error(`代理请求失败 (${response.status})`);
+            }
+
+            const result = await response.json();
+
+            if (result.error) {
+              throw new Error(result.error);
+            }
+
+            if (result.status && result.status >= 200 && result.status < 300) {
               statusIcon = '✅';
               statusText = '测试通过';
               statusColor = '#4CAF50';
               detailText = '连接正常，模型响应成功';
             } else {
               statusIcon = '❌';
-              statusText = `失败 (${response.status})`;
+              const errMsg = result.data?.error?.message || `上游返回 ${result.status}`;
+              statusText = `失败 (${result.status})`;
               statusColor = '#e57373';
-              detailText = response.statusText || '请检查通道配置和 API Key';
+              detailText = errMsg;
               allPassed = false;
             }
           } catch (error) {
             statusIcon = '❌';
-            statusText = '网络错误';
+            statusText = '测试失败';
             statusColor = '#e57373';
             detailText = error.message || '无法连接到服务器';
             allPassed = false;
