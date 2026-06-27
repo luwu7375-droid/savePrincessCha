@@ -161,9 +161,9 @@ function _renderApiSubpage() {
     const modelLabel = hasValidProvider ? (currentMapping.model || "未选择") : "未选择";
 
     rolesMappingHtml += `
-      <div class="settings-card-row">
+      <div class="settings-card-row settings-card-row--stacked">
         <div><strong>${role.label}</strong><small>${role.description}</small></div>
-        <span class="settings-row-value settings-row-value--compact">${providerLabel} · ${modelLabel}</span>
+        <small class="settings-row-model-hint">${providerLabel} · ${modelLabel}</small>
       </div>
       <div class="settings-card-row settings-card-row--selects">
         <select class="settings-select" data-role="${roleId}" data-type="provider">
