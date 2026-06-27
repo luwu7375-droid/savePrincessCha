@@ -3110,9 +3110,8 @@ async function triggerReply(replyMode) {
     setStatusDotState("online"); // Return to online after success
   } catch (error) {
     removeTypingIndicator();
-    addMessage(`回复失败：${error.message}`, "assistant");
-    setStatusDotState("error"); // Set to error state on failure
-    // Automatically return to online after 5 seconds
+    showToast(error.message || "回复失败，请稍后重试");
+    setStatusDotState("error");
     setTimeout(() => setStatusDotState("online"), 5000);
   } finally {
     setChatTitleState("idle");
@@ -6109,11 +6108,18 @@ document.getElementById("mcBackButton")?.addEventListener("click", () => {
 // a simple one-button alert. If a lighter toast API exists in the codebase
 // we can swap this out, but showDialog is the existing pattern.
 
-function showToast(message) {
-  if (typeof showDialog === "function") {
-    showDialog({ title: message, body: "", confirmLabel: "知道了" });
-  } else {
-    alert(message);
+function showToast(message, duration = 2800) {
+  const el = document.createElement("div");
+  el.className = "memory-toast toast-enter";
+  el.textContent = message;
+  el.addEventListener("click", () => dismiss());
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.remove("toast-enter"));
+  const t = setTimeout(dismiss, duration);
+  function dismiss() {
+    clearTimeout(t);
+    el.classList.add("toast-exit");
+    el.addEventListener("transitionend", () => el.remove(), { once: true });
   }
 }
 

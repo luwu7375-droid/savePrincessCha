@@ -826,10 +826,10 @@ function _initSettingsApiSubpage(container) {
             }
           }, 500);
         } else {
-          alert('保存失败，请重试');
+          if (typeof showToast === 'function') showToast('保存失败，请重试');
         }
       } else {
-        alert('请至少配置一个用途模型');
+        if (typeof showToast === 'function') showToast('请至少配置一个用途模型');
       }
     });
   }
