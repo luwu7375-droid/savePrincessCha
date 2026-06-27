@@ -194,6 +194,9 @@ export const CHECKER_PROMPT = `# 小cha 日记检查 Prompt
 [日记]
 {{diary_json}}
 
+[可用的 source event IDs]
+{{source_event_ids}}
+
 ---
 
 ## 检查标准
@@ -203,7 +206,7 @@ export const CHECKER_PROMPT = `# 小cha 日记检查 Prompt
 如果缺少必要字段 —— 判为失败。
 如果 \`diary_type\` 不是单一枚举值，而是 \`"a | b | c"\` 这种说明字符串 —— 判为失败。
 如果 \`source_types\` 不是数组，或数组里出现未允许的来源类型 —— 判为失败。
-如果 \`source_event_ids\` 引用了不存在的 source event —— 判为失败。
+如果 \`source_event_ids\` 引用了不在上述可用列表中的 source event ID —— 判为失败。
 
 **1. 来源是否被伪装成亲历记忆？**
 如果出现"我记得当时""我曾经""那时候我"等亲历口吻，但对应来源是 \`south_city_old_stories\` / \`project_reference\` / \`dream_imagination\` 而非 \`current_experience\` 或 \`shared_activity\` —— 判为失败。

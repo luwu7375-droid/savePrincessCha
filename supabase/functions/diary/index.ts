@@ -170,10 +170,14 @@ content: ${evt.content}
     }
 
     // Call model for checker (purpose: checker)
-    const checkerPrompt = CHECKER_PROMPT.replace("{{diary_json}}", JSON.stringify(diaryJson, null, 2));
+    // Pass source_events to checker so it can validate source_event_ids
+    const sourceEventIds = source_events.map(evt => evt.id);
+    const checkerPromptWithContext = CHECKER_PROMPT
+      .replace("{{diary_json}}", JSON.stringify(diaryJson, null, 2))
+      .replace("{{source_event_ids}}", JSON.stringify(sourceEventIds));
     const checkerCallResult = await callModelTextWithFallback(
       providers,
-      [{ role: "user", content: checkerPrompt }],
+      [{ role: "user", content: checkerPromptWithContext }],
       { maxTokens: 1000, temperature: 0.2, purpose: "checker" },
     );
 
