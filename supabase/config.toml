@@ -15,3 +15,9 @@ verify_jwt = false
 
 [functions.tts]
 verify_jwt = false
+
+[functions.models]
+verify_jwt = false
+
+[functions.chat-test]
+verify_jwt = false
