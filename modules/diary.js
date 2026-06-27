@@ -154,6 +154,12 @@
         requestBody.customModel = customModelParams;
       }
 
+      // Pass custom system prompt if user has overridden it
+      const customPrompt = localStorage.getItem('diary_generation_prompt');
+      if (customPrompt) {
+        requestBody.custom_system_prompt = customPrompt;
+      }
+
       const response = await fetch(`${supabaseClient.supabaseUrl}/functions/v1/diary`, {
         method: 'POST',
         headers: {
@@ -610,13 +616,47 @@
   }
 
   /**
-   * Open prompt editor
+   * Open prompt editor as a modal dialog (no back navigation)
    */
   function openPromptEditor() {
-    const overlay = _getDiaryOverlay();
-    const editorPage = renderPromptEditor();
-    overlay.innerHTML = '';
-    overlay.appendChild(editorPage);
+    if (document.getElementById('diaryPromptDialog')) return;
+
+    const savedPrompt = localStorage.getItem('diary_generation_prompt') || getDefaultDiaryPrompt();
+
+    const dialogOverlay = document.createElement('div');
+    dialogOverlay.id = 'diaryPromptDialog';
+    dialogOverlay.className = 'dialog-overlay';
+    dialogOverlay.innerHTML = `
+      <div class="dialog" style="width:520px;max-width:94vw">
+        <h3>日记生成提示词</h3>
+        <textarea id="diaryPromptTextarea" style="width:100%;min-height:220px;resize:vertical;font-family:monospace;font-size:13px">${escapeHtml(savedPrompt)}</textarea>
+        <div class="dialog-actions">
+          <button type="button" class="btn-cancel" id="diaryPromptResetBtn">恢复默认</button>
+          <button type="button" class="btn-confirm" id="diaryPromptSaveBtn">保存</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dialogOverlay);
+
+    dialogOverlay.addEventListener('click', (e) => {
+      if (e.target === dialogOverlay) dialogOverlay.remove();
+    });
+
+    dialogOverlay.querySelector('#diaryPromptResetBtn').addEventListener('click', () => {
+      dialogOverlay.querySelector('#diaryPromptTextarea').value = getDefaultDiaryPrompt();
+    });
+
+    dialogOverlay.querySelector('#diaryPromptSaveBtn').addEventListener('click', () => {
+      const val = dialogOverlay.querySelector('#diaryPromptTextarea').value.trim();
+      if (val) {
+        localStorage.setItem('diary_generation_prompt', val);
+      } else {
+        localStorage.removeItem('diary_generation_prompt');
+      }
+      if (typeof showToast === 'function') showToast('提示词已保存');
+      dialogOverlay.remove();
+    });
   }
 
   /**
@@ -713,60 +753,35 @@
 字数：200-400字`;
   }
 
+
+  // ── Auto-schedule ───────────────────────────────────────────────────────────
+
   /**
-   * Render prompt editor page
+   * Check if auto-generation should fire and trigger it.
+   * Call once on startup, then poll every minute.
    */
-  function renderPromptEditor() {
-    const container = document.createElement('section');
-    container.className = 'v2-page v2-page--diary-settings v2-active';
+  function _checkDiarySchedule() {
+    if (localStorage.getItem('diary_auto_schedule') !== 'enabled') return;
 
-    const scroll = document.createElement('div');
-    scroll.className = 'v2-scroll';
+    const scheduledTime = localStorage.getItem('diary_schedule_time') || '23:30';
+    const [hh, mm] = scheduledTime.split(':').map(Number);
 
-    const savedPrompt = localStorage.getItem('diary_generation_prompt') || getDefaultDiaryPrompt();
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+    const lastGenerated = localStorage.getItem('diary_last_auto_generated_date');
 
-    scroll.innerHTML = `
-      <header class="diary-detail-header">
-        <button type="button" class="back-btn" id="promptBackBtn">← 返回</button>
-        <h1>生成提示词</h1>
-      </header>
-      <div style="padding: 1rem;">
-        <textarea id="promptEditor" style="width: 100%; min-height: 300px; padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; font-family: monospace; font-size: 0.9em; resize: vertical;">${escapeHtml(savedPrompt)}</textarea>
-      </div>
-      <div style="padding: 0 1rem 1rem; display: flex; gap: 0.5rem;">
-        <button type="button" class="pill-btn" id="resetPromptBtn" style="flex: 1; padding: 0.75rem; opacity: 0.7;">恢复默认</button>
-        <button type="button" class="pill-btn" id="savePromptBtn" style="flex: 1; padding: 0.75rem;">保存提示词</button>
-      </div>
-    `;
+    if (lastGenerated === todayKey) return; // already generated today
 
-    container.appendChild(scroll);
+    if (now.getHours() === hh && now.getMinutes() === mm) {
+      localStorage.setItem('diary_last_auto_generated_date', todayKey);
+      console.log('[diary] Auto-schedule: triggering generation at', scheduledTime);
+      handleGenerateNow();
+    }
+  }
 
-    // Event handlers
-    setTimeout(() => {
-      const backBtn = container.querySelector('#promptBackBtn');
-      const resetBtn = container.querySelector('#resetPromptBtn');
-      const saveBtn = container.querySelector('#savePromptBtn');
-      const editor = container.querySelector('#promptEditor');
-
-      backBtn?.addEventListener('click', navigateToDiaryList);
-
-      resetBtn?.addEventListener('click', () => {
-        if (editor) {
-          editor.value = getDefaultDiaryPrompt();
-          showToast('已恢复默认提示词');
-        }
-      });
-
-      saveBtn?.addEventListener('click', () => {
-        if (editor) {
-          localStorage.setItem('diary_generation_prompt', editor.value);
-          showToast('已保存日记提示词');
-          setTimeout(navigateToDiaryList, 1000);
-        }
-      });
-    }, 0);
-
-    return container;
+  function initDiaryScheduler() {
+    _checkDiarySchedule();
+    setInterval(_checkDiarySchedule, 60 * 1000); // check every minute
   }
 
   // ── Export ─────────────────────────────────────────────────────────────────
@@ -778,7 +793,8 @@
     generateDiary,
     updateHomeDiaryCard,
     navigateToDiaryList,
-    navigateToDiaryDetail
+    navigateToDiaryDetail,
+    initDiaryScheduler,
   };
 
 })(window);

@@ -91,7 +91,7 @@
     } catch (err) {
       console.error('Diary generation failed:', err);
       btn.textContent = '生成失败';
-      alert(`日记生成失败：${err.message}`);
+      if (typeof showToast === 'function') showToast(`日记生成失败：${err.message}`);
       setTimeout(() => {
         btn.textContent = originalText;
         btn.disabled = false;

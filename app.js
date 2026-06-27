@@ -6166,11 +6166,12 @@ if (_SW_DEV_HOST) {
 
 // ── Diary Module Initialization ──────────────────────────────────────────────
 
-// Update Home diary card on page load
+// Update Home diary card on page load and start auto-schedule checker
 window.addEventListener("load", () => {
   if (supabaseClient && window.SPDiary) {
     window.SPDiary.updateHomeDiaryCard(supabaseClient, window.currentUserId || 'default')
       .catch(err => console.error('Failed to update diary card:', err));
+    window.SPDiary.initDiaryScheduler();
   }
 });
 

@@ -313,15 +313,16 @@
 }
 
 .v2-page--diary-settings .pill-btn {
-  background: var(--accent-color, #5b9bd5);
-  color: white;
-  border: none;
+  background: var(--bg-raise);
+  color: var(--text);
+  border: 1px solid var(--border);
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .v2-page--diary-settings .pill-btn:hover {
-  opacity: 0.9;
+  background: var(--surface);
+  border-color: var(--text-muted);
 }
 
 .v2-page--diary-list .v2-scroll,
