@@ -385,11 +385,13 @@ function setChatTitleState(mode) {
   window.SavePrincessChatAPI = {
     callChatAPI,
     extractTextFromMessageContent,
+    setChatTitleState,
   };
 
   // ── Legacy global aliases (for backward compatibility) ────────────────────
   window.callChatAPI = callChatAPI;
   window.extractTextFromMessageContent = extractTextFromMessageContent;
+  window.setChatTitleState = setChatTitleState;
   window._conversationStartedAt = _conversationStartedAt;
 
 })();
