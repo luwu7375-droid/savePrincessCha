@@ -68,7 +68,7 @@
       sceneContext,
       chaStatus: '独处',
       diaryLength: 'normal',
-      debug: false
+      debug: true  // Enable debug mode to see raw responses
     });
 
     return result;

@@ -160,17 +160,29 @@
         requestBody.custom_system_prompt = customPrompt;
       }
 
+      // Get user's session token for RLS
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      const authToken = session?.access_token || supabaseClient.supabaseKey;
+
+      console.log('[diary] Auth debug:', {
+        hasSession: !!session,
+        hasAccessToken: !!session?.access_token,
+        userId: window.currentUserId,
+        usingSessionToken: !!session?.access_token
+      });
+
       const response = await fetch(`${supabaseClient.supabaseUrl}/functions/v1/diary`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseClient.supabaseKey}`
+          'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Full error response:', errorData);  // Log complete error
         throw new Error(errorData.error || 'Failed to generate diary');
       }
 

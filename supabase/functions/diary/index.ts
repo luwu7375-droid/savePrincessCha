@@ -150,7 +150,13 @@ content: ${evt.content}
 
     let diaryJson: DiaryOutput;
     try {
-      diaryJson = JSON.parse(diaryCallResult.text);
+      // Strip markdown code blocks if present
+      let diaryText = diaryCallResult.text.trim();
+      const jsonMatch = diaryText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      if (jsonMatch) {
+        diaryText = jsonMatch[1].trim();
+      }
+      diaryJson = JSON.parse(diaryText);
     } catch (_e) {
       return new Response(
         JSON.stringify({
@@ -183,7 +189,13 @@ content: ${evt.content}
 
     let checkerJson: CheckerOutput;
     try {
-      checkerJson = JSON.parse(checkerCallResult.text);
+      // Strip markdown code blocks if present
+      let checkerText = checkerCallResult.text.trim();
+      const jsonMatch = checkerText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      if (jsonMatch) {
+        checkerText = jsonMatch[1].trim();
+      }
+      checkerJson = JSON.parse(checkerText);
     } catch (_e) {
       return new Response(
         JSON.stringify({
