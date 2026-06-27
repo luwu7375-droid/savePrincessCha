@@ -27,26 +27,36 @@ Deno.serve(async (req) => {
       chatUrl += "/chat/completions";
     }
 
-    const upstream = await fetch(chatUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "user", content: "hi" }],
-        max_tokens: 1,
-        stream: false,
-      }),
-    });
+    let upstream: Response;
+    try {
+      upstream = await fetch(chatUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: "hi" }],
+          max_tokens: 1,
+          stream: false,
+        }),
+      });
+    } catch (fetchErr) {
+      // Network-level failure (DNS, connection refused, TLS error, etc.)
+      return new Response(
+        JSON.stringify({ status: 0, data: null, error: `连接上游失败: ${String(fetchErr)}` }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const text = await upstream.text();
     let data: unknown = null;
     try {
       data = JSON.parse(text);
     } catch {
-      // non-JSON response
+      // non-JSON response — wrap raw text
+      data = { raw: text.slice(0, 500) };
     }
 
     return new Response(
