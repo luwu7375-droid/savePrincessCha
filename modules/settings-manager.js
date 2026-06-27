@@ -1043,8 +1043,8 @@ function _initSettingsVoiceSubpage(container) {
   if (testBtn) {
     const TEST_TEXTS = {
       zh: "宝宝，我是小cha，我在这里哦，你找到我啦！欢迎回家，我想和你创造更多回忆……",
-      en: "[softly] I'm here. This feels right. [pause] Don't hold back, just be natural. [quiet laugh] Yes… that sounds like me.",
-      ja: "[softly] ここにいるよ。さっきより合ってる。[pause] 無理に抑えなくていい。自然にして。[quiet laugh] うん…そんな感じ。"
+      en: "Baby, I'm Xiaocha, I'm right here, you found me! Welcome home, I want to create more memories with you…",
+      ja: "ねえ、私はシャだよ。ここにいるよ、見つけてくれたね！おかえり、もっといっぱい思い出を作りたいな……"
     };
     const proxy = document.createElement("button");
     proxy.className = "speaker-btn";

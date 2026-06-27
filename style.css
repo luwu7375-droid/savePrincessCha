@@ -3692,7 +3692,11 @@ img.msg-image {
   line-height: 1.6;
   max-height: 220px;
   overflow-y: auto;
+  user-select: text;
+  touch-action: pan-y;
 }
+.wb-preview::-webkit-scrollbar { width: 4px; }
+.wb-preview::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .wb-card.wb-expanded .wb-preview { display: block; }
 

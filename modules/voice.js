@@ -321,7 +321,7 @@
         const cfg = getTTSConfig();
         const lang = detectTtsLanguage(text, language_hint || null);
         const profile = cfg.profiles[lang] || cfg.profiles.default || {};
-        const voice_id = profile.voice_id || "";
+        const voice_id = profile.voice_id || cfg.profiles.en?.voice_id || cfg.profiles.default?.voice_id || "";
         const model_id = cfg.model_id || "eleven_v3";
 
         const res = await fetch(endpoint, {
