@@ -620,18 +620,18 @@
     dialogOverlay.id = 'diaryScheduleDialog';
     dialogOverlay.className = 'dialog-overlay';
     dialogOverlay.innerHTML = `
-      <div class="dialog" style="width:400px;max-width:94vw">
-        <h3>自动生成时间</h3>
+      <div class="dialog" style="width:400px;max-width:94vw;background:#fff;color:#1a1a1a">
+        <h3 style="color:#1a1a1a">自动生成时间</h3>
         <div style="margin: 1.5rem 0;">
-          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 1rem; color:#1a1a1a">
             <input type="checkbox" id="scheduleEnabled" ${currentSchedule !== 'off' ? 'checked' : ''} />
             <span>启用自动生成</span>
           </label>
           <div id="scheduleTimeSection" style="${currentSchedule === 'off' ? 'opacity: 0.5; pointer-events: none;' : ''}">
-            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9em;">每天生成时间：</label>
-            <input type="time" id="scheduleTime" value="${scheduleTime}" style="padding: 0.5rem; border: 1px solid var(--border, #ddd); border-radius: 4px; width: 100%; font-size: 1em;" />
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9em; color:#1a1a1a">每天生成时间：</label>
+            <input type="time" id="scheduleTime" value="${scheduleTime}" style="padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; width: 100%; font-size: 1em; color:#1a1a1a; background:#fff" />
           </div>
-          <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg-muted, #f5f5f5); border-radius: 4px; font-size: 0.85em; opacity: 0.7;">
+          <div style="margin-top: 1rem; padding: 0.75rem; background: #f5f5f5; border-radius: 4px; font-size: 0.85em; color:#666">
             当前状态：${currentSchedule !== 'off' ? `每天 ${scheduleTime}` : '已关闭'}
           </div>
         </div>
@@ -695,9 +695,9 @@
     dialogOverlay.id = 'diaryPromptDialog';
     dialogOverlay.className = 'dialog-overlay';
     dialogOverlay.innerHTML = `
-      <div class="dialog" style="width:520px;max-width:94vw">
-        <h3>日记生成提示词</h3>
-        <textarea id="diaryPromptTextarea" style="width:100%;min-height:220px;resize:vertical;font-family:monospace;font-size:13px">${escapeHtml(savedPrompt)}</textarea>
+      <div class="dialog" style="width:520px;max-width:94vw;background:#fff;color:#1a1a1a">
+        <h3 style="color:#1a1a1a">日记生成提示词</h3>
+        <textarea id="diaryPromptTextarea" style="width:100%;min-height:220px;resize:vertical;font-family:monospace;font-size:13px;color:#1a1a1a;background:#fff;border:1px solid #ddd">${escapeHtml(savedPrompt)}</textarea>
         <div class="dialog-actions">
           <button type="button" class="btn-cancel" id="diaryPromptResetBtn">恢复默认</button>
           <button type="button" class="btn-confirm" id="diaryPromptSaveBtn">保存</button>
