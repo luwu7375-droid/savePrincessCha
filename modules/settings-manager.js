@@ -591,17 +591,34 @@ function _showCustomProviderDialog(providerId = null) {
       }
 
       const result = await response.json();
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
       if (result.status && result.status !== 200) {
-        throw new Error(`上游 API 返回 ${result.status}`);
+        // Show upstream error message if available
+        const errDetail = result.data?.error?.message || result.data?.error || '';
+        throw new Error(`上游 API 返回 ${result.status}${errDetail ? ': ' + errDetail : ''}`);
       }
       const data = result.data;
 
       // Parse OpenAI-compatible response: { data: [{ id: "model-name", ... }] }
-      if (!data.data || !Array.isArray(data.data)) {
-        throw new Error('返回数据格式不符合 OpenAI API 规范');
+      // Some providers return the array at top-level or use different keys
+      let modelList = null;
+      if (data && Array.isArray(data.data)) {
+        modelList = data.data;
+      } else if (data && Array.isArray(data.models)) {
+        modelList = data.models;
+      } else if (Array.isArray(data)) {
+        modelList = data;
       }
 
-      const modelIds = data.data.map(m => m.id).filter(id => id);
+      if (!modelList || modelList.length === 0) {
+        const preview = JSON.stringify(data).slice(0, 200);
+        throw new Error(`未能解析模型列表。返回内容: ${preview}`);
+      }
+
+      const modelIds = modelList.map(m => m.id || m.name || m).filter(id => id);
 
       if (modelIds.length === 0) {
         throw new Error('未找到任何模型');

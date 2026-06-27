@@ -22,7 +22,11 @@ Deno.serve(async (req) => {
     let upstream: Response;
     try {
       upstream = await fetch(modelsUrl, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "HTTP-Referer": "https://saveprincesscha.pages.dev",
+          "X-Title": "SavePrincessCha",
+        },
       });
     } catch (fetchErr) {
       return new Response(
