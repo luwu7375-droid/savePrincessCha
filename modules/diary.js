@@ -610,7 +610,8 @@
    * Open auto schedule settings as a modal dialog (no back navigation)
    */
   function openAutoScheduleSettings() {
-    if (document.getElementById('diaryScheduleDialog')) return;
+    const overlay = _getDiaryOverlay();
+    if (overlay.querySelector('#diaryScheduleDialog')) return;
 
     const currentSchedule = localStorage.getItem('diary_auto_schedule') || 'off';
     const scheduleTime = localStorage.getItem('diary_schedule_time') || '23:30';
@@ -628,7 +629,7 @@
           </label>
           <div id="scheduleTimeSection" style="${currentSchedule === 'off' ? 'opacity: 0.5; pointer-events: none;' : ''}">
             <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9em;">每天生成时间：</label>
-            <input type="time" id="scheduleTime" value="${scheduleTime}" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; width: 100%; font-size: 1em;" />
+            <input type="time" id="scheduleTime" value="${scheduleTime}" style="padding: 0.5rem; border: 1px solid var(--border, #ddd); border-radius: 4px; width: 100%; font-size: 1em;" />
           </div>
           <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg-muted, #f5f5f5); border-radius: 4px; font-size: 0.85em; opacity: 0.7;">
             当前状态：${currentSchedule !== 'off' ? `每天 ${scheduleTime}` : '已关闭'}
@@ -641,7 +642,7 @@
       </div>
     `;
 
-    document.body.appendChild(dialogOverlay);
+    overlay.appendChild(dialogOverlay);
 
     const enabledCheckbox = dialogOverlay.querySelector('#scheduleEnabled');
     const timeSection = dialogOverlay.querySelector('#scheduleTimeSection');
@@ -685,7 +686,8 @@
    * Open prompt editor as a modal dialog (no back navigation)
    */
   function openPromptEditor() {
-    if (document.getElementById('diaryPromptDialog')) return;
+    const overlay = _getDiaryOverlay();
+    if (overlay.querySelector('#diaryPromptDialog')) return;
 
     const savedPrompt = localStorage.getItem('diary_generation_prompt') || getDefaultDiaryPrompt();
 
@@ -703,7 +705,7 @@
       </div>
     `;
 
-    document.body.appendChild(dialogOverlay);
+    overlay.appendChild(dialogOverlay);
 
     dialogOverlay.addEventListener('click', (e) => {
       if (e.target === dialogOverlay) dialogOverlay.remove();
