@@ -153,7 +153,7 @@ function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo) {
   row.appendChild(stack);
   maybeAddTimeSeparator(createdAt);
   messageList.appendChild(row);
-  messageList.scrollTop = messageList.scrollHeight;
+  if (isNearBottom()) messageList.scrollTop = messageList.scrollHeight;
   return row;
 }
 

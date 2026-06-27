@@ -1661,12 +1661,10 @@ function startLongPress(row, x, y) {
   cancelLongPress();
   longPressOpened = false;
   longPressStart = { x, y };
-  console.log("long press start");
   longPressTimer = setTimeout(() => {
     longPressTimer = null;
     if (longPressOpened) return;
     longPressOpened = true;
-    console.log("long press menu open");
     if (navigator.vibrate) navigator.vibrate(8);
     showMessageActionMenu(row, x, y);
   }, 450);

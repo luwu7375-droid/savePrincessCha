@@ -110,6 +110,14 @@ function renderSettingsSubpage(type) {
 }
 
 function _renderApiSubpage() {
+  // Sync custom providers from localStorage into window.PROVIDER_GROUPS
+  if (!window.PROVIDER_GROUPS) window.PROVIDER_GROUPS = {};
+  const _cpData = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+  Object.entries(_cpData).forEach(([pid, p]) => {
+    window.PROVIDER_GROUPS[pid] = window.PROVIDER_GROUPS[pid] || { name: p.name, endpoint: p.endpoint, models: p.models, description: p.description || '自定义配置', requiresAuth: true };
+  });
+  const PROVIDER_GROUPS = window.PROVIDER_GROUPS;
+
   const mapping = getModelRoleMapping();
 
   // Build provider status section - all providers show edit button now
@@ -512,11 +520,10 @@ function _showCustomProviderDialog(providerId = null) {
           </div>
           <div>
             <label style="display:block;font-size:12px;color:#8E8E8E;margin-bottom:4px;">支持的模型</label>
-            <div style="display:flex;gap:8px;">
-              <input type="text" id="providerModelsInput" placeholder="点击右侧按钮自动获取"
-                value="${existingProvider?.models?.join(', ') || ''}"
-                style="flex:1;padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;font-size:14px;">
-              <button type="button" id="fetchModelsBtn" style="padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;cursor:pointer;white-space:nowrap;font-size:13px;">获取模型</button>
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <textarea id="providerModelsInput" placeholder="点击右侧按钮自动获取，或手动输入（每行一个）" rows="5"
+                style="flex:1;padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;font-size:13px;resize:vertical;line-height:1.5;">${existingProvider?.models?.join('\n') || ''}</textarea>
+              <button type="button" id="fetchModelsBtn" style="padding:8px 12px;border:1px solid rgba(30,30,30,0.08);border-radius:8px;background:#FAFAF8;color:#202020;cursor:pointer;white-space:nowrap;font-size:13px;flex-shrink:0;">获取模型</button>
             </div>
             <div id="fetchModelsStatus" style="font-size:11px;color:#8E8E8E;margin-top:4px;"></div>
           </div>
@@ -600,8 +607,8 @@ function _showCustomProviderDialog(providerId = null) {
         throw new Error('未找到任何模型');
       }
 
-      // Fill the models input with fetched model names
-      modelsInput.value = modelIds.join(', ');
+      // Fill the models input with fetched model names (one per line)
+      modelsInput.value = modelIds.join('\n');
 
       fetchModelsStatus.textContent = `成功获取 ${modelIds.length} 个模型`;
       fetchModelsStatus.style.color = '#4CAF50';
@@ -654,7 +661,7 @@ function _showCustomProviderDialog(providerId = null) {
       return;
     }
 
-    const models = modelsStr.split(',').map(m => m.trim()).filter(m => m);
+    const models = modelsStr.split(/[\n,]/).map(m => m.trim()).filter(m => m);
     if (models.length === 0) {
       if (typeof showToast === 'function') {
         showToast('请至少添加一个模型');
@@ -702,6 +709,7 @@ function _renderBeautifySubpage()  { return _renderAppearanceResourcesSubpage();
 function _renderPromptSubpage()    { return _renderPromptWorldbookSubpage(); }
 
 function _initSettingsApiSubpage(container) {
+  const PROVIDER_GROUPS = window.PROVIDER_GROUPS || {};
   const mapping = getModelRoleMapping();
 
   // Handle add custom provider button
