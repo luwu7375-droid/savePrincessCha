@@ -569,29 +569,25 @@ function _showCustomProviderDialog(providerId = null) {
     fetchModelsStatus.style.color = 'var(--text-muted)';
 
     try {
-      // Normalize endpoint to get /models URL
-      // Accepted inputs: https://api.x.com/v1, https://api.x.com/v1/, https://api.x.com
-      let modelsEndpoint = endpoint.replace(/\/+$/, '');
-      // Strip /chat/completions or /completions if user pasted a chat endpoint
-      modelsEndpoint = modelsEndpoint.replace(/\/chat\/completions$/, '').replace(/\/completions$/, '');
-      // Ensure /v1 path
-      if (!modelsEndpoint.match(/\/v\d+$/)) {
-        modelsEndpoint += '/v1';
-      }
-      modelsEndpoint += '/models';
+      // Proxy through backend to avoid CORS preflight 401 on direct browser→upstream calls
+      const supabaseUrl = window.supabaseClient?.supabaseUrl || 'https://zbpbkyzisamleqspijnr.supabase.co';
+      const proxyUrl = `${supabaseUrl}/functions/v1/models`;
 
-      const response = await fetch(modelsEndpoint, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`
-        }
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint, apiKey })
       });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const result = await response.json();
+      if (result.status && result.status !== 200) {
+        throw new Error(`上游 API 返回 ${result.status}`);
+      }
+      const data = result.data;
 
       // Parse OpenAI-compatible response: { data: [{ id: "model-name", ... }] }
       if (!data.data || !Array.isArray(data.data)) {
