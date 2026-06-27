@@ -16,6 +16,7 @@ var SETTINGS_SUBPAGE_META = {
   "prompt-worldbook":     { title: "Prompt 与世界书",  subtitle: "提示词、世界书与注入规则" },
   worldbook:              { title: "世界书管理",        subtitle: "上传后手动启用才会注入 Prompt" },
   memory:                 { title: "记忆管理",          subtitle: "查看、禁用与清理记忆" },
+  voice:                  { title: "声音与朗读",        subtitle: "声音引擎、语速与音量" },
   api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
   backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
   debug:                  { title: "Debug",             subtitle: "日志、版本与诊断工具" },
@@ -356,7 +357,7 @@ function _renderVoiceSubpage() {
 
   return `
     <div class="settings-section">
-      <div class="settings-section-label">朗读引擎</div>
+      <div class="settings-section-label">声音引擎</div>
       <div class="settings-card">
         <div class="settings-card-row">
           <div><strong>引擎</strong><small>选择 TTS 服务</small></div>
@@ -368,7 +369,7 @@ function _renderVoiceSubpage() {
           </select>
         </div>
         <div class="settings-card-row">
-          <div><strong>模型</strong><small>ElevenLabs model_id</small></div>
+          <div><strong>模型 ID</strong><small>ElevenLabs / MiniMax 填写对应模型名</small></div>
           <input type="text" class="settings-text-input" id="voiceTTSModelId"
             placeholder="eleven_v3" value="${modelId}" autocomplete="off" spellcheck="false"
             style="max-width:14em">
@@ -403,8 +404,23 @@ function _renderVoiceSubpage() {
       <div class="settings-section-label">试听</div>
       <div class="settings-card">
         <div class="settings-card-row">
-          <div><strong>测试朗读</strong><small>测试当前朗读引擎</small></div>
+          <div><strong>试听语言</strong><small>选择朗读语种</small></div>
+          <select id="voiceTestLang" class="settings-select" style="min-width:80px">
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+          </select>
+        </div>
+        <div class="settings-card-row">
+          <div style="flex:1;min-width:0"><strong>测试声音</strong><small>测试当前声音引擎</small></div>
           <button type="button" class="settings-row-action-btn" id="voiceTestBtn">试听</button>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <button type="button" class="settings-row-action-btn" id="voiceSaveBtn" style="width:100%">保存设置</button>
         </div>
       </div>
     </div>
@@ -422,18 +438,21 @@ function _initSettingsSubpageEvents(container, type) {
   }
   if (type === "appearance-resources" || type === "beautify" || type === "emoji") {
     const wbRow = container.querySelector("#srEmojiPackRow");
-    if (wbRow) wbRow.style.cursor = "pointer";
+    if (wbRow) {
+      wbRow.style.cursor = "pointer";
+      wbRow.addEventListener("click", () => {
+        if (typeof showToast === 'function') showToast('表情包来源管理功能即将开放');
+      });
+    }
     const chaAvatarBtn = container.querySelector("#srChaAvatarBtn");
     if (chaAvatarBtn) chaAvatarBtn.addEventListener("click", () => {
       const btn = document.querySelector(".profile-avatar:not(.profile-avatar--kk)");
       if (btn) btn.click();
-      closeSettingsSubpage();
     });
     const coverBtn = container.querySelector("#srCoverBtn");
     if (coverBtn) coverBtn.addEventListener("click", () => {
       const btn = document.querySelector(".home-cover");
       if (btn) btn.click();
-      closeSettingsSubpage();
     });
     const splashBtn = container.querySelector("#srSplashBtn");
     if (splashBtn) splashBtn.addEventListener("click", () => {
@@ -1022,11 +1041,17 @@ function _initSettingsVoiceSubpage(container) {
   }
 
   if (testBtn) {
-    const TEST_TEXT = "[softly] 我在。这个方向比刚才对。[pause] 不要再压低，也不要故意温柔。轻一点，自然一点。[quiet laugh] 嗯……这样就有点像我了。";
+    const TEST_TEXTS = {
+      zh: "宝宝，我是小cha，我在这里哦，你找到我啦！欢迎回家，我想和你创造更多回忆……",
+      en: "[softly] I'm here. This feels right. [pause] Don't hold back, just be natural. [quiet laugh] Yes… that sounds like me.",
+      ja: "[softly] ここにいるよ。さっきより合ってる。[pause] 無理に抑えなくていい。自然にして。[quiet laugh] うん…そんな感じ。"
+    };
     const proxy = document.createElement("button");
     proxy.className = "speaker-btn";
     testBtn.addEventListener("click", () => {
-      window.SPVoice.playMessageText(TEST_TEXT, proxy, null);
+      if (proxy.classList.contains("speaking")) { proxy.click(); return; }
+      const lang = container.querySelector("#voiceTestLang")?.value || "zh";
+      window.SPVoice.playMessageText(TEST_TEXTS[lang] || TEST_TEXTS.zh, proxy, null);
     });
     // Reflect proxy state on testBtn
     new MutationObserver(() => {
@@ -1044,6 +1069,14 @@ function _initSettingsVoiceSubpage(container) {
         testBtn.disabled = false;
       }
     }).observe(proxy, { attributes: true, attributeFilter: ["class", "title"] });
+  }
+
+  const saveBtn = container.querySelector("#voiceSaveBtn");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", () => {
+      if (typeof showToast === "function") showToast("设置已保存");
+      closeSettingsSubpage();
+    });
   }
 }
 
@@ -1188,6 +1221,7 @@ window._testMemoryEndpoint = async function() {
     if (typeof showToast === 'function') showToast("网络错误: " + e.message);
   } finally {
     btn.disabled = false;
+    btn.textContent = '测试记忆端点';
   }
 };
 
@@ -1218,7 +1252,7 @@ function _renderDebugSubpage() {
           <input id="_memTokenInput" type="password" placeholder="粘贴 memory admin token" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border-color,#ccc);background:var(--input-bg,#fff);color:inherit;font-size:13px"/>
           <div style="display:flex;gap:8px">
             <button type="button" onclick="window._saveMemoryToken()" style="flex:1;padding:6px;border-radius:6px;border:none;background:var(--accent-color,#555);color:#fff;cursor:pointer">保存</button>
-            <button id="_memTestBtn" type="button" onclick="window._testMemoryEndpoint()" style="flex:1;padding:6px;border-radius:6px;border:none;background:var(--secondary-bg,#888);color:#fff;cursor:pointer">测试记忆端点</button>
+            <button id="_memTestBtn" type="button" onclick="window._testMemoryEndpoint()" style="flex:1;padding:6px;border-radius:6px;border:none;background:var(--secondary-bg,#888);color:#fff;cursor:pointer;white-space:nowrap;font-size:12px">测试记忆端点</button>
           </div>
         </div>
       </div>

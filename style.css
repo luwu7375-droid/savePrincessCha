@@ -7,8 +7,8 @@
   --bg-raise:  oklch(18% 0.013 250);
   --surface:   oklch(20% 0.014 250);
   --border:    oklch(26% 0.014 250);
-  --text:      oklch(92% 0.008 250);
-  --text-muted:oklch(58% 0.012 250);
+  --text:      oklch(95% 0.008 250);
+  --text-muted:oklch(70% 0.012 250);
   --bubble-me: oklch(34% 0.055 240);
   --bubble-ai: oklch(22% 0.016 250);
   --send-hover:oklch(40% 0.08 240);
@@ -3690,6 +3690,8 @@ img.msg-image {
   white-space: pre-wrap;
   word-break: break-all;
   line-height: 1.6;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .wb-card.wb-expanded .wb-preview { display: block; }
