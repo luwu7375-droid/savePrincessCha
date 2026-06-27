@@ -19,11 +19,26 @@ Deno.serve(async (req) => {
     if (!modelsUrl.match(/\/v\d+$/)) modelsUrl += "/v1";
     modelsUrl += "/models";
 
-    const upstream = await fetch(modelsUrl, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
+    let upstream: Response;
+    try {
+      upstream = await fetch(modelsUrl, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+    } catch (fetchErr) {
+      return new Response(
+        JSON.stringify({ status: 0, data: null, error: `连接上游失败: ${String(fetchErr)}` }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
-    const data = await upstream.json();
+    const text = await upstream.text();
+    let data: unknown = null;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text.slice(0, 500) };
+    }
+
     return new Response(JSON.stringify({ status: upstream.status, data }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

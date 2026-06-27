@@ -165,7 +165,7 @@ function _renderApiSubpage() {
         <div><strong>${role.label}</strong><small>${role.description}</small></div>
         <span class="settings-row-value settings-row-value--compact">${providerLabel} · ${modelLabel}</span>
       </div>
-      <div class="settings-card-row">
+      <div class="settings-card-row settings-card-row--selects">
         <select class="settings-select" data-role="${roleId}" data-type="provider">
           <option value="">选择通道</option>
           ${Object.entries(PROVIDER_GROUPS).map(([gid, g]) =>

@@ -1006,6 +1006,55 @@ body {
 .settings-card-row .settings-row-value {
   font-size: 13px;
   color: var(--text-muted);
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Prevent label/description from being squeezed into vertical single-char columns */
+.settings-card-row > div:first-child {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.settings-card-row > div:first-child > strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.settings-card-row > div:first-child > small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+/* API settings: select dropdowns row */
+.settings-card-row--selects {
+  grid-template-columns: 1fr 1fr;
+}
+
+.settings-select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238E8E8E'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-empty-state {
