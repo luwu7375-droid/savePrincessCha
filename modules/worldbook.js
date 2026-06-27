@@ -161,12 +161,14 @@
         wbDelete(book.id, book.name);
       });
 
-      // Drag events
-      card.addEventListener("dragstart", wbOnDragStart);
-      card.addEventListener("dragover",  wbOnDragOver);
-      card.addEventListener("dragleave", wbOnDragLeave);
-      card.addEventListener("drop",      wbOnDrop);
-      card.addEventListener("dragend",   wbOnDragEnd);
+      // Drag events (desktop only)
+      if (window.matchMedia && window.matchMedia('(min-width: 641px)').matches) {
+        card.addEventListener("dragstart", wbOnDragStart);
+        card.addEventListener("dragover",  wbOnDragOver);
+        card.addEventListener("dragleave", wbOnDragLeave);
+        card.addEventListener("drop",      wbOnDrop);
+        card.addEventListener("dragend",   wbOnDragEnd);
+      }
 
       wbList.appendChild(card);
     });

@@ -56,6 +56,12 @@
   flex-direction: column;
   gap: 0.5rem;
   transition: transform 0.2s, box-shadow 0.2s;
+  background: inherit;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
 }
 
 .diary-list-card:hover {
@@ -69,11 +75,16 @@
   color: var(--text-primary, #1a1a1a);
 }
 
+.diary-list-card p {
+  color: var(--text-primary, #1a1a1a);
+}
+
 .diary-summary {
   font-size: 0.95em;
   opacity: 0.7;
   line-height: 1.5;
   margin: 0;
+  color: inherit;
 }
 
 .diary-meta {

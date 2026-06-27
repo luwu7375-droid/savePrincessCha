@@ -3551,14 +3551,20 @@ img.msg-image {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
-  cursor: grab;
   user-select: none;
   transition: opacity 0.15s, border-color 0.15s;
   position: relative;
-  touch-action: pan-y;
 }
 
-.wb-card:active { cursor: grabbing; }
+/* Only enable drag cursor and draggable on desktop */
+@media (min-width: 641px) {
+  .wb-card {
+    cursor: grab;
+  }
+  .wb-card:active {
+    cursor: grabbing;
+  }
+}
 
 .wb-card.wb-dragging {
   opacity: 0.4;
