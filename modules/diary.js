@@ -601,18 +601,84 @@
       }
     } catch (err) {
       console.error('Failed to generate diary:', err);
-      showToast('日记生成失败，请稍后重试');
+      const errorMsg = err.message || '未知错误';
+      showToast(`日记生成失败：${errorMsg}`);
     }
   }
 
   /**
-   * Open auto schedule settings
+   * Open auto schedule settings as a modal dialog (no back navigation)
    */
   function openAutoScheduleSettings() {
-    const overlay = _getDiaryOverlay();
-    const settingsPage = renderAutoScheduleSettings();
-    overlay.innerHTML = '';
-    overlay.appendChild(settingsPage);
+    if (document.getElementById('diaryScheduleDialog')) return;
+
+    const currentSchedule = localStorage.getItem('diary_auto_schedule') || 'off';
+    const scheduleTime = localStorage.getItem('diary_schedule_time') || '23:30';
+
+    const dialogOverlay = document.createElement('div');
+    dialogOverlay.id = 'diaryScheduleDialog';
+    dialogOverlay.className = 'dialog-overlay';
+    dialogOverlay.innerHTML = `
+      <div class="dialog" style="width:400px;max-width:94vw">
+        <h3>自动生成时间</h3>
+        <div style="margin: 1.5rem 0;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 1rem;">
+            <input type="checkbox" id="scheduleEnabled" ${currentSchedule !== 'off' ? 'checked' : ''} />
+            <span>启用自动生成</span>
+          </label>
+          <div id="scheduleTimeSection" style="${currentSchedule === 'off' ? 'opacity: 0.5; pointer-events: none;' : ''}">
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.9em;">每天生成时间：</label>
+            <input type="time" id="scheduleTime" value="${scheduleTime}" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; width: 100%; font-size: 1em;" />
+          </div>
+          <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg-muted, #f5f5f5); border-radius: 4px; font-size: 0.85em; opacity: 0.7;">
+            当前状态：${currentSchedule !== 'off' ? `每天 ${scheduleTime}` : '已关闭'}
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn-cancel" id="scheduleDialogCancelBtn">取消</button>
+          <button type="button" class="btn-confirm" id="scheduleDialogSaveBtn">保存</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dialogOverlay);
+
+    const enabledCheckbox = dialogOverlay.querySelector('#scheduleEnabled');
+    const timeSection = dialogOverlay.querySelector('#scheduleTimeSection');
+
+    enabledCheckbox.addEventListener('change', () => {
+      if (enabledCheckbox.checked) {
+        timeSection.style.opacity = '1';
+        timeSection.style.pointerEvents = 'auto';
+      } else {
+        timeSection.style.opacity = '0.5';
+        timeSection.style.pointerEvents = 'none';
+      }
+    });
+
+    dialogOverlay.addEventListener('click', (e) => {
+      if (e.target === dialogOverlay) dialogOverlay.remove();
+    });
+
+    dialogOverlay.querySelector('#scheduleDialogCancelBtn').addEventListener('click', () => {
+      dialogOverlay.remove();
+    });
+
+    dialogOverlay.querySelector('#scheduleDialogSaveBtn').addEventListener('click', () => {
+      const enabled = dialogOverlay.querySelector('#scheduleEnabled').checked;
+      const time = dialogOverlay.querySelector('#scheduleTime').value;
+
+      if (enabled) {
+        localStorage.setItem('diary_auto_schedule', 'on');
+        localStorage.setItem('diary_schedule_time', time);
+        if (typeof showToast === 'function') showToast(`已设置每天 ${time} 自动生成`);
+      } else {
+        localStorage.setItem('diary_auto_schedule', 'off');
+        if (typeof showToast === 'function') showToast('已关闭自动生成');
+      }
+
+      dialogOverlay.remove();
+    });
   }
 
   /**
@@ -660,82 +726,6 @@
   }
 
   /**
-   * Render auto schedule settings page
-   */
-  function renderAutoScheduleSettings() {
-    const container = document.createElement('section');
-    container.className = 'v2-page v2-page--diary-settings v2-active';
-
-    const scroll = document.createElement('div');
-    scroll.className = 'v2-scroll';
-
-    const currentSchedule = localStorage.getItem('diary_auto_schedule') || 'off';
-    const scheduleTime = localStorage.getItem('diary_schedule_time') || '23:30';
-
-    scroll.innerHTML = `
-      <header class="diary-detail-header">
-        <button type="button" class="back-btn" id="scheduleBackBtn">← 返回</button>
-        <h1>自动生成时间</h1>
-      </header>
-      <div class="soft-card" style="padding: 1.5rem; margin: 1rem;">
-        <div style="margin-bottom: 1.5rem;">
-          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-            <input type="checkbox" id="scheduleEnabled" ${currentSchedule !== 'off' ? 'checked' : ''} />
-            <span>启用自动生成</span>
-          </label>
-        </div>
-        <div id="scheduleTimeSection" style="${currentSchedule === 'off' ? 'opacity: 0.5; pointer-events: none;' : ''}">
-          <label style="display: block; margin-bottom: 0.5rem;">每天生成时间：</label>
-          <input type="time" id="scheduleTime" value="${scheduleTime}" style="padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; width: 100%;" />
-        </div>
-        <div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg-muted); border-radius: 4px; font-size: 0.85em; opacity: 0.7;">
-          当前状态：${currentSchedule !== 'off' ? `每天 ${scheduleTime}` : '已关闭'}
-        </div>
-      </div>
-      <div style="padding: 1rem; display: flex; gap: 0.5rem;">
-        <button type="button" class="pill-btn" id="saveScheduleBtn" style="flex: 1; padding: 0.75rem;">保存设置</button>
-      </div>
-    `;
-
-    container.appendChild(scroll);
-
-    // Event handlers
-    setTimeout(() => {
-      const backBtn = container.querySelector('#scheduleBackBtn');
-      const saveBtn = container.querySelector('#saveScheduleBtn');
-      const enabledCheckbox = container.querySelector('#scheduleEnabled');
-      const timeSection = container.querySelector('#scheduleTimeSection');
-
-      backBtn?.addEventListener('click', navigateToDiaryList);
-
-      enabledCheckbox?.addEventListener('change', (e) => {
-        if (timeSection) {
-          timeSection.style.opacity = e.target.checked ? '1' : '0.5';
-          timeSection.style.pointerEvents = e.target.checked ? 'auto' : 'none';
-        }
-      });
-
-      saveBtn?.addEventListener('click', () => {
-        const enabled = enabledCheckbox?.checked;
-        const time = container.querySelector('#scheduleTime')?.value || '23:30';
-
-        if (enabled) {
-          localStorage.setItem('diary_auto_schedule', 'enabled');
-          localStorage.setItem('diary_schedule_time', time);
-          showToast('已保存自动生成设置');
-        } else {
-          localStorage.setItem('diary_auto_schedule', 'off');
-          showToast('已关闭自动生成');
-        }
-
-        setTimeout(navigateToDiaryList, 1000);
-      });
-    }, 0);
-
-    return container;
-  }
-
-  /**
    * Get default diary prompt
    */
   function getDefaultDiaryPrompt() {
@@ -761,7 +751,8 @@
    * Call once on startup, then poll every minute.
    */
   function _checkDiarySchedule() {
-    if (localStorage.getItem('diary_auto_schedule') !== 'enabled') return;
+    const scheduleStatus = localStorage.getItem('diary_auto_schedule');
+    if (scheduleStatus !== 'on' && scheduleStatus !== 'enabled') return;
 
     const scheduledTime = localStorage.getItem('diary_schedule_time') || '23:30';
     const [hh, mm] = scheduledTime.split(':').map(Number);
