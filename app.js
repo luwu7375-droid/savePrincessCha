@@ -1672,7 +1672,41 @@ function showMultiSelectBar() {
   forwardBtn.disabled = true;
   forwardBtn.style.cssText = 'padding:8px 16px;border:none;border-radius:6px;background:var(--accent-primary);color:white;cursor:pointer;font-size:14px;';
   forwardBtn.addEventListener('click', () => {
-    if (typeof showToast === 'function') showToast('转发功能开发中...');
+    if (selectedMessageIds.size === 0) return;
+
+    // 收集选中消息的文本内容
+    const selectedTexts = [];
+    for (const msgId of selectedMessageIds) {
+      const row = messageList.querySelector(`[data-msg-id="${msgId}"]`);
+      if (!row) continue;
+
+      const bubble = row.querySelector('.bubble');
+      if (bubble) {
+        // 提取纯文本，移除引用部分
+        const quotedSection = bubble.querySelector('.quoted-section');
+        const replyText = bubble.querySelector('.reply-text');
+        const textContent = replyText ? replyText.textContent.trim() :
+                           (quotedSection ? bubble.textContent.replace(quotedSection.textContent, '').trim() :
+                            bubble.textContent.trim());
+        if (textContent) selectedTexts.push(textContent);
+      }
+    }
+
+    // 将内容填充到输入框
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput && selectedTexts.length > 0) {
+      const forwardedContent = selectedTexts.join('\n---\n');
+      messageInput.value = forwardedContent;
+      messageInput.style.height = 'auto';
+      messageInput.style.height = messageInput.scrollHeight + 'px';
+      messageInput.focus();
+
+      if (typeof showToast === 'function') {
+        showToast(`已将 ${selectedTexts.length} 条消息复制到输入框`);
+      }
+
+      exitMultiSelectMode();
+    }
   });
 
   const cancelBtn = document.createElement('button');
