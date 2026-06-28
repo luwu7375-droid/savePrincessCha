@@ -305,6 +305,7 @@ async function callChatAPI(messages, replyMode = "auto") {
       conversationId: getActiveConversationId(),
       modelTier: modelTierToSend,
       customModel: customModelParams,
+      temperature: typeof getChatReplyTemperature === "function" ? getChatReplyTemperature() : 0.7,
       timeContext,
       conversation_state,
       // storySeedsEnabled intentionally omitted — legacy memory system retired

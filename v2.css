@@ -577,21 +577,26 @@ body {
 
 .track-meta strong {
   display: block;
-.memory-vortex {
-  display: block;
-  width: 100%;
-  min-height: 160px;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border-soft);
-  background: linear-gradient(135deg, #dfe0dc, #fafaf8 48%, #d7d8d5);
-  margin-bottom: 18px;
-  overflow: hidden;
-  position: relative;
-  padding: 0;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}  border-radius: 999px;
+  font-size: 14px;
+}
+
+.music-icon,
+.music-play {
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
+
+.music-icon img {
+  width: 18px;
+  height: 18px;
+}
+
+.music-play {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
   border: 1px solid rgba(32,32,32,0.2);
 }
 
@@ -613,72 +618,24 @@ body {
 }
 
 .memory-vortex {
-  display: grid;
-  grid-template-columns: 1fr 38px;
-  align-content: center;
-  gap: 4px 12px;
+  display: block;
   width: 100%;
-  min-height: 118px;
+  min-height: 160px;
   border-radius: var(--radius-card);
   border: 1px solid var(--border-soft);
-  background:
-    radial-gradient(circle at center, transparent 0 8px, rgba(32,32,32,0.18) 9px 10px, transparent 11px 18px, rgba(32,32,32,0.12) 19px 20px, transparent 21px),
-    linear-gradient(135deg, #dfe0dc, #fafaf8 48%, #d7d8d5);
+  background: linear-gradient(135deg, #dfe0dc, #fafaf8 48%, #d7d8d5);
   margin-bottom: 18px;
   overflow: hidden;
   position: relative;
-  padding: 20px 22px;
-  text-align: left;
+  padding: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
-.v2-page--couple .memory-vortex { margin-top: 14px; }
+.v2-page--couple .memory-vortex { margin-top: 18px; }
+
 .v2-page--playground .feature-grid--play { margin-top: 18px; }
-
-.memory-vortex-title,
-.memory-vortex-desc,
-.memory-vortex-arrow {
-  position: relative;
-  z-index: 1;
-}
-
-.memory-vortex-arrow {
-  grid-column: 2;
-  grid-row: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-}
-
-.memory-vortex-title {
-  display: block;
-  color: var(--text-main);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.memory-vortex-desc {
-  display: block;
-  max-width: 230px;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.memory-vortex-arrow {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
-  justify-self: end;
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.72);
-  color: var(--text-main);
-  font-size: 22px;
-}
 
 .feature-grid {
   display: grid;
@@ -1651,11 +1608,19 @@ body {
   width: auto;
 }
 
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
 .input-bar textarea {
   min-height: 34px;
   max-height: 96px;
   border: 0;
-  padding: 7px 0;
+  padding: 7px 40px 7px 0;
   background: transparent;
   color: var(--text-main);
   font-size: 16px;
@@ -1670,6 +1635,34 @@ body {
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+}
+
+.input-suffix-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  opacity: 0.42;
+  transition: opacity 0.14s ease, background 0.14s ease;
+}
+
+.input-suffix-btn:hover {
+  opacity: 0.72;
+  background: rgba(30, 30, 30, 0.05);
+}
+
+.input-suffix-btn:active {
+  opacity: 1;
+  background: rgba(30, 30, 30, 0.09);
+}
+
+.input-suffix-btn img {
+  width: 20px;
+  height: 20px;
+  filter: brightness(0);
 }
 
 .input-bar textarea::placeholder {
@@ -2263,7 +2256,6 @@ body {
   /* dock baseline + composer + measured panel height (adaptive, not fixed 320px) */
   padding-bottom: calc(12px + var(--chat-input-height) + var(--emoji-panel-h, 0px) + 8px);
 }
-
 
 /* plus panel open: reserve dock baseline + composer + measured panel height */
 .chat-shell.plus-panel-open .message-list {
@@ -4569,16 +4561,12 @@ body {
 /* ── Input Bar Restructured ────────────────────────────────────────────── */
 
 #page-chat-detail .input-bar {
-  grid-template-columns: 36px 1fr 36px 36px;
-  /* [+] [input] [emoji] [mic/send] */
+  grid-template-columns: 36px 1fr 36px;
+  /* [+] [input+emoji] [mic/send] */
 }
 
 #composerMenuBtn {
   order: -1; /* First position on mobile */
-}
-
-#emojiButton {
-  order: 0;
 }
 
 #voiceInputBtn,
@@ -4609,8 +4597,8 @@ body {
 /* Desktop layout: + button after input */
 @media (min-width: 1288px) {
   #page-chat-detail .input-bar {
-    grid-template-columns: 1fr 36px 36px 36px;
-    /* [input] [+] [emoji] [mic/send] */
+    grid-template-columns: 1fr 36px 36px;
+    /* [input+emoji] [+] [mic/send] */
   }
 
   #composerMenuBtn {
@@ -4807,7 +4795,6 @@ body {
 .profile-info-row--readonly:active {
   background: transparent;
 }
-
 
 /* ── Cost Dashboard ─────────────────────────────────────────────────────── */
 .cost-cards {

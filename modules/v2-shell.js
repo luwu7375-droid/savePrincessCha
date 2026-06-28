@@ -83,7 +83,8 @@
   // ── Asset upload slots ───────────────────────────────────────────────────────
 
   var ASSET_SLOTS = {
-    "home-cover-cha":       ".home-cover-left",\n    "home-cover-kk":        ".home-cover-right",
+    "home-cover-cha":       ".home-cover-left",
+    "home-cover-kk":        ".home-cover-right",
     "home-cha-avatar":      ".profile-avatar:not(.profile-avatar--kk), .header-avatar, .top-avatar",
     "home-kk-avatar":       ".profile-avatar.profile-avatar--kk",
     "home-today-image":     ".today-photo",
