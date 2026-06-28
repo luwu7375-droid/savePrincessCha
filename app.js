@@ -2520,15 +2520,17 @@ if (isMobileLayout()) {
   sidebar.classList.remove("hidden");
 }
 
-sidebarToggle.addEventListener("click", () => {
-  if (isMobileLayout()) {
-    const opening = !sidebar.classList.contains("mobile-open");
-    sidebar.classList.toggle("mobile-open", opening);
-    sidebarBackdrop.classList.toggle("hidden", !opening);
-  } else {
-    sidebar.classList.toggle("hidden");
-  }
-});
+if (sidebarToggle) {
+  sidebarToggle.addEventListener("click", () => {
+    if (isMobileLayout()) {
+      const opening = !sidebar.classList.contains("mobile-open");
+      sidebar.classList.toggle("mobile-open", opening);
+      sidebarBackdrop.classList.toggle("hidden", !opening);
+    } else {
+      sidebar.classList.toggle("hidden");
+    }
+  });
+}
 
 sidebarBackdrop.addEventListener("click", closeMobileSidebar);
 
