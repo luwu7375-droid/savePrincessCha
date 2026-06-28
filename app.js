@@ -1766,7 +1766,25 @@ async function recallMessage(row, msgId) {
   const idx = chatMessages.findIndex(m => m.id === msgId);
   if (idx === -1) return;
 
-  const originalContent = extractTextFromMessageContent(chatMessages[idx].content);
+  const message = chatMessages[idx];
+
+  // 检查时间窗口：只能撤回2分钟内的消息
+  const messageTime = message.timestamp ? new Date(message.timestamp).getTime() : Date.now();
+  const now = Date.now();
+  const twoMinutes = 2 * 60 * 1000;
+
+  if (now - messageTime > twoMinutes) {
+    if (typeof showToast === 'function') {
+      showToast('消息发送已超过2分钟，无法撤回');
+    }
+    return;
+  }
+
+  const originalContent = extractTextFromMessageContent(message.content);
+
+  // 标记消息为已撤回
+  message.is_recalled = true;
+  message.recalled_at = new Date().toISOString();
 
   // 前端显示撤回提示
   const textEl = row.querySelector(".message-text");
@@ -1791,16 +1809,17 @@ async function deleteMessage(row, msgId) {
     return;
   }
 
-  // 前端移除消息
-  row.remove();
-
-  // 从 chatMessages 中移除
+  // 标记消息为已删除（软删除）
   const idx = chatMessages.findIndex(m => m.id === msgId);
   if (idx !== -1) {
-    chatMessages.splice(idx, 1);
+    chatMessages[idx].is_deleted = true;
+    chatMessages[idx].deleted_at = new Date().toISOString();
   }
 
-  // TODO: 调用后端API标记消息为已删除（不真正删除，只是标记 is_deleted）
+  // 前端移除消息显示
+  row.remove();
+
+  // TODO: 调用后端API标记消息为已删除（软删除，不真正删除）
   // await fetch('/api/messages/delete', { method: 'POST', body: JSON.stringify({ messageId: msgId }) });
 
   if (typeof showToast === 'function') {
@@ -1810,6 +1829,53 @@ async function deleteMessage(row, msgId) {
   // 刷新消息分组样式
   if (typeof refreshGroupClasses === 'function') {
     refreshGroupClasses();
+  }
+}
+
+// 收藏/取消收藏消息
+async function favoriteMessage(row, msgId, shouldFavorite) {
+  closeMessageActionMenu();
+
+  // 更新消息的收藏状态
+  const idx = chatMessages.findIndex(m => m.id === msgId);
+  if (idx !== -1) {
+    chatMessages[idx].is_favorited = shouldFavorite;
+    if (shouldFavorite) {
+      chatMessages[idx].favorited_at = new Date().toISOString();
+    } else {
+      delete chatMessages[idx].favorited_at;
+    }
+  }
+
+  // 前端视觉反馈：添加/移除收藏标记
+  const messageEl = row.querySelector('.message');
+  if (messageEl) {
+    if (shouldFavorite) {
+      messageEl.classList.add('message-favorited');
+      // 可选：添加收藏图标
+      if (!messageEl.querySelector('.favorite-badge')) {
+        const badge = document.createElement('span');
+        badge.className = 'favorite-badge';
+        badge.innerHTML = '★';
+        badge.style.cssText = 'position: absolute; top: 4px; right: 4px; color: #FFD700; font-size: 14px;';
+        messageEl.style.position = 'relative';
+        messageEl.appendChild(badge);
+      }
+    } else {
+      messageEl.classList.remove('message-favorited');
+      const badge = messageEl.querySelector('.favorite-badge');
+      if (badge) badge.remove();
+    }
+  }
+
+  // TODO: 调用后端API保存收藏状态
+  // await fetch('/api/messages/favorite', {
+  //   method: 'POST',
+  //   body: JSON.stringify({ messageId: msgId, favorited: shouldFavorite })
+  // });
+
+  if (typeof showToast === 'function') {
+    showToast(shouldFavorite ? '已收藏' : '已取消收藏');
   }
 }
 
@@ -2064,6 +2130,15 @@ function showMessageActionMenu(row, x, y) {
   // 撤回功能（仅 user 消息）
   if (isUser && effectiveMsgId) {
     addMessageMenuButton(menu, "撤回", () => recallMessage(row, effectiveMsgId));
+  }
+
+  // 收藏功能（所有消息支持）
+  if (effectiveMsgId) {
+    const msg = chatMessages.find(m => m.id === effectiveMsgId);
+    const isFavorited = msg?.is_favorited;
+    addMessageMenuButton(menu, isFavorited ? "取消收藏" : "收藏", () =>
+      favoriteMessage(row, effectiveMsgId, !isFavorited)
+    );
   }
 
   // 删除功能（user 和 assistant 都支持）
