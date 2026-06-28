@@ -1558,6 +1558,145 @@ function fallbackCopy(text) {
   return ok;
 }
 
+// ── Multi-select Mode State ────────────────────────────────────────────────
+let multiSelectMode = false;
+let selectedMessageIds = new Set();
+
+function enterMultiSelectMode() {
+  multiSelectMode = true;
+  selectedMessageIds.clear();
+  messageList.classList.add('multi-select-mode');
+
+  getMessageRows().forEach(row => {
+    const msgId = row.dataset.msgId || row.dataset.bubbleSibling;
+    if (!msgId || row.querySelector('.multi-select-checkbox')) return;
+
+    const checkbox = document.createElement('div');
+    checkbox.className = 'multi-select-checkbox';
+    checkbox.dataset.msgId = msgId;
+    checkbox.innerHTML = '<div class="checkbox-inner"></div>';
+    checkbox.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMessageSelection(msgId);
+    });
+    row.insertBefore(checkbox, row.firstChild);
+  });
+
+  showMultiSelectBar();
+}
+
+function exitMultiSelectMode() {
+  multiSelectMode = false;
+  selectedMessageIds.clear();
+  messageList.classList.remove('multi-select-mode');
+  document.querySelectorAll('.multi-select-checkbox').forEach(el => el.remove());
+  hideMultiSelectBar();
+}
+
+function toggleMessageSelection(msgId) {
+  if (selectedMessageIds.has(msgId)) {
+    selectedMessageIds.delete(msgId);
+  } else {
+    selectedMessageIds.add(msgId);
+  }
+  updateMultiSelectUI();
+}
+
+function updateMultiSelectUI() {
+  document.querySelectorAll('.multi-select-checkbox').forEach(checkbox => {
+    const msgId = checkbox.dataset.msgId;
+    checkbox.classList.toggle('selected', selectedMessageIds.has(msgId));
+  });
+
+  const countEl = document.querySelector('.multi-select-count');
+  if (countEl) countEl.textContent = `已选择 ${selectedMessageIds.size} 条`;
+
+  const forwardBtn = document.getElementById('multiSelectForwardBtn');
+  const deleteBtn = document.getElementById('multiSelectDeleteBtn');
+  if (forwardBtn) forwardBtn.disabled = selectedMessageIds.size === 0;
+  if (deleteBtn) deleteBtn.disabled = selectedMessageIds.size === 0;
+}
+
+function showMultiSelectBar() {
+  hideMultiSelectBar();
+  const bar = document.createElement('div');
+  bar.id = 'multiSelectBar';
+  bar.className = 'multi-select-bar';
+  bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--border);padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:space-between;z-index:1000;box-shadow:0 -2px 10px rgba(0,0,0,0.1);';
+
+  const leftSection = document.createElement('div');
+  leftSection.style.cssText = 'display:flex;align-items:center;gap:12px;';
+
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.textContent = '全选';
+  selectAllBtn.style.cssText = 'padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);cursor:pointer;font-size:14px;';
+  selectAllBtn.addEventListener('click', () => {
+    const allMsgIds = Array.from(document.querySelectorAll('.multi-select-checkbox')).map(el => el.dataset.msgId);
+    if (selectedMessageIds.size === allMsgIds.length) {
+      selectedMessageIds.clear();
+    } else {
+      allMsgIds.forEach(id => selectedMessageIds.add(id));
+    }
+    updateMultiSelectUI();
+  });
+
+  const countSpan = document.createElement('span');
+  countSpan.className = 'multi-select-count';
+  countSpan.textContent = '已选择 0 条';
+  countSpan.style.cssText = 'color:var(--text-secondary);font-size:14px;';
+
+  leftSection.appendChild(selectAllBtn);
+  leftSection.appendChild(countSpan);
+
+  const rightSection = document.createElement('div');
+  rightSection.style.cssText = 'display:flex;align-items:center;gap:8px;';
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.id = 'multiSelectDeleteBtn';
+  deleteBtn.textContent = '删除';
+  deleteBtn.disabled = true;
+  deleteBtn.style.cssText = 'padding:8px 16px;border:none;border-radius:6px;background:#ff4444;color:white;cursor:pointer;font-size:14px;';
+  deleteBtn.addEventListener('click', async () => {
+    if (selectedMessageIds.size === 0) return;
+    if (!confirm(`确定要删除选中的 ${selectedMessageIds.size} 条消息吗？`)) return;
+    for (const msgId of selectedMessageIds) {
+      const row = messageList.querySelector(`[data-msg-id="${msgId}"]`);
+      if (row) await deleteMessage(row, msgId);
+    }
+    exitMultiSelectMode();
+  });
+
+  const forwardBtn = document.createElement('button');
+  forwardBtn.id = 'multiSelectForwardBtn';
+  forwardBtn.textContent = '转发';
+  forwardBtn.disabled = true;
+  forwardBtn.style.cssText = 'padding:8px 16px;border:none;border-radius:6px;background:var(--accent-primary);color:white;cursor:pointer;font-size:14px;';
+  forwardBtn.addEventListener('click', () => {
+    if (typeof showToast === 'function') showToast('转发功能开发中...');
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = 'padding:8px 16px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);cursor:pointer;font-size:14px;';
+  cancelBtn.addEventListener('click', () => exitMultiSelectMode());
+
+  rightSection.appendChild(deleteBtn);
+  rightSection.appendChild(forwardBtn);
+  rightSection.appendChild(cancelBtn);
+
+  bar.appendChild(leftSection);
+  bar.appendChild(rightSection);
+  document.body.appendChild(bar);
+}
+
+function hideMultiSelectBar() {
+  document.getElementById('multiSelectBar')?.remove();
+}
+
+// 暴露多选模式API
+window.enterMultiSelectMode = enterMultiSelectMode;
+window.exitMultiSelectMode = exitMultiSelectMode;
+
 async function regenerateMessage(row) {
   // Stop TTS playback when regenerating
   if (window.SPVoice) window.SPVoice.stopSpeaking();
@@ -4087,6 +4226,13 @@ function _syncChatMoreSubsheet(id) {
     // reuse existing search sheet open
     const searchBtn = document.getElementById("chatSearchButton");
     if (searchBtn) searchBtn.click();
+  });
+
+  document.getElementById("cmsMultiSelectBtn")?.addEventListener("click", () => {
+    closeChatMoreSheet();
+    if (typeof enterMultiSelectMode === 'function') {
+      enterMultiSelectMode();
+    }
   });
 
   document.getElementById("cmsAppearanceBtn")?.addEventListener("click", () => {
