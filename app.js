@@ -1640,6 +1640,170 @@ async function deleteMessage(row, msgId) {
   }
 }
 
+// 编辑图片描述
+async function editImageDescription(row, msgId) {
+  closeMessageActionMenu();
+
+  const idx = chatMessages.findIndex(m => m.id === msgId);
+  if (idx === -1) return;
+
+  const currentDescription = chatMessages[idx].image_description || '';
+
+  // 创建弹窗
+  const overlay = document.createElement('div');
+  overlay.className = 'image-description-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  const dialog = document.createElement('div');
+  dialog.className = 'image-description-dialog';
+  dialog.style.cssText = `
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  `;
+
+  const title = document.createElement('h3');
+  title.textContent = '编辑图片描述';
+  title.style.cssText = `
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    color: var(--text);
+  `;
+
+  const textarea = document.createElement('textarea');
+  textarea.value = currentDescription;
+  textarea.placeholder = '输入图片描述...';
+  textarea.style.cssText = `
+    width: 100%;
+    min-height: 100px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    resize: vertical;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+  `;
+
+  const buttons = document.createElement('div');
+  buttons.style.cssText = `
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    justify-content: flex-end;
+  `;
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = `
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = '保存';
+  saveBtn.style.cssText = `
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent-primary);
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+  `;
+
+  saveBtn.addEventListener('click', async () => {
+    const newDescription = textarea.value.trim();
+
+    // 更新数据库
+    const { error: updateError } = await supabaseClient
+      .from("messages")
+      .update({ image_description: newDescription })
+      .eq("id", msgId);
+
+    if (updateError) {
+      console.error("保存图片描述失败：", updateError);
+      if (typeof showToast === 'function') {
+        showToast('保存失败，请重试');
+      }
+      return;
+    }
+
+    // 更新本地数据
+    chatMessages[idx].image_description = newDescription;
+
+    // 更新UI显示
+    const messageEl = row.querySelector('.message-image');
+    if (messageEl) {
+      let descEl = messageEl.querySelector('.image-description');
+      if (newDescription) {
+        if (!descEl) {
+          descEl = document.createElement('div');
+          descEl.className = 'image-description';
+          descEl.style.cssText = `
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.4;
+            color: var(--text-secondary);
+          `;
+          messageEl.appendChild(descEl);
+        }
+        descEl.textContent = newDescription;
+      } else if (descEl) {
+        descEl.remove();
+      }
+    }
+
+    overlay.remove();
+
+    if (typeof showToast === 'function') {
+      showToast('描述已保存');
+    }
+  });
+
+  buttons.appendChild(cancelBtn);
+  buttons.appendChild(saveBtn);
+
+  dialog.appendChild(title);
+  dialog.appendChild(textarea);
+  dialog.appendChild(buttons);
+  overlay.appendChild(dialog);
+
+  document.body.appendChild(overlay);
+  textarea.focus();
+
+  // 点击背景关闭
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      overlay.remove();
+    }
+  });
+}
+
 messageList.addEventListener("mouseenter", refreshMessageActions);
 window.addEventListener("resize", () => {
   closeMessageActionMenu();
@@ -1711,6 +1875,12 @@ function showMessageActionMenu(row, x, y) {
   // 只有 user 的最后一条消息可以编辑
   if (isUser && row === getLastMessageRow("user") && row.dataset.msgId) {
     addMessageMenuButton(menu, "编辑", () => editUserMessage(row));
+  }
+
+  // 图片消息编辑描述（所有图片消息）
+  const hasImage = row.querySelector(".message-image");
+  if (hasImage && effectiveMsgId) {
+    addMessageMenuButton(menu, "编辑描述", () => editImageDescription(row, effectiveMsgId));
   }
 
   // 重新生成功能（仅 assistant 的最后一条消息）
