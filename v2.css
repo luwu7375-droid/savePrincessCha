@@ -4606,15 +4606,15 @@ body {
   display: none !important;
 }
 
-/* Desktop layout: + button after input */
+/* Desktop layout: + button before input */
 @media (min-width: 1288px) {
   #page-chat-detail .input-bar {
-    grid-template-columns: 1fr 36px 36px;
-    /* [input+emoji] [+] [mic/send] */
+    grid-template-columns: 36px 1fr 36px;
+    /* [+] [input+emoji] [mic/send] */
   }
 
   #composerMenuBtn {
-    order: 1; /* After input on desktop */
+    order: -1; /* Before input on desktop */
   }
 
   #messageInput {

@@ -89,8 +89,7 @@ function refreshMessageActions() {
         e.preventDefault();
         e.stopPropagation();
         const role = isAssistant ? "assistant" : "user";
-        const textEl = row.querySelector(".message-text");
-        const preview = (textEl?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
+        const preview = getMessageQuotePreview ? getMessageQuotePreview(row) : "";
         setReplyDraft(effectiveMsgId, preview, role);
       });
       actions.appendChild(replyBtn);

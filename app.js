@@ -6335,7 +6335,14 @@ function initV2Composer() {
       label: "图片",
       desc: "相册或文件",
       icon: '<span>＋</span>',
-      onClick: () => imageAttachBtn?.click(),
+      onClick: () => {
+        if (isMobileLayout()) {
+          showImageBottomSheet();
+        } else {
+          imageInput.value = "";
+          imageInput.click();
+        }
+      },
     });
     addPanelItem(actions, {
       label: "接话",
