@@ -53,12 +53,13 @@
 
   async function fetchAggregates(supabase) {
     // Total stats
-    const { data: totals } = await supabase
+    const { data: totals, error } = await supabase
       .from("cost_log")
       .select("cost_cny, in_tokens, out_tokens, cache_read_tokens, is_fallback")
       .limit(10000);
 
-    if (!totals) return null;
+    // Table may not exist yet or RLS blocks; return zeros
+    if (!totals || error) return { totalCny: 0, totalIn: 0, totalOut: 0, totalCacheRead: 0, fallbacks: 0, todayCny: 0, todayTokens: 0, totalRows: 0 };
 
     let totalCny = 0, totalIn = 0, totalOut = 0, totalCacheRead = 0, fallbacks = 0;
     totals.forEach(function (r) {
@@ -388,17 +389,22 @@
       return;
     }
 
-    var [agg, recentRows, dailyRows, msgCount, burnRate] = await Promise.all([
-      fetchAggregates(supabase),
-      fetchRecentCalls(supabase, 50),
-      fetchDailyBreakdown(supabase, 30),
-      fetchWordCount(supabase),
-      fetchWeeklyBurnRate(supabase),
-    ]);
+    var agg, recentRows, dailyRows, msgCount, burnRate;
+    try {
+      [agg, recentRows, dailyRows, msgCount, burnRate] = await Promise.all([
+        fetchAggregates(supabase),
+        fetchRecentCalls(supabase, 50),
+        fetchDailyBreakdown(supabase, 30),
+        fetchWordCount(supabase),
+        fetchWeeklyBurnRate(supabase),
+      ]);
+    } catch (e) {
+      agg = { totalCny: 0, totalIn: 0, totalOut: 0, totalCacheRead: 0, fallbacks: 0, todayCny: 0, todayTokens: 0, totalRows: 0 };
+      recentRows = []; dailyRows = []; msgCount = 0; burnRate = 0;
+    }
 
-    if (!agg) {
-      container.innerHTML = `<div style="padding:16px;color:var(--error,#e57373)">数据查询失败，请确认已登录</div>`;
-      return;
+    if (!agg.totalRows && !recentRows.length) {
+      // No data yet - show dashboard with zeros (table may not exist or no calls logged)
     }
 
     var dailyData  = buildDailyData(dailyRows, 14);
