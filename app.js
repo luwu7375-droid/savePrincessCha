@@ -2873,11 +2873,12 @@ function setReplyingState(replying) {
 }
 
 function updateAutoReplyToggle() {
-  if (!autoReplyToggle) return; // Element doesn't exist in new UI
-  autoReplyToggle.classList.toggle("active", autoReplyEnabled);
-  autoReplyToggle.textContent = autoReplyEnabled ? "●" : "◌";
-  autoReplyToggle.title = autoReplyEnabled ? "自动接话：开" : "自动接话：关";
-  autoReplyToggle.setAttribute("aria-label", autoReplyToggle.title);
+  if (autoReplyToggle) {
+    autoReplyToggle.classList.toggle("active", autoReplyEnabled);
+    autoReplyToggle.textContent = autoReplyEnabled ? "●" : "◌";
+    autoReplyToggle.title = autoReplyEnabled ? "自动接话：开" : "自动接话：关";
+    autoReplyToggle.setAttribute("aria-label", autoReplyToggle.title);
+  }
   const composerMenuBtn = document.getElementById("composerMenuBtn");
   if (composerMenuBtn) composerMenuBtn.classList.toggle("auto-badge", autoReplyEnabled);
 }
