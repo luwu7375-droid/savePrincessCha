@@ -49,6 +49,7 @@ type DiaryOutput = {
   source_event_ids: string[];
   source_boundary: string;
   title: string;
+  anchor: string;
   private_body: string;
   memory_summary: string;
   felt_sense: string;
@@ -252,6 +253,7 @@ content: ${evt.content}
           diary_type: diaryJson.diary_type,
           diary_length,
           title: diaryJson.title,
+          anchor: diaryJson.anchor || "",
           private_body: diaryJson.private_body,
           memory_summary: diaryJson.memory_summary,
           felt_sense: diaryJson.felt_sense,
