@@ -6753,20 +6753,31 @@ if (profileClearHistoryBtn) {
 
 // ── Bottom Tab Chat Integration ──────────────────────────────────────────────
 
-// Update bottom tab chat button to show contact list as entry point
-const chatTabBtn = document.querySelector('[data-tab="chat"]');
-if (chatTabBtn) {
-  const originalClickHandler = chatTabBtn.onclick;
-  chatTabBtn.addEventListener('click', (e) => {
-    // Let v2-shell handle page activation first
-    if (window.ChatNavigation) {
-      // Small delay to ensure page is active
-      setTimeout(() => {
-        window.ChatNavigation.navigateToChatPage('chat-contacts');
-      }, 0);
-    }
+// Listen for page activation and show contact list when chat page becomes active
+window.addEventListener('load', () => {
+  // Monitor page changes
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+        const chatPage = document.querySelector('.v2-page--chat');
+        if (chatPage?.classList.contains('v2-active')) {
+          // Chat page just became active
+          const currentChatPage = window.ChatNavigation?.getCurrentChatPage();
+          if (!currentChatPage) {
+            // No subpage is active, show contact list
+            window.ChatNavigation?.navigateToChatPage('chat-contacts');
+          }
+        }
+      }
+    });
   });
-}
+
+  const chatPage = document.querySelector('.v2-page--chat');
+  if (chatPage) {
+    observer.observe(chatPage, { attributes: true });
+  }
+});
+
 
 // ── Search Contact Functionality ─────────────────────────────────────────────
 
