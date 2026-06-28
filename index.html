@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>救公主</title>
-  <link rel="stylesheet" href="style.css?v=cloudflare-0097">
-  <link rel="stylesheet" href="v2.css?v=cloudflare-0097">
-  <link rel="stylesheet" href="v2-bubbles.css?v=cloudflare-0097">
+  <link rel="stylesheet" href="style.css?v=cloudflare-0098">
+  <link rel="stylesheet" href="v2.css?v=cloudflare-0098">
+  <link rel="stylesheet" href="v2-bubbles.css?v=cloudflare-0098">
   <link rel="stylesheet" href="css/diary.css">
   <!-- PWA -->
   <link rel="manifest" href="/manifest.webmanifest">
@@ -413,15 +413,17 @@
           <form class="input-bar" id="chatForm">
             <input type="file" id="imageInput" accept="image/*" style="display:none">
             <button id="composerMenuBtn" type="button" class="ghost-icon-btn" title="更多操作" aria-label="更多操作">✦</button>
-            <textarea id="messageInput" rows="1" placeholder="说点什么…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
-            <button id="emojiButton" type="button" class="ghost-icon-btn" title="表情" aria-label="表情">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.5"/>
-                <circle cx="6.5" cy="7.5" r="1" fill="currentColor"/>
-                <circle cx="11.5" cy="7.5" r="1" fill="currentColor"/>
-                <path d="M6 11c.5 1 1.5 1.5 3 1.5s2.5-.5 3-1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-            </button>
+            <div class="input-wrapper">
+              <textarea id="messageInput" rows="1" placeholder="说点什么…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
+              <button id="emojiButton" type="button" class="ghost-icon-btn input-suffix-btn" title="表情" aria-label="表情">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.5"/>
+                  <circle cx="6.5" cy="7.5" r="1" fill="currentColor"/>
+                  <circle cx="11.5" cy="7.5" r="1" fill="currentColor"/>
+                  <path d="M6 11c.5 1 1.5 1.5 3 1.5s2.5-.5 3-1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
             <button id="voiceInputBtn" type="button" class="ghost-icon-btn" title="语音输入" aria-label="语音输入">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="6" y="2" width="6" height="10" rx="3" stroke="currentColor" stroke-width="1.5"/>
