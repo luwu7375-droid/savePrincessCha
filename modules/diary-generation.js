@@ -46,19 +46,9 @@
       reliability: 'experienced'
     }));
 
-    // Fetch enabled worldbook entries for scene context
-    let sceneContext = '聊天结束后';
-    const { data: wbEntries } = await supabaseClient
-      .from('world_books')
-      .select('name, content')
-      .eq('user_id', userId)
-      .eq('enabled', true)
-      .order('priority', { ascending: false });
-
-    if (wbEntries && wbEntries.length > 0) {
-      const wbText = wbEntries.map(e => `[${e.name}]\n${e.content}`).join('\n\n');
-      sceneContext = `${sceneContext}\n\n[设定参考]\n${wbText}`;
-    }
+    // Scene context — diary generation does not use worldbooks
+    // (worldbooks are chat-only; injected by supabase/functions/chat/index.ts)
+    const sceneContext = '聊天结束后';
 
     // Generate diary
     const result = await window.SPDiary.generateDiary(supabaseClient, {
