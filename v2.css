@@ -4760,3 +4760,46 @@ body {
   background: transparent;
 }
 
+
+/* ── Cost Dashboard ─────────────────────────────────────────────────────── */
+.cost-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 16px 0 8px;
+}
+.cost-card {
+  background: var(--bg-raise, #f7f7f7);
+  border-radius: 10px;
+  padding: 12px 10px;
+  text-align: center;
+}
+.cost-card__value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cost-card__label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+.cost-table th,
+.cost-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-soft, #eee);
+  white-space: nowrap;
+}
+.cost-table th {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.cost-table td {
+  font-size: 12px;
+  color: var(--text-main);
+}

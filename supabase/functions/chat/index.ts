@@ -2180,6 +2180,12 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
         orApiKey: backgroundApiKey,
         fastModel: backgroundModel,
         userMessageId: typeof payload.userMessageId === "number" ? payload.userMessageId : null,
+        // cost tracking fields
+        tier,
+        site: result.usedProvider === "fiftyfive" ? "55api" : result.usedProvider,
+        rawModel: result.usedModel,
+        isFallback: result.fallbackUsed,
+        fallbackReason: result.fallbackReason,
       }).catch((e) => console.error(JSON.stringify({ fn: "vault_runner", event: "uncaught", error: String(e) })));
     }
 

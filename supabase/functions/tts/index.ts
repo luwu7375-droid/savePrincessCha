@@ -4,6 +4,7 @@ import { generateSpeech as minimaxGenerate } from "./providers/minimax.ts";
 import { generateSpeech as localHttpGenerate } from "./providers/localHttp.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { json } from "../_shared/response-helpers.ts";
+import { calculateTtsCostCny } from "../_shared/cost-calculator.ts";
 
 const SUPPORTED_PROVIDERS = ["elevenlabs", "minimax", "local_http"] as const;
 type SupportedProvider = typeof SUPPORTED_PROVIDERS[number];
@@ -163,6 +164,25 @@ Deno.serve(async (req) => {
 
   if (!SUPABASE_URL || !SERVICE_KEY) {
     return json({ ok: false, code: "MISSING_TTS_SECRET", message: "missing: SUPABASE infra config", request_id }, 500);
+  }
+
+  // ── Extract caller's user_id from the Authorization JWT (best-effort) ────────
+  let callerUserId: string | null = null;
+  try {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    if (token) {
+      // JWT payload is the second base64url-encoded segment
+      const parts = token.split(".");
+      if (parts.length === 3) {
+        const raw = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const pad = raw.length % 4 ? raw + "=".repeat(4 - (raw.length % 4)) : raw;
+        const claims = JSON.parse(atob(pad));
+        callerUserId = claims?.sub ?? null;
+      }
+    }
+  } catch {
+    // non-fatal — cost_log row will be skipped if userId is unavailable
   }
 
   const DB_HEADERS = {
@@ -325,6 +345,30 @@ Deno.serve(async (req) => {
     }
 
     audioBuffer = result.audioBuffer;
+
+    // ── Write cost_log row (fire-and-forget) ────────────────────────────────
+    if (callerUserId && SUPABASE_URL && SERVICE_KEY) {
+      const charCount = text.length;
+      const costCny = calculateTtsCostCny(provider, model_id, charCount);
+      fetch(`${SUPABASE_URL}/rest/v1/cost_log`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SERVICE_KEY,
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({
+          user_id: callerUserId,
+          tier: "tts",
+          site: provider,
+          raw_model: model_id,
+          chars: charCount,
+          cost_cny: costCny,
+          is_fallback: false,
+        }),
+      }).catch(() => {});
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     finalize({ error_code: "PROVIDER_ERROR", error_message: msg });

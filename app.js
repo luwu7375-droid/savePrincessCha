@@ -6774,21 +6774,69 @@ if (profileNotesBtn) {
 // Profile chat background button — syncs with ui_custom_chat_background (Settings)
 const profileChatBgBtn = document.getElementById('profileChatBgBtn');
 if (profileChatBgBtn) {
-  profileChatBgBtn.addEventListener('click', () => {
-    // Navigate to the appearance settings subpage (same as "聊天背景" in chat more sheet)
-    if (window.ChatNavigation) {
-      window.ChatNavigation.navigateToChatPage('chat-detail');
-    }
-    // Switch to settings page, then open appearance subpage
-    setTimeout(() => {
-      const settingsTab = document.querySelector('[data-tab="setting"]');
-      if (settingsTab) settingsTab.click();
-      setTimeout(() => {
-        if (typeof openSettingsSubpage === 'function') {
-          openSettingsSubpage('appearance-resources');
+  profileChatBgBtn.addEventListener('click', async () => {
+    // Direct file upload for chat background (shares ui_custom_chat_background with Settings)
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+
+      // Validate type: JPEG, PNG, WebP, GIF only
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      if (!allowedTypes.includes(file.type)) {
+        if (typeof showToast === 'function') {
+          showToast('仅支持 JPEG、PNG、WebP、GIF 格式');
         }
-      }, 80);
-    }, 60);
+        fileInput.remove();
+        return;
+      }
+
+      // Validate size: max 10MB for backgrounds
+      if (file.size > 10 * 1024 * 1024) {
+        if (typeof showToast === 'function') {
+          showToast('图片不能超过 10MB');
+        }
+        fileInput.remove();
+        return;
+      }
+
+      try {
+        // Compress and save
+        const dataUrl = await compressImage(file);
+        localStorage.setItem('ui_custom_chat_background', dataUrl);
+
+        // Update hint text in profile page
+        const hintEl = document.getElementById('profileChatBgHint');
+        if (hintEl) hintEl.textContent = '已自定义';
+
+        // Apply to chat shell immediately
+        const chatShell = document.querySelector('.chat-shell');
+        if (chatShell) {
+          chatShell.style.backgroundImage = `url(${dataUrl})`;
+          chatShell.style.backgroundSize = 'cover';
+          chatShell.style.backgroundPosition = 'center';
+          chatShell.style.backgroundRepeat = 'no-repeat';
+        }
+
+        if (typeof showToast === 'function') {
+          showToast('聊天背景已更新');
+        }
+      } catch (err) {
+        console.error('Failed to set chat background:', err);
+        if (typeof showToast === 'function') {
+          showToast('背景图片处理失败，请重试');
+        }
+      }
+
+      fileInput.remove();
+    });
+
+    document.body.appendChild(fileInput);
+    fileInput.click();
   });
 }
 

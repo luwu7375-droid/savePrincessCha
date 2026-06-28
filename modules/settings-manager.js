@@ -20,6 +20,7 @@ var SETTINGS_SUBPAGE_META = {
   api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
   backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
   debug:                  { title: "Debug",             subtitle: "日志、版本与诊断工具" },
+  cost:                   { title: "成本驾驶舱",        subtitle: "花费、调用与缓存监控" },
   // legacy aliases — keep so any existing deep-links don't break
   beautify: { title: "外观与资源",      subtitle: "头像、壁纸、开屏图与表情包来源" },
   prompt:   { title: "Prompt 与世界书", subtitle: "提示词、世界书与注入规则" },
@@ -105,6 +106,8 @@ function renderSettingsSubpage(type) {
       return _renderDebugSubpage();
     case "chat":
       return _renderChatAppearanceSubpage();
+    case "cost":
+      return _renderCostSubpage();
     default:
       return `<div class="settings-empty-state"><strong>${type}</strong><p>此页面尚未实现。</p></div>`;
   }
@@ -632,6 +635,12 @@ function _initSettingsSubpageEvents(container, type) {
   }
   if (type === "api") {
     _initSettingsApiSubpage(container);
+  }
+  if (type === "cost") {
+    const mount = container.querySelector("#costDashboardMount");
+    if (mount && window.SPCostDashboard) {
+      window.SPCostDashboard.renderCostPage(mount);
+    }
   }
 }
 
@@ -1418,6 +1427,13 @@ function _renderDebugSubpage() {
         <div id="_memAuditPanel" style="font-size:12px;color:var(--text-muted)">打开后自动加载…</div>
       </div>
     </div>`;
+}
+
+function _renderCostSubpage() {
+  // Renders a mount point; SPCostDashboard.renderCostPage() fills it async.
+  return `<div id="costDashboardMount" style="padding-bottom:24px">
+    <div style="padding:16px;color:var(--text-muted);font-size:13px">加载中…</div>
+  </div>`;
 }
 
   // ── Public API ────────────────────────────────────────────────────────────
