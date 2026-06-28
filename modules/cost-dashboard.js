@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  // ── helpers ────────────────────────────────────────────────────────────────
+  // -- helpers ----------------------------------------------------------------
 
   function fmtCny(n) {
     if (n == null) return "—";
@@ -32,7 +32,7 @@
     return window._supabase || window.supabase || null;
   }
 
-  // ── Balance localStorage keys ──────────────────────────────────────────────
+  // -- Balance localStorage keys ----------------------------------------------
 
   var BALANCE_KEY = "cost_dashboard_balance_cny";
   var TOPUP_KEY   = "cost_dashboard_topup_cny";
@@ -40,7 +40,7 @@
   function readBalance() { return parseFloat(localStorage.getItem(BALANCE_KEY) || "") || null; }
   function readTopup()   { return parseFloat(localStorage.getItem(TOPUP_KEY)   || "") || null; }
 
-  // ── Chart.js instance store (to destroy before re-render) ─────────────────
+  // -- Chart.js instance store (to destroy before re-render) -----------------
 
   var _charts = {};
 
@@ -49,7 +49,7 @@
     _charts = {};
   }
 
-  // ── Data fetching ──────────────────────────────────────────────────────────
+  // -- Data fetching ----------------------------------------------------------
 
   async function fetchAggregates(supabase) {
     // Total stats
@@ -125,7 +125,7 @@
     return sum / 7; // ¥/day
   }
 
-  // ── Build chart data ───────────────────────────────────────────────────────
+  // -- Build chart data -------------------------------------------------------
 
   function buildDailyData(rows, days) {
     const buckets = {};
@@ -174,7 +174,7 @@
     return { fresh: Math.max(0, fresh), cached };
   }
 
-  // ── Chart rendering ────────────────────────────────────────────────────────
+  // -- Chart rendering --------------------------------------------------------
 
   var CHART_COLORS = ["#5B8DEE", "#EE7C5B", "#5BEEAD", "#EEB85B", "#B85BEE", "#5BEEE0", "#EE5B8D"];
 
@@ -278,7 +278,7 @@
     });
   }
 
-  // ── HTML builders ──────────────────────────────────────────────────────────
+  // -- HTML builders ----------------------------------------------------------
 
   function renderStatCards(agg, msgCount) {
     var cacheHitPct = (agg.totalIn + agg.totalCacheRead) > 0
@@ -374,7 +374,7 @@
     return html;
   }
 
-  // ── Main render ────────────────────────────────────────────────────────────
+  // -- Main render ------------------------------------------------------------
 
   async function renderCostPage(container) {
     if (!container) return;
@@ -483,7 +483,7 @@
     }
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  // -- Public API -------------------------------------------------------------
   window.SPCostDashboard = {
     renderCostPage: renderCostPage,
     destroyCharts: destroyCharts,

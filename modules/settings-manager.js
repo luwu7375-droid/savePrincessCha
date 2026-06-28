@@ -7,7 +7,7 @@
 (function() {
   "use strict";
 
-// ── Settings subpage system ─────────────────────────────────────────────────
+// -- Settings subpage system -------------------------------------------------
 
 var _currentSettingsSubpage = null;
 
@@ -1499,14 +1499,14 @@ function _renderCostSubpage() {
   </div>`;
 }
 
-  // ── Public API ────────────────────────────────────────────────────────────
+  // -- Public API ------------------------------------------------------------
   window.SavePrincessSettings = {
     openSettingsSubpage,
     closeSettingsSubpage,
     renderSettingsSubpage,
   };
 
-  // ── Legacy global aliases (for backward compatibility) ────────────────────
+  // -- Legacy global aliases (for backward compatibility) --------------------
   window.openSettingsSubpage = openSettingsSubpage;
   window.closeSettingsSubpage = closeSettingsSubpage;
   window.renderSettingsSubpage = renderSettingsSubpage;

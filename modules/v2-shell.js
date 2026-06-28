@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  // ── Settings subpage state ───────────────────────────────────────────────────
+  // -- Settings subpage state ---------------------------------------------------
 
   var _currentSettingsSubpage = null;
 
@@ -78,9 +78,9 @@
     _currentSettingsSubpage = null;
   }
 
-  // ── Shell init ───────────────────────────────────────────────────────────────
+  // -- Shell init ---------------------------------------------------------------
 
-  // ── Asset upload slots ───────────────────────────────────────────────────────
+  // -- Asset upload slots -------------------------------------------------------
 
   var ASSET_SLOTS = {
     "home-cover-cha":       ".home-cover-left",
@@ -167,7 +167,7 @@
       }, true);
     }
 
-    // ── Settings subpage entries ─────────────────────────────────────────────
+    // -- Settings subpage entries ---------------------------------------------
     document.querySelectorAll("[data-settings-subpage]").forEach(function (entry) {
       entry.addEventListener("click", function () {
         openSettingsSubpage(entry.dataset.settingsSubpage);
@@ -179,7 +179,7 @@
       settingsBackBtn.addEventListener("click", function () { closeSettingsSubpage(); });
     }
 
-    // ── Legacy placeholder routes ────────────────────────────────────────────
+    // -- Legacy placeholder routes --------------------------------------------
     document.querySelectorAll("[data-placeholder-route]").forEach(function (entry) {
       entry.addEventListener("click", function () {
         var route = entry.dataset.placeholderRoute;
@@ -270,7 +270,7 @@
     window.SPV2Shell.showPage = showPage;
   }
 
-  // ── Public API ───────────────────────────────────────────────────────────────
+  // -- Public API ---------------------------------------------------------------
   window.SPV2Shell = {
     initV2Shell:          initV2Shell,
     openSettingsSubpage:  openSettingsSubpage,
