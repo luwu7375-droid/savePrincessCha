@@ -6675,7 +6675,9 @@ function loadContactProfilePage(contactId) {
   }
 
   if (chatBgHint) {
-    chatBgHint.textContent = contact.chatBackground === 'default' ? '默认' : contact.chatBackground;
+    // Read directly from Settings storage key so they stay in sync
+    const hasChatBg = !!localStorage.getItem('ui_custom_chat_background');
+    chatBgHint.textContent = hasChatBg ? '已自定义' : '默认';
   }
 }
 
@@ -6748,6 +6750,45 @@ if (profileClearHistoryBtn) {
         }
       }
     });
+  });
+}
+
+// Profile notes button
+const profileNotesBtn = document.getElementById('profileNotesBtn');
+if (profileNotesBtn) {
+  profileNotesBtn.addEventListener('click', () => {
+    if (!window.ContactManager) return;
+    const contact = window.ContactManager.getContactById('cha');
+    showDialog({
+      title: '备注',
+      input: contact?.notes || '',
+      confirmLabel: '保存',
+      onConfirm: (newValue) => {
+        window.ContactManager.updateContactMetadata('cha', { notes: newValue.trim() });
+        loadContactProfilePage('cha');
+      }
+    });
+  });
+}
+
+// Profile chat background button — syncs with ui_custom_chat_background (Settings)
+const profileChatBgBtn = document.getElementById('profileChatBgBtn');
+if (profileChatBgBtn) {
+  profileChatBgBtn.addEventListener('click', () => {
+    // Navigate to the appearance settings subpage (same as "聊天背景" in chat more sheet)
+    if (window.ChatNavigation) {
+      window.ChatNavigation.navigateToChatPage('chat-detail');
+    }
+    // Switch to settings page, then open appearance subpage
+    setTimeout(() => {
+      const settingsTab = document.querySelector('[data-tab="setting"]');
+      if (settingsTab) settingsTab.click();
+      setTimeout(() => {
+        if (typeof openSettingsSubpage === 'function') {
+          openSettingsSubpage('appearance-resources');
+        }
+      }, 80);
+    }, 60);
   });
 }
 

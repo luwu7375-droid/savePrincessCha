@@ -113,6 +113,40 @@
     return text.slice(0, maxLength) + '...';
   }
 
+  /**
+   * Strip markdown/formatting from message content to get plain preview text.
+   * Handles bold, italic, headers, code blocks, inline code, links, images, etc.
+   */
+  function stripMarkdownForPreview(text) {
+    if (!text) return '';
+    // Handle array content (multipart messages)
+    if (typeof text !== 'string') return '';
+
+    let s = text;
+
+    // Remove code fences (```...```)
+    s = s.replace(/```[\s\S]*?```/g, '[代码]');
+    // Remove inline code
+    s = s.replace(/`[^`]+`/g, '[代码]');
+    // Remove images ![alt](url)
+    s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, '[图片]');
+    // Remove links, keep link text [text](url)
+    s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+    // Remove bold/italic (**, *, __, _)
+    s = s.replace(/(\*\*|__)(.*?)\1/g, '$2');
+    s = s.replace(/(\*|_)(.*?)\1/g, '$2');
+    // Remove headers (# ## ###)
+    s = s.replace(/^#{1,6}\s+/gm, '');
+    // Remove horizontal rules
+    s = s.replace(/^[-*_]{3,}\s*$/gm, '');
+    // Remove blockquotes
+    s = s.replace(/^>\s*/gm, '');
+    // Collapse whitespace/newlines
+    s = s.replace(/\s+/g, ' ').trim();
+
+    return s;
+  }
+
   // ── Public API ──────────────────────────────────────────────────────────────
 
   /**
@@ -135,12 +169,9 @@
       lastMessage = await getLastMessageForConversation(conversationId);
       if (lastMessage) {
         lastMessageTime = lastMessage.created_at;
-        // Format preview based on role
-        if (lastMessage.role === 'user') {
-          lastMessagePreview = truncateText(lastMessage.content);
-        } else {
-          lastMessagePreview = truncateText(lastMessage.content);
-        }
+        // Strip markdown formatting to show clean preview
+        const plainText = stripMarkdownForPreview(lastMessage.content);
+        lastMessagePreview = truncateText(plainText);
       }
     }
 

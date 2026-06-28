@@ -4466,6 +4466,15 @@ body {
   grid-template-columns: 44px 1fr 44px;
   align-items: center;
   gap: 8px;
+  justify-items: center; /* Center all items horizontally */
+}
+
+#page-chat-detail .top-bar #chatDetailBackBtn {
+  justify-self: start; /* Back button stays left */
+}
+
+#page-chat-detail .top-bar #chatMoreBtn {
+  justify-self: end; /* More button stays right */
 }
 
 .chat-detail-contact-btn {
@@ -4473,13 +4482,15 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 16px;
   border-radius: 12px;
   background: transparent;
   border: none;
   cursor: pointer;
   transition: background 0.12s ease;
   min-width: 0;
+  /* Make entire button clickable */
+  min-height: 44px;
 }
 
 .chat-detail-contact-btn:active {
@@ -4493,6 +4504,8 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Ensure text is part of clickable area */
+  pointer-events: none;
 }
 
 .chat-detail-contact-btn .online-dot {
@@ -4501,6 +4514,8 @@ body {
   border-radius: 50%;
   background: var(--online);
   flex-shrink: 0;
+  /* Ensure dot is part of clickable area */
+  pointer-events: none;
 }
 
 /* ── Input Bar Restructured ────────────────────────────────────────────── */
@@ -4733,5 +4748,15 @@ body {
 
 .profile-danger .profile-label {
   color: #EF5350;
+}
+
+/* Readonly rows — display only, not interactive */
+.profile-info-row--readonly {
+  cursor: default;
+  pointer-events: none;
+}
+
+.profile-info-row--readonly:active {
+  background: transparent;
 }
 
