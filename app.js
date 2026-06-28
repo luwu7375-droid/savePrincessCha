@@ -6754,17 +6754,23 @@ if (profileClearHistoryBtn) {
 // ── Bottom Tab Chat Integration ──────────────────────────────────────────────
 
 // Listen for page activation and show contact list when chat page becomes active
-window.addEventListener('load', () => {
-  // Monitor page changes
+(function initChatPageObserver() {
+  const chatPage = document.querySelector('.v2-page--chat');
+  if (!chatPage) {
+    console.warn('[Chat] Chat page not found, will retry...');
+    setTimeout(initChatPageObserver, 100);
+    return;
+  }
+
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-        const chatPage = document.querySelector('.v2-page--chat');
-        if (chatPage?.classList.contains('v2-active')) {
+        if (chatPage.classList.contains('v2-active')) {
           // Chat page just became active
           const currentChatPage = window.ChatNavigation?.getCurrentChatPage();
-          if (!currentChatPage) {
+          if (!currentChatPage || currentChatPage === null) {
             // No subpage is active, show contact list
+            console.log('[Chat] Auto-navigating to contact list');
             window.ChatNavigation?.navigateToChatPage('chat-contacts');
           }
         }
@@ -6772,11 +6778,9 @@ window.addEventListener('load', () => {
     });
   });
 
-  const chatPage = document.querySelector('.v2-page--chat');
-  if (chatPage) {
-    observer.observe(chatPage, { attributes: true });
-  }
-});
+  observer.observe(chatPage, { attributes: true });
+  console.log('[Chat] Page observer initialized');
+})();
 
 
 // ── Search Contact Functionality ─────────────────────────────────────────────
