@@ -105,7 +105,6 @@
         _toast("偏好推送失败: " + error.message);
       } else {
         console.log("[user-prefs] Pushed preferences to server", Object.keys(prefs));
-        _toast("设置已同步到云端");
       }
     } catch (err) {
       console.warn("[user-prefs] Push error:", err);
