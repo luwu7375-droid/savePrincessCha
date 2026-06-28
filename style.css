@@ -581,6 +581,10 @@ body {
   color: #ffffff;
 }
 
+[data-theme="light"] .input-bar textarea {
+  color: #111827;
+}
+
 .message.assistant {
   background: var(--bubble-ai);
   color: var(--text);
