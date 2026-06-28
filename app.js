@@ -6753,7 +6753,7 @@ if (profileClearHistoryBtn) {
 
 // ── Bottom Tab Chat Integration ──────────────────────────────────────────────
 
-// Listen for page activation and show contact list when chat page becomes active
+// Listen for page activation and show chat detail when chat page becomes active
 (function initChatPageObserver() {
   const chatPage = document.querySelector('.v2-page--chat');
   if (!chatPage) {
@@ -6762,23 +6762,36 @@ if (profileClearHistoryBtn) {
     return;
   }
 
+  function ensureChatDetailShown() {
+    if (chatPage.classList.contains('v2-active')) {
+      const currentChatPage = window.ChatNavigation?.getCurrentChatPage();
+      // Always show chat detail when chat page is active, unless explicitly on another subpage
+      if (!currentChatPage || currentChatPage === 'chat-contacts') {
+        console.log('[Chat] Navigating to chat detail');
+        if (window.ChatNavigation) {
+          window.ChatNavigation.navigateToChatPage('chat-detail');
+          // Also update top bar
+          if (window.updateChatDetailTopBar) {
+            window.updateChatDetailTopBar('cha');
+          }
+        }
+      }
+    }
+  }
+
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-        if (chatPage.classList.contains('v2-active')) {
-          // Chat page just became active
-          const currentChatPage = window.ChatNavigation?.getCurrentChatPage();
-          if (!currentChatPage || currentChatPage === null) {
-            // No subpage is active, show contact list
-            console.log('[Chat] Auto-navigating to contact list');
-            window.ChatNavigation?.navigateToChatPage('chat-contacts');
-          }
-        }
+        ensureChatDetailShown();
       }
     });
   });
 
   observer.observe(chatPage, { attributes: true });
+
+  // Also call immediately in case page is already active
+  ensureChatDetailShown();
+
   console.log('[Chat] Page observer initialized');
 })();
 
