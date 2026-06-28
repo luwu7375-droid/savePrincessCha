@@ -4291,21 +4291,22 @@ body {
   flex-direction: column;
   background: var(--app-bg);
   overflow: hidden;
-  visibility: hidden; /* Hide by default */
-  opacity: 0;
-  pointer-events: none;
-  transition: none; /* No animation to prevent flicker */
 }
 
-/* Only show and allow interaction when the chat page is active */
-.v2-page--chat.v2-active .chat-subpage:not([hidden]) {
-  visibility: visible;
-  opacity: 1;
-  pointer-events: auto;
-}
-
+/* Hide subpages by default when not explicitly shown */
 .chat-subpage[hidden] {
-  display: none;
+  display: none !important;
+}
+
+/* Only allow interaction when the chat page is active */
+.v2-page--chat:not(.v2-active) .chat-subpage {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.v2-page--chat.v2-active .chat-subpage {
+  pointer-events: auto;
+  visibility: visible;
 }
 
 /* ── Contact List Page ─────────────────────────────────────────────────── */
