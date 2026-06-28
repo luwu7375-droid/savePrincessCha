@@ -3071,11 +3071,13 @@ function initTierBar() {
   }
 }
 
-autoReplyToggle.addEventListener("click", () => {
-  autoReplyEnabled = !autoReplyEnabled;
-  updateAutoReplyToggle();
-  if (!autoReplyEnabled) cancelAutoReplyTimer();
-});
+if (autoReplyToggle) {
+  autoReplyToggle.addEventListener("click", () => {
+    autoReplyEnabled = !autoReplyEnabled;
+    updateAutoReplyToggle();
+    if (!autoReplyEnabled) cancelAutoReplyTimer();
+  });
+}
 
 updateAutoReplyToggle();
 
@@ -3570,10 +3572,12 @@ sendButton.addEventListener("click", (e) => {
   maintainBottomAnchor("send");
 });
 
-forceReplyBtn.addEventListener("click", () => {
-  if (isReplying || !chatMessages.length) return;
-  triggerReply("forced");
-});
+if (forceReplyBtn) {
+  forceReplyBtn.addEventListener("click", () => {
+    if (isReplying || !chatMessages.length) return;
+    triggerReply("forced");
+  });
+}
 
 // ── Chat more sheet ──────────────────────────────────────────────────────────
 
