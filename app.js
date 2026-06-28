@@ -1780,23 +1780,197 @@ async function recallMessage(row, msgId) {
     return;
   }
 
+  // 确认撤回
+  const confirmOverlay = document.createElement('div');
+  confirmOverlay.className = 'recall-confirm-overlay';
+  confirmOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  const confirmDialog = document.createElement('div');
+  confirmDialog.style.cssText = `
+    background: var(--surface, #fff);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 280px;
+    text-align: center;
+  `;
+
+  const confirmTitle = document.createElement('div');
+  confirmTitle.textContent = '撤回该条消息?';
+  confirmTitle.style.cssText = `
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 20px;
+  `;
+
+  const confirmButtons = document.createElement('div');
+  confirmButtons.style.cssText = `
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  `;
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = `
+    flex: 1;
+    padding: 10px 20px;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-main);
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  cancelBtn.addEventListener('click', () => {
+    confirmOverlay.remove();
+  });
+
+  const recallBtn = document.createElement('button');
+  recallBtn.textContent = '撤回';
+  recallBtn.style.cssText = `
+    flex: 1;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    background: var(--active, #5B9FF5);
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  recallBtn.addEventListener('click', async () => {
+    confirmOverlay.remove();
+    await performRecall(row, msgId, message);
+  });
+
+  confirmButtons.appendChild(cancelBtn);
+  confirmButtons.appendChild(recallBtn);
+  confirmDialog.appendChild(confirmTitle);
+  confirmDialog.appendChild(confirmButtons);
+  confirmOverlay.appendChild(confirmDialog);
+  document.body.appendChild(confirmOverlay);
+
+  // 点击背景关闭
+  confirmOverlay.addEventListener('click', (e) => {
+    if (e.target === confirmOverlay) {
+      confirmOverlay.remove();
+    }
+  });
+}
+
+async function performRecall(row, msgId, message) {
   const originalContent = extractTextFromMessageContent(message.content);
 
   // 标记消息为已撤回
   message.is_recalled = true;
   message.recalled_at = new Date().toISOString();
+  message.original_content = originalContent;
 
-  // 前端显示撤回提示
-  const textEl = row.querySelector(".message-text");
-  if (textEl) {
-    textEl.innerHTML = `<span style="color: var(--text-muted); font-size: 13px;">你撤回了一条消息</span><br><span style="color: var(--text-muted); font-size: 12px;">原文：${originalContent}</span>`;
+  // 调用后端API标记消息为已撤回
+  try {
+    const response = await fetch('/api/messages/recall', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messageId: msgId,
+        conversationId: currentConversationId,
+        is_recalled: true,
+        recalled_at: message.recalled_at,
+        original_content: originalContent
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('撤回失败');
+    }
+  } catch (error) {
+    console.error('Recall API error:', error);
+    if (typeof showToast === 'function') {
+      showToast('撤回失败，请重试');
+    }
+    return;
   }
 
-  // TODO: 调用后端API标记消息为已撤回
-  // await fetch('/api/messages/recall', { method: 'POST', body: JSON.stringify({ messageId: msgId }) });
+  // 替换消息行为系统消息样式
+  row.classList.remove('user', 'assistant');
+  row.classList.add('system-message', 'recalled-message');
+  row.innerHTML = '';
+
+  const recallNotice = document.createElement('div');
+  recallNotice.className = 'recall-notice';
+  recallNotice.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    text-align: center;
+  `;
+
+  const recallText = document.createElement('div');
+  recallText.textContent = '你撤回了一条消息';
+  recallText.style.cssText = `
+    color: var(--text-muted);
+    font-size: 13px;
+  `;
+
+  const reEditBtn = document.createElement('button');
+  reEditBtn.textContent = '重新编辑';
+  reEditBtn.style.cssText = `
+    padding: 6px 16px;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-main);
+    cursor: pointer;
+    font-size: 13px;
+  `;
+  reEditBtn.addEventListener('click', () => {
+    // 恢复内容到输入框
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) {
+      messageInput.value = originalContent;
+      messageInput.focus();
+      // 自动调整高度
+      messageInput.style.height = 'auto';
+      messageInput.style.height = messageInput.scrollHeight + 'px';
+    }
+  });
+
+  const originalText = document.createElement('div');
+  originalText.textContent = `原文：${originalContent}`;
+  originalText.style.cssText = `
+    color: var(--text-muted);
+    font-size: 12px;
+    max-width: 80%;
+    word-break: break-word;
+  `;
+
+  recallNotice.appendChild(recallText);
+  recallNotice.appendChild(reEditBtn);
+  recallNotice.appendChild(originalText);
+  row.appendChild(recallNotice);
 
   if (typeof showToast === 'function') {
     showToast('已撤回');
+  }
+
+  // 刷新消息分组样式
+  if (typeof refreshGroupClasses === 'function') {
+    refreshGroupClasses();
   }
 }
 
@@ -1816,11 +1990,34 @@ async function deleteMessage(row, msgId) {
     chatMessages[idx].deleted_at = new Date().toISOString();
   }
 
+  // 调用后端API标记消息为已删除（软删除，不真正删除）
+  try {
+    const response = await fetch('/api/messages/delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messageId: msgId,
+        conversationId: currentConversationId,
+        is_deleted: true,
+        deleted_at: chatMessages[idx]?.deleted_at
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('删除失败');
+    }
+  } catch (error) {
+    console.error('Delete API error:', error);
+    if (typeof showToast === 'function') {
+      showToast('删除失败，请重试');
+    }
+    return;
+  }
+
   // 前端移除消息显示
   row.remove();
-
-  // TODO: 调用后端API标记消息为已删除（软删除，不真正删除）
-  // await fetch('/api/messages/delete', { method: 'POST', body: JSON.stringify({ messageId: msgId }) });
 
   if (typeof showToast === 'function') {
     showToast('已删除');
@@ -1868,11 +2065,31 @@ async function favoriteMessage(row, msgId, shouldFavorite) {
     }
   }
 
-  // TODO: 调用后端API保存收藏状态
-  // await fetch('/api/messages/favorite', {
-  //   method: 'POST',
-  //   body: JSON.stringify({ messageId: msgId, favorited: shouldFavorite })
-  // });
+  // 调用后端API保存收藏状态
+  try {
+    const response = await fetch('/api/messages/favorite', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messageId: msgId,
+        conversationId: currentConversationId,
+        is_favorited: shouldFavorite,
+        favorited_at: shouldFavorite ? chatMessages[idx]?.favorited_at : null
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('收藏操作失败');
+    }
+  } catch (error) {
+    console.error('Favorite API error:', error);
+    if (typeof showToast === 'function') {
+      showToast('收藏操作失败，请重试');
+    }
+    return;
+  }
 
   if (typeof showToast === 'function') {
     showToast(shouldFavorite ? '已收藏' : '已取消收藏');
@@ -2096,14 +2313,57 @@ function showMessageActionMenu(row, x, y) {
 
   const menu = document.createElement("div");
   menu.className = "message-action-menu";
-  addMessageMenuButton(menu, "复制", async (btn) => {
-    await copyMessage(row, btn);
-  });
 
   // Get msgId from either msgId or bubbleSibling (for split messages)
   const effectiveMsgId = row.dataset.msgId || row.dataset.bubbleSibling;
+  const msg = effectiveMsgId ? chatMessages.find(m => m.id === effectiveMsgId) : null;
+  const isFavorited = msg?.is_favorited;
+  const hasImage = row.querySelector(".message-image");
+  const hasText = row.querySelector(".message-text");
+
+  // Row 1: 复制, 转发, 收藏, 撤回, 多选
+  const row1 = document.createElement("div");
+  row1.className = "message-action-menu-row";
+
+  addMessageMenuButton(row1, "复制", async (btn) => {
+    await copyMessage(row, btn);
+  });
+
+  // 转发 (placeholder for now)
+  addMessageMenuButton(row1, "转发", () => {
+    closeMessageActionMenu();
+    if (typeof showToast === 'function') {
+      showToast('转发功能开发中');
+    }
+  });
+
+  // 收藏
   if (effectiveMsgId) {
-    addMessageMenuButton(menu, "引用", () => {
+    addMessageMenuButton(row1, isFavorited ? "取消收藏" : "收藏", () =>
+      favoriteMessage(row, effectiveMsgId, !isFavorited)
+    );
+  }
+
+  // 撤回（仅 user 消息）
+  if (isUser && effectiveMsgId) {
+    addMessageMenuButton(row1, "撤回", () => recallMessage(row, effectiveMsgId));
+  }
+
+  // 多选 (placeholder for now)
+  addMessageMenuButton(row1, "多选", () => {
+    closeMessageActionMenu();
+    if (typeof showToast === 'function') {
+      showToast('多选功能开发中');
+    }
+  });
+
+  // Row 2: 引用, 提醒, 搜一搜, 从当前听
+  const row2 = document.createElement("div");
+  row2.className = "message-action-menu-row";
+
+  // 引用
+  if (effectiveMsgId) {
+    addMessageMenuButton(row2, "引用", () => {
       const role = isAssistant ? "assistant" : "user";
       const preview = getMessageQuotePreview(row);
       closeMessageActionMenu();
@@ -2111,53 +2371,75 @@ function showMessageActionMenu(row, x, y) {
     });
   }
 
-  // 只有 user 的最后一条消息可以编辑
-  if (isUser && row === getLastMessageRow("user") && row.dataset.msgId) {
-    addMessageMenuButton(menu, "编辑", () => editUserMessage(row));
-  }
-
-  // 图片消息编辑描述（所有图片消息）
-  const hasImage = row.querySelector(".message-image");
-  if (hasImage && effectiveMsgId) {
-    addMessageMenuButton(menu, "编辑描述", () => editImageDescription(row, effectiveMsgId));
-  }
-
-  // 重新生成功能（仅 assistant 的最后一条消息）
-  if (isAssistant && row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
-    addMessageMenuButton(menu, "重新生成", () => regenerateMessage(row));
-  }
-
-  // 撤回功能（仅 user 消息）
-  if (isUser && effectiveMsgId) {
-    addMessageMenuButton(menu, "撤回", () => recallMessage(row, effectiveMsgId));
-  }
-
-  // 收藏功能（所有消息支持）
-  if (effectiveMsgId) {
-    const msg = chatMessages.find(m => m.id === effectiveMsgId);
-    const isFavorited = msg?.is_favorited;
-    addMessageMenuButton(menu, isFavorited ? "取消收藏" : "收藏", () =>
-      favoriteMessage(row, effectiveMsgId, !isFavorited)
-    );
-  }
-
-  // 删除功能（user 和 assistant 都支持）
-  if (effectiveMsgId) {
-    addMessageMenuButton(menu, "删除", () => deleteMessage(row, effectiveMsgId));
-  }
-
-  // 朗读功能（仅 assistant 文字消息）
-  if (isAssistant && effectiveMsgId) {
-    const hasText = row.querySelector(".message-text");
-    if (hasText && window.SPVoice) {
-      addMessageMenuButton(menu, "朗读", () => {
-        closeMessageActionMenu();
-        const messageEl = row.querySelector(".message");
-        if (messageEl) {
-          window.SPVoice.speakMessage(messageEl, effectiveMsgId);
-        }
-      });
+  // 提醒 (placeholder)
+  addMessageMenuButton(row2, "提醒", () => {
+    closeMessageActionMenu();
+    if (typeof showToast === 'function') {
+      showToast('提醒功能开发中');
     }
+  });
+
+  // 搜一搜 (placeholder)
+  addMessageMenuButton(row2, "搜一搜", () => {
+    closeMessageActionMenu();
+    if (typeof showToast === 'function') {
+      showToast('搜索功能开发中');
+    }
+  });
+
+  // 朗读（仅 assistant 文字消息）
+  if (isAssistant && effectiveMsgId && hasText && window.SPVoice) {
+    addMessageMenuButton(row2, "从当前听", () => {
+      closeMessageActionMenu();
+      const messageEl = row.querySelector(".message");
+      if (messageEl) {
+        window.SPVoice.speakMessage(messageEl, effectiveMsgId);
+      }
+    });
+  } else {
+    addMessageMenuButton(row2, "从当前听", () => {
+      closeMessageActionMenu();
+      if (typeof showToast === 'function') {
+        showToast('朗读功能开发中');
+      }
+    });
+  }
+
+  menu.appendChild(row1);
+  menu.appendChild(row2);
+
+  // Row 3: Special actions (编辑, 删除, etc.) - shown when applicable
+  const hasSpecialActions =
+    (isUser && row === getLastMessageRow("user") && row.dataset.msgId) ||
+    (hasImage && effectiveMsgId) ||
+    (isAssistant && row === getLastMessageRow("assistant") && canRegenerateRow(row)) ||
+    effectiveMsgId;
+
+  if (hasSpecialActions) {
+    const row3 = document.createElement("div");
+    row3.className = "message-action-menu-row message-action-menu-special";
+
+    // 编辑（仅 user 最后一条）
+    if (isUser && row === getLastMessageRow("user") && row.dataset.msgId) {
+      addMessageMenuButton(row3, "编辑", () => editUserMessage(row));
+    }
+
+    // 编辑描述（图片消息）
+    if (hasImage && effectiveMsgId) {
+      addMessageMenuButton(row3, "编辑描述", () => editImageDescription(row, effectiveMsgId));
+    }
+
+    // 重新生成（仅 assistant 最后一条）
+    if (isAssistant && row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
+      addMessageMenuButton(row3, "重新生成", () => regenerateMessage(row));
+    }
+
+    // 删除
+    if (effectiveMsgId) {
+      addMessageMenuButton(row3, "删除", () => deleteMessage(row, effectiveMsgId));
+    }
+
+    menu.appendChild(row3);
   }
 
   document.body.appendChild(menu);
