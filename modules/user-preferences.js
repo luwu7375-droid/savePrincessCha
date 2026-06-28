@@ -24,7 +24,10 @@
   async function pullPreferences() {
     const client = window.supabaseClient;
     const userId = window.currentUserId;
-    if (!client || !userId) return;
+    if (!client || !userId) {
+      console.warn("[user-prefs] Pull skipped: no client or userId");
+      return;
+    }
 
     try {
       const { data, error } = await client
@@ -35,26 +38,30 @@
 
       if (error) {
         console.warn("[user-prefs] Failed to pull preferences:", error.message);
+        _toast("偏好同步失败: " + error.message);
         return;
       }
 
-      if (!data || !data.preferences) {
+      if (!data || !data.preferences || Object.keys(data.preferences).length === 0) {
         // No remote preferences yet — push current local state
+        console.log("[user-prefs] No remote data, pushing local state...");
         await pushPreferences();
         return;
       }
 
       const remote = data.preferences;
+      let pulled = 0;
       SYNC_KEYS.forEach(key => {
         if (remote[key] !== undefined && remote[key] !== null) {
           localStorage.setItem(key, typeof remote[key] === "string" ? remote[key] : JSON.stringify(remote[key]));
+          pulled++;
         }
       });
 
       // Reload PROVIDER_GROUPS from updated localStorage
       _reloadProviderGroups();
 
-      console.log("[user-prefs] Pulled preferences from server");
+      console.log("[user-prefs] Pulled " + pulled + " keys from server");
     } catch (err) {
       console.warn("[user-prefs] Pull error:", err);
     }
@@ -67,7 +74,10 @@
   async function pushPreferences() {
     const client = window.supabaseClient;
     const userId = window.currentUserId;
-    if (!client || !userId) return;
+    if (!client || !userId) {
+      console.warn("[user-prefs] Push skipped: no client or userId");
+      return;
+    }
 
     const prefs = {};
     SYNC_KEYS.forEach(key => {
@@ -80,18 +90,26 @@
       }
     });
 
+    if (Object.keys(prefs).length === 0) {
+      console.log("[user-prefs] Nothing to push (all keys empty)");
+      return;
+    }
+
     try {
       const { error } = await client
         .from("user_preferences")
         .upsert({ user_id: userId, preferences: prefs }, { onConflict: "user_id" });
 
       if (error) {
-        console.warn("[user-prefs] Failed to push preferences:", error.message);
+        console.warn("[user-prefs] Failed to push preferences:", error.message, error);
+        _toast("偏好推送失败: " + error.message);
       } else {
-        console.log("[user-prefs] Pushed preferences to server");
+        console.log("[user-prefs] Pushed preferences to server", Object.keys(prefs));
+        _toast("设置已同步到云端");
       }
     } catch (err) {
       console.warn("[user-prefs] Push error:", err);
+      _toast("偏好推送异常: " + (err.message || err));
     }
   }
 
@@ -112,6 +130,11 @@
         };
       });
     } catch (_) {}
+  }
+
+  function _toast(msg) {
+    if (typeof window.showToast === "function") window.showToast(msg);
+    else console.log("[user-prefs]", msg);
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
