@@ -4291,6 +4291,12 @@ body {
   flex-direction: column;
   background: var(--app-bg);
   overflow: hidden;
+  pointer-events: none; /* Don't block clicks when parent page is hidden */
+}
+
+/* Only allow interaction when the chat page is active */
+.v2-page--chat.v2-active .chat-subpage {
+  pointer-events: auto;
 }
 
 .chat-subpage[hidden] {
