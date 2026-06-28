@@ -4515,6 +4515,8 @@ body {
 
 #page-chat-detail .top-bar #chatMoreBtn {
   justify-self: end; /* More button stays right */
+  margin-left: 0;    /* Override flexbox auto-margin */
+  flex: none;        /* Neutralize flex grow/shrink */
 }
 
 .chat-detail-contact-btn {

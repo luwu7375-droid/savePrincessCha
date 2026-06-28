@@ -29,7 +29,7 @@
   }
 
   function getSupabase() {
-    return window._supabase || window.supabase || null;
+    return window.supabaseClient || window._supabase || null;
   }
 
   // -- Balance localStorage keys ----------------------------------------------
