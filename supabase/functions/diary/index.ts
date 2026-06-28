@@ -7,6 +7,9 @@ import { DIARY_PROMPT, CHECKER_PROMPT } from "./prompts.ts";
 import {
   resolveProviderForTier,
   callModelTextWithFallback,
+  type ProviderConfig,
+  type TierProviders,
+  toCompletionsUrl,
 } from "../_shared/model-client.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -22,6 +25,13 @@ type SourceEvent = {
   metadata?: Record<string, unknown>;
 };
 
+type CustomModelConfig = {
+  providerGroup: string;
+  model: string;
+  endpoint: string;
+  apiKey: string;
+};
+
 type DiaryGenerationRequest = {
   userId?: string;
   conversationId?: string;
@@ -30,6 +40,7 @@ type DiaryGenerationRequest = {
   cha_status?: string;
   diary_length?: "tiny" | "short" | "normal" | "long";
   debug?: boolean;
+  customModel?: CustomModelConfig;
 };
 
 type DiaryOutput = {
@@ -118,7 +129,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    const providers = resolveProviderForTier("general");
+    // Support custom model configuration from frontend
+    const providers = body.customModel
+      ? resolveCustomProvider(body.customModel)
+      : resolveProviderForTier("general");
+
+    if (body.customModel) {
+      console.log("[diary] Using custom model:", {
+        providerGroup: body.customModel.providerGroup,
+        model: body.customModel.model,
+        hasEndpoint: !!body.customModel.endpoint,
+        hasApiKey: !!body.customModel.apiKey,
+      });
+    } else {
+      console.log("[diary] Using default provider from environment variables");
+    }
 
     // Build diary prompt
     const sourceEventsText = source_events.map((evt, idx) => `[事件 ${idx + 1}]
@@ -308,4 +333,32 @@ function validateDiarySchema(diary: unknown): string | null {
 
   if (!Array.isArray(d.source_event_ids)) return "source_event_ids must be an array";
   return null;
+}
+
+/**
+ * Resolve custom provider config from frontend customModel parameter
+ */
+function resolveCustomProvider(customModel: CustomModelConfig): TierProviders {
+  const { endpoint, apiKey, model } = customModel;
+
+  // Validate required fields
+  if (!endpoint || !apiKey || !model) {
+    console.warn("[diary] customModel incomplete, falling back to tier provider");
+    return resolveProviderForTier("general");
+  }
+
+  // Build custom provider config
+  const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "2000", 10);
+  const primary: ProviderConfig = {
+    providerName: "fiftyfive", // treat as OpenAI-compatible
+    baseUrl: toCompletionsUrl(endpoint),
+    apiKey: apiKey,
+    model: model,
+    maxTokens: maxTokens,
+    tier: "general",
+    role: "primary",
+  };
+
+  // No fallback for custom models (user manages their own providers)
+  return { primary, fallback: null };
 }

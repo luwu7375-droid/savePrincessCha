@@ -99,6 +99,13 @@ function getModelForRole(role) {
   return mapping[role] || null;
 }
 
+// Expose to global for modules
+window.PROVIDER_GROUPS = PROVIDER_GROUPS;
+window.getModelForRole = getModelForRole;
+window.MODEL_ROLES = MODEL_ROLES;
+
+console.log('[app] PROVIDER_GROUPS and getModelForRole exposed to window');
+
 // ── Story Seeds 开关（旧关系史已停用，保留变量避免引用报错） ──────────────────
 // LEGACY_MEMORY_ENABLED=false，storySeedsEnabled 不再影响 chat 注入。
 const storySeedsEnabled = false;

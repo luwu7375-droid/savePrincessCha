@@ -126,16 +126,33 @@
     if (window.getModelForRole && window.PROVIDER_GROUPS) {
       const diaryModel = window.getModelForRole('diary');
       if (diaryModel && diaryModel.providerGroup && diaryModel.model) {
-        const providerGroup = window.PROVIDER_GROUPS[diaryModel.providerGroup];
-        if (providerGroup) {
-          customModelParams = {
-            providerGroup: diaryModel.providerGroup,
-            provider: providerGroup.provider,
-            model: diaryModel.model
-          };
-          console.log('[diary] Using diary model mapping:', customModelParams);
+        // Read custom provider data from localStorage
+        try {
+          const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+          const providerData = customProviders[diaryModel.providerGroup];
+
+          if (providerData && providerData.endpoint && providerData.apiKey) {
+            customModelParams = {
+              providerGroup: diaryModel.providerGroup,
+              model: diaryModel.model,
+              endpoint: providerData.endpoint,
+              apiKey: providerData.apiKey
+            };
+            console.log('[diary] Using custom model:', {
+              providerGroup: customModelParams.providerGroup,
+              model: customModelParams.model,
+              hasEndpoint: !!customModelParams.endpoint,
+              hasApiKey: !!customModelParams.apiKey
+            });
+          } else {
+            console.warn('[diary] Provider data incomplete for:', diaryModel.providerGroup);
+          }
+        } catch (err) {
+          console.error('[diary] Failed to read custom provider:', err);
         }
       }
+    } else {
+      console.log('[diary] No custom model config available, will use server default');
     }
 
     try {
@@ -182,8 +199,19 @@
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('Full error response:', errorData);  // Log complete error
-        throw new Error(errorData.error || 'Failed to generate diary');
+        console.error('[diary] Generation failed:', {
+          status: response.status,
+          error: errorData,
+          hadCustomModel: !!customModelParams
+        });
+
+        // Suggest checking config if custom model failed
+        let errorMsg = errorData.error || 'Failed to generate diary';
+        if (customModelParams && response.status >= 400 && response.status < 500) {
+          errorMsg += ' (请检查日记模型配置)';
+        }
+        console.error('Full error response:', errorData);  // 保留现有日志
+        throw new Error(errorMsg);
       }
 
       return await response.json();
