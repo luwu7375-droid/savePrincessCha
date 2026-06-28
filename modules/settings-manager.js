@@ -376,7 +376,7 @@ function _renderVoiceSubpage() {
           </select>
         </div>
         <div class="settings-card-row">
-          <div><strong>模型 ID</strong><small>ElevenLabs / MiniMax 填写对应模型名</small></div>
+          <div><strong>模型 ID</strong><small>填写对应模型名</small></div>
           <input type="text" class="settings-text-input" id="voiceTTSModelId"
             placeholder="eleven_v3" value="${modelId}" autocomplete="off" spellcheck="false"
             style="max-width:14em">
@@ -1224,19 +1224,82 @@ function _initSettingsVoiceSubpage(container) {
 }
 
 function _initSettingsMemorySubpage(container) {
-  // Reuse the existing memory center v2 state and render functions,
-  // but mounted inside the subpage body instead of the overlay.
   const mount = container.querySelector("#settingsMemoryMount");
   if (!mount) return;
-  memoryCenterV2State.view = "archive";
-  // Render archive view directly into the mount point
   mount.innerHTML = "";
-  const viewRoot = document.createElement("div");
-  viewRoot.id = "settingsMemoryViewRoot";
-  viewRoot.className = "mc-view-root";
-  mount.appendChild(viewRoot);
-  _renderMemoryCenterInto(viewRoot);
-  refreshMemoryCenterData();
+
+  const CATEGORIES = {
+    project: { label: "项目记忆", desc: "项目、工作和学习的共同推进" },
+    relation: { label: "关系记忆", desc: "我们之间的重要时刻和情感连接" },
+    life: { label: "生活记忆", desc: "日常、兴趣爱好和生活点滴" },
+    writing: { label: "写作记忆", desc: "创作、文章和灵感的讨论" },
+    identity: { label: "身份设定", desc: "关于你的偏好、性格和重要设定" },
+    preference: { label: "交互偏好", desc: "你的习惯、风格和交互方式" },
+    background: { label: "常驻背景", desc: "每轮注入的常驻通用背景" },
+  };
+
+  const grid = document.createElement("div");
+  grid.className = "memory-settings-grid";
+
+  Object.entries(CATEGORIES).forEach(([key, cfg]) => {
+    const card = document.createElement("div");
+    card.className = "memory-settings-card";
+    card.dataset.category = key;
+
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "memory-settings-card-header";
+    header.innerHTML = '<div class="memory-settings-card-info"><strong>' + cfg.label + '</strong><small>' + cfg.desc + '</small></div><span class="memory-settings-card-toggle">翻开 →</span>';
+
+    const body = document.createElement("div");
+    body.className = "memory-settings-card-body";
+    body.hidden = true;
+    body.innerHTML = '<div class="memory-settings-loading">加载中…</div>';
+
+    header.addEventListener("click", function() {
+      const isOpen = !body.hidden;
+      if (isOpen) {
+        body.hidden = true;
+        header.querySelector(".memory-settings-card-toggle").textContent = "翻开 →";
+      } else {
+        body.hidden = false;
+        header.querySelector(".memory-settings-card-toggle").textContent = "收起 ↑";
+        _loadCategoryMemories(key, body);
+      }
+    });
+
+    card.appendChild(header);
+    card.appendChild(body);
+    grid.appendChild(card);
+  });
+
+  mount.appendChild(grid);
+
+  if (typeof refreshMemoryCenterData === "function") refreshMemoryCenterData();
+}
+
+function _loadCategoryMemories(categoryKey, bodyEl) {
+  if (typeof mcBridgeGetDisplayItems !== "function") {
+    bodyEl.innerHTML = '<div class="memory-settings-empty">记忆数据未加载</div>';
+    return;
+  }
+  var allItems = mcBridgeGetDisplayItems();
+  var items = allItems.filter(function(item) { return item.categoryKey === categoryKey; });
+
+  if (!items.length) {
+    bodyEl.innerHTML = '<div class="memory-settings-empty">暂无此类记忆</div>';
+    return;
+  }
+
+  bodyEl.innerHTML = "";
+  items.forEach(function(item) {
+    var row = document.createElement("div");
+    row.className = "memory-settings-item";
+    var content = item.content || item.text || item.summary || "";
+    var preview = content.length > 80 ? content.slice(0, 80) + "…" : content;
+    row.innerHTML = '<p class="memory-settings-item-text">' + preview.replace(/</g, '&lt;') + '</p><small class="memory-settings-item-meta">' + (item.status || "enabled") + '</small>';
+    bodyEl.appendChild(row);
+  });
 }
 
 function _renderMemoryCenterInto(root) {

@@ -83,7 +83,7 @@
   // ── Asset upload slots ───────────────────────────────────────────────────────
 
   var ASSET_SLOTS = {
-    "home-cover":           ".home-cover",
+    "home-cover-cha":       ".home-cover-left",\n    "home-cover-kk":        ".home-cover-right",
     "home-cha-avatar":      ".profile-avatar:not(.profile-avatar--kk), .header-avatar, .top-avatar",
     "home-kk-avatar":       ".profile-avatar.profile-avatar--kk",
     "home-today-image":     ".today-photo",
@@ -151,9 +151,7 @@
         }
       }
 
-      if (activeName !== "setting") {
-        closeSettingsSubpage();
-      }
+      closeSettingsSubpage();
     }
 
     // Event delegation on the tab bar (capturing phase) — avoids img/span stealing events
