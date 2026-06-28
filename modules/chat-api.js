@@ -386,12 +386,16 @@ function setChatTitleState(mode) {
     callChatAPI,
     extractTextFromMessageContent,
     setChatTitleState,
+    showTypingIndicator,
+    removeTypingIndicator,
   };
 
   // ── Legacy global aliases (for backward compatibility) ────────────────────
   window.callChatAPI = callChatAPI;
   window.extractTextFromMessageContent = extractTextFromMessageContent;
   window.setChatTitleState = setChatTitleState;
+  window.showTypingIndicator = showTypingIndicator;
+  window.removeTypingIndicator = removeTypingIndicator;
   window._conversationStartedAt = _conversationStartedAt;
 
 })();
