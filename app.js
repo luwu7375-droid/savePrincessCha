@@ -2876,6 +2876,7 @@ function setReplyingState(replying) {
 }
 
 function updateAutoReplyToggle() {
+  if (!autoReplyToggle) return; // Element doesn't exist in new UI
   autoReplyToggle.classList.toggle("active", autoReplyEnabled);
   autoReplyToggle.textContent = autoReplyEnabled ? "●" : "◌";
   autoReplyToggle.title = autoReplyEnabled ? "自动接话：开" : "自动接话：关";
