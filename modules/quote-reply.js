@@ -263,6 +263,9 @@ function showLegacyDataNotice() {
     addAssistantBubbles,
     insertBubblesAnimated,
     renderWelcomeMessage,
+    readDelta,
+    stripThinking,
+    parseVisibleThought,
   };
 
   // ── Legacy global aliases (for backward compatibility) ────────────────────
@@ -276,5 +279,8 @@ function showLegacyDataNotice() {
   window.insertBubblesAnimated = insertBubblesAnimated;
   window.renderWelcomeMessage = renderWelcomeMessage;
   window.renderReplyPreview = renderReplyPreview;
+  window.readDelta = readDelta;
+  window.stripThinking = stripThinking;
+  window.parseVisibleThought = parseVisibleThought;
 
 })();

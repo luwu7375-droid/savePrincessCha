@@ -25,6 +25,8 @@ if (supabaseClient) {
 }
 // currentUserId is set by auth.js
 window.currentUserId = window.currentUserId || "";
+// Expose getConfigValue for modules
+window.getConfigValue = getConfigValue;
 
 const _VALID_TIERS_INIT = ["instant", "general", "advanced"];
 const _storedTier = localStorage.getItem("modelTier");
