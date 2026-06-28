@@ -4291,11 +4291,16 @@ body {
   flex-direction: column;
   background: var(--app-bg);
   overflow: hidden;
-  pointer-events: none; /* Don't block clicks when parent page is hidden */
+  visibility: hidden; /* Hide by default */
+  opacity: 0;
+  pointer-events: none;
+  transition: none; /* No animation to prevent flicker */
 }
 
-/* Only allow interaction when the chat page is active */
-.v2-page--chat.v2-active .chat-subpage {
+/* Only show and allow interaction when the chat page is active */
+.v2-page--chat.v2-active .chat-subpage:not([hidden]) {
+  visibility: visible;
+  opacity: 1;
   pointer-events: auto;
 }
 
