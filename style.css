@@ -3704,6 +3704,7 @@ img.msg-image {
   max-height: 220px;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   user-select: text;
   touch-action: pan-y;
   cursor: text;

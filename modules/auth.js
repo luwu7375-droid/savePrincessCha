@@ -82,6 +82,11 @@
     window.currentUserId = session?.user?.id || "";
     loginOverlay.classList.add("hidden");
 
+    // Sync user preferences from server (API keys, model mappings, voice config)
+    if (window.SPUserPreferences) {
+      window.SPUserPreferences.pullPreferences();
+    }
+
     if (logoutBtn) {
       logoutBtn.classList.remove("hidden");
     }

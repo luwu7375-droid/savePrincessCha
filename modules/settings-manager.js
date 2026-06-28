@@ -441,19 +441,37 @@ function _initSettingsSubpageEvents(container, type) {
     return;
   }
   if (type === "debug") {
+    const LABELS = {
+      persona_memories: "长期记忆", mastodon_profile: "用户画像",
+      writing_memory: "写作记忆", project_memory: "项目记忆",
+      relationship_context: "关系上下文", life_context: "生活上下文",
+      historical_ai_usage: "前世档案", openai_archive: "历史档案",
+      conversation_history: "历史对话", mastodon_timeline: "时间线",
+    };
+
     function _renderMemDebugLog() {
-      const el = container.querySelector("#_memDebugLog");
-      if (!el) return;
+      const pillsEl = container.querySelector("#_memDebugPills");
+      const logEl = container.querySelector("#_memDebugLog");
+      const detailEl = container.querySelector("#_memDebugDetail");
+      if (!logEl) return;
       let debug = null;
       try {
         debug = window.lastMemoryDebug || JSON.parse(localStorage.getItem("lastMemoryDebug") || "null");
       } catch (_) {}
-      if (!debug) { el.textContent = "暂无数据（下次收到 Cha 回复后刷新）"; return; }
-      const LABELS = {
-        persona_memories: "长期记忆", mastodon_profile: "用户画像",
-        writing_memory: "写作记忆", project_memory: "项目记忆",
-        relationship_context: "关系上下文", life_context: "生活上下文",
-      };
+      if (!debug) {
+        if (pillsEl) pillsEl.innerHTML = "";
+        logEl.textContent = "暂无数据（下次收到 Cha 回复后刷新）";
+        if (detailEl) detailEl.textContent = "";
+        return;
+      }
+      // Render pills for active providers
+      const providers = Array.isArray(debug.active_memory_providers) ? debug.active_memory_providers : [];
+      if (pillsEl) {
+        pillsEl.innerHTML = providers.map(p =>
+          `<span style="display:inline-block;padding:3px 8px;border-radius:12px;background:var(--bg-raise,#f0f0f0);font-size:11px;color:var(--text-main)">${LABELS[p] || p}</span>`
+        ).join("") || '<span style="font-size:11px;color:var(--text-muted)">无活跃来源</span>';
+      }
+      // Summary lines
       const lines = [];
       if (debug.injected) {
         Object.entries(debug.injected).forEach(([k, v]) => {
@@ -462,10 +480,85 @@ function _initSettingsSubpageEvents(container, type) {
       }
       if (debug.persona_memories_count != null) lines.push(`记忆条数：${debug.persona_memories_count}`);
       if (debug.mastodon_profile_chars) lines.push(`用户画像：${debug.mastodon_profile_chars} chars`);
-      el.textContent = lines.length ? lines.join("\n") : JSON.stringify(debug, null, 2).slice(0, 400);
+      if (debug.topic_route) lines.push(`话题路由：${debug.topic_route}`);
+      logEl.textContent = lines.length ? lines.join("\n") : "已收到调试数据";
+      // Full detail JSON
+      if (detailEl) detailEl.textContent = JSON.stringify(debug, null, 2);
     }
+
+    async function _renderRecentMemory() {
+      const panel = container.querySelector("#_memRecentPanel");
+      if (!panel) return;
+      const token = sessionStorage.getItem("memory_admin_token");
+      if (!token) { panel.textContent = "需要先设置 Memory Token"; return; }
+      const endpoint = _getMemoryEndpoint();
+      if (!endpoint) { panel.textContent = "记忆端点未配置"; return; }
+      panel.textContent = "加载中…";
+      try {
+        const userId = window.currentUserId || "";
+        const res = await fetch(endpoint + "?type=recent&userId=" + encodeURIComponent(userId), {
+          headers: { "x-memory-admin-token": token }
+        });
+        if (!res.ok) { panel.textContent = `HTTP ${res.status}`; return; }
+        const { source, rows } = await res.json();
+        if (!Array.isArray(rows) || rows.length === 0) { panel.textContent = "暂无最近记忆元数据"; return; }
+        panel.innerHTML = rows.slice(0, 5).map((row, i) =>
+          `<div style="margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border-soft,#eee)">` +
+          `<strong>${i + 1}. ${row.category || row.candidate_type || source || "memory"}</strong><br>` +
+          `<span style="font-size:11px">confidence=${row.confidence ?? "—"} | sensitivity=${row.sensitivity ?? "—"}</span>` +
+          `</div>`
+        ).join("");
+      } catch (err) {
+        panel.textContent = "加载失败：" + (err.message || err);
+      }
+    }
+
+    async function _renderAudit() {
+      const panel = container.querySelector("#_memAuditPanel");
+      if (!panel) return;
+      const token = sessionStorage.getItem("memory_admin_token");
+      if (!token) { panel.textContent = "需要先设置 Memory Token"; return; }
+      const endpoint = _getMemoryEndpoint();
+      if (!endpoint) { panel.textContent = "记忆端点未配置"; return; }
+      panel.textContent = "加载中…";
+      try {
+        const res = await fetch(endpoint + "?type=audit", {
+          headers: { "x-memory-admin-token": token }
+        });
+        if (!res.ok) { panel.textContent = `HTTP ${res.status}`; return; }
+        const audit = await res.json();
+        const memoriesByCategory = audit?.memories?.by_category || {};
+        const archive = audit?.openai_archive_entries || {};
+        const lines = [
+          `openai_archive: 已退役 (${archive.enabled_count ?? 0}/${archive.total ?? 0} enabled)`,
+          ...Object.entries(memoriesByCategory).map(([cat, stat]) =>
+            `${cat}: ${JSON.stringify(stat.origin_distribution || {})}`
+          ),
+        ];
+        panel.textContent = lines.join("\n") || "无审计数据";
+      } catch (err) {
+        panel.textContent = "加载失败：" + (err.message || err);
+      }
+    }
+
+    function _getMemoryEndpoint() {
+      if (typeof window.getMemoryEndpoint === "function") {
+        return window.getMemoryEndpoint();
+      }
+      if (typeof window.getConfigValue === "function") {
+        return window.getConfigValue("MEMORIES_API_ENDPOINT", "");
+      }
+      return "";
+    }
+
     _renderMemDebugLog();
-    container.querySelector("#_memDebugRefreshBtn")?.addEventListener("click", _renderMemDebugLog);
+    _renderRecentMemory();
+    _renderAudit();
+    container.querySelector("#_memDebugRefreshBtn")?.addEventListener("click", () => {
+      _renderMemDebugLog();
+      _renderRecentMemory();
+      _renderAudit();
+    });
     return;
   }
   if (type === "appearance-resources" || type === "beautify" || type === "emoji") {
@@ -747,6 +840,9 @@ function _showCustomProviderDialog(providerId = null) {
     const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
     customProviders[id] = { id, name, endpoint, apiKey, models, description: '自定义配置' };
     localStorage.setItem('custom_providers', JSON.stringify(customProviders));
+
+    // Sync to server for cross-device access
+    if (window.SPUserPreferences) window.SPUserPreferences.pushPreferences();
 
     // Update global PROVIDER_GROUPS
     if (!window.PROVIDER_GROUPS) window.PROVIDER_GROUPS = {};
@@ -1112,6 +1208,7 @@ function _initSettingsVoiceSubpage(container) {
   if (saveBtn) {
     saveBtn.addEventListener("click", () => {
       if (typeof showToast === "function") showToast("设置已保存");
+      if (window.SPUserPreferences) window.SPUserPreferences.pushPreferences();
       closeSettingsSubpage();
     });
   }
@@ -1247,7 +1344,7 @@ window._testMemoryEndpoint = async function() {
 
   try {
     const res = await fetch(endpoint + "?type=audit", {
-      headers: { "Authorization": "Bearer " + token }
+      headers: { "x-memory-admin-token": token }
     });
     btn.textContent = res.ok ? `✅ ${res.status}` : `❌ ${res.status}`;
     if (typeof showToast === 'function') {
@@ -1295,13 +1392,30 @@ function _renderDebugSubpage() {
       </div>
     </div>
     <div class="settings-section">
-      <div class="settings-section-label">日志</div>
-      <div class="settings-card">
-        <div class="settings-card-row">
-          <div><strong>记忆注入日志</strong><small>最近一轮注入状态</small></div>
+      <div class="settings-section-label">本轮记忆注入状态</div>
+      <div class="settings-card" style="padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong style="font-size:13px">活跃记忆来源</strong>
           <button type="button" class="settings-row-action-btn" id="_memDebugRefreshBtn" style="font-size:12px">刷新</button>
         </div>
-        <div id="_memDebugLog" style="padding:8px 0;font-size:12px;color:var(--text-muted);word-break:break-all">—</div>
+        <div id="_memDebugPills" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+        <div id="_memDebugLog" style="font-size:12px;color:var(--text-muted);white-space:pre-wrap;word-break:break-all">—</div>
+        <details style="margin-top:10px">
+          <summary style="font-size:12px;cursor:pointer;color:var(--text-muted)">展开详情</summary>
+          <div id="_memDebugDetail" style="margin-top:8px;font-size:11px;color:var(--text-muted);white-space:pre-wrap;word-break:break-all"></div>
+        </details>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">最近记忆元数据</div>
+      <div class="settings-card" style="padding:12px">
+        <div id="_memRecentPanel" style="font-size:12px;color:var(--text-muted)">打开后自动加载…</div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-label">审计与旧系统</div>
+      <div class="settings-card" style="padding:12px">
+        <div id="_memAuditPanel" style="font-size:12px;color:var(--text-muted)">打开后自动加载…</div>
       </div>
     </div>`;
 }

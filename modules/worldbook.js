@@ -11,7 +11,7 @@
   const WB_MAX_FILE_BYTES  = 1 * 1024 * 1024;   // 1 MB frontend guard
   const WB_MAX_CONTENT_LEN = 200_000;            // chars, mirrors DB constraint
   const WB_PREVIEW_LINES   = 100;
-  const WB_PREVIEW_CHARS   = 200;
+  const WB_PREVIEW_CHARS   = 2000;
 
   // ── State ───────────────────────────────────────────────────────────────────
   let wbBooks        = [];   // WorldBook[]  in-memory cache (sorted by priority)
