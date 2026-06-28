@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>救公主</title>
-  <link rel="stylesheet" href="style.css?v=cloudflare-0096">
-  <link rel="stylesheet" href="v2.css?v=cloudflare-0096">
-  <link rel="stylesheet" href="v2-bubbles.css?v=cloudflare-0096">
+  <link rel="stylesheet" href="style.css?v=cloudflare-0097">
+  <link rel="stylesheet" href="v2.css?v=cloudflare-0097">
+  <link rel="stylesheet" href="v2-bubbles.css?v=cloudflare-0097">
   <link rel="stylesheet" href="css/diary.css">
   <!-- PWA -->
   <link rel="manifest" href="/manifest.webmanifest">
@@ -137,6 +137,7 @@
           <button class="setting-row" data-settings-subpage="api"><img src="assets/icons/settings/api.svg" alt=""><span><strong>API 设置</strong><small>模型、接口与连接状态</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="backup"><img src="assets/icons/settings/backup.svg" alt=""><span><strong>备份与导入</strong><small>导出、恢复与记忆书上传</small></span><b>›</b></button>
           <button class="setting-row" data-settings-subpage="debug"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>Debug</strong><small>日志、版本与诊断工具</small></span><b>›</b></button>
+          <button class="setting-row" data-settings-subpage="cost"><img src="assets/icons/settings/debug.svg" alt=""><span><strong>成本驾驶舱</strong><small>花费、调用与缓存监控</small></span><b>›</b></button>
         </div>
         <footer class="settings-footer">
           <span id="settingsVersionInfo">v2 · build 20260623</span>
@@ -474,13 +475,12 @@
               <button type="button" class="profile-edit-btn" aria-label="编辑介绍">›</button>
             </div>
 
-            <div class="profile-info-row" data-field="status">
+            <div class="profile-info-row profile-info-row--readonly" data-field="status">
               <span class="profile-label">状态</span>
               <span class="profile-value profile-status">
                 <span class="online-dot"></span>
                 <span id="profileStatus">在线</span>
               </span>
-              <button type="button" class="profile-edit-btn" aria-label="编辑状态">›</button>
             </div>
           </div>
 
@@ -991,6 +991,10 @@
       document.write('<script src="modules/auth.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/worldbook.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/settings-manager.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Cost dashboard
+      document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>');
+      document.write('<script src="modules/cost-config.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/cost-dashboard.js?v=' + v + '" charset="utf-8"><\/script>');
       // Phase 2 refactored modules
       document.write('<script src="modules/conversation-manager.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/quote-reply.js?v=' + v + '" charset="utf-8"><\/script>');

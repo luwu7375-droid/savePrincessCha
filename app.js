@@ -6320,11 +6320,11 @@ function initV2Composer() {
     const actions = document.createElement("div");
     actions.className = "plus-panel-grid";
 
-    // Voice call — hidden for now (placeholder entry deferred)
+    // Voice call
     addPanelItem(actions, {
       label: "语音电话",
       desc: "通话服务",
-      icon: '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h4v8H3zM11 6h4v8h-4zM9 1v16M1 9h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      icon: '<img src="assets/icons/others/voice-call.svg" alt="">',
       onClick: () => {
         closePanel();
         // 显示心跳/水波纹加载页面，链接 tts 和语音通话
