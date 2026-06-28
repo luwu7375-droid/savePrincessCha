@@ -2868,11 +2868,8 @@ function exitEditMessageMode({ restoreDraft = false } = {}) {
 
 function setReplyingState(replying) {
   isReplying = replying;
-  // Only sendButton and forceReplyBtn are disabled during reply.
-  // composerMenuBtn, imageAttachBtn, and messageInput remain usable so the user
-  // can prepare attachments / draft text while Cha is typing.
-  forceReplyBtn.disabled = replying;
-  sendButton.disabled = replying;
+  if (forceReplyBtn) forceReplyBtn.disabled = replying;
+  if (sendButton) sendButton.disabled = replying;
 }
 
 function updateAutoReplyToggle() {
