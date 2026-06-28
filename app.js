@@ -1713,6 +1713,11 @@ function showMessageActionMenu(row, x, y) {
     addMessageMenuButton(menu, "编辑", () => editUserMessage(row));
   }
 
+  // 重新生成功能（仅 assistant 的最后一条消息）
+  if (isAssistant && row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
+    addMessageMenuButton(menu, "重新生成", () => regenerateMessage(row));
+  }
+
   // 撤回功能（仅 user 消息）
   if (isUser && effectiveMsgId) {
     addMessageMenuButton(menu, "撤回", () => recallMessage(row, effectiveMsgId));
@@ -1721,6 +1726,20 @@ function showMessageActionMenu(row, x, y) {
   // 删除功能（user 和 assistant 都支持）
   if (effectiveMsgId) {
     addMessageMenuButton(menu, "删除", () => deleteMessage(row, effectiveMsgId));
+  }
+
+  // 朗读功能（仅 assistant 文字消息）
+  if (isAssistant && effectiveMsgId) {
+    const hasText = row.querySelector(".message-text");
+    if (hasText && window.SPVoice) {
+      addMessageMenuButton(menu, "朗读", () => {
+        closeMessageActionMenu();
+        const messageEl = row.querySelector(".message");
+        if (messageEl) {
+          window.SPVoice.speakMessage(messageEl, effectiveMsgId);
+        }
+      });
+    }
   }
 
   document.body.appendChild(menu);
