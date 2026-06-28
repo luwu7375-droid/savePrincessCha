@@ -159,16 +159,41 @@
 
     <!-- 主聊天区 -->
     <section class="v2-page v2-page--chat" data-page="chat" aria-label="Chat">
-      <div class="chat-shell">
-      <header class="top-bar">
-        <button id="sidebarToggle" type="button" class="icon-btn" title="会话列表">☰</button>
-        <button id="chaAvatarButton" type="button" class="top-avatar avatar" title="Change Cha avatar" aria-label="Change Cha avatar"></button>
-        <h1>Cha</h1>
-        <button id="chatOnlineDot" type="button" class="online-dot-hitbox" title="View status" aria-label="View Cha status"><span class="online-dot" aria-hidden="true"></span></button>
-        <span id="chatStatus" class="chat-status"></span>
-        <button id="chatSearchButton" type="button" class="icon-btn" title="Search messages" aria-label="Search messages"><img src="assets/icons/others/search.svg" alt=""></button>
-        <button id="chatMoreBtn" type="button" class="icon-btn" title="更多" aria-label="更多选项"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="4" r="1.5" fill="currentColor"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/><circle cx="9" cy="14" r="1.5" fill="currentColor"/></svg></button>
-      </header>
+
+      <!-- Contact List Page (NEW) -->
+      <div id="page-chat-contacts" class="chat-subpage">
+        <header class="chat-contacts-header">
+          <h1>聊天</h1>
+          <button id="chatContactsSearchBtn" type="button" class="icon-btn" title="搜索" aria-label="搜索联系人">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M12 12L16 16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </header>
+        <div id="chatContactsSearch" class="chat-contacts-search hidden">
+          <input id="contactSearchInput" type="search" placeholder="搜索联系人" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        </div>
+        <div class="chat-contacts-list" id="chatContactsList">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- Chat Detail Page (EXISTING, wrapped) -->
+      <div id="page-chat-detail" class="chat-subpage" hidden>
+        <div class="chat-shell">
+          <header class="top-bar">
+            <button id="chatDetailBackBtn" type="button" class="icon-btn" title="返回" aria-label="返回联系人列表">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11 4L6 9L11 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button id="chatDetailContactBtn" type="button" class="chat-detail-contact-btn" aria-label="查看联系人信息">
+              <span class="chat-detail-name">Cha</span>
+              <span class="online-dot"></span>
+            </button>
+            <button id="chatMoreBtn" type="button" class="icon-btn" title="更多" aria-label="更多选项"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="4" r="1.5" fill="currentColor"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/><circle cx="9" cy="14" r="1.5" fill="currentColor"/></svg></button>
+          </header>
 
       <div id="chatSearchSheet" class="search-sheet hidden" aria-hidden="true">
         <button id="chatSearchOverlay" type="button" class="search-sheet-overlay" aria-label="关闭搜索"></button>
@@ -365,34 +390,124 @@
         </button>
       </div>
 
-      <div id="imagePreviewBar" class="image-preview-bar hidden">
-        <div class="img-preview-wrap">
-          <div class="img-preview-skeleton"></div>
-          <img class="img-preview-thumb" src="" alt="预览">
-          <button type="button" id="imgPreviewRemove" class="img-preview-remove" aria-label="删除图片">✕</button>
-        </div>
-        <div class="img-preview-error-row hidden">
-          <span class="img-preview-error-msg"></span>
-          <button type="button" id="imgPreviewRetry" class="img-preview-retry-btn">重试</button>
+          <div id="imagePreviewBar" class="image-preview-bar hidden">
+            <div class="img-preview-wrap">
+              <div class="img-preview-skeleton"></div>
+              <img class="img-preview-thumb" src="" alt="预览">
+              <button type="button" id="imgPreviewRemove" class="img-preview-remove" aria-label="删除图片">✕</button>
+            </div>
+            <div class="img-preview-error-row hidden">
+              <span class="img-preview-error-msg"></span>
+              <button type="button" id="imgPreviewRetry" class="img-preview-retry-btn">重试</button>
+            </div>
+          </div>
+
+          <!-- URL 检测提示 / web context 提示 -->
+          <div id="webUrlHint" class="web-url-hint" hidden></div>
+          <div id="webContextHint" class="web-context-hint" hidden></div>
+
+          <!-- Quote/reply preview bar -->
+          <div id="replyPreviewBar" class="reply-preview-bar hidden"></div>
+
+          <form class="input-bar" id="chatForm">
+            <input type="file" id="imageInput" accept="image/*" style="display:none">
+            <button id="composerMenuBtn" type="button" class="ghost-icon-btn" title="更多操作" aria-label="更多操作">✦</button>
+            <textarea id="messageInput" rows="1" placeholder="说点什么…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
+            <button id="emojiButton" type="button" class="ghost-icon-btn" title="表情" aria-label="表情">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.5"/>
+                <circle cx="6.5" cy="7.5" r="1" fill="currentColor"/>
+                <circle cx="11.5" cy="7.5" r="1" fill="currentColor"/>
+                <path d="M6 11c.5 1 1.5 1.5 3 1.5s2.5-.5 3-1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button id="voiceInputBtn" type="button" class="ghost-icon-btn" title="语音输入" aria-label="语音输入">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="2" width="6" height="10" rx="3" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M4 10c0 2.5 2 4.5 5 4.5s5-2 5-4.5M9 14.5v2.5M6 17h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button id="sendButton" type="submit" class="composer-send-btn hidden" aria-label="发送">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 15V3M9 3L4 8M9 3L14 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </form>
         </div>
       </div>
 
-      <!-- URL 检测提示 / web context 提示 -->
-      <div id="webUrlHint" class="web-url-hint" hidden></div>
-      <div id="webContextHint" class="web-context-hint" hidden></div>
-      <form class="input-bar" id="chatForm">
-        <input type="file" id="imageInput" accept="image/*" style="display:none">
-        <button id="voiceInputBtn" type="button" class="ghost-icon-btn" title="语音输入" aria-label="语音输入"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="2" width="6" height="10" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M4 10c0 2.5 2 4.5 5 4.5s5-2 5-4.5M9 14.5v2.5M6 17h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <textarea id="messageInput" rows="1" placeholder="说点什么…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
-        <button id="imageAttachBtn" type="button" class="ghost-icon-btn" title="附图" aria-label="附图"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="6.5" cy="7.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M2 12.5L5.5 9L8.5 12L11 9.5L16 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <!-- desktop secondary btns -->
-        <button id="forceReplyBtn" type="button" class="ghost-icon-btn desktop-only-btn" title="让公主回复" aria-label="让公主回复">✦</button>
-        <button id="autoReplyToggle" type="button" class="ghost-icon-btn desktop-only-btn" title="自动接话：关" aria-label="自动接话：关">◌</button>
-        <!-- mobile composer menu btn -->
-        <button id="composerMenuBtn" type="button" class="ghost-icon-btn mobile-composer-btn" title="更多操作" aria-label="更多操作">✦</button>
-        <button id="sendButton" type="submit" aria-label="发送"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 15V3M9 3L4 8M9 3L14 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      </form>
+      <!-- Contact Profile Page (NEW) -->
+      <div id="page-contact-profile" class="chat-subpage" hidden>
+        <header class="contact-profile-header">
+          <button id="contactProfileBackBtn" type="button" class="icon-btn" title="返回" aria-label="返回聊天">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M11 4L6 9L11 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <h1>详细资料</h1>
+          <span class="invisible"><!-- spacer --></span>
+        </header>
+
+        <div class="contact-profile-scroll">
+          <!-- Avatar -->
+          <div class="profile-avatar-section">
+            <button type="button" class="profile-avatar-large" id="profileAvatarBtn" title="更换头像" aria-label="更换头像"></button>
+          </div>
+
+          <!-- Info fields -->
+          <div class="profile-info-list">
+            <div class="profile-info-row" data-field="nickname">
+              <span class="profile-label">昵称</span>
+              <span class="profile-value" id="profileNickname">Cha</span>
+              <button type="button" class="profile-edit-btn" aria-label="编辑昵称">›</button>
+            </div>
+
+            <div class="profile-info-row" data-field="nicknameCalled">
+              <span class="profile-label">Ta 叫我</span>
+              <span class="profile-value" id="profileNicknameCalled">kk</span>
+              <button type="button" class="profile-edit-btn" aria-label="编辑称呼">›</button>
+            </div>
+
+            <div class="profile-info-row" data-field="intro">
+              <span class="profile-label">一句话介绍</span>
+              <span class="profile-value" id="profileIntro">幸福是两双眼睛望向同一个明天</span>
+              <button type="button" class="profile-edit-btn" aria-label="编辑介绍">›</button>
+            </div>
+
+            <div class="profile-info-row" data-field="status">
+              <span class="profile-label">状态</span>
+              <span class="profile-value profile-status">
+                <span class="online-dot"></span>
+                <span id="profileStatus">在线</span>
+              </span>
+              <button type="button" class="profile-edit-btn" aria-label="编辑状态">›</button>
+            </div>
+          </div>
+
+          <!-- Additional actions (optional for MVP) -->
+          <div class="profile-actions-list">
+            <button type="button" class="profile-action-row" id="profileNotesBtn">
+              <span class="profile-label">备注</span>
+              <span class="profile-value-hint" id="profileNotesHint">未设置</span>
+              <span>›</span>
+            </button>
+
+            <button type="button" class="profile-action-row" id="profileChatBgBtn">
+              <span class="profile-label">聊天背景</span>
+              <span class="profile-value-hint" id="profileChatBgHint">默认</span>
+              <span>›</span>
+            </button>
+          </div>
+
+          <!-- Danger zone -->
+          <div class="profile-actions-list">
+            <button type="button" class="profile-action-row profile-danger" id="profileClearHistoryBtn">
+              <span class="profile-label">清空聊天记录</span>
+            </button>
+          </div>
+        </div>
       </div>
+
     </section>
 
     <nav class="bottom-tab-bar" aria-label="一级导航">
@@ -878,6 +993,9 @@
       // Phase 2 refactored modules
       document.write('<script src="modules/conversation-manager.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/quote-reply.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Chat transformation modules
+      document.write('<script src="modules/contact-manager.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/chat-navigation.js?v=' + v + '" charset="utf-8"><\/script>');
       // Phase 3 refactored modules (high-risk core)
       document.write('<script src="modules/message-renderer.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/chat-api.js?v=' + v + '" charset="utf-8"><\/script>');

@@ -78,11 +78,21 @@ function setReplyDraft(id, preview, role) {
   _replyToPreview = preview;
   _replyToRole    = role;
   renderReplyPreview();
+
+  // Update composer state for mic/send toggle
+  if (window.updateComposerState) {
+    window.updateComposerState({ hasQuote: true });
+  }
 }
 
 function clearReplyDraft() {
   _replyToId = _replyToPreview = _replyToRole = null;
   document.getElementById("replyPreviewBar")?.remove();
+
+  // Update composer state for mic/send toggle
+  if (window.updateComposerState) {
+    window.updateComposerState({ hasQuote: false });
+  }
 }
 
 function renderReplyPreview() {

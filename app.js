@@ -3183,6 +3183,11 @@ function updateAttachmentCard() {
     imagePreviewBar.classList.remove("loading", "error");
     const thumb = imagePreviewBar.querySelector(".img-preview-thumb");
     if (thumb) thumb.src = "";
+
+    // Update composer state for mic/send toggle
+    if (window.updateComposerState) {
+      window.updateComposerState({ hasImage: false });
+    }
     return;
   }
   imagePreviewBar.classList.remove("hidden");
@@ -3194,6 +3199,11 @@ function updateAttachmentCard() {
   const errorRow = imagePreviewBar.querySelector(".img-preview-error-row");
   if (errorMsg) errorMsg.textContent = pendingImage.error || "";
   if (errorRow) errorRow.classList.toggle("hidden", !pendingImage.error);
+
+  // Update composer state for mic/send toggle
+  if (window.updateComposerState) {
+    window.updateComposerState({ hasImage: !!(pendingImage.dataUrl && !pendingImage.error) });
+  }
 }
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -3476,6 +3486,16 @@ async function handleSubmit() {
   const replyPreview = _replyToPreview;
   const replyRole    = _replyToRole;
   clearReplyDraft();
+
+  // Reset composer state after sending
+  if (window.updateComposerState) {
+    window.updateComposerState({
+      hasText: false,
+      hasImage: false,
+      hasQuote: false,
+      hasAttachment: false
+    });
+  }
 
   const isFirst = chatMessages.length === 0;
   const now = new Date().toISOString();
@@ -6428,3 +6448,356 @@ window.SPEmoji.loadEmojiCatalog().catch(err => console.warn("[emoji] catalog loa
 
 // Shortcode emoji suggestion bar (moved to modules/emoji-suggestions.js)
 window.SPEmojiSuggestions.initEmojiSuggestionBar();
+
+// ── Chat Transformation Integration ──────────────────────────────────────────
+
+// Initialize contact manager and chat navigation
+if (window.ContactManager) {
+  window.ContactManager.init();
+}
+
+if (window.ChatNavigation) {
+  window.ChatNavigation.init();
+}
+
+// Composer state for mic/send toggle
+const composerState = {
+  hasText: false,
+  hasImage: false,
+  hasQuote: false,
+  hasAttachment: false
+};
+
+function updateComposerButtons() {
+  const hasSendable = composerState.hasText ||
+                      composerState.hasImage ||
+                      composerState.hasQuote ||
+                      composerState.hasAttachment;
+
+  const micBtn = document.getElementById('voiceInputBtn');
+  const sendBtn = document.getElementById('sendButton');
+
+  if (hasSendable) {
+    micBtn?.classList.add('hidden');
+    sendBtn?.classList.remove('hidden');
+  } else {
+    micBtn?.classList.remove('hidden');
+    sendBtn?.classList.add('hidden');
+  }
+}
+
+// Hook into message input
+if (messageInput) {
+  const originalInputListener = messageInput.oninput;
+  messageInput.addEventListener('input', () => {
+    composerState.hasText = messageInput.value.trim().length > 0;
+    updateComposerButtons();
+  });
+}
+
+// Export for other modules to use
+window.updateComposerState = function(updates) {
+  Object.assign(composerState, updates);
+  updateComposerButtons();
+};
+
+// ── Contact List Page Rendering ──────────────────────────────────────────────
+
+async function renderChatContactsList() {
+  const contactsList = document.getElementById('chatContactsList');
+  if (!contactsList || !window.ContactManager) return;
+
+  const contacts = await window.ContactManager.getContactList();
+
+  contactsList.innerHTML = '';
+
+  for (const contact of contacts) {
+    const row = document.createElement('div');
+    row.className = 'contact-row';
+    row.dataset.contactId = contact.id;
+
+    // Avatar
+    const avatar = document.createElement('img');
+    avatar.className = 'contact-avatar';
+    avatar.src = contact.avatar || 'assets/avatars/cha.png';
+    avatar.alt = contact.nickname;
+
+    // Info column
+    const info = document.createElement('div');
+    info.className = 'contact-info';
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'contact-name-row';
+
+    const name = document.createElement('span');
+    name.className = 'contact-name';
+    name.textContent = contact.nickname;
+
+    const statusDot = document.createElement('span');
+    statusDot.className = 'online-dot';
+    if (contact.status !== 'online') {
+      statusDot.style.display = 'none';
+    }
+
+    nameRow.appendChild(name);
+    nameRow.appendChild(statusDot);
+
+    const preview = document.createElement('div');
+    preview.className = 'contact-preview';
+    preview.textContent = contact.lastMessage || '开始聊天...';
+
+    info.appendChild(nameRow);
+    info.appendChild(preview);
+
+    // Meta column
+    const meta = document.createElement('div');
+    meta.className = 'contact-meta';
+
+    const time = document.createElement('span');
+    time.className = 'contact-time';
+    time.textContent = contact.lastMessageTime || '';
+
+    meta.appendChild(time);
+
+    if (contact.unreadCount > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'contact-unread-badge';
+      badge.textContent = contact.unreadCount;
+      meta.appendChild(badge);
+    }
+
+    row.appendChild(avatar);
+    row.appendChild(info);
+    row.appendChild(meta);
+
+    // Click handler
+    row.addEventListener('click', () => enterChatDetailForContact(contact.id));
+
+    contactsList.appendChild(row);
+  }
+}
+
+async function enterChatDetailForContact(contactId) {
+  if (!window.ContactManager || !window.ChatNavigation) return;
+
+  const convId = window.ContactManager.getChatThreadForContact(contactId);
+  if (convId) {
+    setActiveConversationId(convId);
+  }
+
+  window.ChatNavigation.navigateToChatPage('chat-detail');
+
+  // Update top bar with contact info
+  updateChatDetailTopBar(contactId);
+
+  // Reload history
+  await reloadHistory();
+  scrollToBottom(messageList);
+  markReadByUser();
+}
+
+function updateChatDetailTopBar(contactId) {
+  if (!window.ContactManager) return;
+
+  const contact = window.ContactManager.getContactById(contactId);
+  if (!contact) return;
+
+  const nameEl = document.querySelector('.chat-detail-name');
+  const dotEl = document.querySelector('.chat-detail-contact-btn .online-dot');
+
+  if (nameEl) {
+    nameEl.textContent = contact.nickname;
+  }
+
+  if (dotEl) {
+    dotEl.style.display = contact.status === 'online' ? 'block' : 'none';
+  }
+}
+
+// ── Chat Detail Navigation ───────────────────────────────────────────────────
+
+const chatDetailBackBtn = document.getElementById('chatDetailBackBtn');
+const chatDetailContactBtn = document.getElementById('chatDetailContactBtn');
+
+if (chatDetailBackBtn) {
+  chatDetailBackBtn.addEventListener('click', () => {
+    if (window.ChatNavigation) {
+      window.ChatNavigation.navigateToChatPage('chat-contacts');
+    }
+  });
+}
+
+if (chatDetailContactBtn) {
+  chatDetailContactBtn.addEventListener('click', () => {
+    if (window.ChatNavigation) {
+      window.ChatNavigation.navigateToChatPage('contact-profile', { contactId: 'cha' });
+    }
+  });
+}
+
+// ── Contact Profile Page ──────────────────────────────────────────────────────
+
+function loadContactProfilePage(contactId) {
+  if (!window.ContactManager) return;
+
+  const contact = window.ContactManager.getContactById(contactId);
+  if (!contact) return;
+
+  // Update profile fields
+  const nicknameEl = document.getElementById('profileNickname');
+  const nicknameCalledEl = document.getElementById('profileNicknameCalled');
+  const introEl = document.getElementById('profileIntro');
+  const statusEl = document.getElementById('profileStatus');
+  const avatarBtn = document.getElementById('profileAvatarBtn');
+
+  if (nicknameEl) nicknameEl.textContent = contact.nickname;
+  if (nicknameCalledEl) nicknameCalledEl.textContent = contact.nicknameCalled;
+  if (introEl) introEl.textContent = contact.intro;
+  if (statusEl) statusEl.textContent = contact.status === 'online' ? '在线' : '离线';
+
+  if (avatarBtn) {
+    avatarBtn.style.backgroundImage = `url(${contact.avatar})`;
+  }
+
+  // Update hints
+  const notesHint = document.getElementById('profileNotesHint');
+  const chatBgHint = document.getElementById('profileChatBgHint');
+
+  if (notesHint) {
+    notesHint.textContent = contact.notes || '未设置';
+  }
+
+  if (chatBgHint) {
+    chatBgHint.textContent = contact.chatBackground === 'default' ? '默认' : contact.chatBackground;
+  }
+}
+
+// Profile back button
+const contactProfileBackBtn = document.getElementById('contactProfileBackBtn');
+if (contactProfileBackBtn) {
+  contactProfileBackBtn.addEventListener('click', () => {
+    if (window.ChatNavigation) {
+      window.ChatNavigation.navigateToChatPage('chat-detail');
+    }
+  });
+}
+
+// Profile edit buttons
+document.querySelectorAll('.profile-edit-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    const row = e.target.closest('.profile-info-row');
+    if (!row) return;
+
+    const field = row.dataset.field;
+    const label = row.querySelector('.profile-label')?.textContent || '字段';
+    const currentValue = row.querySelector('.profile-value')?.textContent || '';
+
+    showDialog({
+      title: `编辑${label}`,
+      input: currentValue,
+      confirmLabel: '确定',
+      onConfirm: (newValue) => {
+        if (!window.ContactManager) return;
+
+        const updates = {};
+
+        if (field === 'nickname') {
+          updates.nickname = newValue;
+        } else if (field === 'nicknameCalled') {
+          updates.nicknameCalled = newValue;
+        } else if (field === 'intro') {
+          updates.intro = newValue;
+        } else if (field === 'status') {
+          updates.status = newValue === '在线' ? 'online' : 'offline';
+        }
+
+        window.ContactManager.updateContactMetadata('cha', updates);
+        loadContactProfilePage('cha');
+        updateChatDetailTopBar('cha');
+      }
+    });
+  });
+});
+
+// Profile clear history button
+const profileClearHistoryBtn = document.getElementById('profileClearHistoryBtn');
+if (profileClearHistoryBtn) {
+  profileClearHistoryBtn.addEventListener('click', () => {
+    showDialog({
+      title: '清空聊天记录',
+      body: '确定要清空与 Cha 的所有聊天记录吗？此操作不可撤销。',
+      confirmLabel: '清空',
+      confirmClass: 'btn-danger',
+      onConfirm: async () => {
+        const convId = getActiveConversationId();
+        if (!convId) return;
+
+        await supabaseClient.from('messages').delete().eq('conversation_id', convId);
+        chatMessages.length = 0;
+        renderWelcomeMessage();
+
+        if (window.ChatNavigation) {
+          window.ChatNavigation.navigateToChatPage('chat-detail');
+        }
+      }
+    });
+  });
+}
+
+// ── Bottom Tab Chat Integration ──────────────────────────────────────────────
+
+// Update bottom tab chat button to show contact list as entry point
+const chatTabBtn = document.querySelector('[data-tab="chat"]');
+if (chatTabBtn) {
+  const originalClickHandler = chatTabBtn.onclick;
+  chatTabBtn.addEventListener('click', (e) => {
+    // Let v2-shell handle page activation first
+    if (window.ChatNavigation) {
+      // Small delay to ensure page is active
+      setTimeout(() => {
+        window.ChatNavigation.navigateToChatPage('chat-contacts');
+      }, 0);
+    }
+  });
+}
+
+// ── Search Contact Functionality ─────────────────────────────────────────────
+
+const chatContactsSearchBtn = document.getElementById('chatContactsSearchBtn');
+const chatContactsSearch = document.getElementById('chatContactsSearch');
+const contactSearchInput = document.getElementById('contactSearchInput');
+
+if (chatContactsSearchBtn && chatContactsSearch) {
+  chatContactsSearchBtn.addEventListener('click', () => {
+    chatContactsSearch.classList.toggle('hidden');
+    if (!chatContactsSearch.classList.contains('hidden')) {
+      contactSearchInput?.focus();
+    }
+  });
+}
+
+if (contactSearchInput) {
+  contactSearchInput.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase().trim();
+    const rows = document.querySelectorAll('.contact-row');
+
+    rows.forEach(row => {
+      const name = row.querySelector('.contact-name')?.textContent.toLowerCase() || '';
+      const preview = row.querySelector('.contact-preview')?.textContent.toLowerCase() || '';
+
+      if (name.includes(query) || preview.includes(query)) {
+        row.style.display = '';
+      } else {
+        row.style.display = 'none';
+      }
+    });
+  });
+}
+
+// Export functions for global use
+window.renderChatContactsList = renderChatContactsList;
+window.loadContactProfilePage = loadContactProfilePage;
+window.updateChatDetailTopBar = updateChatDetailTopBar;
+
+// Initialize on page load
+updateComposerButtons();
