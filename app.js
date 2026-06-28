@@ -1586,6 +1586,60 @@ async function editUserMessage(row) {
   enterEditMessageMode(row, msgId, oldText);
 }
 
+// 撤回消息（仅用户消息）
+async function recallMessage(row, msgId) {
+  closeMessageActionMenu();
+
+  const idx = chatMessages.findIndex(m => m.id === msgId);
+  if (idx === -1) return;
+
+  const originalContent = extractTextFromMessageContent(chatMessages[idx].content);
+
+  // 前端显示撤回提示
+  const textEl = row.querySelector(".message-text");
+  if (textEl) {
+    textEl.innerHTML = `<span style="color: var(--text-muted); font-size: 13px;">你撤回了一条消息</span><br><span style="color: var(--text-muted); font-size: 12px;">原文：${originalContent}</span>`;
+  }
+
+  // TODO: 调用后端API标记消息为已撤回
+  // await fetch('/api/messages/recall', { method: 'POST', body: JSON.stringify({ messageId: msgId }) });
+
+  if (typeof showToast === 'function') {
+    showToast('已撤回');
+  }
+}
+
+// 删除消息（用户和助手消息都支持）
+async function deleteMessage(row, msgId) {
+  closeMessageActionMenu();
+
+  // 确认删除
+  if (!confirm('确定要删除这条消息吗？删除后无法恢复。')) {
+    return;
+  }
+
+  // 前端移除消息
+  row.remove();
+
+  // 从 chatMessages 中移除
+  const idx = chatMessages.findIndex(m => m.id === msgId);
+  if (idx !== -1) {
+    chatMessages.splice(idx, 1);
+  }
+
+  // TODO: 调用后端API标记消息为已删除（不真正删除，只是标记 is_deleted）
+  // await fetch('/api/messages/delete', { method: 'POST', body: JSON.stringify({ messageId: msgId }) });
+
+  if (typeof showToast === 'function') {
+    showToast('已删除');
+  }
+
+  // 刷新消息分组样式
+  if (typeof refreshGroupClasses === 'function') {
+    refreshGroupClasses();
+  }
+}
+
 messageList.addEventListener("mouseenter", refreshMessageActions);
 window.addEventListener("resize", () => {
   closeMessageActionMenu();
@@ -1659,7 +1713,15 @@ function showMessageActionMenu(row, x, y) {
     addMessageMenuButton(menu, "编辑", () => editUserMessage(row));
   }
 
-  // 移除"重新生成"按钮 - 长按菜单只保留：复制/引用/编辑
+  // 撤回功能（仅 user 消息）
+  if (isUser && effectiveMsgId) {
+    addMessageMenuButton(menu, "撤回", () => recallMessage(row, effectiveMsgId));
+  }
+
+  // 删除功能（user 和 assistant 都支持）
+  if (effectiveMsgId) {
+    addMessageMenuButton(menu, "删除", () => deleteMessage(row, effectiveMsgId));
+  }
 
   document.body.appendChild(menu);
   messageActionMenu = menu;
@@ -3374,7 +3436,7 @@ async function saveEditedMessage(newText) {
 
   const { error: updateError } = await supabaseClient
     .from("messages")
-    .update({ content: newText })
+    .update({ content: newText, edited: true })
     .eq("id", msgId);
 
   if (updateError) {
@@ -3385,9 +3447,23 @@ async function saveEditedMessage(newText) {
   }
 
   chatMessages[idx].content = newText;
+  chatMessages[idx].edited = true;
+
   // Invalidate old render cache before re-rendering with new content
   invalidateRenderCache(msgId);
-  setMessageContent(row.querySelector(".message"), newText, { messageId: String(msgId) });
+
+  const messageEl = row.querySelector(".message");
+  setMessageContent(messageEl, newText, { messageId: String(msgId) });
+
+  // 添加"已编辑"标记
+  let editedLabel = messageEl.querySelector(".edited-label");
+  if (!editedLabel) {
+    editedLabel = document.createElement("span");
+    editedLabel.className = "edited-label";
+    editedLabel.style.cssText = "color: var(--text-muted); font-size: 11px; margin-left: 6px;";
+    editedLabel.textContent = "(已编辑)";
+    messageEl.appendChild(editedLabel);
+  }
 
   // Remove all subsequent messages and retrigger reply
   // Stop TTS in case one of the messages being deleted is currently playing
