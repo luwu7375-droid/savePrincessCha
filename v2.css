@@ -4505,17 +4505,23 @@ body {
   display: grid;
   grid-template-columns: 44px 1fr 44px;
   align-items: center;
-  gap: 8px;
+  gap: 0; /* Remove gap for precise edge alignment */
   justify-items: center; /* Center all items horizontally */
+  padding: calc(env(safe-area-inset-top) + 10px) 18px 8px;
 }
 
 #page-chat-detail .top-bar #chatDetailBackBtn {
   justify-self: start; /* Back button stays left */
 }
 
+#page-chat-detail .top-bar .chat-detail-contact-btn {
+  justify-self: center; /* Explicitly center middle button */
+}
+
 #page-chat-detail .top-bar #chatMoreBtn {
   justify-self: end; /* More button stays right */
   margin-left: 0;    /* Override flexbox auto-margin */
+  margin-right: 0;   /* Remove right margin for flush alignment */
   flex: none;        /* Neutralize flex grow/shrink */
 }
 
@@ -4565,15 +4571,19 @@ body {
 #page-chat-detail .input-bar {
   grid-template-columns: 36px 1fr 36px;
   /* [+] [input+emoji] [mic/send] */
+  align-items: center; /* Ensure all buttons are vertically centered */
+  gap: 6px; /* Consistent spacing between grid items */
 }
 
 #composerMenuBtn {
   order: -1; /* First position on mobile */
+  align-self: center; /* Explicit vertical centering */
 }
 
 #voiceInputBtn,
 #sendButton {
   order: 10; /* Last position, only one visible */
+  align-self: center; /* Explicit vertical centering */
 }
 
 .composer-send-btn {
