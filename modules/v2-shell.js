@@ -198,6 +198,10 @@
           }
           return;
         }
+        if (route === "/couple/favorites") {
+          if (typeof openFavoritesOverlay === "function") openFavoritesOverlay();
+          return;
+        }
         if (route === "/settings/api") {
           var tierLabel = { instant: "Instant", general: "General", advanced: "Advanced" }[
             typeof currentModelTier !== "undefined" ? currentModelTier : ""

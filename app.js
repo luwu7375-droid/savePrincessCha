@@ -2618,6 +2618,456 @@ async function favoriteMessage(row, msgId, shouldFavorite) {
   }
 }
 
+// ── Favorites UI ─────────────────────────────────────────────────────────────
+
+async function openFavoritesOverlay() {
+  // Create overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'favoritesOverlay';
+  overlay.className = 'overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  // Create modal
+  const modal = document.createElement('div');
+  modal.className = 'modal favorites-modal';
+  modal.style.cssText = `
+    background: var(--bg);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  `;
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'modal-header';
+  header.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  `;
+
+  const titleSection = document.createElement('div');
+  const title = document.createElement('h2');
+  title.textContent = '收藏夹';
+  title.style.cssText = 'margin: 0; font-size: 18px; color: var(--text);';
+
+  const subtitle = document.createElement('p');
+  subtitle.id = 'favoritesCount';
+  subtitle.textContent = '加载中...';
+  subtitle.style.cssText = 'margin: 4px 0 0 0; font-size: 13px; color: var(--text-muted);';
+
+  titleSection.appendChild(title);
+  titleSection.appendChild(subtitle);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s;
+  `;
+  closeBtn.addEventListener('mouseenter', () => closeBtn.style.background = 'var(--surface)');
+  closeBtn.addEventListener('mouseleave', () => closeBtn.style.background = 'none');
+  closeBtn.addEventListener('click', () => overlay.remove());
+
+  header.appendChild(titleSection);
+  header.appendChild(closeBtn);
+
+  // Content area
+  const content = document.createElement('div');
+  content.id = 'favoritesContent';
+  content.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+  `;
+
+  // Loading state
+  const loading = document.createElement('div');
+  loading.className = 'favorites-loading';
+  loading.textContent = '加载中...';
+  loading.style.cssText = `
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+  `;
+  content.appendChild(loading);
+
+  // Assemble
+  modal.appendChild(header);
+  modal.appendChild(content);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  // Close on overlay click
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  // Load favorites
+  await loadFavorites();
+}
+
+async function loadFavorites() {
+  const content = document.getElementById('favoritesContent');
+  const countEl = document.getElementById('favoritesCount');
+
+  if (!content) return;
+
+  try {
+    // Fetch favorited messages from database
+    let favorites = [];
+
+    if (supabaseClient && currentUserId) {
+      const { data, error } = await supabaseClient
+        .from('messages')
+        .select('*')
+        .eq('user_id', currentUserId)
+        .eq('is_favorited', true)
+        .order('favorited_at', { ascending: false });
+
+      if (error) throw error;
+      favorites = data || [];
+    }
+
+    // Update count
+    if (countEl) {
+      countEl.textContent = favorites.length === 0
+        ? '暂无收藏'
+        : `共 ${favorites.length} 条收藏`;
+    }
+
+    // Clear loading
+    content.innerHTML = '';
+
+    if (favorites.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'favorites-empty';
+      empty.style.cssText = `
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-muted);
+      `;
+      empty.innerHTML = `
+        <div style="font-size: 48px; margin-bottom: 16px;">★</div>
+        <p style="font-size: 15px; margin: 0;">还没有收藏任何消息</p>
+        <p style="font-size: 13px; margin: 8px 0 0 0; opacity: 0.7;">长按消息选择"收藏"</p>
+      `;
+      content.appendChild(empty);
+      return;
+    }
+
+    // Render favorites
+    favorites.forEach(msg => {
+      const item = createFavoriteItem(msg);
+      content.appendChild(item);
+    });
+
+  } catch (err) {
+    console.error('Failed to load favorites:', err);
+    content.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+        加载失败，请重试
+      </div>
+    `;
+  }
+}
+
+function createFavoriteItem(msg) {
+  const item = document.createElement('div');
+  item.className = 'favorite-item';
+  item.style.cssText = `
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  `;
+  item.addEventListener('mouseenter', () => {
+    item.style.background = 'var(--bg-raise)';
+    item.style.transform = 'translateY(-1px)';
+  });
+  item.addEventListener('mouseleave', () => {
+    item.style.background = 'var(--surface)';
+    item.style.transform = 'none';
+  });
+
+  // Role label
+  const roleLabel = document.createElement('div');
+  roleLabel.style.cssText = `
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    ${msg.role === 'assistant'
+      ? 'background: rgba(91, 159, 245, 0.12); color: #5B9FF5;'
+      : 'background: rgba(232, 168, 124, 0.12); color: #E8A87C;'}
+  `;
+  roleLabel.textContent = msg.role === 'assistant' ? 'Cha' : '你';
+  item.appendChild(roleLabel);
+
+  // Message content preview
+  const textContent = extractTextFromMessageContent(msg.content);
+  const preview = document.createElement('div');
+  preview.style.cssText = `
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+    margin-bottom: 8px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  `;
+  preview.textContent = textContent || '[图片消息]';
+  item.appendChild(preview);
+
+  // Metadata footer
+  const footer = document.createElement('div');
+  footer.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+  `;
+
+  const timestamp = document.createElement('span');
+  timestamp.textContent = formatMessageDate(msg.favorited_at || msg.created_at);
+
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display: flex; gap: 12px;';
+
+  // Jump to message button
+  const jumpBtn = document.createElement('button');
+  jumpBtn.textContent = '跳转';
+  jumpBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: var(--accent-primary);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s;
+  `;
+  jumpBtn.addEventListener('mouseenter', () => jumpBtn.style.background = 'rgba(91, 159, 245, 0.1)');
+  jumpBtn.addEventListener('mouseleave', () => jumpBtn.style.background = 'none');
+  jumpBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await jumpToMessage(msg.id, msg.conversation_id);
+  });
+
+  // Unfavorite button
+  const unfavoriteBtn = document.createElement('button');
+  unfavoriteBtn.textContent = '取消收藏';
+  unfavoriteBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s, color 0.2s;
+  `;
+  unfavoriteBtn.addEventListener('mouseenter', () => {
+    unfavoriteBtn.style.background = 'rgba(255, 68, 68, 0.1)';
+    unfavoriteBtn.style.color = '#ff4444';
+  });
+  unfavoriteBtn.addEventListener('mouseleave', () => {
+    unfavoriteBtn.style.background = 'none';
+    unfavoriteBtn.style.color = 'var(--text-muted)';
+  });
+  unfavoriteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await unfavoriteFromList(msg.id, item);
+  });
+
+  actions.appendChild(jumpBtn);
+  actions.appendChild(unfavoriteBtn);
+  footer.appendChild(timestamp);
+  footer.appendChild(actions);
+  item.appendChild(footer);
+
+  return item;
+}
+
+async function jumpToMessage(msgId, conversationId) {
+  // Close favorites overlay
+  const overlay = document.getElementById('favoritesOverlay');
+  if (overlay) overlay.remove();
+
+  // Switch to chat page
+  switchMainPage('chat');
+
+  // If different conversation, load it
+  if (conversationId !== currentConversationId) {
+    await loadConversation(conversationId);
+  }
+
+  // Wait a bit for rendering
+  await new Promise(resolve => setTimeout(resolve, 300));
+
+  // Find and scroll to message
+  const targetRow = messageList.querySelector(`[data-msg-id="${msgId}"]`);
+  if (targetRow) {
+    targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Highlight the message briefly
+    const messageEl = targetRow.querySelector('.message');
+    if (messageEl) {
+      messageEl.style.boxShadow = '0 0 0 3px rgba(91, 159, 245, 0.3)';
+      setTimeout(() => {
+        messageEl.style.boxShadow = '';
+      }, 2000);
+    }
+  } else {
+    if (typeof showToast === 'function') {
+      showToast('消息不存在或已被删除');
+    }
+  }
+}
+
+async function unfavoriteFromList(msgId, itemEl) {
+  try {
+    if (supabaseClient) {
+      const { error } = await supabaseClient
+        .from('messages')
+        .update({
+          is_favorited: false,
+          favorited_at: null
+        })
+        .eq('id', msgId);
+
+      if (error) throw error;
+    }
+
+    // Update in-memory chatMessages if it's in current conversation
+    const idx = chatMessages.findIndex(m => m.id === msgId);
+    if (idx !== -1) {
+      chatMessages[idx].is_favorited = false;
+      delete chatMessages[idx].favorited_at;
+
+      // Update UI in message list
+      const row = messageList.querySelector(`[data-msg-id="${msgId}"]`);
+      if (row) {
+        const messageEl = row.querySelector('.message');
+        if (messageEl) {
+          messageEl.classList.remove('message-favorited');
+          const badge = messageEl.querySelector('.favorite-badge');
+          if (badge) badge.remove();
+        }
+      }
+    }
+
+    // Remove from favorites list with animation
+    itemEl.style.transition = 'opacity 0.3s, transform 0.3s';
+    itemEl.style.opacity = '0';
+    itemEl.style.transform = 'translateX(-20px)';
+    setTimeout(() => {
+      itemEl.remove();
+
+      // Check if list is empty now
+      const content = document.getElementById('favoritesContent');
+      if (content && content.children.length === 0) {
+        loadFavorites(); // Reload to show empty state
+      } else {
+        // Update count
+        const countEl = document.getElementById('favoritesCount');
+        const remaining = content ? content.children.length : 0;
+        if (countEl) {
+          countEl.textContent = remaining === 0 ? '暂无收藏' : `共 ${remaining} 条收藏`;
+        }
+      }
+    }, 300);
+
+    if (typeof showToast === 'function') {
+      showToast('已取消收藏');
+    }
+
+  } catch (err) {
+    console.error('Failed to unfavorite:', err);
+    if (typeof showToast === 'function') {
+      showToast('取消收藏失败，请重试');
+    }
+  }
+}
+
+function formatMessageDate(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = now - date;
+
+  // Less than 1 minute
+  if (diff < 60000) return '刚刚';
+
+  // Less than 1 hour
+  if (diff < 3600000) {
+    const mins = Math.floor(diff / 60000);
+    return `${mins} 分钟前`;
+  }
+
+  // Less than 24 hours
+  if (diff < 86400000) {
+    const hours = Math.floor(diff / 3600000);
+    return `${hours} 小时前`;
+  }
+
+  // Less than 7 days
+  if (diff < 604800000) {
+    const days = Math.floor(diff / 86400000);
+    return `${days} 天前`;
+  }
+
+  // Format as date
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  if (year === now.getFullYear()) {
+    return `${month}-${day}`;
+  }
+  return `${year}-${month}-${day}`;
+}
+
+// Make it globally accessible
+window.openFavoritesOverlay = openFavoritesOverlay;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // 编辑图片描述
 async function editImageDescription(row, msgId) {
   closeMessageActionMenu();
