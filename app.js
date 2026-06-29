@@ -1879,11 +1879,14 @@ async function performRecall(row, msgId, message) {
 
   // 调用后端API标记消息为已撤回
   try {
-    const response = await fetch(`${getSupabaseUrl()}/functions/v1/messages-recall`, {
+    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+    const supabaseAnonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/messages-recall`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getSupabaseAnonKey()}`
+        'Authorization': `Bearer ${supabaseAnonKey}`
       },
       body: JSON.stringify({
         messageId: msgId,
@@ -1993,11 +1996,14 @@ async function deleteMessage(row, msgId) {
 
   // 调用后端API标记消息为已删除（软删除，不真正删除）
   try {
-    const response = await fetch(`${getSupabaseUrl()}/functions/v1/messages-delete`, {
+    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+    const supabaseAnonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/messages-delete`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getSupabaseAnonKey()}`
+        'Authorization': `Bearer ${supabaseAnonKey}`
       },
       body: JSON.stringify({
         messageId: msgId,
@@ -2069,10 +2075,14 @@ async function favoriteMessage(row, msgId, shouldFavorite) {
 
   // 调用后端API保存收藏状态
   try {
-    const response = await fetch('/api/messages/favorite', {
+    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+    const supabaseAnonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/messages-favorite`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseAnonKey}`
       },
       body: JSON.stringify({
         messageId: msgId,
