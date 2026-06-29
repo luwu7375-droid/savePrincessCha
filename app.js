@@ -821,7 +821,7 @@ async function reloadHistory(opts = {}) {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_transcribed_text")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_transcribed_text, edited, edited_at, edit_count, edit_history")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
@@ -1229,7 +1229,11 @@ async function requestStreamingReply(replyMode = "auto") {
   }
   if (!fullReply) throw new Error("未收到模型回复");
   console.log("[VT-debug] fullReply:", fullReply.slice(0, 300));
-  const { bubbles: thoughtBubbles, reply: cleanReply } = parseVisibleThought(fullReply);
+
+  // Parse assistant proactive quote FIRST (before visible thought parsing loses it)
+  const { cleanText: replyWithoutQuote, replyTo: assistantReplyTo } = parseAssistantReplyTo(fullReply);
+
+  const { bubbles: thoughtBubbles, reply: cleanReply } = parseVisibleThought(replyWithoutQuote);
   console.log("[VT-debug] bubbles:", JSON.stringify(thoughtBubbles));
   if (cleanReply === "<NO_REPLY>") {
     removeTypingIndicator();
@@ -1237,8 +1241,7 @@ async function requestStreamingReply(replyMode = "auto") {
     return;
   }
 
-  // Parse assistant proactive quote (reply_to_message tag)
-  const { cleanText: finalReply, replyTo: assistantReplyTo } = parseAssistantReplyTo(cleanReply);
+  const finalReply = cleanReply;
 
   const replyTime = new Date().toISOString();
   const replyId = await saveMessage("assistant", finalReply, null, {}, assistantReplyTo);
@@ -5729,9 +5732,29 @@ async function saveEditedMessage(newText) {
   const idx = chatMessages.findIndex(m => m.id === msgId);
   if (idx === -1) { exitEditMessageMode(); return; }
 
+  // Capture previous content for history
+  const previousContent = chatMessages[idx].content;
+  const previousEditHistory = chatMessages[idx].edit_history || [];
+  const previousEditCount = chatMessages[idx].edit_count || 0;
+
+  // Build new edit history entry
+  const newHistoryEntry = {
+    edited_at: new Date().toISOString(),
+    previous_content: previousContent
+  };
+
+  const newEditHistory = [...previousEditHistory, newHistoryEntry];
+  const newEditCount = previousEditCount + 1;
+
   const { error: updateError } = await supabaseClient
     .from("messages")
-    .update({ content: newText, edited: true })
+    .update({
+      content: newText,
+      edited: true,
+      edited_at: new Date().toISOString(),
+      edit_count: newEditCount,
+      edit_history: newEditHistory
+    })
     .eq("id", msgId);
 
   if (updateError) {
@@ -5743,6 +5766,9 @@ async function saveEditedMessage(newText) {
 
   chatMessages[idx].content = newText;
   chatMessages[idx].edited = true;
+  chatMessages[idx].edited_at = new Date().toISOString();
+  chatMessages[idx].edit_count = newEditCount;
+  chatMessages[idx].edit_history = newEditHistory;
 
   // Invalidate old render cache before re-rendering with new content
   invalidateRenderCache(msgId);
@@ -5750,14 +5776,21 @@ async function saveEditedMessage(newText) {
   const messageEl = row.querySelector(".message");
   setMessageContent(messageEl, newText, { messageId: String(msgId) });
 
-  // 添加"已编辑"标记
+  // 添加"已编辑"标记（可点击查看历史）
   let editedLabel = messageEl.querySelector(".edited-label");
   if (!editedLabel) {
     editedLabel = document.createElement("span");
     editedLabel.className = "edited-label";
-    editedLabel.style.cssText = "color: var(--text-muted); font-size: 11px; margin-left: 6px;";
-    editedLabel.textContent = "(已编辑)";
+    editedLabel.style.cssText = "color: var(--text-muted); font-size: 11px; margin-left: 6px; cursor: pointer; text-decoration: underline; text-decoration-style: dotted;";
+    editedLabel.textContent = `(已编辑 ${newEditCount > 1 ? newEditCount + '次' : ''})`.trim();
+    editedLabel.title = "点击查看编辑历史";
+    editedLabel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showEditHistory(msgId, chatMessages[idx]);
+    });
     messageEl.appendChild(editedLabel);
+  } else {
+    editedLabel.textContent = `(已编辑 ${newEditCount > 1 ? newEditCount + '次' : ''})`.trim();
   }
 
   // Remove all subsequent messages and retrigger reply
@@ -5774,6 +5807,216 @@ async function saveEditedMessage(newText) {
   await reloadHistory();
   await triggerReply("forced");
 }
+
+// ── Edit History Viewer ──────────────────────────────────────────────────────
+
+function showEditHistory(msgId, msg) {
+  if (!msg || !msg.edit_history || msg.edit_history.length === 0) {
+    if (typeof showToast === 'function') {
+      showToast('暂无编辑历史');
+    }
+    return;
+  }
+
+  // Create overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'edit-history-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 20px;
+  `;
+
+  // Create modal
+  const modal = document.createElement('div');
+  modal.className = 'edit-history-modal';
+  modal.style.cssText = `
+    background: var(--bg);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  `;
+
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  `;
+
+  const title = document.createElement('h2');
+  title.textContent = '编辑历史';
+  title.style.cssText = 'margin: 0; font-size: 18px; color: var(--text);';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s;
+  `;
+  closeBtn.addEventListener('mouseenter', () => closeBtn.style.background = 'var(--surface)');
+  closeBtn.addEventListener('mouseleave', () => closeBtn.style.background = 'none');
+  closeBtn.addEventListener('click', () => overlay.remove());
+
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+
+  // Content
+  const content = document.createElement('div');
+  content.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+  `;
+
+  // Current version
+  const currentVersion = document.createElement('div');
+  currentVersion.className = 'edit-history-item';
+  currentVersion.style.cssText = `
+    margin-bottom: 20px;
+    padding: 14px;
+    background: var(--surface);
+    border: 2px solid var(--accent-primary);
+    border-radius: 12px;
+  `;
+
+  const currentHeader = document.createElement('div');
+  currentHeader.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  `;
+
+  const currentLabel = document.createElement('div');
+  currentLabel.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+
+  const currentBadge = document.createElement('span');
+  currentBadge.textContent = '当前版本';
+  currentBadge.style.cssText = `
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(91, 159, 245, 0.12);
+    color: var(--accent-primary);
+  `;
+
+  const currentTime = document.createElement('span');
+  currentTime.textContent = msg.edited_at ? formatMessageDate(msg.edited_at) : '最新';
+  currentTime.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+
+  currentLabel.appendChild(currentBadge);
+  currentLabel.appendChild(currentTime);
+  currentHeader.appendChild(currentLabel);
+
+  const currentText = document.createElement('div');
+  currentText.style.cssText = `
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  `;
+  currentText.textContent = extractTextFromMessageContent(msg.content);
+
+  currentVersion.appendChild(currentHeader);
+  currentVersion.appendChild(currentText);
+  content.appendChild(currentVersion);
+
+  // Previous versions (reverse order - newest first)
+  const history = [...msg.edit_history].reverse();
+  history.forEach((entry, idx) => {
+    const versionNum = history.length - idx;
+    const item = document.createElement('div');
+    item.className = 'edit-history-item';
+    item.style.cssText = `
+      margin-bottom: 12px;
+      padding: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    `;
+
+    const itemHeader = document.createElement('div');
+    itemHeader.style.cssText = `
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    `;
+
+    const versionLabel = document.createElement('span');
+    versionLabel.textContent = `版本 ${versionNum}`;
+    versionLabel.style.cssText = 'font-size: 13px; font-weight: 600; color: var(--text);';
+
+    const timestamp = document.createElement('span');
+    timestamp.textContent = formatMessageDate(entry.edited_at);
+    timestamp.style.cssText = 'font-size: 12px; color: var(--text-muted);';
+
+    itemHeader.appendChild(versionLabel);
+    itemHeader.appendChild(timestamp);
+
+    const itemText = document.createElement('div');
+    itemText.style.cssText = `
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text);
+      opacity: 0.75;
+      white-space: pre-wrap;
+      word-break: break-word;
+    `;
+    itemText.textContent = extractTextFromMessageContent(entry.previous_content);
+
+    item.appendChild(itemHeader);
+    item.appendChild(itemText);
+    content.appendChild(item);
+  });
+
+  // Assemble
+  modal.appendChild(header);
+  modal.appendChild(content);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  // Close on overlay click
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 messageList.addEventListener("click", (e) => {
   // 如果刚打开长按菜单，阻止其他点击操作
