@@ -2319,128 +2319,283 @@ function showMessageActionMenu(row, x, y) {
   const msg = effectiveMsgId ? chatMessages.find(m => m.id === effectiveMsgId) : null;
   const isFavorited = msg?.is_favorited;
   const hasImage = row.querySelector(".message-image");
+  const hasVoice = row.querySelector(".message-voice");
   const hasText = row.querySelector(".message-text");
 
-  // Row 1: 复制, 转发, 收藏, 撤回, 多选
+  // 判断消息类型：图片、语音、文字
+  const messageType = hasImage ? 'image' : (hasVoice ? 'voice' : 'text');
+
+  // 两横排布局
   const row1 = document.createElement("div");
   row1.className = "message-action-menu-row";
-
-  addMessageMenuButton(row1, "复制", async (btn) => {
-    await copyMessage(row, btn);
-  });
-
-  // 转发 (placeholder for now)
-  addMessageMenuButton(row1, "转发", () => {
-    closeMessageActionMenu();
-    if (typeof showToast === 'function') {
-      showToast('转发功能开发中');
-    }
-  });
-
-  // 收藏
-  if (effectiveMsgId) {
-    addMessageMenuButton(row1, isFavorited ? "取消收藏" : "收藏", () =>
-      favoriteMessage(row, effectiveMsgId, !isFavorited)
-    );
-  }
-
-  // 撤回（仅 user 消息）
-  if (isUser && effectiveMsgId) {
-    addMessageMenuButton(row1, "撤回", () => recallMessage(row, effectiveMsgId));
-  }
-
-  // 多选 (placeholder for now)
-  addMessageMenuButton(row1, "多选", () => {
-    closeMessageActionMenu();
-    if (typeof showToast === 'function') {
-      showToast('多选功能开发中');
-    }
-  });
-
-  // Row 2: 引用, 提醒, 搜一搜, 从当前听
   const row2 = document.createElement("div");
   row2.className = "message-action-menu-row";
 
-  // 引用
-  if (effectiveMsgId) {
-    addMessageMenuButton(row2, "引用", () => {
-      const role = isAssistant ? "assistant" : "user";
-      const preview = getMessageQuotePreview(row);
-      closeMessageActionMenu();
-      setReplyDraft(effectiveMsgId, preview, role);
-    });
+  // ============ 文字消息 ============
+  if (messageType === 'text') {
+    if (isUser) {
+      // KK 的文字消息
+      // 第一行：引用、编辑、复制、删除
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "引用", () => {
+          const preview = getMessageQuotePreview(row);
+          closeMessageActionMenu();
+          setReplyDraft(effectiveMsgId, preview, "user");
+        });
+      }
+      if (row === getLastMessageRow("user") && row.dataset.msgId) {
+        addMessageMenuButton(row1, "编辑", () => editUserMessage(row));
+      }
+      addMessageMenuButton(row1, "复制", async (btn) => {
+        await copyMessage(row, btn);
+      });
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "删除", () => deleteMessage(row, effectiveMsgId));
+      }
+
+      // 第二行：收藏、多选、转发、撤回
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, isFavorited ? "取消收藏" : "收藏", () =>
+          favoriteMessage(row, effectiveMsgId, !isFavorited)
+        );
+      }
+      addMessageMenuButton(row2, "多选", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('多选功能开发中');
+      });
+      addMessageMenuButton(row2, "转发", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('转发功能开发中');
+      });
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, "撤回", () => recallMessage(row, effectiveMsgId));
+      }
+    } else {
+      // Cha 的文字消息
+      // 第一行：引用、复制、重新生成、朗读
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "引用", () => {
+          const preview = getMessageQuotePreview(row);
+          closeMessageActionMenu();
+          setReplyDraft(effectiveMsgId, preview, "assistant");
+        });
+      }
+      addMessageMenuButton(row1, "复制", async (btn) => {
+        await copyMessage(row, btn);
+      });
+      if (row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
+        addMessageMenuButton(row1, "重新生成", () => regenerateMessage(row));
+      }
+      if (effectiveMsgId && hasText && window.SPVoice) {
+        addMessageMenuButton(row1, "朗读", () => {
+          closeMessageActionMenu();
+          const messageEl = row.querySelector(".message");
+          if (messageEl) {
+            window.SPVoice.speakMessage(messageEl, effectiveMsgId);
+          }
+        });
+      }
+
+      // 第二行：收藏、多选、转发、删除
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, isFavorited ? "取消收藏" : "收藏", () =>
+          favoriteMessage(row, effectiveMsgId, !isFavorited)
+        );
+      }
+      addMessageMenuButton(row2, "多选", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('多选功能开发中');
+      });
+      addMessageMenuButton(row2, "转发", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('转发功能开发中');
+      });
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, "删除", () => deleteMessage(row, effectiveMsgId));
+      }
+    }
   }
-
-  // 提醒 (placeholder)
-  addMessageMenuButton(row2, "提醒", () => {
-    closeMessageActionMenu();
-    if (typeof showToast === 'function') {
-      showToast('提醒功能开发中');
-    }
-  });
-
-  // 搜一搜 (placeholder)
-  addMessageMenuButton(row2, "搜一搜", () => {
-    closeMessageActionMenu();
-    if (typeof showToast === 'function') {
-      showToast('搜索功能开发中');
-    }
-  });
-
-  // 朗读（仅 assistant 文字消息）
-  if (isAssistant && effectiveMsgId && hasText && window.SPVoice) {
-    addMessageMenuButton(row2, "从当前听", () => {
-      closeMessageActionMenu();
-      const messageEl = row.querySelector(".message");
-      if (messageEl) {
-        window.SPVoice.speakMessage(messageEl, effectiveMsgId);
+  // ============ 图片消息 ============
+  else if (messageType === 'image') {
+    if (isUser) {
+      // KK 的图片消息
+      // 第一行：引用、编辑、保存、删除
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "引用", () => {
+          const preview = getMessageQuotePreview(row);
+          closeMessageActionMenu();
+          setReplyDraft(effectiveMsgId, preview, "user");
+        });
       }
-    });
-  } else {
-    addMessageMenuButton(row2, "从当前听", () => {
-      closeMessageActionMenu();
-      if (typeof showToast === 'function') {
-        showToast('朗读功能开发中');
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "编辑", () => editImageDescription(row, effectiveMsgId));
       }
-    });
+      addMessageMenuButton(row1, "保存", () => {
+        closeMessageActionMenu();
+        const img = row.querySelector(".message-image img");
+        if (img) {
+          const a = document.createElement('a');
+          a.href = img.src;
+          a.download = 'image.jpg';
+          a.click();
+        }
+      });
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "删除", () => deleteMessage(row, effectiveMsgId));
+      }
+
+      // 第二行：收藏、多选、转发、撤回
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, isFavorited ? "取消收藏" : "收藏", () =>
+          favoriteMessage(row, effectiveMsgId, !isFavorited)
+        );
+      }
+      addMessageMenuButton(row2, "多选", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('多选功能开发中');
+      });
+      addMessageMenuButton(row2, "转发", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('转发功能开发中');
+      });
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, "撤回", () => recallMessage(row, effectiveMsgId));
+      }
+    } else {
+      // Cha 的图片消息
+      // 第一行：引用、保存、重新生成、删除
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "引用", () => {
+          const preview = getMessageQuotePreview(row);
+          closeMessageActionMenu();
+          setReplyDraft(effectiveMsgId, preview, "assistant");
+        });
+      }
+      addMessageMenuButton(row1, "保存", () => {
+        closeMessageActionMenu();
+        const img = row.querySelector(".message-image img");
+        if (img) {
+          const a = document.createElement('a');
+          a.href = img.src;
+          a.download = 'image.jpg';
+          a.click();
+        }
+      });
+      if (row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
+        addMessageMenuButton(row1, "重新生成", () => regenerateMessage(row));
+      }
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "删除", () => deleteMessage(row, effectiveMsgId));
+      }
+
+      // 第二行：收藏、多选、转发、查看图片描述
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, isFavorited ? "取消收藏" : "收藏", () =>
+          favoriteMessage(row, effectiveMsgId, !isFavorited)
+        );
+      }
+      addMessageMenuButton(row2, "多选", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('多选功能开发中');
+      });
+      addMessageMenuButton(row2, "转发", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('转发功能开发中');
+      });
+      addMessageMenuButton(row2, "查看图片描述", () => {
+        closeMessageActionMenu();
+        if (msg?.imageDescription) {
+          if (typeof showToast === 'function') showToast(msg.imageDescription);
+        } else {
+          if (typeof showToast === 'function') showToast('暂无图片描述');
+        }
+      });
+    }
+  }
+  // ============ 语音消息 ============
+  else if (messageType === 'voice') {
+    if (isUser) {
+      // KK 的语音消息
+      // 第一行：引用、转文字、编辑、撤回
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "引用", () => {
+          const preview = getMessageQuotePreview(row);
+          closeMessageActionMenu();
+          setReplyDraft(effectiveMsgId, preview, "user");
+        });
+      }
+      addMessageMenuButton(row1, "转文字", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('转文字功能开发中');
+      });
+      if (row === getLastMessageRow("user") && row.dataset.msgId) {
+        addMessageMenuButton(row1, "编辑", () => editUserMessage(row));
+      }
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "撤回", () => recallMessage(row, effectiveMsgId));
+      }
+
+      // 第二行：收藏、多选、转发、删除
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, isFavorited ? "取消收藏" : "收藏", () =>
+          favoriteMessage(row, effectiveMsgId, !isFavorited)
+        );
+      }
+      addMessageMenuButton(row2, "多选", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('多选功能开发中');
+      });
+      addMessageMenuButton(row2, "转发", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('转发功能开发中');
+      });
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, "删除", () => deleteMessage(row, effectiveMsgId));
+      }
+    } else {
+      // Cha 的语音消息
+      // 第一行：引用、转文字、倍速、重新生成
+      if (effectiveMsgId) {
+        addMessageMenuButton(row1, "引用", () => {
+          const preview = getMessageQuotePreview(row);
+          closeMessageActionMenu();
+          setReplyDraft(effectiveMsgId, preview, "assistant");
+        });
+      }
+      addMessageMenuButton(row1, "转文字", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('转文字功能开发中');
+      });
+      addMessageMenuButton(row1, "倍速", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('倍速功能开发中');
+      });
+      if (row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
+        addMessageMenuButton(row1, "重新生成", () => regenerateMessage(row));
+      }
+
+      // 第二行：收藏、多选、转发、删除
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, isFavorited ? "取消收藏" : "收藏", () =>
+          favoriteMessage(row, effectiveMsgId, !isFavorited)
+        );
+      }
+      addMessageMenuButton(row2, "多选", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('多选功能开发中');
+      });
+      addMessageMenuButton(row2, "转发", () => {
+        closeMessageActionMenu();
+        if (typeof showToast === 'function') showToast('转发功能开发中');
+      });
+      if (effectiveMsgId) {
+        addMessageMenuButton(row2, "删除", () => deleteMessage(row, effectiveMsgId));
+      }
+    }
   }
 
   menu.appendChild(row1);
   menu.appendChild(row2);
-
-  // Row 3: Special actions (编辑, 删除, etc.) - shown when applicable
-  const hasSpecialActions =
-    (isUser && row === getLastMessageRow("user") && row.dataset.msgId) ||
-    (hasImage && effectiveMsgId) ||
-    (isAssistant && row === getLastMessageRow("assistant") && canRegenerateRow(row)) ||
-    effectiveMsgId;
-
-  if (hasSpecialActions) {
-    const row3 = document.createElement("div");
-    row3.className = "message-action-menu-row message-action-menu-special";
-
-    // 编辑（仅 user 最后一条）
-    if (isUser && row === getLastMessageRow("user") && row.dataset.msgId) {
-      addMessageMenuButton(row3, "编辑", () => editUserMessage(row));
-    }
-
-    // 编辑描述（图片消息）
-    if (hasImage && effectiveMsgId) {
-      addMessageMenuButton(row3, "编辑描述", () => editImageDescription(row, effectiveMsgId));
-    }
-
-    // 重新生成（仅 assistant 最后一条）
-    if (isAssistant && row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
-      addMessageMenuButton(row3, "重新生成", () => regenerateMessage(row));
-    }
-
-    // 删除
-    if (effectiveMsgId) {
-      addMessageMenuButton(row3, "删除", () => deleteMessage(row, effectiveMsgId));
-    }
-
-    menu.appendChild(row3);
-  }
 
   document.body.appendChild(menu);
   messageActionMenu = menu;
