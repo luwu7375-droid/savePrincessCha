@@ -2818,6 +2818,374 @@ function addMessageMenuButton(menu, label, action) {
   menu.appendChild(btn);
 }
 
+// ── Voice Message Helper Functions ──────────────────────────────────────────
+
+/**
+ * Show voice message transcription in a dialog
+ */
+function showVoiceTranscription(row, msg) {
+  const transcribedText = msg?.audio_transcribed_text;
+  if (!transcribedText) {
+    if (typeof showToast === 'function') showToast('暂无转录文字');
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  `;
+
+  const title = document.createElement('h3');
+  title.textContent = '语音转文字';
+  title.style.cssText = `
+    margin: 0 0 12px 0;
+    font-size: 16px;
+    color: var(--text);
+  `;
+
+  const content = document.createElement('div');
+  content.textContent = transcribedText;
+  content.style.cssText = `
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 16px;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  `;
+
+  const buttonRow = document.createElement('div');
+  buttonRow.style.cssText = `
+    display: flex;
+    gap: 8px;
+  `;
+
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = '复制';
+  copyBtn.style.cssText = `
+    flex: 1;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(transcribedText);
+      if (typeof showToast === 'function') showToast('已复制到剪贴板');
+      overlay.remove();
+    } catch (err) {
+      console.error('Copy failed:', err);
+      if (typeof showToast === 'function') showToast('复制失败');
+    }
+  });
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '关闭';
+  closeBtn.style.cssText = `
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent-primary);
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  closeBtn.addEventListener('click', () => overlay.remove());
+
+  buttonRow.appendChild(copyBtn);
+  buttonRow.appendChild(closeBtn);
+  dialog.appendChild(title);
+  dialog.appendChild(content);
+  dialog.appendChild(buttonRow);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+}
+
+/**
+ * Edit voice message transcription (for KK's fake voice)
+ */
+function editVoiceTranscription(row, effectiveMsgId) {
+  const msg = chatMessages.find(m => m.id === effectiveMsgId);
+  if (!msg || !msg.audio_transcribed_text) {
+    if (typeof showToast === 'function') showToast('无法编辑此语音消息');
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  `;
+
+  const title = document.createElement('h3');
+  title.textContent = '编辑语音内容';
+  title.style.cssText = `
+    margin: 0 0 12px 0;
+    font-size: 16px;
+    color: var(--text);
+  `;
+
+  const textarea = document.createElement('textarea');
+  textarea.value = msg.audio_transcribed_text;
+  textarea.style.cssText = `
+    width: 100%;
+    min-height: 120px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    resize: vertical;
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg);
+    margin-bottom: 16px;
+  `;
+
+  const buttonRow = document.createElement('div');
+  buttonRow.style.cssText = `
+    display: flex;
+    gap: 8px;
+  `;
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = `
+    flex: 1;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = '保存';
+  saveBtn.style.cssText = `
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent-primary);
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  saveBtn.addEventListener('click', async () => {
+    const newText = textarea.value.trim();
+    if (!newText) {
+      if (typeof showToast === 'function') showToast('内容不能为空');
+      return;
+    }
+
+    try {
+      const { error } = await supabaseClient
+        .from('messages')
+        .update({
+          audio_transcribed_text: newText,
+          content: newText, // Also update content field
+        })
+        .eq('id', effectiveMsgId);
+
+      if (error) throw error;
+
+      // Update local chatMessages
+      msg.audio_transcribed_text = newText;
+      msg.content = newText;
+
+      if (typeof showToast === 'function') showToast('已保存');
+      overlay.remove();
+
+      // Optionally refresh the voice bubble (not critical for MVP)
+    } catch (err) {
+      console.error('Edit voice transcription error:', err);
+      if (typeof showToast === 'function') showToast('保存失败，请重试');
+    }
+  });
+
+  buttonRow.appendChild(cancelBtn);
+  buttonRow.appendChild(saveBtn);
+  dialog.appendChild(title);
+  dialog.appendChild(textarea);
+  dialog.appendChild(buttonRow);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  // Focus textarea
+  setTimeout(() => textarea.focus(), 100);
+}
+
+/**
+ * Change voice playback speed (for Cha's real voice)
+ */
+function changeVoicePlaybackSpeed(row) {
+  const voiceContainer = row.querySelector('.voice-message');
+  if (!voiceContainer) {
+    if (typeof showToast === 'function') showToast('无法找到语音消息');
+    return;
+  }
+
+  // Get current speed from data attribute or default to 1.0
+  const currentSpeed = parseFloat(voiceContainer.dataset.playbackSpeed || '1.0');
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 320px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  `;
+
+  const title = document.createElement('h3');
+  title.textContent = '播放速度';
+  title.style.cssText = `
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    color: var(--text);
+    text-align: center;
+  `;
+
+  const speedOptions = [
+    { value: 0.75, label: '0.75x' },
+    { value: 1.0, label: '1.0x（正常）' },
+    { value: 1.25, label: '1.25x' },
+    { value: 1.5, label: '1.5x' },
+    { value: 2.0, label: '2.0x' }
+  ];
+
+  const optionsContainer = document.createElement('div');
+  optionsContainer.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  `;
+
+  speedOptions.forEach(option => {
+    const btn = document.createElement('button');
+    btn.textContent = option.label;
+    btn.style.cssText = `
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: ${option.value === currentSpeed ? 'var(--accent-primary)' : 'transparent'};
+      color: ${option.value === currentSpeed ? 'white' : 'var(--text)'};
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    `;
+
+    btn.addEventListener('click', () => {
+      // Store speed in data attribute
+      voiceContainer.dataset.playbackSpeed = option.value;
+
+      // If audio is currently playing, update its playback rate
+      if (window.SPVoiceMessage && window.SPVoiceMessage.currentAudio) {
+        window.SPVoiceMessage.currentAudio.playbackRate = option.value;
+      }
+
+      if (typeof showToast === 'function') showToast(`播放速度已设置为 ${option.label}`);
+      overlay.remove();
+    });
+
+    optionsContainer.appendChild(btn);
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = `
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 14px;
+  `;
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  dialog.appendChild(title);
+  dialog.appendChild(optionsContainer);
+  dialog.appendChild(cancelBtn);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+}
+
 function showMessageActionMenu(row, x, y) {
   closeMessageActionMenu();
   const isAssistant = row.classList.contains("assistant");
@@ -3178,10 +3546,13 @@ function showMessageActionMenu(row, x, y) {
       }
       addMessageMenuButton(row1, "转文字", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('转文字功能开发中');
+        showVoiceTranscription(row, msg);
       });
       if (row === getLastMessageRow("user") && row.dataset.msgId) {
-        addMessageMenuButton(row1, "编辑", () => editUserMessage(row));
+        addMessageMenuButton(row1, "编辑", () => {
+          closeMessageActionMenu();
+          editVoiceTranscription(row, effectiveMsgId);
+        });
       }
       if (effectiveMsgId) {
         addMessageMenuButton(row1, "撤回", () => recallMessage(row, effectiveMsgId));
@@ -3223,11 +3594,11 @@ function showMessageActionMenu(row, x, y) {
       }
       addMessageMenuButton(row1, "转文字", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('转文字功能开发中');
+        showVoiceTranscription(row, msg);
       });
       addMessageMenuButton(row1, "倍速", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('倍速功能开发中');
+        changeVoicePlaybackSpeed(row);
       });
       if (canRegenerateRow(row)) {
         addMessageMenuButton(row1, "重新生成", () => regenerateMessage(row));

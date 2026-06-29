@@ -280,9 +280,13 @@ async function callChatAPI(messages, replyMode = "auto") {
   let modelTierToSend = currentModelTier;
   let customModelParams = null;
 
+  console.log("[model-mapping] chatModel:", chatModel);
+  console.log("[model-mapping] PROVIDER_GROUPS:", PROVIDER_GROUPS);
+
   if (chatModel && chatModel.providerGroup && chatModel.model) {
     // Use custom model mapping
     const providerGroup = PROVIDER_GROUPS[chatModel.providerGroup];
+    console.log("[model-mapping] Found providerGroup:", providerGroup);
     if (providerGroup) {
       customModelParams = {
         providerGroup: chatModel.providerGroup,
@@ -290,7 +294,11 @@ async function callChatAPI(messages, replyMode = "auto") {
         model: chatModel.model
       };
       console.log("[model-mapping] Using chat model mapping:", customModelParams);
+    } else {
+      console.warn("[model-mapping] Provider group not found:", chatModel.providerGroup);
     }
+  } else {
+    console.log("[model-mapping] No custom model configured for chat role");
   }
 
   return fetch(endpoint, {

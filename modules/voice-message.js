@@ -199,6 +199,10 @@
     currentVoiceRow = row;
     currentVoiceProgress = progressBar;
 
+    // Apply playback speed if set
+    const playbackSpeed = parseFloat(container.dataset.playbackSpeed || '1.0');
+    audio.playbackRate = playbackSpeed;
+
     playBtn.innerHTML = getPauseIcon();
     progressBar.style.display = "block";
     row?.classList.add("voice-playing");
@@ -520,6 +524,10 @@
     stopVoicePlayback,
     showVoiceInputDialog,
     formatDuration,
+    // Expose currentVoiceAudio for playback speed control
+    get currentAudio() {
+      return currentVoiceAudio;
+    }
   };
 
 })(window);
