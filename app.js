@@ -886,8 +886,17 @@ async function reloadHistory(opts = {}) {
       audio_duration: m.audio_duration ?? null,
       audio_type: m.audio_type ?? null,
       audio_transcribed_text: m.audio_transcribed_text ?? null,
+      edited: m.edited ?? false,
+      edited_at: m.edited_at ?? null,
+      edit_count: m.edit_count ?? 0,
+      edit_history: m.edit_history ?? [],
       replyTo: replyToData
     });
+
+    // Add edit indicator if message was edited
+    if (m.edited && m.id) {
+      addEditIndicatorToMessage(m.id, m.edit_count || 0);
+    }
   }
   if (resolved.length > 0) oldestLoadedMessageCreatedAt = resolved[0].created_at;
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
@@ -912,7 +921,7 @@ async function loadOlderHistory() {
   historyLoadingOlder = true;
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_transcribed_text")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_transcribed_text, edited, edited_at, edit_count, edit_history")
     .eq("conversation_id", conversationId)
     .lt("created_at", oldestLoadedMessageCreatedAt)
     .order("created_at", { ascending: false })
@@ -5809,6 +5818,33 @@ async function saveEditedMessage(newText) {
 }
 
 // ── Edit History Viewer ──────────────────────────────────────────────────────
+
+function addEditIndicatorToMessage(msgId, editCount) {
+  // Find the message row
+  const row = messageList.querySelector(`[data-msg-id="${msgId}"]`);
+  if (!row) return;
+
+  const messageEl = row.querySelector('.message');
+  if (!messageEl) return;
+
+  // Don't add if already exists
+  if (messageEl.querySelector('.edited-label')) return;
+
+  // Get the full message data
+  const msg = chatMessages.find(m => m.id === msgId);
+  if (!msg) return;
+
+  const editedLabel = document.createElement('span');
+  editedLabel.className = 'edited-label';
+  editedLabel.style.cssText = 'color: var(--text-muted); font-size: 11px; margin-left: 6px; cursor: pointer; text-decoration: underline; text-decoration-style: dotted;';
+  editedLabel.textContent = `(已编辑 ${editCount > 1 ? editCount + '次' : ''})`.trim();
+  editedLabel.title = '点击查看编辑历史';
+  editedLabel.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showEditHistory(msgId, msg);
+  });
+  messageEl.appendChild(editedLabel);
+}
 
 function showEditHistory(msgId, msg) {
   if (!msg || !msg.edit_history || msg.edit_history.length === 0) {
