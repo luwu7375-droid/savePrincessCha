@@ -1070,7 +1070,15 @@ img.msg-image {
   border-radius: 14px !important;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.10) !important;
   padding: 6px !important;
-  min-width: 140px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+
+.message-action-menu-row {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 4px !important;
 }
 
 .message-action-menu button {
@@ -1078,13 +1086,15 @@ img.msg-image {
   font-size: 14px !important;
   color: var(--text-main, var(--text)) !important;
   padding: 10px 14px !important;
-  text-align: left !important;
-  width: 100% !important;
+  text-align: center !important;
   background: transparent !important;
   border: none !important;
   font-family: inherit !important;
   cursor: pointer !important;
   transition: background 0.12s ease !important;
+  white-space: nowrap !important;
+  flex: 1 !important;
+  min-width: 0 !important;
 }
 
 .message-action-menu button:hover,

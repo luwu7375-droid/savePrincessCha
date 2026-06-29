@@ -621,12 +621,18 @@ body {
   z-index: 2000;
   display: flex;
   flex-direction: column;
-  min-width: 132px;
+  gap: 4px;
   padding: 6px;
   background: var(--bg-raise);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow);
+}
+
+.message-action-menu-row {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
 }
 
 .message-action-menu button {
@@ -636,9 +642,12 @@ body {
   padding: 10px 12px;
   font: inherit;
   font-size: 14px;
-  text-align: left;
+  text-align: center;
   border-radius: 6px;
   cursor: pointer;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .message-action-menu button:hover,
