@@ -1618,13 +1618,20 @@ function enterMultiSelectMode() {
   selectedMessageIds.clear();
   messageList.classList.add('multi-select-mode');
 
+  const processedMsgIds = new Set();  // Track which msgIds we've already added checkboxes for
+
   getMessageRows().forEach(row => {
-    const msgId = row.dataset.msgId || row.dataset.bubbleSibling;
-    if (!msgId || row.querySelector('.multi-select-checkbox')) return;
+    // Use effectiveMsgId to support both primary and sibling bubbles
+    const effectiveMsgId = row.dataset.msgId || row.dataset.bubbleSibling;
+    if (!effectiveMsgId || row.querySelector('.multi-select-checkbox')) return;
+
+    // Skip if we've already added a checkbox for this message (for sibling bubbles)
+    if (processedMsgIds.has(effectiveMsgId)) return;
+    processedMsgIds.add(effectiveMsgId);
 
     const checkbox = document.createElement('div');
     checkbox.className = 'multi-select-checkbox';
-    checkbox.dataset.msgId = msgId;
+    checkbox.dataset.msgId = effectiveMsgId;  // Store the effective msgId
     checkbox.innerHTML = '<div class="checkbox-inner"></div>';
     checkbox.style.cssText = `
       position: absolute;
@@ -1657,7 +1664,7 @@ function enterMultiSelectMode() {
 
     checkbox.addEventListener('click', (e) => {
       e.stopPropagation();
-      toggleMessageSelection(msgId);
+      toggleMessageSelection(effectiveMsgId);
     });
 
     // Add checkbox to row with position relative
