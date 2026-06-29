@@ -621,24 +621,23 @@ img.msg-image {
   font-size: 13px;
   line-height: 1.5;
   color: var(--b-theirs-text);
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--b-theirs);
   border-radius: 8px;
-  opacity: 0.75;
   white-space: pre-wrap;
   word-wrap: break-word;
 }
 
 .msg-row.user .voice-transcription {
   color: var(--b-mine-text);
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--b-mine);
 }
 
 [data-theme="dark"] .voice-transcription {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--b-theirs);
 }
 
 [data-theme="dark"] .msg-row.user .voice-transcription {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--b-mine);
 }
 
 .voice-duration {
