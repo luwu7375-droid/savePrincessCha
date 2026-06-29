@@ -73,7 +73,9 @@ const MODEL_ROLE_MAPPING_KEY = "spc_model_role_mapping_v1";
 function getModelRoleMapping() {
   try {
     const stored = localStorage.getItem(MODEL_ROLE_MAPPING_KEY);
-    return stored ? JSON.parse(stored) : {};
+    const parsed = stored ? JSON.parse(stored) : {};
+    console.log('[app] getModelRoleMapping returned:', parsed);
+    return parsed;
   } catch (err) {
     console.error("Failed to parse model role mapping:", err);
     return {};
@@ -82,12 +84,18 @@ function getModelRoleMapping() {
 
 // Save model role mapping to localStorage
 function saveModelRoleMapping(mapping) {
+  console.log('[app] saveModelRoleMapping called with:', mapping);
   try {
     const data = {
       ...mapping,
       updatedAt: new Date().toISOString()
     };
     localStorage.setItem(MODEL_ROLE_MAPPING_KEY, JSON.stringify(data));
+    console.log('[app] Saved to localStorage:', MODEL_ROLE_MAPPING_KEY, data);
+
+    // Verify it was saved
+    const saved = localStorage.getItem(MODEL_ROLE_MAPPING_KEY);
+    console.log('[app] Verification read from localStorage:', saved);
     return true;
   } catch (err) {
     console.error("Failed to save model role mapping:", err);

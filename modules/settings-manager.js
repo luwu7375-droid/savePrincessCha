@@ -934,6 +934,7 @@ function _initSettingsApiSubpage(container) {
   const saveBtn = container.querySelector('#saveModelRoleMappingBtn');
   if (saveBtn) {
     saveBtn.addEventListener('click', () => {
+      console.log('[settings] Save button clicked');
       const newMapping = {};
       let hasChanges = false;
 
@@ -949,8 +950,11 @@ function _initSettingsApiSubpage(container) {
         }
       });
 
+      console.log('[settings] New mapping:', newMapping, 'hasChanges:', hasChanges);
+
       if (hasChanges) {
         const success = saveModelRoleMapping(newMapping);
+        console.log('[settings] saveModelRoleMapping result:', success);
         if (success) {
           if (typeof showToast === 'function') {
             showToast('已保存用途模型映射');
