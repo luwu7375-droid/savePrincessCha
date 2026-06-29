@@ -5,19 +5,29 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Disable native text selection menu (iOS callout) ────────────────────── */
-* {
+/* 全局禁用原生长按菜单 */
+html, body, * {
   -webkit-touch-callout: none !important;
-  -webkit-user-select: text;
-  user-select: text;
 }
 
-/* Allow text selection but disable callout on message bubbles */
+/* 消息区域允许文本选择但禁用原生菜单 */
 .message-list,
+.message-list *,
 .msg-row,
-.message {
+.msg-row *,
+.message,
+.message *,
+.message-text,
+.message-text * {
   -webkit-touch-callout: none !important;
-  -webkit-user-select: text;
-  user-select: text;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+/* 输入框需要保留用户选择功能 */
+input, textarea {
+  -webkit-user-select: text !important;
+  user-select: text !important;
 }
 
 /* ── Color & spacing tokens ─────────────────────────────────────────────── */

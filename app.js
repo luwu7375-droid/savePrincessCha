@@ -2609,13 +2609,14 @@ function showMessageActionMenu(row, x, y) {
 
 function selectMessageText(row) {
   // 选中消息文本（模拟原生长按选中效果）
-  const messageEl = row.querySelector(".message-text, .message");
+  const messageEl = row.querySelector(".message-text");
   if (!messageEl) return;
 
   const selection = window.getSelection();
-  const range = document.createRange();
+  if (!selection) return;
 
   try {
+    const range = document.createRange();
     range.selectNodeContents(messageEl);
     selection.removeAllRanges();
     selection.addRange(range);
@@ -7913,3 +7914,18 @@ window.updateChatDetailTopBar = updateChatDetailTopBar;
 
 // Initialize on page load
 updateComposerButtons();
+
+// ── 全局禁用原生文本选择菜单 ────────────────────────────────────────────
+// 阻止所有 contextmenu 事件（除了已经在 messageList 上处理的）
+document.addEventListener("contextmenu", (e) => {
+  // 只阻止消息区域和文本选择触发的原生菜单
+  if (e.target instanceof Element) {
+    const inMessageList = e.target.closest(".message-list");
+    const inMessage = e.target.closest(".message");
+    if (inMessageList || inMessage) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  }
+}, { capture: true });
