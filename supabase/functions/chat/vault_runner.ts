@@ -88,6 +88,16 @@ async function writeCostLog(params: {
     usageSource, costSource, usageRaw, costPrecision, cacheMetricSource,
   } = params;
   try {
+    console.log(JSON.stringify({
+      fn: "writeCostLog",
+      event: "attempting_write",
+      userId: userId.slice(0, 6),
+      site,
+      rawModel,
+      costCny,
+      usageSource,
+    }));
+
     await fetch(`${supabaseUrl}/rest/v1/cost_log`, {
       method: "POST",
       headers: {
@@ -115,6 +125,11 @@ async function writeCostLog(params: {
         cache_metric_source: cacheMetricSource,
       }),
     });
+    console.log(JSON.stringify({
+      fn: "writeCostLog",
+      event: "write_success",
+      userId: userId.slice(0, 6),
+    }));
   } catch (err) {
     // Non-critical — log but don't surface
     console.error(JSON.stringify({
@@ -171,6 +186,16 @@ export async function runAfterChatVault(params: AfterChatVaultParams): Promise<v
     // 1. Drain the background SSE branch to recover the full assistant response text
     //    and the usage object from the final SSE chunk.
     const { text: gResponse, usage } = await drainSSEStream(streamBody);
+
+    console.log(JSON.stringify({
+      fn: "runAfterChatVault",
+      event: "usage_check",
+      hasUsage: !!usage,
+      hasSupabase: !!(supabaseUrl && serviceRoleKey),
+      userId: userId.slice(0, 6),
+      site,
+      rawModel,
+    }));
 
     // 1a. Write cost_log row (fire-and-forget — does not block vault logic)
     if (usage && supabaseUrl && serviceRoleKey && userId) {
