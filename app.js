@@ -811,19 +811,29 @@ async function reloadHistory(opts = {}) {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
 
-  if (error) { renderWelcomeMessage(); console.error(error); return; }
+  if (error) {
+    console.error("❌ reloadHistory error:", error);
+    renderWelcomeMessage();
+    return;
+  }
+
+  console.log("✅ reloadHistory loaded:", data?.length, "messages for conversation:", conversationId);
 
   const resolved = await resolveImagePaths([...data].reverse());
   chatMessages.length = 0;
   messageList.innerHTML = "";
   lastMessageTime = null;
   chaUnreadCount = 0;
-  if (!resolved.length) { renderWelcomeMessage(); return; }
+  if (!resolved.length) {
+    console.warn("⚠️ No messages after resolveImagePaths");
+    renderWelcomeMessage();
+    return;
+  }
   for (const m of resolved) {
     const replyTo = m.reply_to_message_id
       ? { id: String(m.reply_to_message_id), preview: m.reply_to_preview || "", role: m.reply_to_role || "user" }
@@ -841,13 +851,6 @@ async function reloadHistory(opts = {}) {
       id: m.id != null ? String(m.id) : null,
       read_by_cha_at: m.read_by_cha_at ?? null,
       read_by_user_at: m.read_by_user_at ?? null,
-      is_deleted: m.is_deleted ?? false,
-      is_recalled: m.is_recalled ?? false,
-      original_content: m.original_content ?? null,
-      is_favorited: m.is_favorited ?? false,
-      favorited_at: m.favorited_at ?? null,
-      image_description: m.image_description ?? null,
-      image_prompt: m.image_prompt ?? null,
       replyTo: replyToData
     });
   }
@@ -874,7 +877,7 @@ async function loadOlderHistory() {
   historyLoadingOlder = true;
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role")
     .eq("conversation_id", conversationId)
     .lt("created_at", oldestLoadedMessageCreatedAt)
     .order("created_at", { ascending: false })
@@ -893,13 +896,6 @@ async function loadOlderHistory() {
       id: m.id != null ? String(m.id) : null,
       read_by_cha_at: m.read_by_cha_at ?? null,
       read_by_user_at: m.read_by_user_at ?? null,
-      is_deleted: m.is_deleted ?? false,
-      is_recalled: m.is_recalled ?? false,
-      original_content: m.original_content ?? null,
-      is_favorited: m.is_favorited ?? false,
-      favorited_at: m.favorited_at ?? null,
-      image_description: m.image_description ?? null,
-      image_prompt: m.image_prompt ?? null,
       replyTo: rt
     };
   });
