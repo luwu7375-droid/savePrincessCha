@@ -2047,6 +2047,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
   // ── Proactive quote injection ────────────────────────────────────────────────
   if (Array.isArray(payload.quoteCandidates) && payload.quoteCandidates.length > 0) {
+    console.log("[quote-candidates] Received quoteCandidates:", payload.quoteCandidates.length, "candidates");
     const candidateLines = payload.quoteCandidates
       .map(c => `${c.id} | ${c.author} | ${c.preview}`)
       .join("\n");
@@ -2067,6 +2068,9 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
 可引用消息：
 ${candidateLines}`;
+    console.log("[quote-candidates] Injected quote prompt with", payload.quoteCandidates.length, "candidates");
+  } else {
+    console.log("[quote-candidates] No quoteCandidates to inject");
   }
 
   if (payload.replyMode === "auto") {

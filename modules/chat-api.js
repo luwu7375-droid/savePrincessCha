@@ -285,6 +285,8 @@ async function callChatAPI(messages, replyMode = "auto") {
       index_from_latest: arr.length - 1 - idx,
     }));
 
+  console.log("[quote-candidates] Built quoteCandidates:", quoteCandidates.length, "candidates:", quoteCandidates);
+
   // 编译引用消息到 content 中
   const compiledMessages = messages.map(msg => {
     if (!msg.replyTo || msg.role !== "user") {
