@@ -2782,8 +2782,10 @@ function showMessageActionMenu(row, x, y) {
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
         enterMultiSelectMode();
-        if (effectiveMsgId) {
-          toggleMessageSelection(effectiveMsgId);
+        // Auto-select the current bubble after entering multi-select mode
+        const bubbleId = row.dataset.msgId ? row.dataset.msgId : `${row.dataset.bubbleSibling}-${Array.from(messageList.children).indexOf(row)}`;
+        if (bubbleId) {
+          toggleBubbleSelection(bubbleId, row);
         }
       });
       addMessageMenuButton(row2, "转发", () => {
@@ -2830,8 +2832,10 @@ function showMessageActionMenu(row, x, y) {
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
         enterMultiSelectMode();
-        if (effectiveMsgId) {
-          toggleMessageSelection(effectiveMsgId);
+        // Auto-select the current bubble after entering multi-select mode
+        const bubbleId = row.dataset.msgId ? row.dataset.msgId : `${row.dataset.bubbleSibling}-${Array.from(messageList.children).indexOf(row)}`;
+        if (bubbleId) {
+          toggleBubbleSelection(bubbleId, row);
         }
       });
       addMessageMenuButton(row2, "转发", () => {
@@ -2905,8 +2909,10 @@ function showMessageActionMenu(row, x, y) {
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
         enterMultiSelectMode();
-        if (effectiveMsgId) {
-          toggleMessageSelection(effectiveMsgId);
+        // Auto-select the current bubble after entering multi-select mode
+        const bubbleId = row.dataset.msgId ? row.dataset.msgId : `${row.dataset.bubbleSibling}-${Array.from(messageList.children).indexOf(row)}`;
+        if (bubbleId) {
+          toggleBubbleSelection(bubbleId, row);
         }
       });
       addMessageMenuButton(row2, "转发", () => {
@@ -2976,8 +2982,10 @@ function showMessageActionMenu(row, x, y) {
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
         enterMultiSelectMode();
-        if (effectiveMsgId) {
-          toggleMessageSelection(effectiveMsgId);
+        // Auto-select the current bubble after entering multi-select mode
+        const bubbleId = row.dataset.msgId ? row.dataset.msgId : `${row.dataset.bubbleSibling}-${Array.from(messageList.children).indexOf(row)}`;
+        if (bubbleId) {
+          toggleBubbleSelection(bubbleId, row);
         }
       });
       addMessageMenuButton(row2, "转发", () => {
@@ -3095,8 +3103,10 @@ function showMessageActionMenu(row, x, y) {
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
         enterMultiSelectMode();
-        if (effectiveMsgId) {
-          toggleMessageSelection(effectiveMsgId);
+        // Auto-select the current bubble after entering multi-select mode
+        const bubbleId = row.dataset.msgId ? row.dataset.msgId : `${row.dataset.bubbleSibling}-${Array.from(messageList.children).indexOf(row)}`;
+        if (bubbleId) {
+          toggleBubbleSelection(bubbleId, row);
         }
       });
       addMessageMenuButton(row2, "转发", () => {
@@ -3139,8 +3149,10 @@ function showMessageActionMenu(row, x, y) {
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
         enterMultiSelectMode();
-        if (effectiveMsgId) {
-          toggleMessageSelection(effectiveMsgId);
+        // Auto-select the current bubble after entering multi-select mode
+        const bubbleId = row.dataset.msgId ? row.dataset.msgId : `${row.dataset.bubbleSibling}-${Array.from(messageList.children).indexOf(row)}`;
+        if (bubbleId) {
+          toggleBubbleSelection(bubbleId, row);
         }
       });
       addMessageMenuButton(row2, "转发", () => {
