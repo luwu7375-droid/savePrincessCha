@@ -1630,6 +1630,13 @@ function enterMultiSelectMode() {
     // Create a unique identifier for this specific bubble/row
     const bubbleId = row.dataset.msgId ? row.dataset.msgId : `${row.dataset.bubbleSibling}-${Array.from(messageList.children).indexOf(row)}`;
 
+    console.log('Creating checkbox for bubble:', {
+      bubbleId,
+      hasMsgId: !!row.dataset.msgId,
+      hasBubbleSibling: !!row.dataset.bubbleSibling,
+      effectiveMsgId
+    });
+
     const checkbox = document.createElement('div');
     checkbox.className = 'multi-select-checkbox';
     checkbox.dataset.bubbleId = bubbleId;  // Store unique bubble ID
@@ -1666,6 +1673,7 @@ function enterMultiSelectMode() {
 
     checkbox.addEventListener('click', (e) => {
       e.stopPropagation();
+      console.log('Checkbox clicked for bubbleId:', bubbleId);
       toggleBubbleSelection(bubbleId, row);
     });
 
@@ -1677,6 +1685,7 @@ function enterMultiSelectMode() {
     row.addEventListener('click', (e) => {
       // Don't toggle if clicking on interactive elements
       if (e.target.closest('button, a, input, textarea, .msg-actions')) return;
+      console.log('Row clicked for bubbleId:', bubbleId);
       toggleBubbleSelection(bubbleId, row);
     });
   });
@@ -1707,11 +1716,13 @@ function toggleMessageSelection(msgId) {
 }
 
 function toggleBubbleSelection(bubbleId, row) {
+  console.log('toggleBubbleSelection called:', { bubbleId, wasSelected: selectedBubbles.has(bubbleId) });
   if (selectedBubbles.has(bubbleId)) {
     selectedBubbles.delete(bubbleId);
   } else {
     selectedBubbles.set(bubbleId, row);
   }
+  console.log('selectedBubbles size after toggle:', selectedBubbles.size);
   updateMultiSelectUI();
 }
 
