@@ -5610,7 +5610,7 @@ async function sendVoiceMessage(transcribedText, audioType = "fake") {
 
   maybeAddTimeSeparator(now);
   messageList.appendChild(row);
-  maintainBottomAnchor("send");
+  messageList.scrollTop = messageList.scrollHeight;
 
   // Add to chatMessages
   chatMessages.push({

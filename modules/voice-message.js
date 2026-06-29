@@ -59,12 +59,10 @@
     const waveform = document.createElement("div");
     waveform.className = "voice-waveform";
 
-    // Generate 20 random bars for waveform
+    // Generate 20 bars for waveform (heights defined in CSS)
     for (let i = 0; i < 20; i++) {
       const bar = document.createElement("div");
-      const height = Math.random() * 0.6 + 0.4; // 40-100%
       bar.className = "voice-waveform-bar";
-      bar.style.height = `${height * 100}%`;
       waveform.appendChild(bar);
     }
 

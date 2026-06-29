@@ -173,11 +173,13 @@
     let fresh = 0, cached = 0;
     rows.forEach(function (r) {
       const cr = Number(r.cache_read_tokens) || 0;
-      const total = Number(r.in_tokens) || 0;
+      const inTotal = Number(r.in_tokens) || 0;
       cached += cr;
-      fresh  += (total - cr);
+      // Assume in_tokens already includes cached tokens (OpenAI format)
+      // So fresh = in_tokens - cache_read_tokens
+      fresh += Math.max(0, inTotal - cr);
     });
-    return { fresh: Math.max(0, fresh), cached };
+    return { fresh, cached };
   }
 
   // -- Chart rendering --------------------------------------------------------
@@ -269,7 +271,7 @@
     _charts.cache = new Chart(ctx, {
       type: "doughnut",
       data: {
-        labels: ["Cache 命中 (" + pct + "%)", "新鲜输入"],
+        labels: ["上游 Prompt Cache (" + pct + "%)", "新鲜输入"],
         datasets: [{
           data: [cached, fresh],
           backgroundColor: [CHART_COLORS[2], CHART_COLORS[0] + "88"],
@@ -279,7 +281,16 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } },
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              afterLabel: function() {
+                return "来自 usage.prompt_tokens_details.cached_tokens";
+              }
+            }
+          }
+        },
       },
     });
   }
@@ -287,18 +298,18 @@
   // -- HTML builders ----------------------------------------------------------
 
   function renderStatCards(agg, msgCount) {
-    var cacheHitPct = (agg.totalIn + agg.totalCacheRead) > 0
-      ? Math.round(agg.totalCacheRead / (agg.totalIn + agg.totalCacheRead) * 100)
+    var cacheHitPct = agg.totalIn > 0
+      ? Math.round(agg.totalCacheRead / agg.totalIn * 100)
       : 0;
     return `
       <div class="cost-cards">
         <div class="cost-card">
           <div class="cost-card__value">${fmtCny(agg.totalCny)}</div>
-          <div class="cost-card__label">累计花费</div>
+          <div class="cost-card__label">累计花费 <span style="font-size:10px;color:var(--text-muted)" title="基于本地价格表估算，非上游账单实际扣费">(估算)</span></div>
         </div>
         <div class="cost-card">
           <div class="cost-card__value">${fmtCny(agg.todayCny)}</div>
-          <div class="cost-card__label">今日花费</div>
+          <div class="cost-card__label">今日花费 <span style="font-size:10px;color:var(--text-muted)">(估算)</span></div>
         </div>
         <div class="cost-card">
           <div class="cost-card__value">${fmtNum(agg.totalIn + agg.totalOut)}</div>
@@ -306,7 +317,7 @@
         </div>
         <div class="cost-card">
           <div class="cost-card__value">${cacheHitPct}%</div>
-          <div class="cost-card__label">缓存命中率</div>
+          <div class="cost-card__label">上游 Prompt Cache <span style="font-size:10px;color:var(--text-muted)" title="来自 usage.prompt_tokens_details.cached_tokens，不是记忆缓存">(?)</span></div>
         </div>
         <div class="cost-card">
           <div class="cost-card__value">${agg.fallbacks}</div>
@@ -360,11 +371,16 @@
     }
     var html = `<div style="overflow-x:auto"><table class="cost-table" style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr>
-        <th>时间</th><th>层级</th><th>站点</th><th>模型</th><th>in</th><th>out</th><th>cache</th><th>花费</th>
+        <th>时间</th><th>层级</th><th>站点</th><th>模型</th><th>in</th><th>out</th><th>cache</th><th>花费</th><th>usage来源</th><th>cost来源</th>
       </tr></thead><tbody>`;
     rows.forEach(function (r) {
       var alias = (window.SPCostConfig && window.SPCostConfig.getAlias(r.raw_model));
       var modelLabel = alias ? alias.display : (r.raw_model || "—");
+      var usageSourceLabel = r.usage_source || "—";
+      var costSourceLabel = r.cost_source || "—";
+      var costDisplay = fmtCny(r.cost_cny, "detailed");
+      // Add title attribute to show full precision on hover
+      var costTitle = r.cost_cny != null ? "¥" + r.cost_cny : "";
       html += `<tr ${r.is_fallback ? 'style="opacity:0.6"' : ""}>
         <td>${fmtDate(r.ts)}</td>
         <td>${r.tier || "—"}</td>
@@ -373,7 +389,9 @@
         <td>${fmtNum(r.in_tokens)}</td>
         <td>${fmtNum(r.out_tokens)}</td>
         <td>${fmtNum(r.cache_read_tokens)}</td>
-        <td>${fmtCny(r.cost_cny)}</td>
+        <td title="${costTitle}">${costDisplay}</td>
+        <td>${usageSourceLabel}</td>
+        <td>${costSourceLabel}</td>
       </tr>`;
     });
     html += "</tbody></table></div>";
@@ -448,9 +466,17 @@
             </div>
           </div>
           <div style="flex:1;min-width:160px">
-            <div class="settings-section-label">缓存命中</div>
+            <div class="settings-section-label">上游 Prompt Cache</div>
             <div class="settings-card" style="padding:14px">
               <div style="height:140px;position:relative"><canvas id="cdCacheChart"></canvas></div>
+            </div>
+          </div>
+          <div style="flex:1;min-width:160px">
+            <div class="settings-section-label">记忆缓存命中率</div>
+            <div class="settings-card" style="padding:14px">
+              <div style="height:140px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;text-align:center">
+                暂无统计<br><small style="font-size:11px;margin-top:4px;display:block">记忆缓存数据未持久化至 cost_log</small>
+              </div>
             </div>
           </div>
         </div>` : chartNote}

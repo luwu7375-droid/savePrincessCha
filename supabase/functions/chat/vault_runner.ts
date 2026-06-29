@@ -76,10 +76,16 @@ async function writeCostLog(params: {
   costCny: number;
   isFallback: boolean;
   fallbackReason: string | null;
+  usageSource: string;
+  costSource: string;
+  usageRaw: object | null;
+  costPrecision: string;
+  cacheMetricSource: string;
 }): Promise<void> {
   const {
     supabaseUrl, serviceRoleKey, userId, tier, site, rawModel,
     inTokens, outTokens, cacheRead, cacheWrite, costCny, isFallback, fallbackReason,
+    usageSource, costSource, usageRaw, costPrecision, cacheMetricSource,
   } = params;
   try {
     await fetch(`${supabaseUrl}/rest/v1/cost_log`, {
@@ -102,6 +108,11 @@ async function writeCostLog(params: {
         cost_cny: costCny,
         is_fallback: isFallback,
         fallback_reason: fallbackReason ?? null,
+        usage_source: usageSource,
+        cost_source: costSource,
+        usage_raw: usageRaw,
+        cost_precision: costPrecision,
+        cache_metric_source: cacheMetricSource,
       }),
     });
   } catch (err) {
@@ -171,6 +182,23 @@ export async function runAfterChatVault(params: AfterChatVaultParams): Promise<v
       writeCostLog({
         supabaseUrl, serviceRoleKey, userId, tier, site, rawModel,
         inTokens, outTokens, cacheRead, cacheWrite, costCny, isFallback, fallbackReason,
+        usageSource: "upstream_sse_usage",
+        costSource: "local_price_table",
+        usageRaw: usage,
+        costPrecision: "estimated",
+        cacheMetricSource: cacheRead > 0 ? "prompt_tokens_details.cached_tokens" : "none",
+      }).catch(() => {});
+    } else if (supabaseUrl && serviceRoleKey && userId) {
+      // No usage available from upstream
+      writeCostLog({
+        supabaseUrl, serviceRoleKey, userId, tier, site, rawModel,
+        inTokens: 0, outTokens: 0, cacheRead: 0, cacheWrite: 0, costCny: 0,
+        isFallback, fallbackReason,
+        usageSource: "unavailable",
+        costSource: "local_price_table",
+        usageRaw: null,
+        costPrecision: "estimated",
+        cacheMetricSource: "none",
       }).catch(() => {});
     }
 
