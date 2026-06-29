@@ -1735,16 +1735,24 @@ async function regenerateMessage(row) {
   // Stop TTS playback when regenerating
   if (window.SPVoice) window.SPVoice.stopSpeaking();
 
-  if (isReplying || row !== getLastMessageRow("assistant")) return;
-  const msgId = row.dataset.msgId;
-  const idx = chatMessages.findIndex(m => m.id === msgId);
+  if (isReplying) return;
+
+  // Get effective msgId from either primary row or sibling bubble
+  const effectiveMsgId = row.dataset.msgId || row.dataset.bubbleSibling;
+  if (!effectiveMsgId) return;
+
+  const idx = chatMessages.findIndex(m => m.id === effectiveMsgId);
   if (idx === -1) return;
+
   closeMessageActionMenu();
   chatMessages.splice(idx, 1);
-  // 删除所有属于同一条消息的气泡 row（bubbleSibling 指向此 msgId 的兄弟行）
-  messageList.querySelectorAll(`[data-bubble-sibling="${msgId}"]`).forEach(r => r.remove());
-  row.remove();
-  if (msgId) await supabaseClient.from("messages").delete().eq("id", msgId);
+
+  // Delete all bubbles belonging to this message:
+  // 1. Primary row with this msgId
+  // 2. All sibling rows pointing to this msgId
+  messageList.querySelectorAll(`[data-msg-id="${effectiveMsgId}"], [data-bubble-sibling="${effectiveMsgId}"]`).forEach(r => r.remove());
+
+  if (effectiveMsgId) await supabaseClient.from("messages").delete().eq("id", effectiveMsgId);
   triggerReply("forced");
 }
 
@@ -2395,7 +2403,7 @@ function showMessageActionMenu(row, x, y) {
       addMessageMenuButton(row1, "复制", async (btn) => {
         await copyMessage(row, btn);
       });
-      if (row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
+      if (canRegenerateRow(row)) {
         addMessageMenuButton(row1, "重新生成", () => regenerateMessage(row));
       }
       if (effectiveMsgId && hasText && window.SPVoice) {
@@ -2537,7 +2545,7 @@ function showMessageActionMenu(row, x, y) {
           }
         }
       });
-      if (row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
+      if (canRegenerateRow(row)) {
         addMessageMenuButton(row1, "重新生成", () => regenerateMessage(row));
       }
       if (effectiveMsgId) {
@@ -2626,7 +2634,7 @@ function showMessageActionMenu(row, x, y) {
         closeMessageActionMenu();
         if (typeof showToast === 'function') showToast('倍速功能开发中');
       });
-      if (row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
+      if (canRegenerateRow(row)) {
         addMessageMenuButton(row1, "重新生成", () => regenerateMessage(row));
       }
 

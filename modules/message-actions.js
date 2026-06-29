@@ -22,8 +22,18 @@ function isMobileMessageActions() {
 }
 
 function canRegenerateRow(row) {
-  return !!row?.dataset.msgId && row === getLastMessageRow("assistant") &&
-    chatMessages.some(m => m.id === row.dataset.msgId);
+  // Support both primary message rows and sibling bubble rows
+  const effectiveMsgId = row?.dataset.msgId || row?.dataset.bubbleSibling;
+  if (!effectiveMsgId) return false;
+
+  // Check if this message is the last assistant message
+  const lastAssistantRow = getLastMessageRow("assistant");
+  if (!lastAssistantRow) return false;
+
+  const lastAssistantMsgId = lastAssistantRow.dataset.msgId || lastAssistantRow.dataset.bubbleSibling;
+
+  return effectiveMsgId === lastAssistantMsgId &&
+    chatMessages.some(m => m.id === effectiveMsgId);
 }
 
 function refreshGroupClasses() {
