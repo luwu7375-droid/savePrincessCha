@@ -150,42 +150,67 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
 
 // ── Multi-bubble helpers ───────────────────────────────────────────────────────
 
-/** 按 ||| 切分原始回复，最多 3 条，超出的并到最后一条 */
+/**
+ * 按 ||| 切分原始回复（模型显式分段），最多 5 条。
+ * fallback 自动切分最多 3 条，保守兜底。
+ */
 function splitBubbles(rawText) {
+  const MAX_EXPLICIT = 5;
+  const MAX_FALLBACK = 3;
+  const MIN_BUBBLE_CHARS = 6;
+
   // ── Primary split: explicit ||| separator ────────────────────────────────
   if (rawText.includes("|||")) {
     const parts = rawText.split("|||").map(s => s.trim()).filter(s => s.length > 0);
     if (parts.length <= 1) return [rawText.trim()];
-    if (parts.length <= 3) return parts;
-    // more than 3: merge tail into third
-    return [parts[0], parts[1], parts.slice(2).join(" ")];
+    if (parts.length <= MAX_EXPLICIT) return parts;
+    // more than 5: merge tail into the 5th bubble
+    const result = parts.slice(0, MAX_EXPLICIT - 1);
+    result.push(parts.slice(MAX_EXPLICIT - 1).join(""));
+    return result;
   }
 
-  // ── Fallback split: Chinese sentence-ending punctuation ──────────────────
+  // ── Fallback split: conservative auto-split ──────────────────────────────
   const text = rawText.trim();
   // Short replies stay as one bubble
   if (text.length < 45) return [text];
 
-  // Split on Chinese/common sentence-ending punctuation or newlines.
-  // Keep the delimiter attached to the preceding segment.
-  const segments = text.split(/(?<=[。！？；\n])/).map(s => s.trim()).filter(s => s.length > 0);
-  if (segments.length <= 1) return [text];
+  // Split on newlines first, then on sentence-ending punctuation with a
+  // following clause start (转折词、语气转换). Keep delimiter attached.
+  const segments = text
+    .split(/(?<=[\n])|(?<=[。！？；])(?=\s*(?:但|不过|然后|而且|可是|所以|就是|其实|话说|对了|哦对|嗯|啊|哈|诶))/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
 
-  // Merge short tails (< 8 chars) into the preceding segment
+  if (segments.length <= 1) {
+    // Try plain sentence-ending split for longer texts
+    const plainSegs = text.split(/(?<=[。！？\n])/).map(s => s.trim()).filter(s => s.length > 0);
+    if (plainSegs.length <= 1) return [text];
+    return mergeFallbackSegments(plainSegs, MAX_FALLBACK, MIN_BUBBLE_CHARS);
+  }
+
+  return mergeFallbackSegments(segments, MAX_FALLBACK, MIN_BUBBLE_CHARS);
+}
+
+/** Merge short segments and cap total count for fallback splitting */
+function mergeFallbackSegments(segments, maxBubbles, minChars) {
+  // Merge short segments (< minChars) into the preceding one
   const merged = [];
   for (const seg of segments) {
-    if (merged.length > 0 && seg.length < 8) {
+    if (merged.length > 0 && seg.length < minChars) {
       merged[merged.length - 1] += seg;
     } else {
       merged.push(seg);
     }
   }
 
-  // Cap at 3 bubbles: merge anything beyond index 1 into a second bubble
-  if (merged.length === 1) return merged;
-  if (merged.length === 2) return merged;
-  // 3+: first bubble is merged[0], second is everything else joined
-  return [merged[0], merged.slice(1).join("")];
+  if (merged.length <= 1) return merged;
+  if (merged.length <= maxBubbles) return merged;
+
+  // Cap: keep first (maxBubbles - 1) and merge the rest into the last
+  const result = merged.slice(0, maxBubbles - 1);
+  result.push(merged.slice(maxBubbles - 1).join(""));
+  return result;
 }
 
 /**

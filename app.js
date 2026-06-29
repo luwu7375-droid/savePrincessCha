@@ -811,7 +811,7 @@ async function reloadHistory(opts = {}) {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_transcribed_text")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
@@ -848,6 +848,9 @@ async function reloadHistory(opts = {}) {
     // Render recalled messages as system notice
     if (m.is_recalled && m.role === 'user') {
       renderRecalledMessage(m);
+    } else if (m.audio_type && window.SPVoiceMessage) {
+      // Render voice message
+      renderVoiceMessage(m, replyTo);
     } else if (m.role === "assistant") {
       addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null, !!m.read_by_user_at, replyTo);
     } else {
@@ -869,6 +872,10 @@ async function reloadHistory(opts = {}) {
       favorited_at: m.favorited_at ?? null,
       image_description: m.image_description ?? null,
       image_prompt: m.image_prompt ?? null,
+      audio_url: m.audio_url ?? null,
+      audio_duration: m.audio_duration ?? null,
+      audio_type: m.audio_type ?? null,
+      audio_transcribed_text: m.audio_transcribed_text ?? null,
       replyTo: replyToData
     });
   }
@@ -895,7 +902,7 @@ async function loadOlderHistory() {
   historyLoadingOlder = true;
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt")
+    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_transcribed_text")
     .eq("conversation_id", conversationId)
     .lt("created_at", oldestLoadedMessageCreatedAt)
     .order("created_at", { ascending: false })
@@ -921,6 +928,10 @@ async function loadOlderHistory() {
       favorited_at: m.favorited_at ?? null,
       image_description: m.image_description ?? null,
       image_prompt: m.image_prompt ?? null,
+      audio_url: m.audio_url ?? null,
+      audio_duration: m.audio_duration ?? null,
+      audio_type: m.audio_type ?? null,
+      audio_transcribed_text: m.audio_transcribed_text ?? null,
       replyTo: rt
     };
   });
@@ -929,7 +940,10 @@ async function loadOlderHistory() {
   lastMessageTime = null;
   for (const m of chatMessages) {
     const rt = m.reply_to_message_id ? { id: String(m.reply_to_message_id), preview: m.reply_to_preview || "", role: m.reply_to_role || "user" } : null;
-    if (m.role === "assistant") {
+    if (m.audio_type && window.SPVoiceMessage) {
+      // Render voice message
+      renderVoiceMessage(m, rt);
+    } else if (m.role === "assistant") {
       addAssistantBubbles(m.content, m.created_at, m.id, !!m.read_by_user_at, rt);
     } else {
       addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at, replyTo: rt }, m.id);
@@ -2193,6 +2207,66 @@ function renderRecalledMessage(message) {
   recallNotice.appendChild(reEditBtn);
   recallNotice.appendChild(originalText);
   row.appendChild(recallNotice);
+
+  maybeAddTimeSeparator(message.created_at);
+  messageList.appendChild(row);
+}
+
+// 渲染语音消息（用于 reload 时显示语音消息）
+function renderVoiceMessage(message, replyTo = null) {
+  if (!window.SPVoiceMessage) {
+    console.warn("SPVoiceMessage module not loaded");
+    return;
+  }
+
+  const voiceBubble = window.SPVoiceMessage.createVoiceMessageBubble({
+    audioUrl: message.audio_url || "",
+    duration: message.audio_duration || 0,
+    audioType: message.audio_type || "real",
+    transcribedText: message.audio_transcribed_text || "",
+    role: message.role,
+    msgId: message.id
+  });
+
+  // Add to message list
+  const row = document.createElement("div");
+  row.className = `msg-row ${message.role}`;
+  row.dataset.msgId = message.id;
+
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+
+  // Add quote block if replying
+  if (replyTo && window.makeQuoteBlock) {
+    const quoteBlock = window.makeQuoteBlock(replyTo);
+    stack.appendChild(quoteBlock);
+  }
+
+  stack.appendChild(voiceBubble);
+
+  // Add read receipt for user messages
+  if (message.role === "user") {
+    const receipt = document.createElement("div");
+    receipt.className = "read-receipt";
+    receipt.textContent = message.read_by_cha_at ? "已读" : "未读";
+    receipt.dataset.receiptState = message.read_by_cha_at ? "read" : "unread";
+    stack.appendChild(receipt);
+  }
+
+  row.appendChild(stack);
+
+  // Add avatar
+  if (message.role === "assistant") {
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.title = "Cha";
+    row.insertBefore(avatar, row.firstChild);
+  } else {
+    const avatar = document.createElement("div");
+    avatar.className = "msg-avatar";
+    avatar.innerHTML = '<div class="msg-avatar-initial">KK</div>';
+    row.appendChild(avatar);
+  }
 
   maybeAddTimeSeparator(message.created_at);
   messageList.appendChild(row);
