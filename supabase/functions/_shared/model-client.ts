@@ -183,7 +183,13 @@ export async function callModel(
     const res = await fetch(provider.baseUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: provider.model, messages, stream: true, max_tokens: provider.maxTokens }),
+      body: JSON.stringify({
+        model: provider.model,
+        messages,
+        stream: true,
+        stream_options: { include_usage: true },
+        max_tokens: provider.maxTokens
+      }),
       signal: controller.signal,
     });
     return { res, ms: Date.now() - t };

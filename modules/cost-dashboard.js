@@ -7,8 +7,13 @@
 
   // -- helpers ----------------------------------------------------------------
 
-  function fmtCny(n) {
+  function fmtCny(n, precision) {
     if (n == null) return "—";
+    // For recent calls table, show 6 decimals for better precision
+    if (precision === "detailed") {
+      return "¥" + n.toFixed(6);
+    }
+    // For summary cards, keep readable format
     if (n < 0.001) return "< ¥0.001";
     return "¥" + n.toFixed(n >= 10 ? 2 : 4);
   }
@@ -90,7 +95,7 @@
   async function fetchRecentCalls(supabase, limit) {
     const { data } = await supabase
       .from("cost_log")
-      .select("ts, tier, site, raw_model, in_tokens, out_tokens, cache_read_tokens, cost_cny, is_fallback")
+      .select("ts, tier, site, raw_model, in_tokens, out_tokens, cache_read_tokens, cost_cny, is_fallback, usage_source, cost_source, cost_precision")
       .order("ts", { ascending: false })
       .limit(limit || 50);
     return data || [];

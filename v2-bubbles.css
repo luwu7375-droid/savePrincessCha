@@ -1483,3 +1483,117 @@ img.msg-image {
     transition: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Voice Message Bubbles
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Voice message container inherits from .message */
+.message-voice {
+  position: relative;
+}
+
+.voice-bubble {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  min-width: 180px;
+  max-width: 280px;
+  cursor: pointer;
+  position: relative;
+}
+
+/* Play/Pause button */
+.voice-play-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent-primary, #5B9FF5);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.voice-play-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+.voice-play-btn:active {
+  transform: scale(0.95);
+}
+
+/* Voice info container (waveform + duration) */
+.voice-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Waveform visualization */
+.voice-waveform {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+}
+
+.voice-waveform-bar {
+  width: 2px;
+  background: var(--text-secondary, #999);
+  border-radius: 1px;
+  transition: all 0.2s;
+}
+
+/* Progress bar overlay */
+.voice-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0%;
+  height: 100%;
+  background: var(--accent-primary, #5B9FF5);
+  opacity: 0.3;
+  pointer-events: none;
+  display: none;
+}
+
+/* Duration display */
+.voice-duration {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+
+/* Unread indicator for Cha voice messages */
+.voice-unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-red, #ff4444);
+  position: absolute;
+  top: -2px;
+  right: -2px;
+}
+
+/* Playing state */
+.msg-row.voice-playing .voice-waveform-bar {
+  background: var(--accent-primary, #5B9FF5);
+}
+
+/* Dark theme adjustments */
+[data-theme="dark"] .voice-waveform-bar {
+  background: var(--text-secondary, #888);
+}
+
+[data-theme="dark"] .voice-duration {
+  color: var(--text-secondary, #888);
+}

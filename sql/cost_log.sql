@@ -16,7 +16,13 @@ create table public.cost_log (
   chars               int default 0, -- for TTS / character-billed calls
   cost_cny            numeric(10,6) not null default 0,
   is_fallback         boolean not null default false,
-  fallback_reason     text
+  fallback_reason     text,
+  -- New fields for data source transparency
+  usage_source        text,          -- upstream_sse_usage / unavailable / estimated
+  cost_source         text,          -- local_price_table / upstream_billing
+  usage_raw           jsonb,         -- raw usage object from upstream for debugging
+  cost_precision      text,          -- estimated / actual
+  cache_metric_source text           -- prompt_tokens_details.cached_tokens / none
 );
 
 -- RLS: users can only read their own rows

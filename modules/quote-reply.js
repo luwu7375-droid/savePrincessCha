@@ -254,7 +254,8 @@ function parseVisibleThought(raw) {
   const replyParts = bubbles.filter(b => b.type === "reply").map(b => b.content);
   const cleanReply = replyParts.length > 0 ? replyParts.join("\n\n") : stripThinking(raw);
 
-  return { bubbles, thought: bubbles.find(b => b.type === "thought")?.content || null, reply: cleanReply };
+  const firstThought = bubbles.find(b => b.type === "thought");
+  return { bubbles, thought: firstThought ? firstThought.content : null, reply: cleanReply };
 }
 
 function base64DecodeUtf8(base64) {
@@ -265,6 +266,31 @@ function base64DecodeUtf8(base64) {
 
 function readDelta(chunk) {
   return chunk.choices?.[0]?.delta?.content || "";
+}
+
+/** Strip <reply_to_message> tag from the beginning of streaming text so it never shows in UI. */
+function stripReplyToTag(text) {
+  return text.replace(/^<reply_to_message\s+id="[^"]*">\s*<\/reply_to_message>\s*/, "");
+}
+
+/** Parse assistant proactive reply-to tag from model output.
+ *  Returns { cleanText, replyTo } where replyTo is null or { id, role, preview }. */
+function parseAssistantReplyTo(text) {
+  const match = text.match(/^<reply_to_message\s+id="([^"]+)">\s*<\/reply_to_message>\s*/);
+  if (!match) return { cleanText: text, replyTo: null };
+
+  const targetId = match[1];
+  const cleanText = text.slice(match[0].length);
+
+  // Validate id exists in chatMessages
+  const target = chatMessages.find(m => String(m.id) === targetId && !m.is_deleted);
+  if (!target) return { cleanText, replyTo: null };
+
+  const preview = extractTextFromMessageContent(target.content).slice(0, 100);
+  return {
+    cleanText,
+    replyTo: { id: targetId, role: target.role, preview }
+  };
 }
 
 function showLegacyDataNotice() {
@@ -297,6 +323,8 @@ function showLegacyDataNotice() {
     readDelta,
     stripThinking,
     parseVisibleThought,
+    stripReplyToTag,
+    parseAssistantReplyTo,
   };
 
   // ── Legacy global aliases (for backward compatibility) ────────────────────
@@ -313,5 +341,7 @@ function showLegacyDataNotice() {
   window.readDelta = readDelta;
   window.stripThinking = stripThinking;
   window.parseVisibleThought = parseVisibleThought;
+  window.stripReplyToTag = stripReplyToTag;
+  window.parseAssistantReplyTo = parseAssistantReplyTo;
 
 })();

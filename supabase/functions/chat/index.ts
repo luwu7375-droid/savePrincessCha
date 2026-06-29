@@ -94,6 +94,13 @@ type ChatRequest = {
   rawUserMessage?: string | null; // original user input before any frontend wrapping
   emojiGuide?: string | null; // client-built guide of usable custom emoji shortcodes
   webContext?: string | null; // injected by phone.js after user confirms URL read
+  quoteCandidates?: Array<{
+    id: string;
+    role: string;
+    author: string;
+    preview: string;
+    index_from_latest: number;
+  }> | null;
   customModel?: {
     providerGroup?: string;
     provider?: string;
@@ -2036,6 +2043,30 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
   // its local catalog+lexicon. Inject it here so the model can actually use them.
   if (typeof payload.emojiGuide === "string" && payload.emojiGuide.trim()) {
     systemContent += `\n\n${payload.emojiGuide}`;
+  }
+
+  // ── Proactive quote injection ────────────────────────────────────────────────
+  if (Array.isArray(payload.quoteCandidates) && payload.quoteCandidates.length > 0) {
+    const candidateLines = payload.quoteCandidates
+      .map(c => `${c.id} | ${c.author} | ${c.preview}`)
+      .join("\n");
+    systemContent += `\n\n【主动引用】
+你可以在回复时主动引用 KK 或你自己前面某条消息。在回复最开头输出：
+<reply_to_message id="消息id"></reply_to_message>
+然后紧跟正常回复内容。
+
+适合引用的场景：
+- KK 问"你刚刚说的/我刚刚说的/上面那句"需要明确指向
+- KK 连续补充多条，你需要明确回应其中某一条
+- 你要纠正、承接、反驳某个具体句子
+- 多条消息同时存在时需要指明接哪一条
+
+不适合引用：普通顺接聊天、短回复、没有歧义时。
+一轮最多引用一条。id 必须来自下方候选列表，不要编造。
+如果不需要引用，不要输出 <reply_to_message> 标签。
+
+可引用消息：
+${candidateLines}`;
   }
 
   if (payload.replyMode === "auto") {

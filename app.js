@@ -1206,10 +1206,10 @@ async function requestStreamingReply(replyMode = "auto") {
           const sepIdx = fullReply.indexOf("|||");
           if (sepIdx !== -1) {
             // 定住第一段，后续 delta 只进 fullReply 不渲染
-            assistantEl.textContent = stripThinking(fullReply.slice(0, sepIdx));
+            assistantEl.textContent = stripReplyToTag(stripThinking(fullReply.slice(0, sepIdx)));
             firstSepSeen = true;
           } else {
-            assistantEl.textContent = stripThinking(fullReply);
+            assistantEl.textContent = stripReplyToTag(stripThinking(fullReply));
             messageList.scrollTop = messageList.scrollHeight;
           }
         }
@@ -1225,10 +1225,13 @@ async function requestStreamingReply(replyMode = "auto") {
     return;
   }
 
+  // Parse assistant proactive quote (reply_to_message tag)
+  const { cleanText: finalReply, replyTo: assistantReplyTo } = parseAssistantReplyTo(cleanReply);
+
   const replyTime = new Date().toISOString();
-  const replyId = await saveMessage("assistant", cleanReply);
+  const replyId = await saveMessage("assistant", finalReply, null, {}, assistantReplyTo);
   const replyIdStr = replyId != null ? String(replyId) : null;
-  chatMessages.push({ role: "assistant", content: cleanReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null, replyTo: null });
+  chatMessages.push({ role: "assistant", content: finalReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null, replyTo: assistantReplyTo });
   lastMessageTime = new Date(replyTime).getTime();
 
   // If the user is already on the Chat tab, pre-mark this reply as read by user
@@ -1253,7 +1256,7 @@ async function requestStreamingReply(replyMode = "auto") {
     if (vaultUserMessage) {
       triggerVaultAfterChat({
         userMessage: vaultUserMessage,
-        assistantMessage: cleanReply,
+        assistantMessage: finalReply,
         userMessageId: _currentRequestUserMessageId,
         conversationId: getActiveConversationId(),
         route: localStorage.getItem("previousTopicRoute") || null,
@@ -1293,24 +1296,31 @@ async function requestStreamingReply(replyMode = "auto") {
         for (let si = 0; si < subBubbles.length; si++) {
           const msgId = isFirstReply ? replyIdStr : null;
           const sibling = isFirstReply ? null : String(replyIdStr);
-          insertBubbleSync(subBubbles[si], replyTime, msgId, sibling);
+          insertBubbleSync(subBubbles[si], replyTime, msgId, sibling, isFirstReply && si === 0 ? assistantReplyTo : undefined);
           if (isFirstReply && si === 0) isFirstReply = false;
         }
       }
     }
   } else {
     // 无思考气泡：走原来的 splitBubbles 路径
-    const bubbles = splitBubbles(cleanReply);
+    const bubbles = splitBubbles(finalReply);
     if (bubbles.length === 1 || !firstSepSeen) {
       if (assistantEl) {
+        // Prepend quote block to the streaming placeholder if needed
+        if (assistantReplyTo) {
+          assistantEl.prepend(makeQuoteBlock(assistantReplyTo));
+        }
         setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
         const row = assistantEl.closest(".msg-row");
         if (row && replyIdStr) row.dataset.msgId = replyIdStr;
       } else {
-        insertBubbleSync(bubbles[0], replyTime, replyIdStr, null);
+        insertBubbleSync(bubbles[0], replyTime, replyIdStr, null, assistantReplyTo);
       }
     } else {
       if (assistantEl) {
+        if (assistantReplyTo) {
+          assistantEl.prepend(makeQuoteBlock(assistantReplyTo));
+        }
         setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
         const row = assistantEl.closest(".msg-row");
         if (row && replyIdStr) row.dataset.msgId = replyIdStr;

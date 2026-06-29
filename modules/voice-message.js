@@ -31,8 +31,10 @@
       msgId = null
     } = options;
 
+    const speakerClass = role === "assistant" ? "cha-message" : "user-message";
+
     const container = document.createElement("div");
-    container.className = `message voice-message ${role === "user" ? "user-voice" : "cha-voice"}`;
+    container.className = `message ${role} ${speakerClass} message-voice`;
     container.dataset.audioUrl = audioUrl;
     container.dataset.duration = duration;
     container.dataset.audioType = audioType;
@@ -42,97 +44,39 @@
     // Voice bubble container
     const bubble = document.createElement("div");
     bubble.className = "voice-bubble";
-    bubble.style.cssText = `
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
-      background: var(--message-bg);
-      border-radius: 16px;
-      min-width: 180px;
-      max-width: 280px;
-      cursor: pointer;
-    `;
 
     // Play/Pause button
     const playBtn = document.createElement("button");
     playBtn.className = "voice-play-btn";
     playBtn.type = "button";
     playBtn.innerHTML = getPlayIcon();
-    playBtn.style.cssText = `
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: none;
-      background: var(--accent-primary, #5B9FF5);
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: all 0.2s;
-    `;
 
     // Waveform and duration display
     const infoContainer = document.createElement("div");
     infoContainer.className = "voice-info";
-    infoContainer.style.cssText = `
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    `;
 
     // Waveform visualization (simple bars)
     const waveform = document.createElement("div");
     waveform.className = "voice-waveform";
-    waveform.style.cssText = `
-      display: flex;
-      align-items: center;
-      gap: 2px;
-      height: 20px;
-    `;
 
     // Generate 20 random bars for waveform
     for (let i = 0; i < 20; i++) {
       const bar = document.createElement("div");
       const height = Math.random() * 0.6 + 0.4; // 40-100%
-      bar.style.cssText = `
-        width: 2px;
-        height: ${height * 100}%;
-        background: var(--text-secondary, #999);
-        border-radius: 1px;
-        transition: all 0.2s;
-      `;
+      bar.className = "voice-waveform-bar";
+      bar.style.height = `${height * 100}%`;
       waveform.appendChild(bar);
     }
 
     // Progress bar (hidden, overlays waveform during playback)
     const progressBar = document.createElement("div");
     progressBar.className = "voice-progress";
-    progressBar.style.cssText = `
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 0%;
-      height: 100%;
-      background: var(--accent-primary, #5B9FF5);
-      opacity: 0.3;
-      pointer-events: none;
-      display: none;
-    `;
-    waveform.style.position = "relative";
     waveform.appendChild(progressBar);
 
     // Duration display
     const durationEl = document.createElement("div");
     durationEl.className = "voice-duration";
     durationEl.textContent = formatDuration(duration);
-    durationEl.style.cssText = `
-      font-size: 12px;
-      color: var(--text-secondary, #999);
-    `;
 
     // Assemble bubble
     infoContainer.appendChild(waveform);
@@ -145,17 +89,7 @@
     if (role === "assistant") {
       const unreadDot = document.createElement("div");
       unreadDot.className = "voice-unread-dot";
-      unreadDot.style.cssText = `
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--accent-red, #ff4444);
-        position: absolute;
-        top: -2px;
-        right: -2px;
-      `;
-      bubble.style.position = "relative";
-      bubble.appendChild(unreadDot);
+      container.appendChild(unreadDot);
     }
 
     // Wire up playback
