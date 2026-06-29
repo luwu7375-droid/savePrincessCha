@@ -226,14 +226,35 @@ function stripThinking(text) {
 }
 
 function parseVisibleThought(raw) {
-  const thoughtMatch = raw.match(/<visible_thought>([\s\S]*?)<\/visible_thought>/);
-  if (!thoughtMatch) return { thought: null, reply: stripThinking(raw) };
-  const thought = thoughtMatch[1].trim().slice(0, 60);
-  const replyMatch = raw.match(/<reply>([\s\S]*?)<\/reply>/s);
-  const reply = replyMatch
-    ? replyMatch[1].trim()
-    : stripThinking(raw.replace(/<visible_thought>[\s\S]*?<\/visible_thought>/, "").trim());
-  return { thought, reply: reply || stripThinking(raw) };
+  const bubbles = [];
+  const pattern = /<(visible_thought|reply)>([\s\S]*?)<\/\1>/g;
+  let match;
+
+  while ((match = pattern.exec(raw)) !== null) {
+    const tag = match[1];
+    const content = match[2].trim();
+    if (!content) continue;
+
+    if (tag === "visible_thought") {
+      bubbles.push({ type: "thought", content: content.slice(0, 60) });
+    } else {
+      bubbles.push({ type: "reply", content });
+    }
+  }
+
+  // 如果没有解析到任何标签，fallback 到纯 reply
+  if (bubbles.length === 0) {
+    const cleaned = stripThinking(raw);
+    if (cleaned.trim()) {
+      bubbles.push({ type: "reply", content: cleaned });
+    }
+  }
+
+  // 兼容旧接口：提取 cleanReply 用于存储
+  const replyParts = bubbles.filter(b => b.type === "reply").map(b => b.content);
+  const cleanReply = replyParts.length > 0 ? replyParts.join("\n\n") : stripThinking(raw);
+
+  return { bubbles, thought: bubbles.find(b => b.type === "thought")?.content || null, reply: cleanReply };
 }
 
 function base64DecodeUtf8(base64) {

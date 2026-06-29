@@ -1204,7 +1204,7 @@ async function requestStreamingReply(replyMode = "auto") {
     }
   }
   if (!fullReply) throw new Error("未收到模型回复");
-  const { thought: visibleThought, reply: cleanReply } = parseVisibleThought(fullReply);
+  const { bubbles: thoughtBubbles, reply: cleanReply } = parseVisibleThought(fullReply);
   if (cleanReply === "<NO_REPLY>") {
     removeTypingIndicator();
     if (assistantEl) assistantEl.closest(".msg-row")?.remove();
@@ -1247,43 +1247,62 @@ async function requestStreamingReply(replyMode = "auto") {
     }
   }
 
-  // ── Visible thought bubble (webContext replies only) ──────────────────────
-  if (visibleThought && assistantEl) {
-    const thinkAvatar = document.createElement("div");
-    thinkAvatar.className = "avatar";
-    thinkAvatar.title = "Cha";
-    const thinkBubble = document.createElement("div");
-    thinkBubble.className = "message assistant cha-message message-text thinking-bubble";
-    thinkBubble.textContent = "💭 " + visibleThought;
-    const thinkStack = document.createElement("div");
-    thinkStack.className = "msg-stack";
-    thinkStack.appendChild(thinkBubble);
-    const thinkRow = document.createElement("div");
-    thinkRow.className = "msg-row assistant";
-    thinkRow.appendChild(thinkAvatar);
-    thinkRow.appendChild(thinkStack);
-    messageList.insertBefore(thinkRow, assistantEl.closest(".msg-row"));
-  }
-
-  const bubbles = splitBubbles(cleanReply);
-  if (bubbles.length === 1 || !firstSepSeen) {
-    // 单气泡或模型没有输出 |||：直接用临时气泡，原地更新内容并转正
+  // ── Multi-bubble visible thought rendering ──────────────────────────────────
+  const hasThoughts = thoughtBubbles.some(b => b.type === "thought");
+  if (hasThoughts) {
+    // 有思考气泡：移除流式占位，按顺序渲染所有气泡
     if (assistantEl) {
-      setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
-      const row = assistantEl.closest(".msg-row");
-      if (row && replyIdStr) row.dataset.msgId = replyIdStr;
-    } else {
-      insertBubbleSync(bubbles[0], replyTime, replyIdStr, null);
+      const placeholderRow = assistantEl.closest(".msg-row");
+      if (placeholderRow) placeholderRow.remove();
+      assistantEl = null;
+    }
+    let isFirstReply = true;
+    for (const bubble of thoughtBubbles) {
+      if (bubble.type === "thought") {
+        const thinkAvatar = document.createElement("div");
+        thinkAvatar.className = "avatar";
+        thinkAvatar.title = "Cha";
+        const thinkBubble = document.createElement("div");
+        thinkBubble.className = "message assistant cha-message message-text thinking-bubble";
+        thinkBubble.textContent = "\uD83D\uDCAD " + bubble.content;
+        const thinkStack = document.createElement("div");
+        thinkStack.className = "msg-stack";
+        thinkStack.appendChild(thinkBubble);
+        const thinkRow = document.createElement("div");
+        thinkRow.className = "msg-row assistant";
+        thinkRow.appendChild(thinkAvatar);
+        thinkRow.appendChild(thinkStack);
+        messageList.appendChild(thinkRow);
+      } else {
+        // reply 气泡：用 splitBubbles 支持 ||| 分割
+        const subBubbles = splitBubbles(bubble.content);
+        for (let si = 0; si < subBubbles.length; si++) {
+          const msgId = isFirstReply ? replyIdStr : null;
+          const sibling = isFirstReply ? null : String(replyIdStr);
+          insertBubbleSync(subBubbles[si], replyTime, msgId, sibling);
+          if (isFirstReply && si === 0) isFirstReply = false;
+        }
+      }
     }
   } else {
-    // 多气泡：第一个气泡已经在 assistantEl 里，转正 msgId，后续气泡逐条弹出
-    if (assistantEl) {
-      setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
-      const row = assistantEl.closest(".msg-row");
-      if (row && replyIdStr) row.dataset.msgId = replyIdStr;
+    // 无思考气泡：走原来的 splitBubbles 路径
+    const bubbles = splitBubbles(cleanReply);
+    if (bubbles.length === 1 || !firstSepSeen) {
+      if (assistantEl) {
+        setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
+        const row = assistantEl.closest(".msg-row");
+        if (row && replyIdStr) row.dataset.msgId = replyIdStr;
+      } else {
+        insertBubbleSync(bubbles[0], replyTime, replyIdStr, null);
+      }
+    } else {
+      if (assistantEl) {
+        setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
+        const row = assistantEl.closest(".msg-row");
+        if (row && replyIdStr) row.dataset.msgId = replyIdStr;
+      }
+      await insertBubblesAnimated(bubbles.slice(1), replyTime, replyIdStr, true);
     }
-    // 从第二段开始动画插入
-    await insertBubblesAnimated(bubbles.slice(1), replyTime, replyIdStr, true);
   }
 
   // Pre-warm emoji image cache for the freshly received reply (non-blocking)
@@ -5083,6 +5102,121 @@ async function handleSubmit() {
   })();
 }
 
+// ── Send Voice Message ───────────────────────────────────────────────────────
+async function sendVoiceMessage(transcribedText, audioType = "fake") {
+  // Stop TTS playback
+  if (window.SPVoice) window.SPVoice.stopSpeaking();
+  if (window.SPVoiceMessage) window.SPVoiceMessage.stopVoicePlayback();
+
+  if (isReplying) {
+    setChatStatus("Cha 正在回复，等他说完再发～");
+    setTimeout(() => setChatStatus(""), 2000);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const isFirst = chatMessages.length === 0;
+
+  // For "fake" voice, we generate TTS audio using the transcribed text
+  // The audio will be generated on-demand during playback
+  // For now, we store the transcribed text and mark it as "fake"
+  const content = transcribedText;
+
+  // Optimistic update: render voice message immediately
+  const tempId = `tmp-voice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  // Create voice message bubble
+  const voiceBubble = window.SPVoiceMessage.createVoiceMessageBubble({
+    audioUrl: "", // Will be generated on-demand via TTS
+    duration: 0,  // Unknown duration for fake voice
+    audioType: audioType,
+    transcribedText: transcribedText,
+    role: "user",
+    msgId: tempId
+  });
+
+  // Add to message list
+  const row = document.createElement("div");
+  row.className = "msg-row user";
+  row.dataset.tempId = tempId;
+
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+  stack.appendChild(voiceBubble);
+
+  const avatar = document.createElement("div");
+  avatar.className = "msg-avatar";
+  avatar.innerHTML = '<div class="msg-avatar-initial">KK</div>';
+
+  row.appendChild(stack);
+  row.appendChild(avatar);
+
+  maybeAddTimeSeparator(now);
+  messageList.appendChild(row);
+  maintainBottomAnchor("send");
+
+  // Add to chatMessages
+  chatMessages.push({
+    role: "user",
+    content: content,
+    created_at: now,
+    id: null,
+    audio_type: audioType,
+    audio_transcribed_text: transcribedText,
+    audio_url: null,
+    audio_duration: 0,
+  });
+
+  refreshMessageActions();
+  if (isFirst) updateConvTitle(getActiveConversationId(), "[语音消息]");
+
+  // Save to database
+  (async () => {
+    const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
+    const uid = user?.id || window.currentUserId;
+    const convId = getActiveConversationId();
+
+    const { data, error } = await supabaseClient
+      .from("messages")
+      .insert({
+        conversation_id: convId,
+        user_id: uid,
+        role: "user",
+        content: content,
+        audio_type: audioType,
+        audio_transcribed_text: transcribedText,
+        audio_url: null,
+        audio_duration: 0,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Save voice message error:", error);
+      showToast("语音消息保存失败");
+      return;
+    }
+
+    const msgId = data?.id;
+    if (msgId) {
+      // Update temp row with real ID
+      const tempRow = messageList.querySelector(`[data-temp-id="${tempId}"]`);
+      if (tempRow) {
+        delete tempRow.dataset.tempId;
+        tempRow.dataset.msgId = String(msgId);
+        const voiceEl = tempRow.querySelector(".voice-message");
+        if (voiceEl) voiceEl.dataset.msgId = String(msgId);
+      }
+
+      // Update chatMessages
+      const entry = chatMessages.findLast?.((m) => m.role === "user" && m.id === null);
+      if (entry) entry.id = String(msgId);
+
+      if (autoReplyEnabled) scheduleAutoReply("[语音消息]");
+    }
+  })();
+}
+
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   handleSubmit();
@@ -7978,11 +8112,24 @@ if (window.SPVoice) {
   window.SPVoice.initVoice();
 }
 
-// Voice input button handler (MVP placeholder)
+// Voice input button handler - opens voice input dialog
 if (voiceInputBtn) {
-  voiceInputBtn.addEventListener("click", () => {
-    console.log("Voice input clicked - recording UI not yet implemented");
-    alert("语音输入功能\n\n录音界面开发中...");
+  voiceInputBtn.addEventListener("click", async () => {
+    if (!window.SPVoiceMessage) {
+      alert("语音消息模块未加载");
+      return;
+    }
+
+    try {
+      const result = await window.SPVoiceMessage.showVoiceInputDialog();
+      // result: { text: string, audioType: "fake" }
+
+      // Send as voice message
+      await sendVoiceMessage(result.text, result.audioType);
+    } catch (err) {
+      // User cancelled or error
+      console.log("Voice input cancelled or failed:", err);
+    }
   });
 }
 
