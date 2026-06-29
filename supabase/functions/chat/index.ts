@@ -94,6 +94,11 @@ type ChatRequest = {
   rawUserMessage?: string | null; // original user input before any frontend wrapping
   emojiGuide?: string | null; // client-built guide of usable custom emoji shortcodes
   webContext?: string | null; // injected by phone.js after user confirms URL read
+  customModel?: {
+    providerGroup?: string;
+    provider?: string;
+    model?: string;
+  };
 };
 
 // ── Model tier ────────────────────────────────────────────────────────────────
@@ -229,6 +234,8 @@ type RequestLog = {
   story_seeds_count: number;
   story_seeds_titles: string[];
   bucket_count: number;
+  custom_model_applied: boolean;
+  custom_model_invalid_reason: string | null;
   bucket_titles: string[];
   // New memory provider system
   active_memory_providers: string[];
@@ -1409,6 +1416,20 @@ Deno.serve(async (request) => {
 
   const tier = normalizeTier(payload.modelTier);
   const tierProviders = resolveProviderForTier(tier);
+
+  // ── Custom model override ─────────────────────────────────────────────────
+  let customModelApplied = false;
+  let customModelInvalidReason: string | null = null;
+  if (payload.customModel && typeof payload.customModel === "object") {
+    const cm = payload.customModel;
+    if (typeof cm.model === "string" && cm.model.trim()) {
+      tierProviders.primary = { ...tierProviders.primary, model: cm.model.trim() };
+      customModelApplied = true;
+    } else {
+      customModelInvalidReason = "customModel.model is empty or not a string";
+    }
+  }
+
   const providerConfig = tierProviders.primary;
 
   if (!providerConfig.apiKey) {
@@ -1466,6 +1487,8 @@ Deno.serve(async (request) => {
     story_seeds_count: 0,
     story_seeds_titles: [],
     bucket_count: 0,
+    custom_model_applied: customModelApplied,
+    custom_model_invalid_reason: customModelInvalidReason,
     bucket_titles: [],
     active_memory_providers: [],
     memory_provider_count: 0,
@@ -2140,6 +2163,8 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
       instructions_suppressed_categories: logRecord.instructions_suppressed_categories,
       persona_memories_total_chars: logRecord.persona_memories_total_chars,
       persona_memories_chars_budget_hit: logRecord.persona_memories_chars_budget_hit,
+      custom_model_applied: customModelApplied,
+      custom_model_invalid_reason: customModelInvalidReason,
     };
     const memoryDebugHeader = base64EncodeUtf8(memoryDebugPayload);
     const chatStatusHeader = base64EncodeUtf8(chatStatus);

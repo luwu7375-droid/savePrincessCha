@@ -286,7 +286,7 @@ async function callChatAPI(messages, replyMode = "auto") {
     if (providerGroup) {
       customModelParams = {
         providerGroup: chatModel.providerGroup,
-        provider: providerGroup.provider,
+        provider: providerGroup.name,
         model: chatModel.model
       };
       console.log("[model-mapping] Using chat model mapping:", customModelParams);
