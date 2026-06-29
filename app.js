@@ -1620,6 +1620,9 @@ function enterMultiSelectMode() {
   messageList.classList.add('multi-select-mode');
 
   getMessageRows().forEach(row => {
+    // Skip recalled messages
+    if (row.classList.contains('recalled-message-row')) return;
+
     // Use effectiveMsgId to support both primary and sibling bubbles
     const effectiveMsgId = row.dataset.msgId || row.dataset.bubbleSibling;
     if (!effectiveMsgId || row.querySelector('.multi-select-checkbox')) return;
@@ -1669,6 +1672,13 @@ function enterMultiSelectMode() {
     // Add checkbox to row with position relative
     row.style.position = 'relative';
     row.insertBefore(checkbox, row.firstChild);
+
+    // Also allow clicking the row itself to toggle selection
+    row.addEventListener('click', (e) => {
+      // Don't toggle if clicking on interactive elements
+      if (e.target.closest('button, a, input, textarea, .msg-actions')) return;
+      toggleBubbleSelection(bubbleId, row);
+    });
   });
 
   showMultiSelectBar();
