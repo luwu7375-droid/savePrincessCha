@@ -1612,26 +1612,25 @@ function fallbackCopy(text) {
 // ── Multi-select Mode State ────────────────────────────────────────────────
 let multiSelectMode = false;
 let selectedMessageIds = new Set();
+let selectedBubbles = new Map(); // Map<bubbleId, row>
 
 function enterMultiSelectMode() {
   multiSelectMode = true;
-  selectedMessageIds.clear();
+  selectedBubbles.clear();
   messageList.classList.add('multi-select-mode');
-
-  const processedMsgIds = new Set();  // Track which msgIds we've already added checkboxes for
 
   getMessageRows().forEach(row => {
     // Use effectiveMsgId to support both primary and sibling bubbles
     const effectiveMsgId = row.dataset.msgId || row.dataset.bubbleSibling;
     if (!effectiveMsgId || row.querySelector('.multi-select-checkbox')) return;
 
-    // Skip if we've already added a checkbox for this message (for sibling bubbles)
-    if (processedMsgIds.has(effectiveMsgId)) return;
-    processedMsgIds.add(effectiveMsgId);
+    // Create a unique identifier for this specific bubble/row
+    const bubbleId = row.dataset.msgId ? row.dataset.msgId : `${row.dataset.bubbleSibling}-${Array.from(messageList.children).indexOf(row)}`;
 
     const checkbox = document.createElement('div');
     checkbox.className = 'multi-select-checkbox';
-    checkbox.dataset.msgId = effectiveMsgId;  // Store the effective msgId
+    checkbox.dataset.bubbleId = bubbleId;  // Store unique bubble ID
+    checkbox.dataset.msgId = effectiveMsgId;  // Store message ID for reference
     checkbox.innerHTML = '<div class="checkbox-inner"></div>';
     checkbox.style.cssText = `
       position: absolute;
@@ -1664,7 +1663,7 @@ function enterMultiSelectMode() {
 
     checkbox.addEventListener('click', (e) => {
       e.stopPropagation();
-      toggleMessageSelection(effectiveMsgId);
+      toggleBubbleSelection(bubbleId, row);
     });
 
     // Add checkbox to row with position relative
@@ -1678,6 +1677,7 @@ function enterMultiSelectMode() {
 function exitMultiSelectMode() {
   multiSelectMode = false;
   selectedMessageIds.clear();
+  selectedBubbles.clear();
   messageList.classList.remove('multi-select-mode');
   document.querySelectorAll('.multi-select-checkbox').forEach(el => el.remove());
   // Reset row position
@@ -1696,10 +1696,19 @@ function toggleMessageSelection(msgId) {
   updateMultiSelectUI();
 }
 
+function toggleBubbleSelection(bubbleId, row) {
+  if (selectedBubbles.has(bubbleId)) {
+    selectedBubbles.delete(bubbleId);
+  } else {
+    selectedBubbles.set(bubbleId, row);
+  }
+  updateMultiSelectUI();
+}
+
 function updateMultiSelectUI() {
   document.querySelectorAll('.multi-select-checkbox').forEach(checkbox => {
-    const msgId = checkbox.dataset.msgId;
-    const isSelected = selectedMessageIds.has(msgId);
+    const bubbleId = checkbox.dataset.bubbleId;
+    const isSelected = selectedBubbles.has(bubbleId);
     checkbox.classList.toggle('selected', isSelected);
 
     const inner = checkbox.querySelector('.checkbox-inner');
@@ -1718,13 +1727,13 @@ function updateMultiSelectUI() {
   });
 
   const countEl = document.querySelector('.multi-select-count');
-  if (countEl) countEl.textContent = `已选择 ${selectedMessageIds.size} 条`;
+  if (countEl) countEl.textContent = `已选择 ${selectedBubbles.size} 条`;
 
   // Update select all button text
   const selectAllBtn = document.querySelector('#multiSelectBar button');
   if (selectAllBtn && selectAllBtn.textContent.includes('全选')) {
     const totalCount = document.querySelectorAll('.multi-select-checkbox').length;
-    if (selectedMessageIds.size === totalCount && totalCount > 0) {
+    if (selectedBubbles.size === totalCount && totalCount > 0) {
       selectAllBtn.textContent = '取消全选';
     } else {
       selectAllBtn.textContent = '全选';
@@ -1733,8 +1742,8 @@ function updateMultiSelectUI() {
 
   const forwardBtn = document.getElementById('multiSelectForwardBtn');
   const deleteBtn = document.getElementById('multiSelectDeleteBtn');
-  if (forwardBtn) forwardBtn.disabled = selectedMessageIds.size === 0;
-  if (deleteBtn) deleteBtn.disabled = selectedMessageIds.size === 0;
+  if (forwardBtn) forwardBtn.disabled = selectedBubbles.size === 0;
+  if (deleteBtn) deleteBtn.disabled = selectedBubbles.size === 0;
 }
 
 function showMultiSelectBar() {
@@ -1751,20 +1760,26 @@ function showMultiSelectBar() {
   selectAllBtn.textContent = '全选';
   selectAllBtn.style.cssText = 'padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);cursor:pointer;font-size:14px;';
   selectAllBtn.addEventListener('click', () => {
-    const allMsgIds = [];
+    const allBubbleIds = [];
     document.querySelectorAll('.multi-select-checkbox').forEach(el => {
-      const msgId = el.dataset.msgId;
-      if (msgId) allMsgIds.push(msgId);
+      const bubbleId = el.dataset.bubbleId;
+      if (bubbleId) allBubbleIds.push(bubbleId);
     });
 
-    if (selectedMessageIds.size === allMsgIds.length) {
-      // 全部已选中，取消全选
-      selectedMessageIds.clear();
+    if (selectedBubbles.size === allBubbleIds.length && allBubbleIds.length > 0) {
+      // All selected, deselect all
+      selectedBubbles.clear();
       selectAllBtn.textContent = '全选';
     } else {
-      // 选中全部
-      selectedMessageIds.clear();
-      allMsgIds.forEach(id => selectedMessageIds.add(id));
+      // Select all
+      selectedBubbles.clear();
+      allBubbleIds.forEach(bubbleId => {
+        const checkbox = document.querySelector(`[data-bubble-id="${bubbleId}"]`);
+        if (checkbox) {
+          const row = checkbox.closest('.msg-row');
+          if (row) selectedBubbles.set(bubbleId, row);
+        }
+      });
       selectAllBtn.textContent = '取消全选';
     }
     updateMultiSelectUI();
@@ -1787,9 +1802,18 @@ function showMultiSelectBar() {
   deleteBtn.disabled = true;
   deleteBtn.style.cssText = 'padding:8px 16px;border:none;border-radius:6px;background:#ff4444;color:white;cursor:pointer;font-size:14px;';
   deleteBtn.addEventListener('click', async () => {
-    if (selectedMessageIds.size === 0) return;
-    if (!confirm(`确定要删除选中的 ${selectedMessageIds.size} 条消息吗？`)) return;
-    for (const msgId of selectedMessageIds) {
+    if (selectedBubbles.size === 0) return;
+    if (!confirm(`确定要删除选中的 ${selectedBubbles.size} 条消息吗？`)) return;
+
+    // Collect unique message IDs from selected bubbles
+    const msgIdsToDelete = new Set();
+    for (const [bubbleId, row] of selectedBubbles) {
+      const msgId = row.dataset.msgId || row.dataset.bubbleSibling;
+      if (msgId) msgIdsToDelete.add(msgId);
+    }
+
+    // Delete each unique message
+    for (const msgId of msgIdsToDelete) {
       const row = messageList.querySelector(`[data-msg-id="${msgId}"]`);
       if (row) await deleteMessage(row, msgId);
     }
@@ -1802,12 +1826,26 @@ function showMultiSelectBar() {
   forwardBtn.disabled = true;
   forwardBtn.style.cssText = 'padding:8px 16px;border:none;border-radius:6px;background:var(--accent-primary);color:white;cursor:pointer;font-size:14px;';
   forwardBtn.addEventListener('click', () => {
-    if (selectedMessageIds.size === 0) return;
+    if (selectedBubbles.size === 0) return;
 
-    // 转发选中的消息
-    const msgIds = Array.from(selectedMessageIds);
+    // Collect unique message IDs from selected bubbles for forwarding
+    const msgIdsToForward = [];
+    const seenMsgIds = new Set();
+
+    for (const [bubbleId, row] of selectedBubbles) {
+      const msgId = row.dataset.msgId || row.dataset.bubbleSibling;
+      if (msgId && !seenMsgIds.has(msgId)) {
+        msgIdsToForward.push(msgId);
+        seenMsgIds.add(msgId);
+      }
+    }
+
     exitMultiSelectMode();
-    showForwardTargetPanel(msgIds);
+
+    // Show forward target panel with message IDs
+    if (msgIdsToForward.length > 0) {
+      showForwardTargetPanel(msgIdsToForward);
+    }
   });
 
   const cancelBtn = document.createElement('button');
