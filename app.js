@@ -806,6 +806,241 @@ async function saveMessage(role, content, imageStoragePath = null, eventFields =
   return data?.id || null;
 }
 
+/**
+ * Generate TTS voice for Cha's assistant message
+ * Calls TTS endpoint, saves audio_url to database, updates UI
+ * @param {string} messageId - The message ID
+ * @param {string} text - The message text content
+ */
+async function generateChaVoice(messageId, text) {
+  if (!supabaseClient || !messageId || !text.trim()) return;
+
+  // Check if voice generation is enabled (default: true)
+  const autoVoiceEnabled = localStorage.getItem("cha_auto_voice_enabled") !== "false";
+  if (!autoVoiceEnabled) return;
+
+  try {
+    // Get TTS config
+    const ttsConfig = typeof SPVoice !== "undefined" && SPVoice.getTTSConfig
+      ? SPVoice.getTTSConfig()
+      : null;
+
+    if (!ttsConfig || !ttsConfig.provider) {
+      console.log("TTS not configured, skipping Cha voice generation");
+      return;
+    }
+
+    // Detect language for voice profile selection
+    const language = typeof SPVoice !== "undefined" && SPVoice.detectTtsLanguage
+      ? SPVoice.detectTtsLanguage(text)
+      : "zh";
+
+    // Call TTS endpoint
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/tts`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        text: text,
+        language_hint: language,
+        provider: ttsConfig.provider,
+        model_id: ttsConfig.model_id,
+        voice_id: ttsConfig.profiles?.[language]?.voice_id || ttsConfig.profiles?.default?.voice_id,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn("TTS generation failed:", response.status, errorText);
+      return;
+    }
+
+    const data = await response.json();
+    const audioUrl = data.audio_url || data.url;
+
+    if (!audioUrl) {
+      console.warn("TTS returned no audio URL");
+      return;
+    }
+
+    // Calculate approximate duration (fallback if not provided by TTS)
+    // Rough estimate: ~150 characters per minute for Chinese, ~180 for English
+    const charsPerMinute = language === "zh" ? 150 : 180;
+    const estimatedDuration = Math.max(1, Math.ceil((text.length / charsPerMinute) * 60));
+    const audioDuration = data.duration || estimatedDuration;
+
+    // Update message in database with voice data
+    const { error: updateError } = await supabaseClient
+      .from("messages")
+      .update({
+        audio_url: audioUrl,
+        audio_duration: audioDuration,
+        audio_type: "real",
+        audio_transcribed_text: text, // Store original text as transcription
+      })
+      .eq("id", Number(messageId));
+
+    if (updateError) {
+      console.error("Failed to save Cha voice to database:", updateError);
+      return;
+    }
+
+    // Update chatMessages array
+    const msgEntry = chatMessages.find(m => m.id === messageId);
+    if (msgEntry) {
+      msgEntry.audio_url = audioUrl;
+      msgEntry.audio_duration = audioDuration;
+      msgEntry.audio_type = "real";
+      msgEntry.audio_transcribed_text = text;
+    }
+
+    // Update UI: Add voice indicator to the message
+    addVoiceIndicatorToMessage(messageId, audioUrl, audioDuration, text);
+
+    console.log(`✓ Cha voice generated for message ${messageId}`);
+  } catch (error) {
+    console.error("Cha voice generation error:", error);
+  }
+}
+
+/**
+ * Add a voice playback indicator to an existing text message
+ * Shows a small voice icon that allows playing the TTS audio
+ */
+function addVoiceIndicatorToMessage(messageId, audioUrl, duration, transcribedText) {
+  const row = messageList.querySelector(`[data-msg-id="${messageId}"]`);
+  if (!row) return;
+
+  const messageEl = row.querySelector(".message");
+  if (!messageEl) return;
+
+  // Don't add if already has voice indicator
+  if (messageEl.querySelector(".voice-indicator")) return;
+
+  // Create voice indicator button
+  const voiceBtn = document.createElement("button");
+  voiceBtn.className = "voice-indicator";
+  voiceBtn.type = "button";
+  voiceBtn.title = "播放语音";
+  voiceBtn.style.cssText = `
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    vertical-align: middle;
+  `;
+
+  voiceBtn.innerHTML = `
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 3L5 6H2v4h3l3 3V3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M11 5.5c.5.5 1 1.5 1 2.5s-.5 2-1 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span>${Math.floor(duration)}s</span>
+  `;
+
+  // Store audio data
+  voiceBtn.dataset.audioUrl = audioUrl;
+  voiceBtn.dataset.duration = duration;
+  voiceBtn.dataset.transcribedText = transcribedText;
+
+  // Play audio on click
+  voiceBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    playVoiceIndicatorAudio(voiceBtn);
+  });
+
+  // Add hover effect
+  voiceBtn.addEventListener("mouseenter", () => {
+    voiceBtn.style.background = "rgba(91, 159, 245, 0.12)";
+    voiceBtn.style.color = "var(--accent-primary)";
+  });
+  voiceBtn.addEventListener("mouseleave", () => {
+    if (!voiceBtn.classList.contains("playing")) {
+      voiceBtn.style.background = "rgba(0, 0, 0, 0.06)";
+      voiceBtn.style.color = "var(--text-muted)";
+    }
+  });
+
+  // Append to message bubble
+  messageEl.appendChild(voiceBtn);
+}
+
+/**
+ * Play audio from voice indicator button
+ */
+let currentVoiceIndicatorAudio = null;
+let currentVoiceIndicatorBtn = null;
+
+function playVoiceIndicatorAudio(button) {
+  const audioUrl = button.dataset.audioUrl;
+  if (!audioUrl) return;
+
+  // If this button is currently playing, pause it
+  if (currentVoiceIndicatorAudio && currentVoiceIndicatorBtn === button) {
+    currentVoiceIndicatorAudio.pause();
+    button.classList.remove("playing");
+    button.style.background = "rgba(0, 0, 0, 0.06)";
+    button.style.color = "var(--text-muted)";
+    currentVoiceIndicatorAudio = null;
+    currentVoiceIndicatorBtn = null;
+    return;
+  }
+
+  // Stop any other playing audio
+  if (currentVoiceIndicatorAudio) {
+    currentVoiceIndicatorAudio.pause();
+    if (currentVoiceIndicatorBtn) {
+      currentVoiceIndicatorBtn.classList.remove("playing");
+      currentVoiceIndicatorBtn.style.background = "rgba(0, 0, 0, 0.06)";
+      currentVoiceIndicatorBtn.style.color = "var(--text-muted)";
+    }
+  }
+
+  // Start playing
+  const audio = new Audio(audioUrl);
+  currentVoiceIndicatorAudio = audio;
+  currentVoiceIndicatorBtn = button;
+
+  button.classList.add("playing");
+  button.style.background = "rgba(91, 159, 245, 0.18)";
+  button.style.color = "var(--accent-primary)";
+
+  const onEnded = () => {
+    if (audio !== currentVoiceIndicatorAudio) return;
+    button.classList.remove("playing");
+    button.style.background = "rgba(0, 0, 0, 0.06)";
+    button.style.color = "var(--text-muted)";
+    currentVoiceIndicatorAudio = null;
+    currentVoiceIndicatorBtn = null;
+  };
+
+  audio.addEventListener("ended", onEnded);
+  audio.addEventListener("error", () => {
+    onEnded();
+    if (typeof showToast === "function") {
+      showToast("语音播放失败");
+    }
+  });
+
+  audio.play().catch(err => {
+    console.error("Voice indicator audio playback error:", err);
+    onEnded();
+    if (typeof showToast === "function") {
+      showToast("语音播放失败");
+    }
+  });
+}
+
 async function reloadHistory(opts = {}) {
   if (!supabaseClient) { renderWelcomeMessage(); return; }
   const conversationId = getActiveConversationId();
@@ -897,6 +1132,11 @@ async function reloadHistory(opts = {}) {
     if (m.edited && m.id) {
       addEditIndicatorToMessage(m.id, m.edit_count || 0);
     }
+
+    // Add voice indicator for assistant messages with auto-generated voice
+    if (m.role === "assistant" && m.audio_url && m.audio_type === "real" && !m.audio_type_explicit && m.id) {
+      addVoiceIndicatorToMessage(m.id, m.audio_url, m.audio_duration || 0, m.audio_transcribed_text || m.content);
+    }
   }
   if (resolved.length > 0) oldestLoadedMessageCreatedAt = resolved[0].created_at;
   historyHasMore = data.length === HISTORY_PAGE_SIZE;
@@ -966,6 +1206,16 @@ async function loadOlderHistory() {
       addAssistantBubbles(m.content, m.created_at, m.id, !!m.read_by_user_at, rt);
     } else {
       addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at, replyTo: rt }, m.id);
+    }
+
+    // Add edit indicator if message was edited
+    if (m.edited && m.id) {
+      addEditIndicatorToMessage(m.id, m.edit_count || 0);
+    }
+
+    // Add voice indicator for assistant messages with auto-generated voice
+    if (m.role === "assistant" && m.audio_url && m.audio_type === "real" && !m.audio_type_explicit && m.id) {
+      addVoiceIndicatorToMessage(m.id, m.audio_url, m.audio_duration || 0, m.audio_transcribed_text || m.content);
     }
   }
   messageList.scrollTop = prevScrollTop + (messageList.scrollHeight - prevScrollHeight);
@@ -1258,6 +1508,13 @@ async function requestStreamingReply(replyMode = "auto") {
   chatMessages.push({ role: "assistant", content: finalReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null, replyTo: assistantReplyTo });
   lastMessageTime = new Date(replyTime).getTime();
 
+  // Fire-and-forget: Auto-generate Cha voice for this reply
+  if (replyIdStr && finalReply.trim()) {
+    generateChaVoice(replyIdStr, finalReply).catch(err => {
+      console.warn("Cha voice auto-generation failed:", err);
+    });
+  }
+
   // If the user is already on the Chat tab, pre-mark this reply as read by user
   // so it never gets stuck as "unread" after the stream finishes.
   const _isOnChatNow = document.querySelector(".layout")?.getAttribute("data-active-page") === "chat";
@@ -1317,9 +1574,11 @@ async function requestStreamingReply(replyMode = "auto") {
       } else {
         // reply 气泡：用 splitBubbles 支持 ||| 分割
         const subBubbles = splitBubbles(bubble.content);
+        console.log("[VT-debug] rendering reply, subBubbles:", subBubbles.length, "replyIdStr:", replyIdStr, "isFirstReply:", isFirstReply);
         for (let si = 0; si < subBubbles.length; si++) {
           const msgId = isFirstReply ? replyIdStr : null;
           const sibling = isFirstReply ? null : String(replyIdStr);
+          console.log("[VT-debug] insertBubbleSync si:", si, "msgId:", msgId, "sibling:", sibling, "text:", subBubbles[si].slice(0, 30));
           insertBubbleSync(subBubbles[si], replyTime, msgId, sibling, isFirstReply && si === 0 ? assistantReplyTo : undefined);
           if (isFirstReply && si === 0) isFirstReply = false;
         }
