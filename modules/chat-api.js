@@ -26,6 +26,21 @@ function extractTextFromMessageContent(content) {
   return "";
 }
 
+/** Build a short preview string for a message used in quoteCandidates. */
+function buildQuotePreview(msg) {
+  const text = extractTextFromMessageContent(msg.content);
+  if (msg.image_storage_path || msg.type === "image") {
+    return "[图片] " + (msg.image_description || text).slice(0, 60);
+  }
+  if (msg.audio_url || msg.audio_type) {
+    return "[语音] " + (msg.audio_transcribed_text || "").slice(0, 60);
+  }
+  if (msg.is_recalled) {
+    return "[已撤回] " + text.slice(0, 40);
+  }
+  return text.slice(0, 80);
+}
+
 // Track conversation start time for timeContext
 let _conversationStartedAt = null;
 
@@ -258,6 +273,18 @@ async function callChatAPI(messages, replyMode = "auto") {
     loopDetected,
   });
 
+  // 构造 quoteCandidates：最近 10 条有 id 的非 deleted 消息
+  const quoteCandidates = chatMessages
+    .filter(m => m.id && !m.is_deleted)
+    .slice(-10)
+    .map((m, idx, arr) => ({
+      id: String(m.id),
+      role: m.role,
+      author: m.role === "assistant" ? "Cha" : "KK",
+      preview: buildQuotePreview(m),
+      index_from_latest: arr.length - 1 - idx,
+    }));
+
   // 编译引用消息到 content 中
   const compiledMessages = messages.map(msg => {
     if (!msg.replyTo || msg.role !== "user") {
@@ -340,6 +367,7 @@ async function callChatAPI(messages, replyMode = "auto") {
         return ctx || null;
       })(),
       emojiGuide: buildEmojiGuide() || undefined,
+      quoteCandidates: quoteCandidates.length > 0 ? quoteCandidates : null,
     }),
   });
 }

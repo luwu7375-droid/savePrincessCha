@@ -1420,15 +1420,24 @@ Deno.serve(async (request) => {
   // ── Custom model override ─────────────────────────────────────────────────
   let customModelApplied = false;
   let customModelInvalidReason: string | null = null;
+  console.log("[custom-model] Received payload.customModel:", JSON.stringify(payload.customModel));
+  console.log("[custom-model] tierProviders.primary before override:", JSON.stringify(tierProviders.primary));
+
   if (payload.customModel && typeof payload.customModel === "object") {
     const cm = payload.customModel;
     if (typeof cm.model === "string" && cm.model.trim()) {
       tierProviders.primary = { ...tierProviders.primary, model: cm.model.trim() };
       customModelApplied = true;
+      console.log("[custom-model] Applied custom model override:", cm.model.trim());
     } else {
       customModelInvalidReason = "customModel.model is empty or not a string";
+      console.log("[custom-model] Invalid customModel:", customModelInvalidReason);
     }
+  } else {
+    console.log("[custom-model] No custom model in payload");
   }
+
+  console.log("[custom-model] tierProviders.primary after override:", JSON.stringify(tierProviders.primary));
 
   const providerConfig = tierProviders.primary;
 
