@@ -4,6 +4,22 @@
    Loads after v2.css; overrides where needed.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ── Disable native text selection menu (iOS callout) ────────────────────── */
+* {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Allow text selection but disable callout on message bubbles */
+.message-list,
+.msg-row,
+.message {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* ── Color & spacing tokens ─────────────────────────────────────────────── */
 :root {
   /* Bubble colors */

@@ -2276,6 +2276,11 @@ function closeMessageActionMenu() {
     messageActionMenu.remove();
     messageActionMenu = null;
   }
+  // 清除文本选中状态
+  const selection = window.getSelection();
+  if (selection) {
+    selection.removeAllRanges();
+  }
   // 延迟重置 longPressOpened，避免菜单关闭后立即触发点击
   setTimeout(() => {
     longPressOpened = false;
@@ -2602,6 +2607,23 @@ function showMessageActionMenu(row, x, y) {
   placeMessageActionMenu(menu, x, y);
 }
 
+function selectMessageText(row) {
+  // 选中消息文本（模拟原生长按选中效果）
+  const messageEl = row.querySelector(".message-text, .message");
+  if (!messageEl) return;
+
+  const selection = window.getSelection();
+  const range = document.createRange();
+
+  try {
+    range.selectNodeContents(messageEl);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  } catch (e) {
+    console.warn("Failed to select message text:", e);
+  }
+}
+
 function startLongPress(row, x, y) {
   cancelLongPress();
   longPressOpened = false;
@@ -2611,6 +2633,10 @@ function startLongPress(row, x, y) {
     if (longPressOpened) return;
     longPressOpened = true;
     if (navigator.vibrate) navigator.vibrate(8);
+
+    // 选中消息文本
+    selectMessageText(row);
+
     showMessageActionMenu(row, x, y);
   }, 450);
 }
