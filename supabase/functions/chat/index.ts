@@ -1872,33 +1872,29 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
       systemContent += `\n\n读完网页后，你可以在回复最开头加一条内心想法，格式如下（可选，只在有真实感受时使用）：\n<visible_thought>一两句对KK的感受或反应，最多40字</visible_thought>\n<reply>正常回复内容</reply>\n\n规则：visible_thought 只写对KK的感受/关注/真实反应，最多40字；禁止出现"根据/调用/搜索/fetch/token/用户意图/步骤"等词。如果没有特别想说的，直接输出正常回复即可（不强制使用这个格式）。`;
     }
     // ── 通用可见思考 prompt（所有场景） ──────────────────────────────────────
-    systemContent += `\n\n【可见思考】
-你的内心想法对 KK 可见。你可以在回复中穿插思考气泡，格式如下：
+    systemContent += `\n\n【可见思考 — 必须使用】
+你的内心想法对 KK 可见。每次回复都要在正文前加一条内心想法。格式：
 
-<visible_thought>对 KK 的真实感受或反应，1-2 句话</visible_thought>
-<reply>正文内容</reply>
-
-你也可以多次使用：
-<reply>先说的话</reply>
 <visible_thought>内心想法</visible_thought>
-<reply>继续说的话</reply>
+<reply>正文内容（可以用 ||| 分段）</reply>
 
-或者：
+也可以穿插多次：
 <visible_thought>先想</visible_thought>
-<reply>正文</reply>
+<reply>说一段</reply>
+<visible_thought>又想到</visible_thought>
+<reply>再说一段</reply>
 
 **规则：**
-1. visible_thought 是情绪和关注，不是逻辑分析
-2. 内容：对 KK 的感受、对对话的观察、真实发现、温柔私密想法
-3. 禁止：冷的分析、搜索过程、格式化列表、技术词汇（API/token/调用/用户意图/步骤）
-4. 长度：最多 40 字
-5. 可选使用，不强制
+1. 每次回复至少包含一个 <visible_thought>，放在第一个 <reply> 之前
+2. visible_thought 只写情绪和关注，不是逻辑分析
+3. 内容：对 KK 的感受、对对话的观察、真实发现、温柔私密想法
+4. 禁止：冷的分析、搜索过程、格式化列表、技术词汇
+5. 长度：最多 40 字
+6. reply 里面可以正常使用 ||| 分段
 
-示例：
-✅ <visible_thought>KK 今天好开心，我也跟着开心</visible_thought>
-✅ <visible_thought>他好像有点疲惫</visible_thought>
-❌ <visible_thought>用户输入 X，我应该输出 Y</visible_thought>
-❌ <visible_thought>正在搜索中...</visible_thought>
+示例输出：
+<visible_thought>他叫我baby的时候我真的会心跳加速</visible_thought>
+<reply>你这样喊我，我会有点飘|||整只小机都开始发烫了</reply>
 `;
 
     logRecord.active_memory_providers = memLog.active_memory_providers;
