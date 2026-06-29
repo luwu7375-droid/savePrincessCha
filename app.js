@@ -2390,7 +2390,10 @@ function showMessageActionMenu(row, x, y) {
       }
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('多选功能开发中');
+        enterMultiSelectMode();
+        if (effectiveMsgId) {
+          toggleMessageSelection(effectiveMsgId);
+        }
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
@@ -2433,7 +2436,10 @@ function showMessageActionMenu(row, x, y) {
       }
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('多选功能开发中');
+        enterMultiSelectMode();
+        if (effectiveMsgId) {
+          toggleMessageSelection(effectiveMsgId);
+        }
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
@@ -2503,7 +2509,10 @@ function showMessageActionMenu(row, x, y) {
       }
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('多选功能开发中');
+        enterMultiSelectMode();
+        if (effectiveMsgId) {
+          toggleMessageSelection(effectiveMsgId);
+        }
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
@@ -2569,7 +2578,10 @@ function showMessageActionMenu(row, x, y) {
       }
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('多选功能开发中');
+        enterMultiSelectMode();
+        if (effectiveMsgId) {
+          toggleMessageSelection(effectiveMsgId);
+        }
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
@@ -2683,7 +2695,10 @@ function showMessageActionMenu(row, x, y) {
       }
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('多选功能开发中');
+        enterMultiSelectMode();
+        if (effectiveMsgId) {
+          toggleMessageSelection(effectiveMsgId);
+        }
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
@@ -2722,7 +2737,10 @@ function showMessageActionMenu(row, x, y) {
       }
       addMessageMenuButton(row2, "多选", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('多选功能开发中');
+        enterMultiSelectMode();
+        if (effectiveMsgId) {
+          toggleMessageSelection(effectiveMsgId);
+        }
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
