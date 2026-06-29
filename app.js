@@ -2547,8 +2547,75 @@ function showMessageActionMenu(row, x, y) {
       });
       addMessageMenuButton(row2, "查看图片描述", () => {
         closeMessageActionMenu();
-        if (msg?.imageDescription) {
-          if (typeof showToast === 'function') showToast(msg.imageDescription);
+        const description = msg?.image_description || msg?.image_prompt;
+        if (description) {
+          // Create a better dialog to show description
+          const overlay = document.createElement('div');
+          overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+          `;
+
+          const dialog = document.createElement('div');
+          dialog.style.cssText = `
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+          `;
+
+          const title = document.createElement('h3');
+          title.textContent = '图片描述';
+          title.style.cssText = `
+            margin: 0 0 12px 0;
+            font-size: 16px;
+            color: var(--text);
+          `;
+
+          const content = document.createElement('div');
+          content.textContent = description;
+          content.style.cssText = `
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 16px;
+            max-height: 300px;
+            overflow-y: auto;
+          `;
+
+          const closeBtn = document.createElement('button');
+          closeBtn.textContent = '关闭';
+          closeBtn.style.cssText = `
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            background: var(--accent-primary);
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+          `;
+          closeBtn.addEventListener('click', () => overlay.remove());
+
+          dialog.appendChild(title);
+          dialog.appendChild(content);
+          dialog.appendChild(closeBtn);
+          overlay.appendChild(dialog);
+          document.body.appendChild(overlay);
+
+          overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+          });
         } else {
           if (typeof showToast === 'function') showToast('暂无图片描述');
         }
