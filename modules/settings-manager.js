@@ -956,6 +956,14 @@ function _initSettingsApiSubpage(container) {
         const success = saveModelRoleMapping(newMapping);
         console.log('[settings] saveModelRoleMapping result:', success);
         if (success) {
+          // Sync to server
+          if (window.SPUserPreferences && typeof window.SPUserPreferences.pushPreferences === 'function') {
+            console.log('[settings] Pushing preferences to server...');
+            window.SPUserPreferences.pushPreferences();
+          } else {
+            console.warn('[settings] SPUserPreferences.pushPreferences not available');
+          }
+
           if (typeof showToast === 'function') {
             showToast('已保存用途模型映射');
           } else {
