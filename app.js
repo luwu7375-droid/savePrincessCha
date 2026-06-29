@@ -104,9 +104,11 @@ function getModelForRole(role) {
 // Expose to global for modules
 window.PROVIDER_GROUPS = PROVIDER_GROUPS;
 window.getModelForRole = getModelForRole;
+window.getModelRoleMapping = getModelRoleMapping;
+window.saveModelRoleMapping = saveModelRoleMapping;
 window.MODEL_ROLES = MODEL_ROLES;
 
-console.log('[app] PROVIDER_GROUPS and getModelForRole exposed to window');
+console.log('[app] PROVIDER_GROUPS and model functions exposed to window');
 
 // ── Story Seeds 开关（旧关系史已停用，保留变量避免引用报错） ──────────────────
 // LEGACY_MEMORY_ENABLED=false，storySeedsEnabled 不再影响 chat 注入。
@@ -1281,7 +1283,7 @@ async function requestStreamingReply(replyMode = "auto") {
         thinkAvatar.title = "Cha";
         const thinkBubble = document.createElement("div");
         thinkBubble.className = "message assistant cha-message message-text thinking-bubble";
-        thinkBubble.textContent = "\uD83D\uDCAD " + bubble.content;
+        thinkBubble.textContent = "\u{1F4AD} " + bubble.content;
         const thinkStack = document.createElement("div");
         thinkStack.className = "msg-stack";
         thinkStack.appendChild(thinkBubble);
