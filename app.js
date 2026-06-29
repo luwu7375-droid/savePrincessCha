@@ -1704,39 +1704,10 @@ function showMultiSelectBar() {
   forwardBtn.addEventListener('click', () => {
     if (selectedMessageIds.size === 0) return;
 
-    // 收集选中消息的文本内容
-    const selectedTexts = [];
-    for (const msgId of selectedMessageIds) {
-      const row = messageList.querySelector(`[data-msg-id="${msgId}"]`);
-      if (!row) continue;
-
-      const bubble = row.querySelector('.bubble');
-      if (bubble) {
-        // 提取纯文本，移除引用部分
-        const quotedSection = bubble.querySelector('.quoted-section');
-        const replyText = bubble.querySelector('.reply-text');
-        const textContent = replyText ? replyText.textContent.trim() :
-                           (quotedSection ? bubble.textContent.replace(quotedSection.textContent, '').trim() :
-                            bubble.textContent.trim());
-        if (textContent) selectedTexts.push(textContent);
-      }
-    }
-
-    // 将内容填充到输入框
-    const messageInput = document.getElementById('messageInput');
-    if (messageInput && selectedTexts.length > 0) {
-      const forwardedContent = selectedTexts.join('\n---\n');
-      messageInput.value = forwardedContent;
-      messageInput.style.height = 'auto';
-      messageInput.style.height = messageInput.scrollHeight + 'px';
-      messageInput.focus();
-
-      if (typeof showToast === 'function') {
-        showToast(`已将 ${selectedTexts.length} 条消息复制到输入框`);
-      }
-
-      exitMultiSelectMode();
-    }
+    // 转发选中的消息
+    const msgIds = Array.from(selectedMessageIds);
+    exitMultiSelectMode();
+    showForwardTargetPanel(msgIds);
   });
 
   const cancelBtn = document.createElement('button');
@@ -1797,7 +1768,183 @@ async function editUserMessage(row) {
   enterEditMessageMode(row, msgId, oldText);
 }
 
-// 撤回消息（仅用户消息）
+// 转发消息 - 显示目标选择面板
+function showForwardTargetPanel(messageIds) {
+  const overlay = document.createElement('div');
+  overlay.className = 'forward-target-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  const panel = document.createElement('div');
+  panel.className = 'forward-target-panel';
+  panel.style.cssText = `
+    background: var(--bg);
+    border-radius: 16px 16px 0 0;
+    padding: 20px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    width: 100%;
+    max-width: 500px;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+  `;
+
+  const title = document.createElement('h3');
+  title.textContent = '转发到';
+  title.style.cssText = `
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    color: var(--text);
+    text-align: center;
+  `;
+
+  const options = document.createElement('div');
+  options.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  `;
+
+  // 转发选项
+  const targets = [
+    { id: 'cha-chat', label: 'Cha 聊天', icon: '💬' },
+    { id: 'cha-notes', label: 'Cha Phone Notes', icon: '📝' },
+    { id: 'cha-diary', label: 'Cha Phone Diary', icon: '📔' },
+    { id: 'cha-photos', label: 'Cha Phone Photos', icon: '📷' }
+  ];
+
+  targets.forEach(target => {
+    const btn = document.createElement('button');
+    btn.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 15px;
+      text-align: left;
+      transition: background 0.2s;
+    `;
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'var(--bg-raise)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'var(--surface)';
+    });
+
+    const icon = document.createElement('span');
+    icon.textContent = target.icon;
+    icon.style.cssText = 'font-size: 24px;';
+
+    const label = document.createElement('span');
+    label.textContent = target.label;
+
+    btn.appendChild(icon);
+    btn.appendChild(label);
+
+    btn.addEventListener('click', () => {
+      overlay.remove();
+      forwardToTarget(messageIds, target.id, target.label);
+    });
+
+    options.appendChild(btn);
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = '取消';
+  cancelBtn.style.cssText = `
+    margin-top: 8px;
+    width: 100%;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 15px;
+  `;
+  cancelBtn.addEventListener('click', () => overlay.remove());
+
+  panel.appendChild(title);
+  panel.appendChild(options);
+  panel.appendChild(cancelBtn);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+}
+
+// 执行转发到目标
+function forwardToTarget(messageIds, targetId, targetLabel) {
+  const messages = [];
+  for (const msgId of messageIds) {
+    const msg = chatMessages.find(m => m.id === msgId);
+    if (msg) {
+      const textContent = extractTextFromMessageContent(msg.content);
+      if (textContent) {
+        messages.push({
+          role: msg.role === 'assistant' ? 'Cha' : '你',
+          content: textContent
+        });
+      }
+    }
+  }
+
+  if (messages.length === 0) {
+    if (typeof showToast === 'function') {
+      showToast('没有可转发的内容');
+    }
+    return;
+  }
+
+  if (targetId === 'cha-chat') {
+    // 转发到当前聊天输入框
+    const forwardedText = messages.length === 1
+      ? `转发：${messages[0].content}`
+      : messages.map(m => `${m.role}: ${m.content}`).join('\n---\n');
+
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) {
+      messageInput.value = forwardedText;
+      messageInput.style.height = 'auto';
+      messageInput.style.height = messageInput.scrollHeight + 'px';
+      messageInput.focus();
+
+      if (typeof showToast === 'function') {
+        showToast(`已转发到输入框`);
+      }
+    }
+  } else {
+    // 转发到 Cha Phone Apps - MVP: 保存到 localStorage
+    const storageKey = `cha_phone_forward_${targetId}`;
+    const existing = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    existing.push({
+      timestamp: new Date().toISOString(),
+      messages: messages
+    });
+    localStorage.setItem(storageKey, JSON.stringify(existing));
+
+    if (typeof showToast === 'function') {
+      showToast(`已转发到 ${targetLabel}`);
+    }
+  }
+}
+
+
 async function recallMessage(row, msgId) {
   closeMessageActionMenu();
 
@@ -2397,7 +2544,9 @@ function showMessageActionMenu(row, x, y) {
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('转发功能开发中');
+        if (effectiveMsgId) {
+          showForwardTargetPanel([effectiveMsgId]);
+        }
       });
       if (effectiveMsgId) {
         addMessageMenuButton(row2, "撤回", () => recallMessage(row, effectiveMsgId));
@@ -2443,7 +2592,9 @@ function showMessageActionMenu(row, x, y) {
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('转发功能开发中');
+        if (effectiveMsgId) {
+          showForwardTargetPanel([effectiveMsgId]);
+        }
       });
       if (effectiveMsgId) {
         addMessageMenuButton(row2, "删除", () => deleteMessage(row, effectiveMsgId));
@@ -2516,7 +2667,9 @@ function showMessageActionMenu(row, x, y) {
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('转发功能开发中');
+        if (effectiveMsgId) {
+          showForwardTargetPanel([effectiveMsgId]);
+        }
       });
       if (effectiveMsgId) {
         addMessageMenuButton(row2, "撤回", () => recallMessage(row, effectiveMsgId));
@@ -2585,7 +2738,9 @@ function showMessageActionMenu(row, x, y) {
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('转发功能开发中');
+        if (effectiveMsgId) {
+          showForwardTargetPanel([effectiveMsgId]);
+        }
       });
       addMessageMenuButton(row2, "查看图片描述", () => {
         closeMessageActionMenu();
@@ -2702,7 +2857,9 @@ function showMessageActionMenu(row, x, y) {
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('转发功能开发中');
+        if (effectiveMsgId) {
+          showForwardTargetPanel([effectiveMsgId]);
+        }
       });
       if (effectiveMsgId) {
         addMessageMenuButton(row2, "删除", () => deleteMessage(row, effectiveMsgId));
@@ -2744,7 +2901,9 @@ function showMessageActionMenu(row, x, y) {
       });
       addMessageMenuButton(row2, "转发", () => {
         closeMessageActionMenu();
-        if (typeof showToast === 'function') showToast('转发功能开发中');
+        if (effectiveMsgId) {
+          showForwardTargetPanel([effectiveMsgId]);
+        }
       });
       if (effectiveMsgId) {
         addMessageMenuButton(row2, "删除", () => deleteMessage(row, effectiveMsgId));
