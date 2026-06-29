@@ -1885,31 +1885,24 @@ async function performRecall(row, msgId, message) {
   message.recalled_at = new Date().toISOString();
   message.original_content = originalContent;
 
-  // 调用后端API标记消息为已撤回
+  // 直接更新 Supabase 表标记消息为已撤回
   try {
-    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
-    const supabaseAnonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+    if (supabaseClient) {
+      const { error } = await supabaseClient
+        .from("messages")
+        .update({
+          is_recalled: true,
+          recalled_at: new Date().toISOString(),
+          original_content: originalContent
+        })
+        .eq("id", msgId);
 
-    const response = await fetch(`${supabaseUrl}/functions/v1/messages-recall`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseAnonKey}`
-      },
-      body: JSON.stringify({
-        messageId: msgId,
-        conversationId: currentConversationId,
-        is_recalled: true,
-        recalled_at: message.recalled_at,
-        original_content: originalContent
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('撤回失败');
+      if (error) {
+        throw error;
+      }
     }
   } catch (error) {
-    console.error('Recall API error:', error);
+    console.error('Recall message error:', error);
     if (typeof showToast === 'function') {
       showToast('撤回失败，请重试');
     }
@@ -2002,30 +1995,23 @@ async function deleteMessage(row, msgId) {
     chatMessages[idx].deleted_at = new Date().toISOString();
   }
 
-  // 调用后端API标记消息为已删除（软删除，不真正删除）
+  // 直接更新 Supabase 表（软删除）
   try {
-    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
-    const supabaseAnonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+    if (supabaseClient) {
+      const { error } = await supabaseClient
+        .from("messages")
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString()
+        })
+        .eq("id", msgId);
 
-    const response = await fetch(`${supabaseUrl}/functions/v1/messages-delete`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseAnonKey}`
-      },
-      body: JSON.stringify({
-        messageId: msgId,
-        conversationId: currentConversationId,
-        is_deleted: true,
-        deleted_at: chatMessages[idx]?.deleted_at
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('删除失败');
+      if (error) {
+        throw error;
+      }
     }
   } catch (error) {
-    console.error('Delete API error:', error);
+    console.error('Delete message error:', error);
     if (typeof showToast === 'function') {
       showToast('删除失败，请重试');
     }
@@ -2081,30 +2067,23 @@ async function favoriteMessage(row, msgId, shouldFavorite) {
     }
   }
 
-  // 调用后端API保存收藏状态
+  // 直接更新 Supabase 表保存收藏状态
   try {
-    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
-    const supabaseAnonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+    if (supabaseClient) {
+      const { error } = await supabaseClient
+        .from("messages")
+        .update({
+          is_favorited: shouldFavorite,
+          favorited_at: shouldFavorite ? new Date().toISOString() : null
+        })
+        .eq("id", msgId);
 
-    const response = await fetch(`${supabaseUrl}/functions/v1/messages-favorite`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseAnonKey}`
-      },
-      body: JSON.stringify({
-        messageId: msgId,
-        conversationId: currentConversationId,
-        is_favorited: shouldFavorite,
-        favorited_at: shouldFavorite ? chatMessages[idx]?.favorited_at : null
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('收藏操作失败');
+      if (error) {
+        throw error;
+      }
     }
   } catch (error) {
-    console.error('Favorite API error:', error);
+    console.error('Favorite message error:', error);
     if (typeof showToast === 'function') {
       showToast('收藏操作失败，请重试');
     }
