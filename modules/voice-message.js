@@ -41,19 +41,11 @@
     if (transcribedText) container.dataset.transcribedText = transcribedText;
     if (msgId) container.dataset.msgId = msgId;
 
-    // Voice bubble container
-    const bubble = document.createElement("div");
-    bubble.className = "voice-bubble";
-
     // Play/Pause button
     const playBtn = document.createElement("button");
     playBtn.className = "voice-play-btn";
     playBtn.type = "button";
     playBtn.innerHTML = getPlayIcon();
-
-    // Waveform and duration display
-    const infoContainer = document.createElement("div");
-    infoContainer.className = "voice-info";
 
     // Waveform visualization (simple bars)
     const waveform = document.createElement("div");
@@ -76,12 +68,10 @@
     durationEl.className = "voice-duration";
     durationEl.textContent = formatDuration(duration);
 
-    // Assemble bubble
-    infoContainer.appendChild(waveform);
-    infoContainer.appendChild(durationEl);
-    bubble.appendChild(playBtn);
-    bubble.appendChild(infoContainer);
-    container.appendChild(bubble);
+    // Assemble: playBtn + waveform + duration directly in container
+    container.appendChild(playBtn);
+    container.appendChild(waveform);
+    container.appendChild(durationEl);
 
     // Add unread indicator for Cha voice messages
     if (role === "assistant") {
@@ -96,7 +86,7 @@
       toggleVoicePlayback(container, playBtn, progressBar, durationEl);
     };
     playBtn.addEventListener("click", playHandler);
-    bubble.addEventListener("click", playHandler);
+    container.addEventListener("click", playHandler);
 
     return container;
   }
