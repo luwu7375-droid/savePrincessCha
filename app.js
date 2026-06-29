@@ -1228,7 +1228,9 @@ async function requestStreamingReply(replyMode = "auto") {
     }
   }
   if (!fullReply) throw new Error("未收到模型回复");
+  console.log("[VT-debug] fullReply:", fullReply.slice(0, 300));
   const { bubbles: thoughtBubbles, reply: cleanReply } = parseVisibleThought(fullReply);
+  console.log("[VT-debug] bubbles:", JSON.stringify(thoughtBubbles));
   if (cleanReply === "<NO_REPLY>") {
     removeTypingIndicator();
     if (assistantEl) assistantEl.closest(".msg-row")?.remove();
@@ -2275,19 +2277,6 @@ function renderVoiceMessage(message, replyTo = null) {
 
   row.appendChild(stack);
 
-  // Add avatar
-  if (message.role === "assistant") {
-    const avatar = document.createElement("div");
-    avatar.className = "avatar";
-    avatar.title = "Cha";
-    row.insertBefore(avatar, row.firstChild);
-  } else {
-    const avatar = document.createElement("div");
-    avatar.className = "msg-avatar";
-    avatar.innerHTML = '<div class="msg-avatar-initial">KK</div>';
-    row.appendChild(avatar);
-  }
-
   maybeAddTimeSeparator(message.created_at);
   messageList.appendChild(row);
 }
@@ -2841,7 +2830,7 @@ function addMessageMenuButton(menu, label, action) {
 // ── Voice Message Helper Functions ──────────────────────────────────────────
 
 /**
- * Show voice message transcription in a dialog
+ * Show voice message transcription inline below the voice bubble
  */
 function showVoiceTranscription(row, msg) {
   const transcribedText = msg?.audio_transcribed_text;
@@ -2850,105 +2839,29 @@ function showVoiceTranscription(row, msg) {
     return;
   }
 
-  const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-  `;
+  // Check if transcription is already shown
+  const existingTranscription = row.querySelector('.voice-transcription');
+  if (existingTranscription) {
+    // Toggle: remove if already shown
+    existingTranscription.remove();
+    return;
+  }
 
-  const dialog = document.createElement('div');
-  dialog.style.cssText = `
-    background: var(--bg);
-    border-radius: 12px;
-    padding: 20px;
-    max-width: 400px;
-    width: 90%;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  `;
+  // Create transcription element
+  const transcription = document.createElement('div');
+  transcription.className = 'voice-transcription';
+  transcription.textContent = transcribedText;
 
-  const title = document.createElement('h3');
-  title.textContent = '语音转文字';
-  title.style.cssText = `
-    margin: 0 0 12px 0;
-    font-size: 16px;
-    color: var(--text);
-  `;
-
-  const content = document.createElement('div');
-  content.textContent = transcribedText;
-  content.style.cssText = `
-    color: var(--text);
-    font-size: 14px;
-    line-height: 1.6;
-    margin-bottom: 16px;
-    max-height: 300px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-  `;
-
-  const buttonRow = document.createElement('div');
-  buttonRow.style.cssText = `
-    display: flex;
-    gap: 8px;
-  `;
-
-  const copyBtn = document.createElement('button');
-  copyBtn.textContent = '复制';
-  copyBtn.style.cssText = `
-    flex: 1;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text);
-    cursor: pointer;
-    font-size: 14px;
-  `;
-  copyBtn.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(transcribedText);
-      if (typeof showToast === 'function') showToast('已复制到剪贴板');
-      overlay.remove();
-    } catch (err) {
-      console.error('Copy failed:', err);
-      if (typeof showToast === 'function') showToast('复制失败');
+  // Insert after the voice message in the stack
+  const stack = row.querySelector('.msg-stack');
+  if (stack) {
+    const voiceMessage = stack.querySelector('.message-voice');
+    if (voiceMessage) {
+      voiceMessage.insertAdjacentElement('afterend', transcription);
+    } else {
+      stack.appendChild(transcription);
     }
-  });
-
-  const closeBtn = document.createElement('button');
-  closeBtn.textContent = '关闭';
-  closeBtn.style.cssText = `
-    flex: 1;
-    padding: 10px;
-    border: none;
-    border-radius: 8px;
-    background: var(--accent-primary);
-    color: white;
-    cursor: pointer;
-    font-size: 14px;
-  `;
-  closeBtn.addEventListener('click', () => overlay.remove());
-
-  buttonRow.appendChild(copyBtn);
-  buttonRow.appendChild(closeBtn);
-  dialog.appendChild(title);
-  dialog.appendChild(content);
-  dialog.appendChild(buttonRow);
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
-
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
+  }
 }
 
 /**
@@ -5609,12 +5522,7 @@ async function sendVoiceMessage(transcribedText, audioType = "fake") {
   stack.className = "msg-stack";
   stack.appendChild(voiceBubble);
 
-  const avatar = document.createElement("div");
-  avatar.className = "msg-avatar";
-  avatar.innerHTML = '<div class="msg-avatar-initial">KK</div>';
-
   row.appendChild(stack);
-  row.appendChild(avatar);
 
   maybeAddTimeSeparator(now);
   messageList.appendChild(row);
