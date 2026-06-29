@@ -838,11 +838,22 @@ async function reloadHistory(opts = {}) {
     const replyTo = m.reply_to_message_id
       ? { id: String(m.reply_to_message_id), preview: m.reply_to_preview || "", role: m.reply_to_role || "user" }
       : null;
-    if (m.role === "assistant") {
+
+    // Skip deleted messages (soft delete)
+    if (m.is_deleted) {
+      // Optionally: render as deleted placeholder, for now just skip
+      continue;
+    }
+
+    // Render recalled messages as system notice
+    if (m.is_recalled && m.role === 'user') {
+      renderRecalledMessage(m);
+    } else if (m.role === "assistant") {
       addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null, !!m.read_by_user_at, replyTo);
     } else {
       addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at, replyTo }, m.id);
     }
+
     const replyToData = replyTo ? { id: replyTo.id, role: replyTo.role, preview: replyTo.preview } : null;
     chatMessages.push({
       role: m.role,
@@ -1615,10 +1626,42 @@ function enterMultiSelectMode() {
     checkbox.className = 'multi-select-checkbox';
     checkbox.dataset.msgId = msgId;
     checkbox.innerHTML = '<div class="checkbox-inner"></div>';
+    checkbox.style.cssText = `
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 24px;
+      height: 24px;
+      border: 2px solid var(--border, #ddd);
+      border-radius: 50%;
+      background: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      transition: all 0.2s;
+    `;
+
+    const inner = checkbox.querySelector('.checkbox-inner');
+    inner.style.cssText = `
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-primary, #5B9FF5);
+      opacity: 0;
+      transform: scale(0);
+      transition: all 0.2s;
+    `;
+
     checkbox.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleMessageSelection(msgId);
     });
+
+    // Add checkbox to row with position relative
+    row.style.position = 'relative';
     row.insertBefore(checkbox, row.firstChild);
   });
 
@@ -1630,6 +1673,10 @@ function exitMultiSelectMode() {
   selectedMessageIds.clear();
   messageList.classList.remove('multi-select-mode');
   document.querySelectorAll('.multi-select-checkbox').forEach(el => el.remove());
+  // Reset row position
+  getMessageRows().forEach(row => {
+    row.style.position = '';
+  });
   hideMultiSelectBar();
 }
 
@@ -1645,11 +1692,37 @@ function toggleMessageSelection(msgId) {
 function updateMultiSelectUI() {
   document.querySelectorAll('.multi-select-checkbox').forEach(checkbox => {
     const msgId = checkbox.dataset.msgId;
-    checkbox.classList.toggle('selected', selectedMessageIds.has(msgId));
+    const isSelected = selectedMessageIds.has(msgId);
+    checkbox.classList.toggle('selected', isSelected);
+
+    const inner = checkbox.querySelector('.checkbox-inner');
+    if (inner) {
+      inner.style.opacity = isSelected ? '1' : '0';
+      inner.style.transform = isSelected ? 'scale(1)' : 'scale(0)';
+    }
+
+    if (isSelected) {
+      checkbox.style.borderColor = 'var(--accent-primary, #5B9FF5)';
+      checkbox.style.background = 'var(--accent-primary, #5B9FF5)';
+    } else {
+      checkbox.style.borderColor = 'var(--border, #ddd)';
+      checkbox.style.background = 'white';
+    }
   });
 
   const countEl = document.querySelector('.multi-select-count');
   if (countEl) countEl.textContent = `已选择 ${selectedMessageIds.size} 条`;
+
+  // Update select all button text
+  const selectAllBtn = document.querySelector('#multiSelectBar button');
+  if (selectAllBtn && selectAllBtn.textContent.includes('全选')) {
+    const totalCount = document.querySelectorAll('.multi-select-checkbox').length;
+    if (selectedMessageIds.size === totalCount && totalCount > 0) {
+      selectAllBtn.textContent = '取消全选';
+    } else {
+      selectAllBtn.textContent = '全选';
+    }
+  }
 
   const forwardBtn = document.getElementById('multiSelectForwardBtn');
   const deleteBtn = document.getElementById('multiSelectDeleteBtn');
@@ -1671,11 +1744,21 @@ function showMultiSelectBar() {
   selectAllBtn.textContent = '全选';
   selectAllBtn.style.cssText = 'padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);cursor:pointer;font-size:14px;';
   selectAllBtn.addEventListener('click', () => {
-    const allMsgIds = Array.from(document.querySelectorAll('.multi-select-checkbox')).map(el => el.dataset.msgId);
+    const allMsgIds = [];
+    document.querySelectorAll('.multi-select-checkbox').forEach(el => {
+      const msgId = el.dataset.msgId;
+      if (msgId) allMsgIds.push(msgId);
+    });
+
     if (selectedMessageIds.size === allMsgIds.length) {
+      // 全部已选中，取消全选
       selectedMessageIds.clear();
+      selectAllBtn.textContent = '全选';
     } else {
+      // 选中全部
+      selectedMessageIds.clear();
       allMsgIds.forEach(id => selectedMessageIds.add(id));
+      selectAllBtn.textContent = '取消全选';
     }
     updateMultiSelectUI();
   });
@@ -1955,6 +2038,81 @@ function forwardToTarget(messageIds, targetId, targetLabel) {
 }
 
 
+// 渲染撤回消息（用于 reload 时显示已撤回的消息）
+function renderRecalledMessage(message) {
+  const row = document.createElement('div');
+  row.className = 'msg-row recalled-message-row';
+  row.dataset.msgId = message.id;
+  row.style.cssText = `
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 12px 16px;
+    margin: 8px 0;
+  `;
+
+  const recallNotice = document.createElement('div');
+  recallNotice.className = 'recall-notice';
+  recallNotice.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    text-align: center;
+    background: var(--bg-raise, #f5f5f5);
+    border-radius: 12px;
+    max-width: 320px;
+  `;
+
+  const recallText = document.createElement('div');
+  recallText.textContent = '你撤回了一条消息';
+  recallText.style.cssText = `
+    color: var(--text-muted, #999);
+    font-size: 13px;
+  `;
+
+  const reEditBtn = document.createElement('button');
+  reEditBtn.textContent = '重新编辑';
+  reEditBtn.style.cssText = `
+    padding: 6px 16px;
+    border: 1px solid var(--border-soft, #ddd);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-main, #333);
+    cursor: pointer;
+    font-size: 13px;
+  `;
+  const originalContent = message.original_content || extractTextFromMessageContent(message.content);
+  reEditBtn.addEventListener('click', () => {
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) {
+      messageInput.value = originalContent;
+      messageInput.focus();
+      messageInput.style.height = 'auto';
+      messageInput.style.height = messageInput.scrollHeight + 'px';
+    }
+  });
+
+  const originalText = document.createElement('div');
+  originalText.textContent = `原文：${originalContent}`;
+  originalText.style.cssText = `
+    color: var(--text-muted, #999);
+    font-size: 12px;
+    max-width: 100%;
+    word-break: break-word;
+    margin-top: 4px;
+  `;
+
+  recallNotice.appendChild(recallText);
+  recallNotice.appendChild(reEditBtn);
+  recallNotice.appendChild(originalText);
+  row.appendChild(recallNotice);
+
+  maybeAddTimeSeparator(message.created_at);
+  messageList.appendChild(row);
+}
+
 async function recallMessage(row, msgId) {
   closeMessageActionMenu();
 
@@ -2098,8 +2256,15 @@ async function performRecall(row, msgId, message) {
 
   // 替换消息行为系统消息样式
   row.classList.remove('user', 'assistant');
-  row.classList.add('system-message', 'recalled-message');
+  row.classList.add('recalled-message-row');
   row.innerHTML = '';
+  row.style.cssText = `
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 12px 16px;
+    margin: 8px 0;
+  `;
 
   const recallNotice = document.createElement('div');
   recallNotice.className = 'recall-notice';
@@ -2108,8 +2273,11 @@ async function performRecall(row, msgId, message) {
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    padding: 12px;
+    padding: 12px 20px;
     text-align: center;
+    background: var(--bg-raise, #f5f5f5);
+    border-radius: 12px;
+    max-width: 320px;
   `;
 
   const recallText = document.createElement('div');
