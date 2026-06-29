@@ -4,28 +4,19 @@
    Loads after v2.css; overrides where needed.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Disable native text selection menu (iOS callout) ────────────────────── */
-/* 全局禁用原生长按菜单 */
+/* ── 全局禁用原生长按菜单和文本选择 ────────────────────────────────────── */
+/* 全局禁用原生长按菜单（iOS callout）和文本选择 */
 html, body, * {
   -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
-/* 消息区域允许文本选择但禁用原生菜单 */
-.message-list,
-.message-list *,
-.msg-row,
-.msg-row *,
-.message,
-.message *,
-.message-text,
-.message-text * {
-  -webkit-touch-callout: none !important;
-  -webkit-user-select: text !important;
-  user-select: text !important;
-}
-
-/* 输入框需要保留用户选择功能 */
-input, textarea {
+/* 输入框和可编辑元素需要保留文本选择功能 */
+input,
+textarea,
+[contenteditable="true"],
+[contenteditable="plaintext-only"] {
   -webkit-user-select: text !important;
   user-select: text !important;
 }

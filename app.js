@@ -1879,10 +1879,11 @@ async function performRecall(row, msgId, message) {
 
   // 调用后端API标记消息为已撤回
   try {
-    const response = await fetch('/api/messages/recall', {
+    const response = await fetch(`${getSupabaseUrl()}/functions/v1/messages-recall`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getSupabaseAnonKey()}`
       },
       body: JSON.stringify({
         messageId: msgId,
@@ -1992,10 +1993,11 @@ async function deleteMessage(row, msgId) {
 
   // 调用后端API标记消息为已删除（软删除，不真正删除）
   try {
-    const response = await fetch('/api/messages/delete', {
+    const response = await fetch(`${getSupabaseUrl()}/functions/v1/messages-delete`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getSupabaseAnonKey()}`
       },
       body: JSON.stringify({
         messageId: msgId,
@@ -2276,11 +2278,6 @@ function closeMessageActionMenu() {
     messageActionMenu.remove();
     messageActionMenu = null;
   }
-  // 清除文本选中状态
-  const selection = window.getSelection();
-  if (selection) {
-    selection.removeAllRanges();
-  }
   // 延迟重置 longPressOpened，避免菜单关闭后立即触发点击
   setTimeout(() => {
     longPressOpened = false;
@@ -2435,14 +2432,36 @@ function showMessageActionMenu(row, x, y) {
       if (effectiveMsgId) {
         addMessageMenuButton(row1, "编辑", () => editImageDescription(row, effectiveMsgId));
       }
-      addMessageMenuButton(row1, "保存", () => {
+      addMessageMenuButton(row1, "保存", async () => {
         closeMessageActionMenu();
         const img = row.querySelector(".message-image img");
         if (img) {
-          const a = document.createElement('a');
-          a.href = img.src;
-          a.download = 'image.jpg';
-          a.click();
+          try {
+            // 使用 fetch 获取图片并转换为 blob
+            const response = await fetch(img.src);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `image-${Date.now()}.jpg`;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // 清理 blob URL
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+
+            if (typeof showToast === 'function') {
+              showToast('已保存到相册');
+            }
+          } catch (error) {
+            console.error('Save image error:', error);
+            if (typeof showToast === 'function') {
+              showToast('保存失败，请重试');
+            }
+          }
         }
       });
       if (effectiveMsgId) {
@@ -2476,14 +2495,36 @@ function showMessageActionMenu(row, x, y) {
           setReplyDraft(effectiveMsgId, preview, "assistant");
         });
       }
-      addMessageMenuButton(row1, "保存", () => {
+      addMessageMenuButton(row1, "保存", async () => {
         closeMessageActionMenu();
         const img = row.querySelector(".message-image img");
         if (img) {
-          const a = document.createElement('a');
-          a.href = img.src;
-          a.download = 'image.jpg';
-          a.click();
+          try {
+            // 使用 fetch 获取图片并转换为 blob
+            const response = await fetch(img.src);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `image-${Date.now()}.jpg`;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // 清理 blob URL
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+
+            if (typeof showToast === 'function') {
+              showToast('已保存到相册');
+            }
+          } catch (error) {
+            console.error('Save image error:', error);
+            if (typeof showToast === 'function') {
+              showToast('保存失败，请重试');
+            }
+          }
         }
       });
       if (row === getLastMessageRow("assistant") && canRegenerateRow(row)) {
@@ -2607,24 +2648,6 @@ function showMessageActionMenu(row, x, y) {
   placeMessageActionMenu(menu, x, y);
 }
 
-function selectMessageText(row) {
-  // 选中消息文本（模拟原生长按选中效果）
-  const messageEl = row.querySelector(".message-text");
-  if (!messageEl) return;
-
-  const selection = window.getSelection();
-  if (!selection) return;
-
-  try {
-    const range = document.createRange();
-    range.selectNodeContents(messageEl);
-    selection.removeAllRanges();
-    selection.addRange(range);
-  } catch (e) {
-    console.warn("Failed to select message text:", e);
-  }
-}
-
 function startLongPress(row, x, y) {
   cancelLongPress();
   longPressOpened = false;
@@ -2634,9 +2657,6 @@ function startLongPress(row, x, y) {
     if (longPressOpened) return;
     longPressOpened = true;
     if (navigator.vibrate) navigator.vibrate(8);
-
-    // 选中消息文本
-    selectMessageText(row);
 
     showMessageActionMenu(row, x, y);
   }, 450);
@@ -7915,17 +7935,10 @@ window.updateChatDetailTopBar = updateChatDetailTopBar;
 // Initialize on page load
 updateComposerButtons();
 
-// ── 全局禁用原生文本选择菜单 ────────────────────────────────────────────
-// 阻止所有 contextmenu 事件（除了已经在 messageList 上处理的）
+// ── 全局禁用原生长按菜单 ──────────────────────────────────────────────────
+// 禁用所有区域的原生 contextmenu（包括 chat、bar、其他界面）
 document.addEventListener("contextmenu", (e) => {
-  // 只阻止消息区域和文本选择触发的原生菜单
-  if (e.target instanceof Element) {
-    const inMessageList = e.target.closest(".message-list");
-    const inMessage = e.target.closest(".message");
-    if (inMessageList || inMessage) {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-  }
+  e.preventDefault();
+  e.stopPropagation();
+  return false;
 }, { capture: true });
