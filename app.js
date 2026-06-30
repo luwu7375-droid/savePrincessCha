@@ -1576,12 +1576,13 @@ async function requestStreamingReply(replyMode = "auto") {
         const subBubbles = splitBubbles(bubble.content);
         console.log("[VT-debug] rendering reply, subBubbles:", subBubbles.length, "replyIdStr:", replyIdStr, "isFirstReply:", isFirstReply);
         for (let si = 0; si < subBubbles.length; si++) {
-          const msgId = isFirstReply ? replyIdStr : null;
-          const sibling = isFirstReply ? null : String(replyIdStr);
-          console.log("[VT-debug] insertBubbleSync si:", si, "msgId:", msgId, "sibling:", sibling, "text:", subBubbles[si].slice(0, 30));
-          insertBubbleSync(subBubbles[si], replyTime, msgId, sibling, isFirstReply && si === 0 ? assistantReplyTo : undefined);
-          if (isFirstReply && si === 0) isFirstReply = false;
+          const isFirstSubBubble = (isFirstReply && si === 0);
+          const msgId = isFirstSubBubble ? replyIdStr : null;
+          const sibling = isFirstSubBubble ? null : String(replyIdStr);
+          console.log("[VT-debug] insertBubbleSync si:", si, "isFirstSubBubble:", isFirstSubBubble, "msgId:", msgId, "sibling:", sibling, "text:", subBubbles[si].slice(0, 30));
+          insertBubbleSync(subBubbles[si], replyTime, msgId, sibling, isFirstSubBubble ? assistantReplyTo : undefined);
         }
+        if (isFirstReply && subBubbles.length > 0) isFirstReply = false;
       }
     }
   } else {
@@ -3727,7 +3728,7 @@ function editVoiceTranscription(row, effectiveMsgId) {
  * Change voice playback speed (for Cha's real voice)
  */
 function changeVoicePlaybackSpeed(row) {
-  const voiceContainer = row.querySelector('.voice-message');
+  const voiceContainer = row.querySelector('.message-voice');
   if (!voiceContainer) {
     if (typeof showToast === 'function') showToast('无法找到语音消息');
     return;
@@ -6565,7 +6566,7 @@ async function sendVoiceMessage(transcribedText, audioType = "fake") {
       if (tempRow) {
         delete tempRow.dataset.tempId;
         tempRow.dataset.msgId = String(msgId);
-        const voiceEl = tempRow.querySelector(".voice-message");
+        const voiceEl = tempRow.querySelector(".message-voice");
         if (voiceEl) voiceEl.dataset.msgId = String(msgId);
       }
 

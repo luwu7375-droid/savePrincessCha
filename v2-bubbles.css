@@ -1513,3 +1513,79 @@ img.msg-image {
     transition: none !important;
   }
 }
+
+/* ── Phase 6: Auto-generated voice indicators ────────────────────────────── */
+
+/* Voice indicator button for Cha's auto-generated TTS */
+.voice-indicator {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin-left: 8px !important;
+  padding: 4px 8px !important;
+  border: none !important;
+  border-radius: 12px !important;
+  background: rgba(0, 0, 0, 0.06) !important;
+  color: var(--text-muted) !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  vertical-align: middle !important;
+}
+
+.voice-indicator:hover {
+  background: rgba(91, 159, 245, 0.12) !important;
+  color: var(--accent-primary) !important;
+}
+
+.voice-indicator.playing {
+  background: rgba(91, 159, 245, 0.18) !important;
+  color: var(--accent-primary) !important;
+}
+
+.voice-indicator svg {
+  flex-shrink: 0;
+}
+
+/* Dark mode */
+[data-theme="dark"] .voice-indicator {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: oklch(58% 0.010 250) !important;
+}
+
+[data-theme="dark"] .voice-indicator:hover {
+  background: rgba(91, 159, 245, 0.15) !important;
+  color: oklch(68% 0.14 248) !important;
+}
+
+[data-theme="dark"] .voice-indicator.playing {
+  background: rgba(91, 159, 245, 0.22) !important;
+  color: oklch(68% 0.14 248) !important;
+}
+
+/* ── Playback speed selector animations ──────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.playback-speed-overlay {
+  animation: fadeIn 0.2s ease !important;
+}
+
+.playback-speed-dialog {
+  animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+

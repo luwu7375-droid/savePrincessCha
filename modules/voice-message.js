@@ -190,6 +190,162 @@
   }
 
   /**
+   * Show playback speed selector dialog
+   * @param {HTMLElement} container - Voice message container
+   * @returns {Promise<number>} Selected playback speed
+   */
+  function showPlaybackSpeedSelector(container) {
+    return new Promise((resolve, reject) => {
+      const currentSpeed = parseFloat(container.dataset.playbackSpeed || '1.0');
+      const speeds = [
+        { value: 1.0, label: '1.0x 标准' },
+        { value: 1.5, label: '1.5x 稍快' },
+        { value: 2.0, label: '2.0x 很快' }
+      ];
+
+      const overlay = document.createElement('div');
+      overlay.className = 'playback-speed-overlay';
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        animation: fadeIn 0.2s ease;
+      `;
+
+      const dialog = document.createElement('div');
+      dialog.className = 'playback-speed-dialog';
+      dialog.style.cssText = `
+        background: var(--bg);
+        border-radius: 16px;
+        padding: 20px;
+        width: 90%;
+        max-width: 320px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+      `;
+
+      const title = document.createElement('h3');
+      title.textContent = '播放倍速';
+      title.style.cssText = `
+        margin: 0 0 16px 0;
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--text);
+        text-align: center;
+      `;
+
+      const speedList = document.createElement('div');
+      speedList.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 16px;
+      `;
+
+      speeds.forEach(speed => {
+        const btn = document.createElement('button');
+        btn.textContent = speed.label;
+        btn.style.cssText = `
+          padding: 14px 20px;
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          background: ${speed.value === currentSpeed ? 'var(--accent-primary)' : 'var(--surface)'};
+          color: ${speed.value === currentSpeed ? '#ffffff' : 'var(--text)'};
+          font-size: 15px;
+          font-weight: ${speed.value === currentSpeed ? '600' : '400'};
+          cursor: pointer;
+          transition: all 0.15s ease;
+          font-family: inherit;
+        `;
+
+        btn.addEventListener('mouseenter', () => {
+          if (speed.value !== currentSpeed) {
+            btn.style.background = 'var(--surface-soft)';
+          }
+        });
+        btn.addEventListener('mouseleave', () => {
+          if (speed.value !== currentSpeed) {
+            btn.style.background = 'var(--surface)';
+          }
+        });
+
+        btn.addEventListener('click', () => {
+          document.body.removeChild(overlay);
+          resolve(speed.value);
+        });
+
+        speedList.appendChild(btn);
+      });
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = '取消';
+      cancelBtn.style.cssText = `
+        width: 100%;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 15px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        font-family: inherit;
+      `;
+
+      cancelBtn.addEventListener('click', () => {
+        document.body.removeChild(overlay);
+        reject(new Error('User cancelled'));
+      });
+
+      dialog.appendChild(title);
+      dialog.appendChild(speedList);
+      dialog.appendChild(cancelBtn);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+
+      // Click overlay to cancel
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          document.body.removeChild(overlay);
+          reject(new Error('User cancelled'));
+        }
+      });
+    });
+  }
+
+  /**
+   * Change playback speed for a voice message
+   * @param {HTMLElement} container - Voice message container
+   */
+  async function changePlaybackSpeed(container) {
+    try {
+      const newSpeed = await showPlaybackSpeedSelector(container);
+
+      // Save speed to container
+      container.dataset.playbackSpeed = newSpeed.toString();
+
+      // Apply to currently playing audio if this message is playing
+      if (currentVoiceAudio && currentVoiceRow === container.closest('.msg-row')) {
+        currentVoiceAudio.playbackRate = newSpeed;
+      }
+
+      // Show toast
+      if (typeof showToast === 'function') {
+        showToast(`倍速已设置为 ${newSpeed}x`);
+      }
+    } catch (err) {
+      // User cancelled, do nothing
+    }
+  }
+
+  /**
    * Format duration in seconds to MM:SS
    */
   function formatDuration(seconds) {
@@ -273,7 +429,7 @@
 
       const statusText = document.createElement("div");
       statusText.className = "voice-input-status";
-      statusText.textContent = "点击\"开始录音\"按钮";
+      statusText.textContent = "录音或直接输入文字，然后点击发送";
       statusText.style.cssText = `
         margin: 12px 0;
         font-size: 13px;
@@ -335,35 +491,58 @@
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
-        recognition = new SpeechRecognition();
-        recognition.lang = "zh-CN";
-        recognition.continuous = false;
-        recognition.interimResults = false;
+        try {
+          recognition = new SpeechRecognition();
+          recognition.lang = "zh-CN";
+          recognition.continuous = false;
+          recognition.interimResults = true;
 
-        recognition.onresult = (event) => {
-          const transcript = event.results[0][0].transcript;
-          textarea.value = transcript;
-          statusText.textContent = "识别完成，可以编辑后发送";
-          sendBtn.disabled = false;
-          sendBtn.style.opacity = "1";
-        };
+          recognition.onresult = (event) => {
+            let transcript = '';
+            for (let i = 0; i < event.results.length; i++) {
+              transcript += event.results[i][0].transcript;
+            }
+            textarea.value = transcript;
+            statusText.textContent = event.results[0].isFinal
+              ? "识别完成，可以编辑后发送"
+              : "正在识别...";
+            sendBtn.disabled = false;
+            sendBtn.style.opacity = "1";
+          };
 
-        recognition.onend = () => {
-          isRecording = false;
-          recordBtn.textContent = "开始录音";
-          recordBtn.style.background = "transparent";
-        };
+          recognition.onend = () => {
+            isRecording = false;
+            recordBtn.textContent = "开始录音";
+            recordBtn.style.background = "transparent";
+            recordBtn.style.color = "var(--accent-primary)";
+          };
 
-        recognition.onerror = (event) => {
-          console.error("Speech recognition error:", event.error);
-          isRecording = false;
-          recordBtn.textContent = "开始录音";
-          recordBtn.style.background = "transparent";
-          statusText.textContent = `识别失败: ${event.error}`;
-        };
-      } else {
+          recognition.onerror = (event) => {
+            console.error("Speech recognition error:", event.error);
+            isRecording = false;
+            recordBtn.textContent = "开始录音";
+            recordBtn.style.background = "transparent";
+            recordBtn.style.color = "var(--accent-primary)";
+            if (event.error === 'not-allowed') {
+              statusText.textContent = "需要麦克风权限，请在设置中允许";
+            } else if (event.error === 'no-speech') {
+              statusText.textContent = "未检测到语音，请再试一次";
+            } else if (event.error === 'network') {
+              statusText.textContent = "网络错误，请直接输入文字发送";
+            } else {
+              statusText.textContent = `识别失败: ${event.error}，可直接输入文字`;
+            }
+          };
+        } catch (e) {
+          console.error("SpeechRecognition init failed:", e);
+          recognition = null;
+        }
+      }
+
+      if (!recognition) {
         recordBtn.disabled = true;
-        statusText.textContent = "浏览器不支持语音识别";
+        recordBtn.style.opacity = "0.4";
+        statusText.textContent = "语音识别不可用，请直接输入文字发送";
       }
 
       recordBtn.addEventListener("click", () => {
@@ -445,6 +624,7 @@
     createVoiceMessageBubble,
     stopVoicePlayback,
     showVoiceInputDialog,
+    changePlaybackSpeed,
     formatDuration,
     // Expose currentVoiceAudio for playback speed control
     get currentAudio() {

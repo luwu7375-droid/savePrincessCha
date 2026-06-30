@@ -352,6 +352,9 @@ function _renderVoiceSubpage() {
   const ttsSupported = window.SPVoice ? window.SPVoice.isTTSSupported() : false;
   const profiles = cfg.profiles || {};
 
+  // Get auto-voice setting
+  const autoVoiceEnabled = localStorage.getItem("cha_auto_voice_enabled") !== "false";
+
   function profileRow(lang, label, hint) {
     const voiceId = (profiles[lang] || {}).voice_id || "";
     return `
@@ -363,6 +366,18 @@ function _renderVoiceSubpage() {
   }
 
   return `
+    <div class="settings-section">
+      <div class="settings-section-label">自动语音生成</div>
+      <div class="settings-card">
+        <div class="settings-card-row">
+          <div><strong>Cha 自动语音</strong><small>为 Cha 的回复自动生成语音</small></div>
+          <label class="settings-toggle">
+            <input type="checkbox" id="chaAutoVoiceToggle" ${autoVoiceEnabled ? "checked" : ""}>
+            <span class="settings-toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
     <div class="settings-section">
       <div class="settings-section-label">声音引擎</div>
       <div class="settings-card">
@@ -1149,6 +1164,18 @@ function _renderMemorySubpage() {
 
 function _initSettingsVoiceSubpage(container) {
   if (!window.SPVoice) return;
+
+  // Auto-voice toggle
+  const autoVoiceToggle = container.querySelector("#chaAutoVoiceToggle");
+  if (autoVoiceToggle) {
+    autoVoiceToggle.addEventListener("change", (e) => {
+      const enabled = e.target.checked;
+      localStorage.setItem("cha_auto_voice_enabled", enabled ? "true" : "false");
+      if (typeof showToast === "function") {
+        showToast(enabled ? "已开启 Cha 自动语音" : "已关闭 Cha 自动语音");
+      }
+    });
+  }
 
   const engineSelect = container.querySelector("#voiceTTSEngine");
   const rateSlider = container.querySelector("#voiceTTSRate");

@@ -33,6 +33,9 @@ const PRICE_TABLE: Record<string, Record<string, ModelPrice>> = {
     // GPT-4o family
     "gpt-4o-mini":      { in: 1.08, out: 4.32,  cacheRead: 0.54, cacheWrite: 0 },
     "gpt-4o":           { in: 18,   out: 72,     cacheRead: 9,    cacheWrite: 0 },
+    // GPT-5 family — price TBD, using GPT-4o as placeholder; update from proxy invoice
+    "gpt-5.5":          { in: 18,   out: 72,     cacheRead: 9,    cacheWrite: 0 },
+    "gpt-5":            { in: 18,   out: 72,     cacheRead: 9,    cacheWrite: 0 },
     // Gemini 2.x Flash / Pro
     "gemini-2.5-pro":   { in: 25.2, out: 72,     cacheRead: 3.6,  cacheWrite: 0 },
     "gemini-2.5-flash": { in: 1.8,  out: 5.4,    cacheRead: 0.9,  cacheWrite: 0 },
@@ -86,11 +89,19 @@ const PRICE_TABLE: Record<string, Record<string, ModelPrice>> = {
 /** Find best-match price entry for a given site + model string.
  *  Tries longest prefix match within the site's price map.
  *  Falls back to "_default" if available, then returns null. */
+function normalizeModelName(rawModel: string): string {
+  // Strip [Chinese name] prefix like "[浣溪沙]", "[Custom]" etc.
+  let m = rawModel.replace(/^\[[^\]]*\]/, "");
+  // Strip trailing circled numbers ①②③④⑤ used by some proxies
+  m = m.replace(/[①②③④⑤⑥⑦⑧⑨⑩]+$/, "");
+  return m.trim();
+}
+
 function findPrice(site: string, rawModel: string): ModelPrice | null {
   const siteMap = PRICE_TABLE[site];
   if (!siteMap) return null;
 
-  const model = rawModel.toLowerCase();
+  const model = normalizeModelName(rawModel).toLowerCase();
   let bestKey = "";
   let bestPrice: ModelPrice | null = null;
 

@@ -15,7 +15,9 @@
     }
 
     const userId = window.currentUserId || 'default';
-    const conversationId = window.currentConversationId || 'default';
+    const conversationId = typeof getActiveConversationId === 'function'
+      ? getActiveConversationId()
+      : (window.currentConversationId || 'default');
 
     // Fetch recent messages
     const { data: messages, error } = await supabaseClient
