@@ -318,6 +318,7 @@ function showLegacyDataNotice() {
     getMessageQuotePreview,
     setLoading,
     addAssistantBubbles,
+    insertBubbleSync,
     insertBubblesAnimated,
     renderWelcomeMessage,
     readDelta,
@@ -335,6 +336,7 @@ function showLegacyDataNotice() {
   window.clearReplyDraft = clearReplyDraft;
   window.setLoading = setLoading;
   window.addAssistantBubbles = addAssistantBubbles;
+  window.insertBubbleSync = insertBubbleSync;
   window.insertBubblesAnimated = insertBubblesAnimated;
   window.renderWelcomeMessage = renderWelcomeMessage;
   window.renderReplyPreview = renderReplyPreview;
