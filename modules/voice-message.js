@@ -528,7 +528,22 @@
       }
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
+
+      if (!SpeechRecognition) {
+        recordBtn.disabled = true;
+        recordBtn.style.opacity = "0.4";
+        statusText.textContent = "语音识别不可用，请直接输入文字发送";
+      }
+
+      recordBtn.addEventListener("click", () => {
+        if (!SpeechRecognition) return;
+
+        if (isRecording && recognition) {
+          recognition.stop();
+          return;
+        }
+
+        // Create a fresh recognition instance each time (required for iOS Safari)
         try {
           recognition = new SpeechRecognition();
           recognition.lang = "zh-CN";
@@ -569,39 +584,29 @@
               statusText.textContent = "未检测到语音，请再试一次";
             } else if (event.error === 'network') {
               statusText.textContent = "网络错误，请直接输入文字发送";
+            } else if (event.error === 'aborted') {
+              statusText.textContent = "录音被中断，请再试一次或直接输入文字";
+            } else if (event.error === 'audio-capture') {
+              statusText.textContent = "无法访问麦克风，请检查设备设置";
+            } else if (event.error === 'service-not-allowed') {
+              statusText.textContent = "语音服务不可用，请直接输入文字发送";
             } else {
               statusText.textContent = `识别失败: ${event.error}，可直接输入文字`;
             }
           };
-        } catch (e) {
-          console.error("SpeechRecognition init failed:", e);
-          recognition = null;
-        }
-      }
 
-      if (!recognition) {
-        recordBtn.disabled = true;
-        recordBtn.style.opacity = "0.4";
-        statusText.textContent = "语音识别不可用，请直接输入文字发送";
-      }
-
-      recordBtn.addEventListener("click", () => {
-        if (!recognition) return;
-
-        if (isRecording) {
-          recognition.stop();
-        } else {
-          try {
-            recognition.start();
-            isRecording = true;
-            recordBtn.style.background = "var(--accent-red, #ff4444)";
-            recordBtn.style.color = "white";
-            startRecordTimer();
-          } catch (err) {
-            console.error("Failed to start recognition:", err);
-            stopRecordTimer();
-            statusText.textContent = "启动录音失败";
-          }
+          recognition.start();
+          isRecording = true;
+          recordBtn.textContent = "停止录音";
+          recordBtn.style.background = "var(--accent-red, #ff4444)";
+          recordBtn.style.color = "white";
+          statusText.textContent = "正在录音...";
+          startRecordTimer();
+        } catch (err) {
+          console.error("Failed to start recognition:", err);
+          stopRecordTimer();
+          statusText.textContent = "启动录音失败，请直接输入文字";
+          isRecording = false;
         }
       });
 

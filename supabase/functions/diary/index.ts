@@ -178,19 +178,49 @@ content: ${evt.content}
     try {
       // Strip markdown code blocks if present
       let diaryText = diaryCallResult.text.trim();
-      const jsonMatch = diaryText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+
+      // Strategy 1: Try to find JSON within markdown code blocks
+      const jsonMatch = diaryText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
       if (jsonMatch) {
         diaryText = jsonMatch[1].trim();
       }
+
+      // Strategy 2: If not wrapped in code blocks, find first { to last }
+      if (!diaryText.startsWith("{")) {
+        const firstBrace = diaryText.indexOf("{");
+        const lastBrace = diaryText.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          diaryText = diaryText.substring(firstBrace, lastBrace + 1);
+        }
+      }
+
+      // Strategy 3: Fix common JSON issues before parsing
+      // Remove trailing commas before } or ]
+      diaryText = diaryText.replace(/,\s*([}\]])/g, "$1");
+
       diaryJson = JSON.parse(diaryText);
     } catch (_e) {
-      return new Response(
-        JSON.stringify({
-          error: "Failed to parse diary JSON",
-          raw_response: debug ? diaryCallResult.text : undefined,
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      // Strategy 4: Try to extract JSON with a more aggressive regex
+      try {
+        const rawText = diaryCallResult.text;
+        const braceStart = rawText.indexOf("{");
+        const braceEnd = rawText.lastIndexOf("}");
+        if (braceStart !== -1 && braceEnd > braceStart) {
+          let extracted = rawText.substring(braceStart, braceEnd + 1);
+          extracted = extracted.replace(/,\s*([}\]])/g, "$1");
+          diaryJson = JSON.parse(extracted);
+        } else {
+          throw new Error("No JSON object found");
+        }
+      } catch (_e2) {
+        return new Response(
+          JSON.stringify({
+            error: "Failed to parse diary JSON",
+            raw_response: debug ? diaryCallResult.text : undefined,
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
     }
 
     const validationError = validateDiarySchema(diaryJson);
@@ -217,19 +247,46 @@ content: ${evt.content}
     try {
       // Strip markdown code blocks if present
       let checkerText = checkerCallResult.text.trim();
-      const jsonMatch = checkerText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+      const jsonMatch = checkerText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
       if (jsonMatch) {
         checkerText = jsonMatch[1].trim();
       }
+
+      // Find first { to last }
+      if (!checkerText.startsWith("{")) {
+        const firstBrace = checkerText.indexOf("{");
+        const lastBrace = checkerText.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          checkerText = checkerText.substring(firstBrace, lastBrace + 1);
+        }
+      }
+
+      // Fix trailing commas
+      checkerText = checkerText.replace(/,\s*([}\]])/g, "$1");
+
       checkerJson = JSON.parse(checkerText);
     } catch (_e) {
-      return new Response(
-        JSON.stringify({
-          error: "Failed to parse checker JSON",
-          raw_response: debug ? checkerCallResult.text : undefined,
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      // Fallback: try aggressive extraction
+      try {
+        const rawText = checkerCallResult.text;
+        const braceStart = rawText.indexOf("{");
+        const braceEnd = rawText.lastIndexOf("}");
+        if (braceStart !== -1 && braceEnd > braceStart) {
+          let extracted = rawText.substring(braceStart, braceEnd + 1);
+          extracted = extracted.replace(/,\s*([}\]])/g, "$1");
+          checkerJson = JSON.parse(extracted);
+        } else {
+          throw new Error("No JSON object found");
+        }
+      } catch (_e2) {
+        return new Response(
+          JSON.stringify({
+            error: "Failed to parse checker JSON",
+            raw_response: debug ? checkerCallResult.text : undefined,
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
     }
 
     let finalStatus: "draft" | "checked" | "failed_check" = "draft";
