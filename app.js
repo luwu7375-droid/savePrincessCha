@@ -806,6 +806,169 @@ async function saveMessage(role, content, imageStoragePath = null, eventFields =
   return data?.id || null;
 }
 
+function isExplicitVoiceMessage(message) {
+  return message?.type === "voice" || message?.audio_type_explicit === true;
+}
+
+function shouldRenderVoiceMessage(message) {
+  return isExplicitVoiceMessage(message) && !!window.SPVoiceMessage;
+}
+
+function shouldAddAssistantVoiceIndicator(message) {
+  return message?.role === "assistant"
+    && !!message.audio_url
+    && message.audio_type === "real"
+    && !isExplicitVoiceMessage(message)
+    && !!message.id;
+}
+
+let chaVoiceTtsDebug = {};
+
+function updateChaVoiceTtsDebug(fields = {}) {
+  chaVoiceTtsDebug = {
+    ...chaVoiceTtsDebug,
+    ...fields,
+    updated_at: new Date().toISOString(),
+  };
+  window.chaVoiceTtsDebug = chaVoiceTtsDebug;
+  return chaVoiceTtsDebug;
+}
+
+function getChaTtsFailureReason(error) {
+  if (!error) return "unknown";
+  if (error instanceof Error) return error.message || "unknown";
+  return String(error);
+}
+
+function estimateChaVoiceDuration(text, language = "zh") {
+  const charsPerMinute = language === "zh" ? 150 : 180;
+  return Math.max(1, Math.ceil(((text || "").length / charsPerMinute) * 60));
+}
+
+function getChaTtsRequestConfig(text) {
+  const ttsConfig = typeof SPVoice !== "undefined" && SPVoice.getTTSConfig
+    ? SPVoice.getTTSConfig()
+    : null;
+
+  if (!ttsConfig || !ttsConfig.provider) {
+    throw new Error("TTS provider is not configured");
+  }
+
+  const language = typeof SPVoice !== "undefined" && SPVoice.detectTtsLanguage
+    ? SPVoice.detectTtsLanguage(text)
+    : "zh";
+
+  const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+  const anonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !anonKey || supabaseUrl === "YOUR_SUPABASE_URL" || anonKey === "YOUR_SUPABASE_ANON_KEY") {
+    throw new Error("TTS endpoint is not configured");
+  }
+
+  const profiles = ttsConfig.profiles || {};
+  const profile = profiles[language] || profiles.default || profiles.en || {};
+  const voiceId = profile.voice_id || profiles.en?.voice_id || profiles.default?.voice_id || "";
+  const modelId = ttsConfig.model_id || profile.model_id || "eleven_v3";
+
+  if (!voiceId) {
+    throw new Error("TTS voice_id is not configured");
+  }
+
+  return {
+    endpoint: `${supabaseUrl}/functions/v1/tts`,
+    anonKey,
+    language,
+    provider: ttsConfig.provider || "elevenlabs",
+    voiceId,
+    modelId,
+    profile,
+  };
+}
+
+async function requestChaTts(text, { messageId = null, purpose = "attachment" } = {}) {
+  const cfg = getChaTtsRequestConfig(text);
+  updateChaVoiceTtsDebug({
+    tts_provider: cfg.provider,
+    voice_id: cfg.voiceId,
+    model_id: cfg.modelId,
+    tts_endpoint: cfg.endpoint,
+    tts_status: "pending",
+    tts_error: null,
+    storage_upload_status: null,
+    audio_url_returned: false,
+    purpose,
+  });
+
+  let response;
+  let data = null;
+  try {
+    response = await fetch(cfg.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cfg.anonKey}`,
+        "apikey": cfg.anonKey,
+      },
+      body: JSON.stringify({
+        message_id: messageId != null ? Number(messageId) : null,
+        text,
+        language_hint: cfg.language,
+        provider: cfg.provider,
+        voice_profile: {
+          voice_id: cfg.voiceId,
+          model_id: cfg.modelId,
+          settings: cfg.profile.settings,
+        },
+      }),
+    });
+
+    const raw = await response.text();
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      data = { message: raw };
+    }
+
+    if (!response.ok || data?.ok === false) {
+      const reason = data?.message || data?.code || response.statusText || "TTS request failed";
+      throw new Error(`${response.status}: ${reason}`);
+    }
+
+    const audioUrl = data.audio_url || data.url;
+    if (!audioUrl) {
+      throw new Error("TTS returned no audio URL");
+    }
+
+    const audioDuration = data.duration || estimateChaVoiceDuration(text, cfg.language);
+    updateChaVoiceTtsDebug({
+      tts_status: response.status,
+      tts_error: null,
+      storage_upload_status: data.storage_upload_status || data.audio_url_type || (data.cache_write_failed ? "data_fallback" : null),
+      audio_url_returned: true,
+      tts_provider: data.provider || cfg.provider,
+      voice_id: data.voice_id || cfg.voiceId,
+      model_id: data.model_id || cfg.modelId,
+    });
+
+    return {
+      data,
+      audioUrl,
+      audioDuration,
+      language: cfg.language,
+      provider: data.provider || cfg.provider,
+      voiceId: data.voice_id || cfg.voiceId,
+      modelId: data.model_id || cfg.modelId,
+    };
+  } catch (error) {
+    updateChaVoiceTtsDebug({
+      tts_status: response?.status || "error",
+      tts_error: getChaTtsFailureReason(error),
+      storage_upload_status: data?.storage_upload_status || data?.audio_url_type || (data?.cache_write_failed ? "data_fallback" : null),
+      audio_url_returned: !!(data?.audio_url || data?.url),
+    });
+    throw error;
+  }
+}
+
 /**
  * Generate TTS voice for Cha's assistant message
  * Calls TTS endpoint, saves audio_url to database, updates UI
@@ -820,78 +983,10 @@ async function generateChaVoice(messageId, text) {
   if (!autoVoiceEnabled) return;
 
   try {
-    // Get TTS config
-    const ttsConfig = typeof SPVoice !== "undefined" && SPVoice.getTTSConfig
-      ? SPVoice.getTTSConfig()
-      : null;
-
-    if (!ttsConfig || !ttsConfig.provider) {
-      console.log("TTS not configured, skipping Cha voice generation");
-      return;
-    }
-
-    // Detect language for voice profile selection
-    const language = typeof SPVoice !== "undefined" && SPVoice.detectTtsLanguage
-      ? SPVoice.detectTtsLanguage(text)
-      : "zh";
-
-    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
-    const anonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
-    if (!supabaseUrl || !anonKey) {
-      console.warn("TTS endpoint is not configured, skipping Cha voice generation");
-      return;
-    }
-
-    const profiles = ttsConfig.profiles || {};
-    const profile = profiles[language] || profiles.default || profiles.en || {};
-    const voiceId = profile.voice_id || profiles.en?.voice_id || profiles.default?.voice_id || "";
-    const modelId = ttsConfig.model_id || profile.model_id || "eleven_v3";
-
-    if (!voiceId) {
-      console.warn("TTS voice_id is not configured, skipping Cha voice generation");
-      return;
-    }
-
-    // Call TTS endpoint
-    const response = await fetch(`${supabaseUrl}/functions/v1/tts`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${anonKey}`,
-        "apikey": anonKey,
-      },
-      body: JSON.stringify({
-        message_id: Number(messageId),
-        text: text,
-        language_hint: language,
-        provider: ttsConfig.provider || "elevenlabs",
-        voice_profile: {
-          voice_id: voiceId,
-          model_id: modelId,
-          settings: profile.settings,
-        },
-      }),
+    const { audioUrl, audioDuration } = await requestChaTts(text, {
+      messageId: Number(messageId),
+      purpose: "auto_tts_attachment",
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.warn("TTS generation failed:", response.status, errorText);
-      return;
-    }
-
-    const data = await response.json();
-    const audioUrl = data.audio_url || data.url;
-
-    if (!audioUrl) {
-      console.warn("TTS returned no audio URL");
-      return;
-    }
-
-    // Calculate approximate duration (fallback if not provided by TTS)
-    // Rough estimate: ~150 characters per minute for Chinese, ~180 for English
-    const charsPerMinute = language === "zh" ? 150 : 180;
-    const estimatedDuration = Math.max(1, Math.ceil((text.length / charsPerMinute) * 60));
-    const audioDuration = data.duration || estimatedDuration;
 
     // Update message in database with voice data
     const { error: updateError } = await supabaseClient
@@ -900,12 +995,14 @@ async function generateChaVoice(messageId, text) {
         audio_url: audioUrl,
         audio_duration: audioDuration,
         audio_type: "real",
+        audio_type_explicit: false,
         audio_transcribed_text: text, // Store original text as transcription
       })
       .eq("id", Number(messageId));
 
     if (updateError) {
-      console.error("Failed to save Cha voice to database:", updateError);
+      console.warn("Failed to save Cha voice attachment to database:", updateError);
+      showToast("Cha 朗读保存失败");
       return;
     }
 
@@ -915,6 +1012,7 @@ async function generateChaVoice(messageId, text) {
       msgEntry.audio_url = audioUrl;
       msgEntry.audio_duration = audioDuration;
       msgEntry.audio_type = "real";
+      msgEntry.audio_type_explicit = false;
       msgEntry.audio_transcribed_text = text;
     }
 
@@ -923,9 +1021,121 @@ async function generateChaVoice(messageId, text) {
 
     console.log(`✓ Cha voice generated for message ${messageId}`);
   } catch (error) {
-    console.error("Cha voice generation error:", error);
+    const reason = getChaTtsFailureReason(error);
+    console.warn("Cha voice attachment generation error:", error);
+    showToast(`Cha 朗读生成失败：${reason}`);
   }
 }
+
+async function sendChaVoiceMessage(text, options = {}) {
+  if (!supabaseClient || !text || !text.trim()) return null;
+  if (window.SPVoice) window.SPVoice.stopSpeaking();
+  if (window.SPVoiceMessage) window.SPVoiceMessage.stopVoicePlayback();
+
+  const now = new Date().toISOString();
+  const tempId = `tmp-cha-voice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const conversationId = getActiveConversationId();
+  const cleanedText = text.trim();
+
+  const row = document.createElement("div");
+  row.className = "msg-row assistant";
+  row.dataset.tempId = tempId;
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.title = "Cha";
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+  const pending = document.createElement("div");
+  pending.className = "message assistant cha-message message-voice voice-pending";
+  pending.textContent = "语音生成中...";
+  stack.appendChild(pending);
+  row.appendChild(avatar);
+  row.appendChild(stack);
+  maybeAddTimeSeparator(now);
+  messageList.appendChild(row);
+  messageList.scrollTop = messageList.scrollHeight;
+
+  try {
+    const { audioUrl, audioDuration } = await requestChaTts(cleanedText, {
+      messageId: null,
+      purpose: options.purpose || "explicit_voice_message",
+    });
+    const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
+    const userId = user?.id || window.currentUserId;
+    const { data, error } = await supabaseClient
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        user_id: userId,
+        role: "assistant",
+        content: cleanedText || "[语音]",
+        type: "voice",
+        audio_type: "real",
+        audio_type_explicit: true,
+        audio_url: audioUrl,
+        audio_duration: audioDuration,
+        audio_transcribed_text: cleanedText,
+      })
+      .select("id, created_at")
+      .single();
+
+    if (error) throw error;
+
+    const msgId = data?.id != null ? String(data.id) : null;
+    const createdAt = data?.created_at || now;
+    delete row.dataset.tempId;
+    if (msgId) {
+      row.dataset.msgId = msgId;
+      row.dataset.unreadCha = "1";
+    }
+
+    stack.innerHTML = "";
+    if (window.SPVoiceMessage) {
+      const voiceBubble = window.SPVoiceMessage.createVoiceMessageBubble({
+        audioUrl,
+        duration: audioDuration,
+        audioType: "real",
+        transcribedText: cleanedText,
+        role: "assistant",
+        msgId,
+      });
+      stack.appendChild(voiceBubble);
+    } else {
+      pending.textContent = cleanedText;
+      stack.appendChild(pending);
+      if (msgId) addVoiceIndicatorToMessage(msgId, audioUrl, audioDuration, cleanedText);
+    }
+
+    chatMessages.push({
+      role: "assistant",
+      content: cleanedText,
+      created_at: createdAt,
+      id: msgId,
+      type: "voice",
+      audio_type: "real",
+      audio_type_explicit: true,
+      audio_url: audioUrl,
+      audio_duration: audioDuration,
+      audio_transcribed_text: cleanedText,
+      read_by_user_at: null,
+    });
+    refreshMessageActions();
+    syncChaUnreadCount();
+    observeUnreadChaRows();
+    markVisibleAssistantRowsRead();
+    return msgId;
+  } catch (error) {
+    const reason = getChaTtsFailureReason(error);
+    console.warn("Cha explicit voice message failed:", error);
+    pending.textContent = "语音生成失败";
+    pending.title = reason;
+    showToast(`Cha 语音消息生成失败：${reason}`);
+    return null;
+  }
+}
+
+window.sendChaVoiceMessage = sendChaVoiceMessage;
+window.generateChaVoiceMessage = sendChaVoiceMessage;
 
 /**
  * Add a voice playback indicator to an existing text message
@@ -1078,7 +1288,7 @@ async function reloadHistory(opts = {}) {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_transcribed_text, edited, edited_at, edit_count, edit_history")
+    .select("id, role, content, type, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_type_explicit, audio_transcribed_text, edited, edited_at, edit_count, edit_history")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
@@ -1115,7 +1325,7 @@ async function reloadHistory(opts = {}) {
     // Render recalled messages as system notice
     if (m.is_recalled && m.role === 'user') {
       renderRecalledMessage(m);
-    } else if (m.audio_type && window.SPVoiceMessage) {
+    } else if (shouldRenderVoiceMessage(m)) {
       // Render voice message
       renderVoiceMessage(m, replyTo);
     } else if (m.role === "assistant") {
@@ -1128,6 +1338,7 @@ async function reloadHistory(opts = {}) {
     chatMessages.push({
       role: m.role,
       content: m.content,
+      type: m.type ?? "message",
       created_at: m.created_at,
       id: m.id != null ? String(m.id) : null,
       read_by_cha_at: m.read_by_cha_at ?? null,
@@ -1142,6 +1353,7 @@ async function reloadHistory(opts = {}) {
       audio_url: m.audio_url ?? null,
       audio_duration: m.audio_duration ?? null,
       audio_type: m.audio_type ?? null,
+      audio_type_explicit: m.audio_type_explicit ?? false,
       audio_transcribed_text: m.audio_transcribed_text ?? null,
       edited: m.edited ?? false,
       edited_at: m.edited_at ?? null,
@@ -1156,7 +1368,7 @@ async function reloadHistory(opts = {}) {
     }
 
     // Add voice indicator for assistant messages with auto-generated voice
-    if (m.role === "assistant" && m.audio_url && m.audio_type === "real" && !m.audio_type_explicit && m.id) {
+    if (shouldAddAssistantVoiceIndicator(m)) {
       addVoiceIndicatorToMessage(m.id, m.audio_url, m.audio_duration || 0, m.audio_transcribed_text || m.content);
     }
   }
@@ -1183,7 +1395,7 @@ async function loadOlderHistory() {
   historyLoadingOlder = true;
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_transcribed_text, edited, edited_at, edit_count, edit_history")
+    .select("id, role, content, type, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_type_explicit, audio_transcribed_text, edited, edited_at, edit_count, edit_history")
     .eq("conversation_id", conversationId)
     .lt("created_at", oldestLoadedMessageCreatedAt)
     .order("created_at", { ascending: false })
@@ -1198,6 +1410,7 @@ async function loadOlderHistory() {
     return {
       role: m.role,
       content: m.content,
+      type: m.type ?? "message",
       created_at: m.created_at,
       id: m.id != null ? String(m.id) : null,
       read_by_cha_at: m.read_by_cha_at ?? null,
@@ -1212,6 +1425,7 @@ async function loadOlderHistory() {
       audio_url: m.audio_url ?? null,
       audio_duration: m.audio_duration ?? null,
       audio_type: m.audio_type ?? null,
+      audio_type_explicit: m.audio_type_explicit ?? false,
       audio_transcribed_text: m.audio_transcribed_text ?? null,
       replyTo: rt
     };
@@ -1220,8 +1434,8 @@ async function loadOlderHistory() {
   messageList.innerHTML = "";
   lastMessageTime = null;
   for (const m of chatMessages) {
-    const rt = m.reply_to_message_id ? { id: String(m.reply_to_message_id), preview: m.reply_to_preview || "", role: m.reply_to_role || "user" } : null;
-    if (m.audio_type && window.SPVoiceMessage) {
+    const rt = m.replyTo || (m.reply_to_message_id ? { id: String(m.reply_to_message_id), preview: m.reply_to_preview || "", role: m.reply_to_role || "user" } : null);
+    if (shouldRenderVoiceMessage(m)) {
       // Render voice message
       renderVoiceMessage(m, rt);
     } else if (m.role === "assistant") {
@@ -1236,7 +1450,7 @@ async function loadOlderHistory() {
     }
 
     // Add voice indicator for assistant messages with auto-generated voice
-    if (m.role === "assistant" && m.audio_url && m.audio_type === "real" && !m.audio_type_explicit && m.id) {
+    if (shouldAddAssistantVoiceIndicator(m)) {
       addVoiceIndicatorToMessage(m.id, m.audio_url, m.audio_duration || 0, m.audio_transcribed_text || m.content);
     }
   }
@@ -7368,9 +7582,11 @@ async function sendVoiceMessage(transcribedText, audioType = "fake", duration = 
   chatMessages.push({
     role: "user",
     content: content,
+    type: "voice",
     created_at: now,
     id: null,
     audio_type: audioType,
+    audio_type_explicit: true,
     audio_transcribed_text: transcribedText,
     audio_url: null,
     audio_duration: voiceDuration,
@@ -7392,7 +7608,9 @@ async function sendVoiceMessage(transcribedText, audioType = "fake", duration = 
         user_id: uid,
         role: "user",
         content: content,
+        type: "voice",
         audio_type: audioType,
+        audio_type_explicit: true,
         audio_transcribed_text: transcribedText,
         audio_url: null,
         audio_duration: voiceDuration,

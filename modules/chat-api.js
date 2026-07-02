@@ -32,7 +32,7 @@ function buildQuotePreview(msg) {
   if (msg.image_storage_path || msg.type === "image") {
     return "[图片] " + (msg.image_description || text).slice(0, 60);
   }
-  if (msg.audio_url || msg.audio_type) {
+  if (msg.type === "voice" || msg.audio_type_explicit === true) {
     return "[语音] " + (msg.audio_transcribed_text || "").slice(0, 60);
   }
   if (msg.is_recalled) {
