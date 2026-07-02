@@ -287,6 +287,10 @@ async function callChatAPI(messages, replyMode = "auto") {
 
   console.log("[quote-candidates] Built quoteCandidates:", quoteCandidates.length, "candidates:", quoteCandidates);
 
+  const visualContext = typeof window.getGsEyesVisualContext === "function"
+    ? window.getGsEyesVisualContext()
+    : null;
+
   // 编译引用消息到 content 中
   const compiledMessages = messages.map(msg => {
     if (!msg.replyTo || msg.role !== "user") {
@@ -368,6 +372,7 @@ async function callChatAPI(messages, replyMode = "auto") {
         if (hint) hint.setAttribute("hidden", "");
         return ctx || null;
       })(),
+      visualContext,
       emojiGuide: buildEmojiGuide() || undefined,
       quoteCandidates: quoteCandidates.length > 0 ? quoteCandidates : null,
     }),

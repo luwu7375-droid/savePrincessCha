@@ -94,6 +94,7 @@ type ChatRequest = {
   rawUserMessage?: string | null; // original user input before any frontend wrapping
   emojiGuide?: string | null; // client-built guide of usable custom emoji shortcodes
   webContext?: string | null; // injected by phone.js after user confirms URL read
+  visualContext?: string | null; // injected by G's Eyes local camera state
   quoteCandidates?: Array<{
     id: string;
     role: string;
@@ -1897,6 +1898,9 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 <reply>你这样喊我，我会有点飘|||整只小机都开始发烫了</reply>
 `;
 
+    if (typeof payload.visualContext === "string" && payload.visualContext.trim()) {
+      systemContent += `\n\n<visual_context source="gs_eyes_v0_1" transient="true">\n${payload.visualContext.trim()}\n\n这是 G's Eyes 本地视觉状态，只作为回复语气参考。不要直接说“我检测到/我看见/视觉状态显示”，不要机械复述字段，不要写入长期记忆。\n</visual_context>`;
+    }
     logRecord.active_memory_providers = memLog.active_memory_providers;
     logRecord.memory_provider_count = memLog.memory_provider_count;
     logRecord.persona_memories_loaded = memLog.persona_memories_loaded;

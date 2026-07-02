@@ -2056,6 +2056,151 @@ body {
   z-index: 80;
 }
 
+.gs-eyes-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(12, 14, 18, 0.62);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.gs-eyes-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.gs-eyes-card {
+  width: min(100%, 390px);
+  max-height: min(760px, calc(100dvh - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto auto auto;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #111317;
+  color: #fff;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.36);
+}
+
+.gs-eyes-header,
+.gs-eyes-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.gs-eyes-header strong {
+  display: block;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.gs-eyes-header span,
+.gs-eyes-privacy {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 12px;
+}
+
+.gs-eyes-icon-btn,
+.gs-eyes-footer button {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.gs-eyes-icon-btn {
+  width: 34px;
+  height: 34px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.gs-eyes-video-wrap {
+  position: relative;
+  min-height: 320px;
+  background: #050608;
+}
+
+.gs-eyes-video-wrap video {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  display: block;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.gs-eyes-message {
+  position: absolute;
+  inset: auto 18px 18px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.54);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+}
+
+.gs-eyes-privacy {
+  padding: 10px 16px 0;
+}
+
+.gs-eyes-debug {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gs-eyes-debug summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.gs-eyes-debug-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 7px 10px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.gs-eyes-debug-grid span {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.gs-eyes-debug-grid b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.gs-eyes-sim {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.gs-eyes-footer {
+  justify-content: center;
+  padding-bottom: 16px;
+}
+
+.gs-eyes-footer button {
+  min-width: 120px;
+  min-height: 40px;
+  padding: 0 18px;
+}
+
 @media (max-width: 430px) {
   body {
     display: block;
