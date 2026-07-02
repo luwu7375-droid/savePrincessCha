@@ -375,7 +375,7 @@
 
   /**
    * Show voice input dialog for user to record/edit voice message
-   * Returns a promise that resolves with {text, audioType: "fake"}
+   * Returns a promise that resolves with {text, audioType: "fake", duration}
    */
   function showVoiceInputDialog() {
     return new Promise((resolve, reject) => {
@@ -488,6 +488,44 @@
       // Wire up speech recognition
       let recognition = null;
       let isRecording = false;
+      let recordStartedAt = 0;
+      let recordElapsedMs = 0;
+      let recordTimer = null;
+
+      function getCurrentRecordSeconds() {
+        const liveMs = isRecording && recordStartedAt ? Date.now() - recordStartedAt : 0;
+        return Math.ceil((recordElapsedMs + liveMs) / 1000);
+      }
+
+      function estimateDurationFromText(text) {
+        return Math.max(1, Math.ceil((text || "").trim().length / 6));
+      }
+
+      function updateRecordingDuration() {
+        const seconds = getCurrentRecordSeconds();
+        const label = formatDuration(seconds);
+        recordBtn.textContent = `停止 ${label}`;
+        statusText.textContent = `正在录音 ${label}...`;
+      }
+
+      function startRecordTimer() {
+        recordStartedAt = Date.now();
+        recordElapsedMs = 0;
+        if (recordTimer) clearInterval(recordTimer);
+        updateRecordingDuration();
+        recordTimer = setInterval(updateRecordingDuration, 250);
+      }
+
+      function stopRecordTimer() {
+        if (recordStartedAt) {
+          recordElapsedMs += Date.now() - recordStartedAt;
+          recordStartedAt = 0;
+        }
+        if (recordTimer) {
+          clearInterval(recordTimer);
+          recordTimer = null;
+        }
+      }
 
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
@@ -511,6 +549,7 @@
           };
 
           recognition.onend = () => {
+            stopRecordTimer();
             isRecording = false;
             recordBtn.textContent = "开始录音";
             recordBtn.style.background = "transparent";
@@ -519,6 +558,7 @@
 
           recognition.onerror = (event) => {
             console.error("Speech recognition error:", event.error);
+            stopRecordTimer();
             isRecording = false;
             recordBtn.textContent = "开始录音";
             recordBtn.style.background = "transparent";
@@ -554,12 +594,12 @@
           try {
             recognition.start();
             isRecording = true;
-            recordBtn.textContent = "停止录音";
             recordBtn.style.background = "var(--accent-red, #ff4444)";
             recordBtn.style.color = "white";
-            statusText.textContent = "正在录音...";
+            startRecordTimer();
           } catch (err) {
             console.error("Failed to start recognition:", err);
+            stopRecordTimer();
             statusText.textContent = "启动录音失败";
           }
         }
@@ -567,6 +607,7 @@
 
       cancelBtn.addEventListener("click", () => {
         if (recognition && isRecording) {
+          stopRecordTimer();
           recognition.stop();
         }
         document.body.removeChild(overlay);
@@ -582,10 +623,13 @@
           return;
         }
         if (recognition && isRecording) {
+          stopRecordTimer();
           recognition.stop();
         }
+        const recordDuration = getCurrentRecordSeconds();
+        const duration = recordDuration > 0 ? recordDuration : estimateDurationFromText(text);
         document.body.removeChild(overlay);
-        resolve({ text, audioType: "fake" });
+        resolve({ text, audioType: "fake", duration });
       });
 
       // Enable send button when user types
@@ -610,6 +654,7 @@
       overlay.addEventListener("click", (e) => {
         if (e.target === overlay) {
           if (recognition && isRecording) {
+            stopRecordTimer();
             recognition.stop();
           }
           document.body.removeChild(overlay);

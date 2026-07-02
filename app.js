@@ -835,19 +835,41 @@ async function generateChaVoice(messageId, text) {
       ? SPVoice.detectTtsLanguage(text)
       : "zh";
 
+    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+    const anonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !anonKey) {
+      console.warn("TTS endpoint is not configured, skipping Cha voice generation");
+      return;
+    }
+
+    const profiles = ttsConfig.profiles || {};
+    const profile = profiles[language] || profiles.default || profiles.en || {};
+    const voiceId = profile.voice_id || profiles.en?.voice_id || profiles.default?.voice_id || "";
+    const modelId = ttsConfig.model_id || profile.model_id || "eleven_v3";
+
+    if (!voiceId) {
+      console.warn("TTS voice_id is not configured, skipping Cha voice generation");
+      return;
+    }
+
     // Call TTS endpoint
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/tts`, {
+    const response = await fetch(`${supabaseUrl}/functions/v1/tts`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
       },
       body: JSON.stringify({
+        message_id: Number(messageId),
         text: text,
         language_hint: language,
-        provider: ttsConfig.provider,
-        model_id: ttsConfig.model_id,
-        voice_id: ttsConfig.profiles?.[language]?.voice_id || ttsConfig.profiles?.default?.voice_id,
+        provider: ttsConfig.provider || "elevenlabs",
+        voice_profile: {
+          voice_id: voiceId,
+          model_id: modelId,
+          settings: profile.settings,
+        },
       }),
     });
 
@@ -6715,7 +6737,7 @@ async function handleSubmit() {
 }
 
 // ── Send Voice Message ───────────────────────────────────────────────────────
-async function sendVoiceMessage(transcribedText, audioType = "fake") {
+async function sendVoiceMessage(transcribedText, audioType = "fake", duration = 0) {
   // Stop TTS playback
   if (window.SPVoice) window.SPVoice.stopSpeaking();
   if (window.SPVoiceMessage) window.SPVoiceMessage.stopVoicePlayback();
@@ -6733,6 +6755,10 @@ async function sendVoiceMessage(transcribedText, audioType = "fake") {
   // The audio will be generated on-demand during playback
   // For now, we store the transcribed text and mark it as "fake"
   const content = transcribedText;
+  const numericDuration = Number(duration);
+  const voiceDuration = Number.isFinite(numericDuration) && numericDuration > 0
+    ? Math.ceil(numericDuration)
+    : Math.max(1, Math.ceil((transcribedText || "").length / 6));
 
   // Optimistic update: render voice message immediately
   const tempId = `tmp-voice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -6740,7 +6766,7 @@ async function sendVoiceMessage(transcribedText, audioType = "fake") {
   // Create voice message bubble
   const voiceBubble = window.SPVoiceMessage.createVoiceMessageBubble({
     audioUrl: "", // Will be generated on-demand via TTS
-    duration: 0,  // Unknown duration for fake voice
+    duration: voiceDuration,
     audioType: audioType,
     transcribedText: transcribedText,
     role: "user",
@@ -6771,7 +6797,7 @@ async function sendVoiceMessage(transcribedText, audioType = "fake") {
     audio_type: audioType,
     audio_transcribed_text: transcribedText,
     audio_url: null,
-    audio_duration: 0,
+    audio_duration: voiceDuration,
   });
 
   refreshMessageActions();
@@ -6793,7 +6819,7 @@ async function sendVoiceMessage(transcribedText, audioType = "fake") {
         audio_type: audioType,
         audio_transcribed_text: transcribedText,
         audio_url: null,
-        audio_duration: 0,
+        audio_duration: voiceDuration,
       })
       .select()
       .single();
@@ -9738,10 +9764,10 @@ if (voiceInputBtn) {
 
     try {
       const result = await window.SPVoiceMessage.showVoiceInputDialog();
-      // result: { text: string, audioType: "fake" }
+      // result: { text: string, audioType: "fake", duration: number }
 
       // Send as voice message
-      await sendVoiceMessage(result.text, result.audioType);
+      await sendVoiceMessage(result.text, result.audioType, result.duration);
     } catch (err) {
       // User cancelled or error
       console.log("Voice input cancelled or failed:", err);
