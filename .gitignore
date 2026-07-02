@@ -7,7 +7,11 @@ config.local.js
 docs/superpowers/
 
 # 本地脚本（记忆处理等）
-scripts/
+scripts/*
+!scripts/cha_bridge/
+!scripts/cha_bridge/**
+scripts/cha_bridge/data/
+scripts/cha_bridge/__pycache__/
 
 # 私人记忆内容（不提交）
 memory/

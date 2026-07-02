@@ -1,0 +1,9 @@
+{
+  "host_port": 7842,
+  "cha_port": 7843,
+  "dry_run": true,
+  "provider": "mock",
+  "memory_backend": "local",
+  "nagi_scripts_dir": "C:/path/to/NagiBridge/scripts"
+}
+
