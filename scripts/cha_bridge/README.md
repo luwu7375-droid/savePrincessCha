@@ -25,6 +25,20 @@ Local fallback files are written under:
 - `scripts/cha_bridge/data/stardew_events.jsonl`
 - `scripts/cha_bridge/data/stardew_session_summary.md`
 
+## Windows UTF-8 Viewing
+
+The local files are written as UTF-8. If Windows PowerShell displays Chinese as mojibake, read them with Python instead of relying on the console default encoding:
+
+```bash
+python -X utf8 -c "from pathlib import Path; print(Path('scripts/cha_bridge/data/stardew_session_summary.md').read_text(encoding='utf-8'))"
+```
+
+You can also run the UTF-8 self-check:
+
+```bash
+python -X utf8 scripts/cha_bridge/cha_encoding_check.py
+```
+
 ## Dry-Run Test
 
 From the repository root:
