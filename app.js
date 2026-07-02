@@ -4461,19 +4461,31 @@ window.injectWebContextToChat = function ({ summary, sourceUrl, title }) {
 
 // ── G's Eyes v0.1 local visual context ──────────────────────────────────────
 const GS_EYES_DEFAULT_SUMMARY = "G's Eyes 尚未开启，当前没有可用视觉状态。";
+const GS_EYES_UNSUPPORTED_SUMMARY = "摄像头预览已开启，视觉识别未启用或当前浏览器不支持本地识别。";
+const GS_EYES_MEDIAPIPE_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs";
+const GS_EYES_MEDIAPIPE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite";
 let gsEyesStream = null;
 let gsEyesDetector = null;
 let gsEyesDetectTimer = null;
+let gsEyesDetectorType = "none";
 let gsEyesAbsentSince = null;
 let gsEyesReturnedUntil = 0;
 let gsEyesLastFaceBox = null;
 let gsEyesDebugOpen = false;
 let gsEyesState = {
-  face_present: false,
+  camera_permission: "unknown",
+  camera_preview: "idle",
+  camera_preview_ready: false,
+  detector_type: "none",
+  detection_ready: false,
+  vision_detection_ready: false,
+  last_detection_at: null,
+  error_reason: "",
+  face_present: null,
   face_absent_duration: 0,
-  away_returned: false,
-  smiling: false,
-  head_down_or_away: false,
+  away_returned: null,
+  smiling: null,
+  head_down_or_away: null,
   visual_summary: GS_EYES_DEFAULT_SUMMARY,
   recognition_supported: false,
   camera_active: false,
@@ -4482,7 +4494,13 @@ let gsEyesState = {
 
 function summarizeGsEyesState(partial = {}) {
   const state = { ...gsEyesState, ...partial };
-  if (!state.recognition_supported) return "当前浏览器暂不支持视觉识别；只开启本地摄像头预览。";
+  if (!state.camera_preview_ready) {
+    return state.camera_preview === "error"
+      ? "摄像头未打开，当前没有可用视觉状态。"
+      : GS_EYES_DEFAULT_SUMMARY;
+  }
+  if (!state.detection_ready) return GS_EYES_UNSUPPORTED_SUMMARY;
+  if (state.face_present === null) return "本地视觉识别已启用，正在等待第一帧检测结果。";
   if (!state.face_present) {
     const seconds = Math.round((state.face_absent_duration || 0) / 1000);
     return seconds > 2 ? `用户离开镜头约 ${seconds} 秒。` : "暂时没有在镜头里看到用户。";
@@ -4499,12 +4517,14 @@ function setGsEyesState(partial = {}) {
     ...partial,
     updated_at: new Date().toISOString(),
   };
+  gsEyesState.vision_detection_ready = !!gsEyesState.detection_ready;
+  gsEyesState.recognition_supported = !!gsEyesState.detection_ready;
   gsEyesState.visual_summary = partial.visual_summary || summarizeGsEyesState(gsEyesState);
   renderGsEyesDebug();
 }
 
 window.getGsEyesVisualContext = function () {
-  if (!gsEyesState.camera_active) return null;
+  if (!gsEyesState.camera_preview_ready) return null;
   return [
     "[视觉状态，仅供回复参考，不要机械复述]",
     gsEyesState.visual_summary,
@@ -4523,7 +4543,7 @@ function createGsEyesOverlay() {
   overlay.innerHTML = `
     <div class="gs-eyes-card">
       <header class="gs-eyes-header">
-        <div><strong>G's Eyes</strong><span>cha 正在看见你</span></div>
+        <div><strong>G's Eyes</strong><span data-gs-field="overlay_status">摄像头预览准备中，视觉识别尚未启用</span></div>
         <button type="button" class="gs-eyes-icon-btn" id="gsEyesCloseTop" aria-label="关闭">×</button>
       </header>
       <div class="gs-eyes-video-wrap">
@@ -4534,9 +4554,17 @@ function createGsEyesOverlay() {
       <details id="gsEyesDebug" class="gs-eyes-debug">
         <summary>调试状态</summary>
         <div class="gs-eyes-debug-grid">
-          <span>face_present</span><b data-gs-field="face_present">false</b>
-          <span>smiling</span><b data-gs-field="smiling">false</b>
-          <span>head_down_or_away</span><b data-gs-field="head_down_or_away">false</b>
+          <span>camera_permission</span><b data-gs-field="camera_permission">unknown</b>
+          <span>camera_preview</span><b data-gs-field="camera_preview">idle</b>
+          <span>camera_preview_ready</span><b data-gs-field="camera_preview_ready">false</b>
+          <span>detector_type</span><b data-gs-field="detector_type">none</b>
+          <span>detection_ready</span><b data-gs-field="detection_ready">false</b>
+          <span>vision_detection_ready</span><b data-gs-field="vision_detection_ready">false</b>
+          <span>last_detection_at</span><b data-gs-field="last_detection_at">未检测</b>
+          <span>error_reason</span><b data-gs-field="error_reason">-</b>
+          <span>face_present</span><b data-gs-field="face_present">未检测</b>
+          <span>smiling</span><b data-gs-field="smiling">未检测</b>
+          <span>head_down_or_away</span><b data-gs-field="head_down_or_away">未检测</b>
           <span>visual_summary</span><b data-gs-field="visual_summary">${GS_EYES_DEFAULT_SUMMARY}</b>
         </div>
         <label class="gs-eyes-sim"><input id="gsEyesSmileSim" type="checkbox"><span>模拟微笑</span></label>
@@ -4551,9 +4579,27 @@ function createGsEyesOverlay() {
     gsEyesDebugOpen = event.currentTarget.open;
   });
   overlay.querySelector("#gsEyesSmileSim")?.addEventListener("change", (event) => {
-    setGsEyesState({ smiling: !!event.currentTarget.checked });
+    if (gsEyesState.detection_ready) setGsEyesState({ smiling: !!event.currentTarget.checked });
   });
   return overlay;
+}
+
+function getGsEyesUnavailableLabel() {
+  if (gsEyesState.error_reason?.includes("mediapipe")) return "未启用识别";
+  if (!gsEyesState.detection_ready) return "不支持本地识别";
+  return "未检测";
+}
+
+function formatGsEyesDebugValue(key, value) {
+  if (["face_present", "smiling", "head_down_or_away", "away_returned"].includes(key) && !gsEyesState.detection_ready) {
+    return getGsEyesUnavailableLabel();
+  }
+  if (["face_present", "smiling", "head_down_or_away", "away_returned"].includes(key) && value === null) {
+    return "未检测";
+  }
+  if (key === "last_detection_at") return value || "未检测";
+  if (key === "error_reason") return value || "-";
+  return String(value);
 }
 
 function renderGsEyesDebug() {
@@ -4561,7 +4607,13 @@ function renderGsEyesDebug() {
   if (!overlay) return;
   overlay.querySelectorAll("[data-gs-field]").forEach((node) => {
     const key = node.dataset.gsField;
-    node.textContent = String(gsEyesState[key]);
+    if (key === "overlay_status") {
+      node.textContent = gsEyesState.camera_preview_ready
+        ? (gsEyesState.detection_ready ? "摄像头预览已开启，本地视觉识别运行中" : "摄像头预览已开启，视觉识别未启用/不可用")
+        : "摄像头预览准备中，视觉识别尚未启用";
+      return;
+    }
+    node.textContent = formatGsEyesDebugValue(key, gsEyesState[key]);
   });
   const debug = overlay.querySelector("#gsEyesDebug");
   if (debug) debug.open = gsEyesDebugOpen;
@@ -4572,6 +4624,8 @@ function stopGsEyesDetection() {
     clearInterval(gsEyesDetectTimer);
     gsEyesDetectTimer = null;
   }
+  gsEyesDetector = null;
+  gsEyesDetectorType = "none";
 }
 
 function stopGsEyesCamera() {
@@ -4584,8 +4638,16 @@ function stopGsEyesCamera() {
   if (video) video.srcObject = null;
   setGsEyesState({
     camera_active: false,
-    face_present: false,
-    away_returned: false,
+    camera_preview: "idle",
+    camera_preview_ready: false,
+    detector_type: "none",
+    detection_ready: false,
+    face_present: null,
+    away_returned: null,
+    smiling: null,
+    head_down_or_away: null,
+    last_detection_at: null,
+    error_reason: "",
   });
 }
 
@@ -4606,11 +4668,12 @@ function updateGsEyesFromFaces(faces, video) {
       away_returned: false,
       smiling: false,
       head_down_or_away: true,
+      last_detection_at: new Date(now).toISOString(),
     });
     return;
   }
 
-  const box = face.boundingBox || face;
+  const box = normalizeGsEyesFaceBox(face);
   const returned = !!gsEyesAbsentSince && now - gsEyesAbsentSince > 1200;
   if (returned) gsEyesReturnedUntil = now + 5000;
   gsEyesAbsentSince = null;
@@ -4631,40 +4694,118 @@ function updateGsEyesFromFaces(faces, video) {
     away_returned: now < gsEyesReturnedUntil,
     smiling,
     head_down_or_away: horizontalAway || verticalAway,
+    last_detection_at: new Date(now).toISOString(),
   });
 }
 
-function startGsEyesDetection(video) {
+function normalizeGsEyesFaceBox(face) {
+  const box = face?.boundingBox || face;
+  return {
+    x: box?.x ?? box?.left ?? box?.originX ?? 0,
+    y: box?.y ?? box?.top ?? box?.originY ?? 0,
+    width: box?.width ?? 0,
+    height: box?.height ?? 0,
+  };
+}
+
+function setGsEyesDetectionUnavailable(reason) {
   stopGsEyesDetection();
-  if (!("FaceDetector" in window)) {
-    setGsEyesState({
-      recognition_supported: false,
-      visual_summary: "当前浏览器暂不支持视觉识别；只开启本地摄像头预览。",
-    });
-    return;
-  }
+  setGsEyesState({
+    detector_type: "none",
+    detection_ready: false,
+    face_present: null,
+    away_returned: null,
+    smiling: null,
+    head_down_or_away: null,
+    last_detection_at: null,
+    error_reason: reason || "local detector unavailable",
+    visual_summary: GS_EYES_UNSUPPORTED_SUMMARY,
+  });
+}
+
+async function createGsEyesNativeFaceDetector() {
+  if (!("FaceDetector" in window)) return null;
+  const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+  return {
+    type: "native-face-detector",
+    detect: (video) => detector.detect(video),
+  };
+}
+
+async function createGsEyesMediaPipeDetector() {
+  const vision = await import(GS_EYES_MEDIAPIPE_CDN);
+  const filesetResolver = await vision.FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
+  );
+  const createDetector = (delegate) => vision.FaceDetector.createFromOptions(filesetResolver, {
+    baseOptions: {
+      modelAssetPath: GS_EYES_MEDIAPIPE_MODEL,
+      delegate,
+    },
+    runningMode: "VIDEO",
+    minDetectionConfidence: 0.5,
+  });
+  let detector;
   try {
-    gsEyesDetector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
-    setGsEyesState({ recognition_supported: true });
+    detector = await createDetector("GPU");
+  } catch (error) {
+    console.warn("[gs-eyes] MediaPipe GPU init failed, retrying CPU", error);
+    detector = await createDetector("CPU");
+  }
+  return {
+    type: "mediapipe",
+    detect: (video) => {
+      const result = detector.detectForVideo(video, performance.now());
+      return result?.detections || [];
+    },
+  };
+}
+
+async function createGsEyesDetector() {
+  try {
+    const nativeDetector = await createGsEyesNativeFaceDetector();
+    if (nativeDetector) return nativeDetector;
   } catch (error) {
     console.warn("[gs-eyes] FaceDetector init failed", error);
-    setGsEyesState({
-      recognition_supported: false,
-      visual_summary: "当前浏览器暂不支持视觉识别；只开启本地摄像头预览。",
-    });
+  }
+  try {
+    return await createGsEyesMediaPipeDetector();
+  } catch (error) {
+    console.warn("[gs-eyes] MediaPipe init failed", error);
+    return null;
+  }
+}
+
+async function startGsEyesDetection(video) {
+  stopGsEyesDetection();
+  setGsEyesState({
+    detector_type: "none",
+    detection_ready: false,
+    error_reason: "",
+    visual_summary: "摄像头预览已开启，正在准备本地视觉识别。",
+  });
+  gsEyesDetector = await createGsEyesDetector();
+  if (!gsEyesDetector) {
+    setGsEyesDetectionUnavailable("native FaceDetector unavailable; mediapipe unavailable");
     return;
   }
+  gsEyesDetectorType = gsEyesDetector.type;
+  setGsEyesState({
+    detector_type: gsEyesDetectorType,
+    detection_ready: true,
+    error_reason: "",
+    face_present: null,
+    away_returned: null,
+    smiling: null,
+    head_down_or_away: null,
+  });
   gsEyesDetectTimer = setInterval(async () => {
     if (!gsEyesDetector || !video?.srcObject || video.readyState < 2) return;
     try {
       updateGsEyesFromFaces(await gsEyesDetector.detect(video), video);
     } catch (error) {
       console.warn("[gs-eyes] detect failed", error);
-      setGsEyesState({
-        recognition_supported: false,
-        visual_summary: "当前浏览器暂不支持视觉识别；只开启本地摄像头预览。",
-      });
-      stopGsEyesDetection();
+      setGsEyesDetectionUnavailable(`${gsEyesDetectorType || "local detector"} detect failed`);
     }
   }, 1200);
 }
@@ -4674,6 +4815,15 @@ async function openGsEyesOverlay() {
   const video = overlay.querySelector("#gsEyesVideo");
   const message = overlay.querySelector("#gsEyesMessage");
   overlay.classList.add("open");
+  setGsEyesState({
+    camera_permission: "unknown",
+    camera_preview: "idle",
+    camera_preview_ready: false,
+    detector_type: "none",
+    detection_ready: false,
+    error_reason: "",
+    visual_summary: GS_EYES_DEFAULT_SUMMARY,
+  });
   try {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("camera unavailable");
     gsEyesStream = await navigator.mediaDevices.getUserMedia({
@@ -4681,22 +4831,39 @@ async function openGsEyesOverlay() {
       audio: false,
     });
     video.srcObject = gsEyesStream;
-    message.textContent = "";
-    message.hidden = true;
+    message.textContent = "摄像头预览已开启，正在准备本地视觉识别。";
+    message.hidden = false;
     setGsEyesState({
       camera_active: true,
-      face_present: false,
+      camera_permission: "granted",
+      camera_preview: "ready",
+      camera_preview_ready: true,
+      face_present: null,
       face_absent_duration: 0,
-      recognition_supported: "FaceDetector" in window,
+      detector_type: "none",
+      detection_ready: false,
+      last_detection_at: null,
+      error_reason: "",
     });
-    startGsEyesDetection(video);
+    await startGsEyesDetection(video);
+    message.textContent = gsEyesState.detection_ready
+      ? "摄像头预览已开启，本地视觉识别运行中。"
+      : "摄像头预览已开启，视觉识别未启用/不可用。";
   } catch (error) {
     console.warn("[gs-eyes] camera unavailable", error);
     message.hidden = false;
     message.textContent = "摄像头没有打开。你可以检查浏览器权限，或稍后再试。";
     setGsEyesState({
       camera_active: false,
-      recognition_supported: false,
+      camera_permission: ["NotAllowedError", "PermissionDeniedError", "SecurityError"].includes(error?.name) ? "denied" : "unknown",
+      camera_preview: "error",
+      camera_preview_ready: false,
+      detector_type: "none",
+      detection_ready: false,
+      face_present: null,
+      smiling: null,
+      head_down_or_away: null,
+      error_reason: error?.message || error?.name || "camera unavailable",
       visual_summary: "摄像头未打开，当前没有可用视觉状态。",
     });
   }
