@@ -43,7 +43,7 @@ function scrollToQuotedMessage(id) {
 function getMessageQuotePreview(row) {
   const textEl = row.querySelector(".message-text");
   const imgEl = row.querySelector(".message-image");
-  const audioEl = row.querySelector("audio");
+  const voiceEl = row.querySelector(".message-voice");
 
   let preview = "";
 
@@ -55,10 +55,10 @@ function getMessageQuotePreview(row) {
     }
   }
   // 语音消息
-  else if (audioEl) {
-    const duration = audioEl.duration;
-    if (duration && isFinite(duration)) {
-      preview = `[语音 ${Math.round(duration)}"]`;
+  else if (voiceEl) {
+    const durationEl = voiceEl.querySelector(".voice-duration");
+    if (durationEl?.textContent) {
+      preview = `[语音 ${durationEl.textContent}]`;
     } else {
       preview = "[语音]";
     }

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Fix Active Conversation</title>
+</head>
+<body>
+  <h1>修复 active_conversation_id</h1>
+  <p>当前值: <span id="current"></span></p>
+  <button onclick="fixConversation()">自动修复</button>
+  <pre id="log"></pre>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL = 'https://zbpbkyzisamleqspijnr.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpicGJreXppc2FtbGVxc3Bpam5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTcwNjA2NTksImV4cCI6MjAzMjYzNjY1OX0.v_kKdFN_JktsJCm20caqcvuZm2cGxJeqWIFFWOQsQ04';
+    
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    document.getElementById('current').textContent = localStorage.getItem('active_conversation_id') || '(空)';
+
+    window.fixConversation = async function() {
+      const log = document.getElementById('log');
+      log.textContent = '正在修复...\n';
+
+      // Get most recent conversation
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('id, title')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error) {
+        log.textContent += `错误: ${error.message}\n`;
+        return;
+      }
+
+      if (data) {
+        localStorage.setItem('active_conversation_id', data.id);
+        log.textContent += `已设置为: ${data.id}\n`;
+        log.textContent += `标题: ${data.title}\n`;
+        log.textContent += `\n请刷新页面。\n`;
+        document.getElementById('current').textContent = data.id;
+      }
+    };
+  </script>
+</body>
+</html>
