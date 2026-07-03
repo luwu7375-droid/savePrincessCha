@@ -1335,6 +1335,13 @@ async function callImageGenerationDirect(prompt, params) {
     return { success: false, error: '图片生成通道配置不存在' };
   }
 
+  console.log('[callImageGenerationDirect] Using provider config:', {
+    providerGroup: imageGenConfig.providerGroup,
+    model: imageGenConfig.model,
+    endpoint: provider.endpoint,
+    hasApiKey: !!provider.api_key
+  });
+
   try {
     const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
 

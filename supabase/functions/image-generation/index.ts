@@ -105,7 +105,8 @@ Deno.serve(async (req: Request) => {
 
     console.log("[image-generation] Generating image:", {
       finalPrompt: finalPrompt.slice(0, 100) + "...",
-      provider: provider_config.model
+      provider: provider_config.model,
+      endpoint: provider_config.endpoint
     });
 
     // Call image generation API
@@ -128,6 +129,14 @@ Deno.serve(async (req: Request) => {
       requestBody.response_format = "url";
     }
 
+    console.log("[image-generation] Request body:", {
+      model: requestBody.model,
+      size: requestBody.size,
+      quality: requestBody.quality,
+      style: requestBody.style,
+      promptLength: requestBody.prompt.length
+    });
+
     const response = await fetch(provider_config.endpoint, {
       method: "POST",
       headers: {
@@ -139,18 +148,35 @@ Deno.serve(async (req: Request) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[image-generation] API error:", errorText);
+      console.error("[image-generation] API error:", response.status, errorText.slice(0, 500));
       return new Response(JSON.stringify({
         error: "Image generation failed",
-        details: errorText
+        details: errorText.slice(0, 200),
+        status: response.status
       }), {
         status: response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const result = await response.json();
-    console.log("[image-generation] API response:", result);
+    const resultText = await response.text();
+    console.log("[image-generation] API response (first 500 chars):", resultText.slice(0, 500));
+
+    let result;
+    try {
+      result = JSON.parse(resultText);
+    } catch (parseError) {
+      console.error("[image-generation] Failed to parse API response as JSON:", parseError);
+      return new Response(JSON.stringify({
+        error: "Image API returned invalid response",
+        details: `Not valid JSON: ${resultText.slice(0, 200)}`
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    console.log("[image-generation] Parsed API response:", result);
 
     // Extract image URL based on provider format
     let imageUrl: string | null = null;
