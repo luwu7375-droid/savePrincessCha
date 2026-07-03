@@ -149,7 +149,7 @@
 
   // ── MediaPipe Loading ──────────────────────────────────────────────────────
 
-  async function createFaceLandmarker(filesetResolver, delegate) {
+  async function createFaceLandmarker(FaceLandmarker, filesetResolver, delegate) {
     return await FaceLandmarker.createFromOptions(filesetResolver, {
       baseOptions: {
         modelAssetPath: MEDIAPIPE_MODEL_URL,
@@ -168,12 +168,14 @@
   async function loadMediaPipe() {
     let vision = null;
     let loadError = null;
+    let loadedVersion = null;
 
     // Try multiple versions
     for (const version of MEDIAPIPE_VERSIONS) {
       try {
         console.log(`[gs-eyes] Trying MediaPipe @${version}...`);
         vision = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${version}`);
+        loadedVersion = version;
         console.log(`[gs-eyes] MediaPipe @${version} loaded`);
         break;
       } catch (err) {
@@ -182,7 +184,7 @@
       }
     }
 
-    if (!vision) {
+    if (!vision || !loadedVersion) {
       throw new Error(`Failed to load MediaPipe from any version: ${loadError?.message || "unknown error"}`);
     }
 
@@ -192,19 +194,18 @@
       throw new Error("FaceLandmarker or FilesetResolver not available in vision module");
     }
 
-    // Use the same version for wasm files
-    const workingVersion = MEDIAPIPE_VERSIONS[0]; // Default to first version
+    // Use the loaded version for wasm files
     const wasmFileset = await FilesetResolver.forVisionTasks(
-      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${workingVersion}/wasm`
+      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${loadedVersion}/wasm`
     );
 
     // Try GPU first, fallback to CPU if GPU fails
     try {
-      faceLandmarker = await createFaceLandmarker(wasmFileset, "GPU");
+      faceLandmarker = await createFaceLandmarker(FaceLandmarker, wasmFileset, "GPU");
       console.log("[gs-eyes] MediaPipe Face Landmarker loaded (GPU)");
     } catch (gpuErr) {
       console.warn("[gs-eyes] GPU init failed, retrying CPU", gpuErr);
-      faceLandmarker = await createFaceLandmarker(wasmFileset, "CPU");
+      faceLandmarker = await createFaceLandmarker(FaceLandmarker, wasmFileset, "CPU");
       console.log("[gs-eyes] MediaPipe Face Landmarker loaded (CPU)");
     }
 
