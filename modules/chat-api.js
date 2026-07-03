@@ -430,6 +430,7 @@ function setChatTitleState(mode) {
     callChatAPI,
     extractTextFromMessageContent,
     setChatTitleState,
+    setChatStatus,
     showTypingIndicator,
     removeTypingIndicator,
   };
@@ -438,6 +439,7 @@ function setChatTitleState(mode) {
   window.callChatAPI = callChatAPI;
   window.extractTextFromMessageContent = extractTextFromMessageContent;
   window.setChatTitleState = setChatTitleState;
+  window.setChatStatus = setChatStatus;
   window.showTypingIndicator = showTypingIndicator;
   window.removeTypingIndicator = removeTypingIndicator;
   window._conversationStartedAt = _conversationStartedAt;
