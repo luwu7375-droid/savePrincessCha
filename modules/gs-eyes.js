@@ -15,21 +15,25 @@
   let detectionInterval = null;
   let lastDetectionTime = 0;
   let lastSpeakTime = Date.now(); // Track silence duration
+  let detectionReady = false; // Track if MediaPipe loaded successfully
 
   // Visual state signals (low-risk, strategy-focused)
   let currentState = {
     camera_on: false,
-    face_present: false,
+    face_present: null, // null = unknown, true = detected, false = not detected
     attention: "unknown", // looking / away / unknown
     smile: "none",        // none / slight / clear
     stillness: "normal",  // normal / long_pause
     fatigue_hint: "unknown", // low / medium / unknown
     last_update: null,
     silence_duration_sec: 0,
+    detection_ready: false, // Whether MediaPipe is loaded
   };
 
   // MediaPipe CDN URLs
-  const MEDIAPIPE_VISION_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm";
+  const MEDIAPIPE_VERSION = "0.10.22";
+  const MEDIAPIPE_VISION_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
+  const MEDIAPIPE_BUNDLE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`;
   const MEDIAPIPE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
   // ── Initialization ─────────────────────────────────────────────────────────
@@ -123,13 +127,14 @@
     isActive = false;
     currentState = {
       camera_on: false,
-      face_present: false,
+      face_present: null,
       attention: "unknown",
       smile: "none",
       stillness: "normal",
       fatigue_hint: "unknown",
       last_update: null,
       silence_duration_sec: 0,
+      detection_ready: false,
     };
 
     updateStatusUI("已关闭");
@@ -141,32 +146,60 @@
   // ── MediaPipe Loading ──────────────────────────────────────────────────────
 
   async function loadMediaPipe() {
-    // Dynamically load MediaPipe Vision library
-    if (!window.FaceLandmarker) {
-      await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8");
+    try {
+      // Dynamically import MediaPipe Vision ESM bundle
+      const vision = await import(MEDIAPIPE_BUNDLE_URL);
+      const { FaceLandmarker, FilesetResolver } = vision;
+
+      if (!FaceLandmarker || !FilesetResolver) {
+        throw new Error("FaceLandmarker or FilesetResolver not available in vision bundle");
+      }
+
+      const wasmFileset = await FilesetResolver.forVisionTasks(MEDIAPIPE_VISION_URL);
+
+      // Try GPU first, fallback to CPU if GPU fails
+      try {
+        faceLandmarker = await FaceLandmarker.createFromOptions(wasmFileset, {
+          baseOptions: {
+            modelAssetPath: MEDIAPIPE_MODEL_URL,
+            delegate: "GPU",
+          },
+          runningMode: "VIDEO",
+          numFaces: 1,
+          minFaceDetectionConfidence: 0.5,
+          minFacePresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+          outputFaceBlendshapes: true,
+          outputFacialTransformationMatrixes: false,
+        });
+        console.log("[gs-eyes] MediaPipe Face Landmarker loaded (GPU)");
+      } catch (gpuError) {
+        console.warn("[gs-eyes] GPU delegate failed, trying CPU", gpuError);
+        // Fallback to CPU
+        faceLandmarker = await FaceLandmarker.createFromOptions(wasmFileset, {
+          baseOptions: {
+            modelAssetPath: MEDIAPIPE_MODEL_URL,
+            delegate: "CPU",
+          },
+          runningMode: "VIDEO",
+          numFaces: 1,
+          minFaceDetectionConfidence: 0.5,
+          minFacePresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+          outputFaceBlendshapes: true,
+          outputFacialTransformationMatrixes: false,
+        });
+        console.log("[gs-eyes] MediaPipe Face Landmarker loaded (CPU)");
+      }
+
+      detectionReady = true;
+      currentState.detection_ready = true;
+    } catch (err) {
+      console.error("[gs-eyes] MediaPipe load failed", err);
+      detectionReady = false;
+      currentState.detection_ready = false;
+      throw err;
     }
-
-    const { FaceLandmarker, FilesetResolver } = window;
-    if (!FaceLandmarker || !FilesetResolver) {
-      throw new Error("MediaPipe Vision not loaded");
-    }
-
-    const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_VISION_URL);
-    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: MEDIAPIPE_MODEL_URL,
-        delegate: "GPU",
-      },
-      runningMode: "VIDEO",
-      numFaces: 1,
-      minFaceDetectionConfidence: 0.5,
-      minFacePresenceConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-      outputFaceBlendshapes: true,
-      outputFacialTransformationMatrixes: false,
-    });
-
-    console.log("[gs-eyes] MediaPipe Face Landmarker loaded");
   }
 
   function loadScript(src) {
@@ -191,15 +224,15 @@
     currentState.silence_duration_sec = silenceSec;
     currentState.stillness = silenceSec > 20 ? "long_pause" : "normal";
 
-    // Basic detection: check if video is playing
-    if (!faceLandmarker) {
-      // Fallback mode: no face detection, just basic signals
-      currentState.face_present = false;
+    // Check if MediaPipe is loaded
+    if (!detectionReady || !faceLandmarker) {
+      // Fallback mode: MediaPipe not available
+      currentState.face_present = null; // Unknown, not false
       currentState.attention = "unknown";
       currentState.smile = "none";
       currentState.fatigue_hint = "unknown";
       currentState.last_update = new Date().toISOString();
-      updateStatusUI("未检测到人脸");
+      updateStatusUI("摄像头已开启，本地识别不可用");
       logState();
       return;
     }
@@ -235,7 +268,7 @@
       logState();
     } catch (err) {
       console.error("[gs-eyes] Detection error", err);
-      currentState.face_present = false;
+      currentState.face_present = null;
       updateStatusUI("识别失败");
     }
   }
@@ -288,7 +321,11 @@
     let strategy = "normal";
     const silenceSec = currentState.silence_duration_sec;
 
-    if (!currentState.face_present) {
+    if (!currentState.detection_ready) {
+      strategy = "normal";
+    } else if (currentState.face_present === null) {
+      strategy = "wait";
+    } else if (!currentState.face_present) {
       strategy = "wait";
     } else if (currentState.attention === "away" || currentState.smile === "none" || silenceSec > 20) {
       strategy = currentState.fatigue_hint === "medium"
@@ -301,7 +338,9 @@
       "- 用户已开启视频陪伴",
     ];
 
-    if (currentState.face_present) {
+    if (!currentState.detection_ready) {
+      lines.push("- 视觉识别模块加载中或不可用");
+    } else if (currentState.face_present === true) {
       lines.push("- 面部在画面中");
 
       if (currentState.smile !== "none") {
@@ -313,8 +352,10 @@
       if (currentState.attention === "away") {
         lines.push("- 视线未在画面中");
       }
-    } else {
+    } else if (currentState.face_present === false) {
       lines.push("- 暂未检测到面部");
+    } else {
+      lines.push("- 视觉识别模块加载中");
     }
 
     if (silenceSec > 20) {

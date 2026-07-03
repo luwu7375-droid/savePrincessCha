@@ -194,9 +194,14 @@
     // Show G's Eyes status if available
     if (callState === "watching" && window.GsEyes) {
       const state = window.GsEyes.getState();
-      if (!state.face_present) {
+      if (state.face_present === false) {
+        // Detection ready but no face detected
         statusDisplay.textContent = "未检测到人脸 · 按住麦克风说话";
+      } else if (state.face_present === null && !state.detection_ready) {
+        // MediaPipe not loaded
+        statusDisplay.textContent = "摄像头已开启 · 本地识别加载中";
       }
+      // If face_present === true, keep default "视频已开启，按住麦克风说话"
     }
   }
 
