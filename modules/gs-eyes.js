@@ -331,7 +331,7 @@
 
     lines.push(`- ${strategyText}`);
     lines.push("");
-    lines.push("注意：这些只是即时视觉信号，不是情绪诊断，不要直接说"我检测到你很累"。");
+    lines.push("注意：这些只是即时视觉信号，不是情绪诊断，不要直接说\"我检测到你很累\"。");
 
     return lines.join("\n");
   }
