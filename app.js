@@ -699,7 +699,8 @@ async function uploadImageToStorage(dataUrl, userId, conversationId) {
     path: `${userId}/${conversationId}_${Date.now()}.jpg`,
     contentType: "image/jpeg",
   });
-  return uploadResult?.path || null;
+  if (!uploadResult?.path) return null;
+  return { path: uploadResult.path, signedUrl: uploadResult.signedUrl || null };
 }
 
 /**
@@ -983,12 +984,79 @@ async function generateChaVoice(messageId, text) {
   if (!autoVoiceEnabled) return;
 
   try {
-    const { audioUrl, audioDuration } = await requestChaTts(text, {
-      messageId: Number(messageId),
-      purpose: "auto_tts_attachment",
+    // Get TTS config
+    const ttsConfig = typeof SPVoice !== "undefined" && SPVoice.getTTSConfig
+      ? SPVoice.getTTSConfig()
+      : null;
+
+    if (!ttsConfig || !ttsConfig.provider) {
+      console.log("TTS not configured, skipping Cha voice generation");
+      return;
+    }
+
+    // Detect language for voice profile selection
+    const language = typeof SPVoice !== "undefined" && SPVoice.detectTtsLanguage
+      ? SPVoice.detectTtsLanguage(text)
+      : "zh";
+
+    // Call TTS endpoint — pass message_id so the function attempts Storage upload
+    const voice_id = ttsConfig.profiles?.[language]?.voice_id || ttsConfig.profiles?.default?.voice_id;
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/tts`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        message_id: Number(messageId),
+        text: text,
+        language_hint: language,
+        provider: ttsConfig.provider,
+        voice_profile: {
+          voice_id: voice_id,
+          model_id: ttsConfig.model_id,
+        },
+      }),
     });
 
-    // Update message in database with voice data
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn("TTS generation failed:", response.status, errorText);
+      return;
+    }
+
+    const data = await response.json();
+    const audioUrl = data.audio_url || data.url;
+
+    if (!audioUrl) {
+      console.warn("TTS returned no audio URL");
+      return;
+    }
+
+    const charsPerMinute = language === "zh" ? 150 : 180;
+    const estimatedDuration = Math.max(1, Math.ceil((text.length / charsPerMinute) * 60));
+    const audioDuration = data.duration || estimatedDuration;
+
+    // Guard: never write a base64 data URL into messages.audio_url (causes Postgres index overflow)
+    const isDataUrl = typeof audioUrl === "string" && audioUrl.startsWith("data:audio");
+    const isDataFallback = data.audio_url_type === "data_fallback" || data.cache_write_failed === true;
+
+    if (isDataUrl || isDataFallback) {
+      console.warn("[TTS] Storage upload failed — playing locally, not persisted", {
+        storage_upload_status: data.storage_upload_status,
+        audio_url_type: data.audio_url_type,
+        cache_write_failed: data.cache_write_failed,
+        request_id: data.request_id,
+        message_id: messageId,
+      });
+      if (typeof showToast === "function") {
+        showToast("语音已生成，但音频上传失败，未持久保存");
+      }
+      addVoiceIndicatorToMessage(messageId, audioUrl, audioDuration, text);
+      return;
+    }
+
+    // Only reach here when audioUrl is a real http(s) Storage URL
     const { error: updateError } = await supabaseClient
       .from("messages")
       .update({
@@ -996,7 +1064,7 @@ async function generateChaVoice(messageId, text) {
         audio_duration: audioDuration,
         audio_type: "real",
         audio_type_explicit: false,
-        audio_transcribed_text: text, // Store original text as transcription
+        audio_transcribed_text: text,
       })
       .eq("id", Number(messageId));
 
@@ -1006,7 +1074,6 @@ async function generateChaVoice(messageId, text) {
       return;
     }
 
-    // Update chatMessages array
     const msgEntry = chatMessages.find(m => m.id === messageId);
     if (msgEntry) {
       msgEntry.audio_url = audioUrl;
@@ -1016,10 +1083,9 @@ async function generateChaVoice(messageId, text) {
       msgEntry.audio_transcribed_text = text;
     }
 
-    // Update UI: Add voice indicator to the message
     addVoiceIndicatorToMessage(messageId, audioUrl, audioDuration, text);
 
-    console.log(`✓ Cha voice generated for message ${messageId}`);
+    console.log(`✓ Cha voice generated and saved for message ${messageId}`);
   } catch (error) {
     const reason = getChaTtsFailureReason(error);
     console.warn("Cha voice attachment generation error:", error);
@@ -6246,7 +6312,19 @@ function applyChaAvatar(url) {
   });
 }
 
-applyChaAvatar(localStorage.getItem("cha_avatar_url") || "");
+// On load: show cached URL immediately, then refresh from stored path (signed URLs expire in 1h)
+(async () => {
+  const cachedUrl = localStorage.getItem("cha_avatar_url");
+  const storedPath = localStorage.getItem("cha_avatar_path");
+  if (cachedUrl) applyChaAvatar(cachedUrl);
+  if (storedPath && supabaseClient) {
+    const freshUrl = await getSignedImageUrl(storedPath).catch(() => null);
+    if (freshUrl) {
+      localStorage.setItem("cha_avatar_url", freshUrl);
+      applyChaAvatar(freshUrl);
+    }
+  }
+})();
 
 chaAvatarButton?.addEventListener("click", async () => {
   if (!window.SavePrincessUpload?.create) return;
@@ -6258,9 +6336,11 @@ chaAvatarButton?.addEventListener("click", async () => {
       return `${userId}/cha_avatar_${Date.now()}.${ext || "jpg"}`;
     },
     onUploaded: (result) => {
-      if (result.signedUrl) {
-        localStorage.setItem("cha_avatar_url", result.signedUrl);
-        applyChaAvatar(result.signedUrl);
+      if (result.path) {
+        // Store path (permanent) + signed URL (1h cache for immediate display)
+        localStorage.setItem("cha_avatar_path", result.path);
+        if (result.signedUrl) localStorage.setItem("cha_avatar_url", result.signedUrl);
+        applyChaAvatar(result.signedUrl || "");
       }
     },
   });
@@ -6843,6 +6923,7 @@ messageInput.addEventListener("keydown", (e) => {
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const MAX_PX = 1600;
+    const MAX_BYTES = 1 * 1024 * 1024; // 1 MB output limit
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("读取图片失败"));
     reader.onload = (e) => {
@@ -6857,7 +6938,17 @@ function compressImage(file) {
         const canvas = document.createElement("canvas");
         canvas.width = width; canvas.height = height;
         canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.85));
+        // Reduce quality until compressed size is under 1 MB
+        let quality = 0.85;
+        let dataUrl;
+        do {
+          dataUrl = canvas.toDataURL("image/jpeg", quality);
+          // Approximate decoded byte size from base64 payload length
+          const payloadLen = dataUrl.length - dataUrl.indexOf(",") - 1;
+          if (payloadLen * 0.75 <= MAX_BYTES) break;
+          quality = Math.round((quality - 0.1) * 10) / 10;
+        } while (quality >= 0.3);
+        resolve(dataUrl);
       };
       img.src = e.target.result;
     };
@@ -7500,8 +7591,8 @@ async function handleSubmit() {
     if (snapshot) {
       const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
       const uid = user?.id || window.currentUserId;
-      storagePath = await uploadImageToStorage(snapshot.dataUrl, uid, getActiveConversationId());
-      if (storagePath === null) {
+      const uploadResult = await uploadImageToStorage(snapshot.dataUrl, uid, getActiveConversationId());
+      if (uploadResult === null) {
         setChatStatus("图片上传失败，消息未发送，请重试");
         // 回滚乐观渲染，清理 temp render cache
         chatMessages.pop();
@@ -7510,6 +7601,19 @@ async function handleSubmit() {
         // Restore reply state so the user doesn't lose their reply context
         if (replyId) setReplyDraft(replyId, replyPreview, replyRole);
         return;
+      }
+      storagePath = uploadResult.path;
+      // Replace base64 in chatMessages with the signed URL so subsequent
+      // API calls don't retransmit the full base64 payload
+      if (uploadResult.signedUrl) {
+        const entry = chatMessages.findLast?.(m => m.role === "user" && m.id === null);
+        if (entry && Array.isArray(entry.content)) {
+          entry.content = entry.content.map(part =>
+            part.type === "image_url"
+              ? { ...part, image_url: { ...part.image_url, url: uploadResult.signedUrl } }
+              : part
+          );
+        }
       }
     }
     const msgId = await saveMessage("user", dbContent, storagePath, {}, replyTo).catch(() => null);

@@ -445,6 +445,8 @@ Deno.serve(async (req) => {
       cached: false,
       cache_write_failed: true,
       audio_url_type: "data_fallback",
+      storage_upload_status: uploadRes.status,
+      request_id,
     });
   }
 

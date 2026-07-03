@@ -606,16 +606,41 @@ function _initSettingsSubpageEvents(container, type) {
     if (splashBtn) splashBtn.addEventListener("click", () => {
       const inp = document.createElement("input");
       inp.type = "file"; inp.accept = "image/*";
-      inp.addEventListener("change", () => {
+      inp.addEventListener("change", async () => {
         const file = inp.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          localStorage.setItem("asset_app_splash_wallpaper", reader.result);
+        splashBtn.textContent = "处理中…";
+        splashBtn.disabled = true;
+        try {
+          // Compress to max 800px / 60% quality before storing in localStorage
+          const compressed = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error("读取失败"));
+            reader.onload = (e) => {
+              const img = new Image();
+              img.onerror = () => reject(new Error("解码失败"));
+              img.onload = () => {
+                const MAX = 800;
+                let { width, height } = img;
+                if (width > MAX || height > MAX) {
+                  if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
+                  else { width = Math.round(width * MAX / height); height = MAX; }
+                }
+                const canvas = document.createElement("canvas");
+                canvas.width = width; canvas.height = height;
+                canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL("image/jpeg", 0.6));
+              };
+              img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+          });
+          localStorage.setItem("asset_app_splash_wallpaper", compressed);
           splashBtn.textContent = "已更换";
-          splashBtn.disabled = true;
-        };
-        reader.readAsDataURL(file);
+        } catch {
+          splashBtn.textContent = "更换失败";
+          splashBtn.disabled = false;
+        }
       });
       inp.click();
     });
