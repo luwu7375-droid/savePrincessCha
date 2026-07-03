@@ -318,6 +318,41 @@
     }
   }
 
+  // ── G's Eyes Video Call Integration ──────────────────────────────────────
+
+  function initGsEyes() {
+    const toggleBtn = document.getElementById("gsEyesToggleBtn");
+    if (!toggleBtn) return;
+
+    toggleBtn.addEventListener("click", async () => {
+      const isActive = toggleBtn.dataset.gsEyesActive === "true";
+
+      if (!isActive) {
+        // Start G's Eyes
+        const result = await window.GsEyes.start();
+        if (result.ok) {
+          toggleBtn.dataset.gsEyesActive = "true";
+          toggleBtn.querySelector(".video-call-label").textContent = "结束";
+          toggleBtn.querySelector(".video-call-icon").textContent = "⏹";
+        } else {
+          alert("摄像头启动失败: " + result.error);
+        }
+      } else {
+        // Stop G's Eyes
+        await window.GsEyes.stop();
+        toggleBtn.dataset.gsEyesActive = "false";
+        toggleBtn.querySelector(".video-call-label").textContent = "开始";
+        toggleBtn.querySelector(".video-call-icon").textContent = "📹";
+
+        // Reset video preview
+        const preview = document.querySelector("#phoneVideoScreen .video-preview");
+        if (preview && !preview.querySelector("video")) {
+          preview.textContent = "📹 视频预览";
+        }
+      }
+    });
+  }
+
   // ── Utils ─────────────────────────────────────────────────────────────────
 
   function escapeHtml(s) {
@@ -359,6 +394,7 @@
     initBackButtons();
     initBrowser();
     initOverlays();
+    initGsEyes();
   }
 
   if (document.readyState === "loading") {

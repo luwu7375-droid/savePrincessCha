@@ -7496,6 +7496,11 @@ async function handleSubmit() {
   // Stop TTS playback when sending a new message
   if (window.SPVoice) window.SPVoice.stopSpeaking();
 
+  // ── G's Eyes: reset silence timer ──────────────────────────────────────────
+  if (window.GsEyes?.onUserSpeak) {
+    window.GsEyes.onUserSpeak();
+  }
+
   // ── Edit mode: save the edited message ──────────────────────────────────────
   if (composerEditMode === "edit") {
     const newText = messageInput.value.trim();
@@ -8017,6 +8022,25 @@ function _syncChatMoreSubsheet(id) {
     closeChatMoreSheet();
     if (typeof enterMultiSelectMode === 'function') {
       enterMultiSelectMode();
+    }
+  });
+
+  document.getElementById("cmsVideoCallBtn")?.addEventListener("click", async () => {
+    const valSpan = document.getElementById("cmsVideoCallVal");
+    if (!valSpan) return;
+
+    const isActive = window.VideoCall?.isActive();
+
+    if (!isActive) {
+      // Start video call
+      closeChatMoreSheet();
+      await window.VideoCall.start();
+      valSpan.textContent = "运行中";
+    } else {
+      // End video call
+      await window.VideoCall.end();
+      valSpan.textContent = "已关闭";
+      closeChatMoreSheet();
     }
   });
 
@@ -10403,6 +10427,16 @@ window.addEventListener("load", () => {
       .catch(err => console.error('Failed to update diary card:', err));
     window.SPDiary.initDiaryScheduler();
   }
+
+  // ── G's Eyes Status Monitor ──────────────────────────────────────────────────
+  // Update Video Call status display in chat more panel every 2 seconds
+  setInterval(() => {
+    const valSpan = document.getElementById("cmsVideoCallVal");
+    if (valSpan && window.VideoCall) {
+      const isActive = window.VideoCall.isActive();
+      valSpan.textContent = isActive ? "运行中" : "已关闭";
+    }
+  }, 2000);
 });
 
 // ── V2 Composer (Plus Panel & Emoji Button) ──────────────────────────────────

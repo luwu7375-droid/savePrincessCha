@@ -3977,3 +3977,296 @@ img.msg-image {
     font-size: 16px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   G's Eyes - Video Call Interface
+   ════��═════════════════════════════════════════════════════════════════════════
+   Local camera preview and visual context status display.
+   ────────────────────────────────────────────────────────────────────────────── */
+
+.phone-video-interface {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #000;
+}
+
+.video-preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a1a;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+.video-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gs-eyes-status-bar {
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gs-eyes-status {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  display: block;
+  text-align: center;
+}
+
+.video-controls {
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  background: rgba(0, 0, 0, 0.9);
+}
+
+.video-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #fff;
+}
+
+.video-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.05);
+}
+
+.video-btn:active {
+  transform: scale(0.95);
+}
+
+.video-call {
+  background: #34c759;
+  width: 80px;
+  height: 80px;
+}
+
+.video-call:hover {
+  background: #30b350;
+}
+
+.video-call[data-gs-eyes-active="true"] {
+  background: #ff3b30;
+}
+
+.video-call[data-gs-eyes-active="true"]:hover {
+  background: #e63329;
+}
+
+.video-call-icon {
+  font-size: 28px;
+  display: block;
+}
+
+.video-call-label {
+  font-size: 12px;
+  margin-top: 4px;
+  display: block;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Video Call Mode - In-Chat Video Interface
+   ══════════════════════════════════════════════════════════════════════════════
+   Embedded video call mode within chat interface with voice interaction.
+   ────────────────────────────────────────────────────────────────────────────── */
+
+.video-call-container {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.video-call-preview {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 aspect ratio */
+  background: #1a1a1a;
+  overflow: hidden;
+}
+
+.video-call-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-call-status {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.video-call-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.9);
+  position: relative;
+}
+
+.video-call-mic-btn {
+  background: #34c759;
+  border: none;
+  border-radius: 50%;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #fff;
+  font-size: 11px;
+  position: relative;
+}
+
+.video-call-mic-btn svg {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 4px;
+}
+
+.video-call-mic-btn span {
+  font-size: 10px;
+  opacity: 0.9;
+}
+
+.video-call-mic-btn:hover:not(:disabled) {
+  background: #30b350;
+  transform: scale(1.05);
+}
+
+.video-call-mic-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.video-call-mic-btn:disabled {
+  background: #666;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.video-call-mic-btn--active {
+  background: #ff3b30;
+  animation: pulse-mic 1.5s ease-in-out infinite;
+}
+
+.video-call-mic-btn--active:hover {
+  background: #e63329;
+}
+
+@keyframes pulse-mic {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 15px rgba(255, 59, 48, 0);
+  }
+}
+
+.video-call-close-btn {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.video-call-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.video-call-subtitle {
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.8);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .video-call-container {
+    border-radius: 0;
+    margin-bottom: 0;
+  }
+
+  .video-call-preview {
+    padding-top: 75%; /* 4:3 aspect ratio on mobile */
+  }
+
+  .video-call-mic-btn {
+    width: 64px;
+    height: 64px;
+  }
+
+  .video-call-mic-btn svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .video-call-subtitle {
+    font-size: 13px;
+    padding: 10px 12px;
+    min-height: 40px;
+  }
+}
+
+

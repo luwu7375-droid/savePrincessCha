@@ -220,6 +220,7 @@
             <ul class="chat-more-list" role="list">
               <li><button type="button" class="chat-more-item" id="cmsSearchBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="7.5" cy="7.5" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11.5 11.5L15 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>搜索聊天记录</span></button></li>
               <li><button type="button" class="chat-more-item" id="cmsMultiSelectBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="3" y="3" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="3" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/></svg><span>多选</span></button></li>
+              <li><button type="button" class="chat-more-item" id="cmsVideoCallBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="2" y="4" width="10" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M12 7l3-2v7l-3-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>视频聊天</span><span id="cmsVideoCallVal" class="chat-more-item-value">已关闭</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsAppearanceBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="2" y="2" width="13" height="13" rx="3" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 6L13 8.5L9.5 11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>聊天外观</span><span class="chat-more-item-arrow">›</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsReplyStyleBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M3 5h11M3 8.5h7M3 12h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>回复风格</span><span id="cmsReplyStyleVal" class="chat-more-item-value">均衡</span><span class="chat-more-item-arrow">›</span></button></li>
               <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsVoiceBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.5 3L6 5.5H3.5v3H6l2.5 2.5V3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 6c.5.5 1 1.2 1 2.5s-.5 2-1 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>声音</span><span class="chat-more-item-arrow">›</span></button></li>
@@ -936,10 +937,14 @@
         </div>
         <div class="phone-video-interface">
           <div class="video-preview">📹 视频预览</div>
+          <div class="gs-eyes-status-bar">
+            <span class="gs-eyes-status">G's Eyes 已关闭</span>
+          </div>
           <div class="video-controls">
-            <button type="button" class="video-btn">🎤</button>
-            <button type="button" class="video-btn video-call">📹 开始</button>
-            <button type="button" class="video-btn">🔄</button>
+            <button type="button" class="video-btn video-call" id="gsEyesToggleBtn" data-gs-eyes-active="false">
+              <span class="video-call-icon">📹</span>
+              <span class="video-call-label">开始</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1007,7 +1012,11 @@
       document.write('<script src="modules/chat-navigation.js?v=' + v + '" charset="utf-8"><\/script>');
       // Phase 3 refactored modules (high-risk core)
       document.write('<script src="modules/message-renderer.js?v=' + v + '" charset="utf-8"><\/script>');
+      // G's Eyes must load before chat-api.js (chat-api calls window.getGsEyesVisualContext)
+      document.write('<script src="modules/gs-eyes.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/chat-api.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Video Call must load after gs-eyes.js and chat-api.js
+      document.write('<script src="modules/video-call.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/message-actions.js?v=' + v + '" charset="utf-8"><\/script>');
       // debug-overlay: only load in dev builds or when ?debug is in URL
       if (window.location.search.indexOf('debug') !== -1 || (window.SAVE_PRINCESS_BUILD || '').indexOf('dev') !== -1) {
