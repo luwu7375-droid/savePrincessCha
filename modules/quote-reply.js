@@ -224,17 +224,26 @@ function setLoading(isLoading) {
 }
 
 function stripThinking(text) {
-  return text
+  // Remove <think> tags AND their content
+  let result = text
     .replace(/<think>[\s\S]*?<\/think>/g, "")
-    .replace(/<think>[\s\S]*$/, "")
+    .replace(/<think>[\s\S]*$/, "");
+
+  // Remove <visible_thought> tags AND their content (not just the tags)
+  result = result
     .replace(/<visible_thought>[\s\S]*?<\/visible_thought>/g, "")
-    .replace(/<visible_thought>[\s\S]*$/, "")
+    .replace(/<visible_thought>[\s\S]*$/, "");
+
+  // Remove <reply> tags but keep content
+  result = result
     .replace(/<\/?reply>/g, "")
-    .replace(/\b[A-Z][A-Z_]{2,}_END\b/g, "")
-    .trim();
+    .replace(/\b[A-Z][A-Z_]{2,}_END\b/g, "");
+
+  return result.trim();
 }
 
 function parseVisibleThought(raw) {
+  console.log("[parseVisibleThought] Input raw (first 500 chars):", raw.slice(0, 500));
   const bubbles = [];
   const pattern = /<(visible_thought|reply)>([\s\S]*?)<\/\1>/g;
   let match;
@@ -242,6 +251,7 @@ function parseVisibleThought(raw) {
   while ((match = pattern.exec(raw)) !== null) {
     const tag = match[1];
     const content = match[2].trim();
+    console.log(`[parseVisibleThought] Found tag: ${tag}, content length: ${content.length}`);
     if (!content) continue;
 
     if (tag === "visible_thought") {
@@ -251,8 +261,11 @@ function parseVisibleThought(raw) {
     }
   }
 
+  console.log("[parseVisibleThought] Total bubbles parsed:", bubbles.length);
+
   // 如果没有解析到任何标签，fallback 到纯 reply
   if (bubbles.length === 0) {
+    console.log("[parseVisibleThought] No tags found, using fallback");
     const cleaned = stripThinking(raw);
     if (cleaned.trim()) {
       bubbles.push({ type: "reply", content: cleaned });
@@ -264,6 +277,7 @@ function parseVisibleThought(raw) {
   const cleanReply = replyParts.length > 0 ? replyParts.join("\n\n") : stripThinking(raw);
 
   const firstThought = bubbles.find(b => b.type === "thought");
+  console.log("[parseVisibleThought] Returning:", { bubbles: bubbles.length, hasThought: !!firstThought, replyLength: cleanReply.length });
   return { bubbles, thought: firstThought ? firstThought.content : null, reply: cleanReply };
 }
 

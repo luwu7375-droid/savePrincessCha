@@ -2016,13 +2016,18 @@ async function requestStreamingReply(replyMode = "auto") {
     }
   }
   if (!fullReply) throw new Error("未收到模型回复");
-  console.log("[VT-debug] fullReply:", fullReply.slice(0, 300));
+  console.log("[VT-debug] fullReply (first 500):", fullReply.slice(0, 500));
+  console.log("[VT-debug] fullReply contains <visible_thought>:", fullReply.includes("<visible_thought>"));
+  console.log("[VT-debug] fullReply contains <reply>:", fullReply.includes("<reply>"));
 
   // Parse assistant proactive quote FIRST (before visible thought parsing loses it)
   const { cleanText: replyWithoutQuote, replyTo: assistantReplyTo } = parseAssistantReplyTo(fullReply);
+  console.log("[VT-debug] replyWithoutQuote (first 500):", replyWithoutQuote.slice(0, 500));
 
   const { bubbles: thoughtBubbles, reply: cleanReply, thought } = parseVisibleThought(replyWithoutQuote);
   console.log("[VT-debug] bubbles:", JSON.stringify(thoughtBubbles));
+  console.log("[VT-debug] thought:", thought);
+  console.log("[VT-debug] cleanReply (first 200):", cleanReply.slice(0, 200));
   if (cleanReply === "<NO_REPLY>") {
     removeTypingIndicator();
     if (assistantEl) assistantEl.closest(".msg-row")?.remove();
