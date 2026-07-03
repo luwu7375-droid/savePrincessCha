@@ -184,6 +184,13 @@ function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false
     return;
   }
 
+  // Check if this is a generated image message (content is just "[图片]")
+  if (typeof rawContent === "string" && rawContent.trim() === "[图片]") {
+    console.log("[addAssistantBubbles] Generated image message detected, skipping text rendering");
+    // Image will be rendered by vision content array from resolveImagePaths
+    return;
+  }
+
   const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
   if (bubbles.length === 0) return;
   const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo, thought);

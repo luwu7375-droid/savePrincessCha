@@ -221,22 +221,39 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log("[image-generation] Image generated:", imageUrl);
+    console.log("[image-generation] finalPrompt:", finalPrompt.slice(0, 200));
+    console.log("[image-generation] Saving assistant image message...");
+
+    // Prepare metadata with all image generation details
+    const metadata = {
+      type: "generated_image",
+      image_url: imageUrl,
+      image_prompt: finalPrompt,
+      image_description: legacyPrompt || description || "生成的图片",
+      image_type: image_type || "portrait",
+      size: size || "1024x1024",
+      quality: quality || "standard",
+      style: style || "natural",
+    };
 
     // Save image message to database
     const { data: message, error: insertError } = await supabase
       .from("messages")
       .insert({
         role: "assistant",
-        content: `[图片] ${finalPrompt}`,
+        content: "[图片]", // Don't expose prompt to user
         type: "image",
         conversation_id,
         user_id: user.id,
         image_storage_path: imageUrl, // Store external URL directly
-        image_prompt: finalPrompt,
-        image_description: finalPrompt,
+        image_prompt: finalPrompt, // Keep for backward compatibility
+        image_description: legacyPrompt || description || "生成的图片",
+        metadata: metadata, // Store all details in metadata
       })
       .select("id")
       .single();
+
+    console.log("[image-generation] Message saved with id:", message?.id);
 
     if (insertError) {
       console.error("[image-generation] Failed to save message:", insertError);

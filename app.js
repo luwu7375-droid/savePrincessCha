@@ -1410,10 +1410,14 @@ async function callImageGenerationDirect(prompt, params) {
 async function handleImageGeneration(intent, userText) {
   const { route, face_policy, reason } = intent;
 
-  console.log(`[image-generation] Starting auto-generation...`);
-  console.log(`[image-generation] Route: ${route}, Face policy: ${face_policy}, Reason: ${reason}`);
+  console.log(`[image-gen] ========== AUTO IMAGE GENERATION START ==========`);
+  console.log(`[image-gen] intercepted userText:`, userText);
+  console.log(`[image-gen] route:`, route);
+  console.log(`[image-gen] face_policy:`, face_policy);
+  console.log(`[image-gen] reason:`, reason);
 
   // First, save user message to database and render it
+  console.log(`[image-gen] saving user message before generation`);
   const now = new Date().toISOString();
   const isFirst = chatMessages.length === 0;
   const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -1423,6 +1427,7 @@ async function handleImageGeneration(intent, userText) {
   chatMessages.push({ role: "user", content: userText, created_at: now, id: null });
 
   // Save user message to database
+  let userMessageId = null;
   try {
     const { data: userMsg, error: userMsgError } = await supabaseClient
       .from("messages")
@@ -1437,16 +1442,17 @@ async function handleImageGeneration(intent, userText) {
       .single();
 
     if (userMsgError) {
-      console.error('[image-generation] Failed to save user message:', userMsgError);
+      console.error('[image-gen] Failed to save user message:', userMsgError);
     } else {
-      console.log('[image-generation] User message saved with id:', userMsg.id);
+      userMessageId = userMsg.id;
+      console.log('[image-gen] User message saved with id:', userMessageId);
       // Update the last message in chatMessages with the real ID
       if (chatMessages.length > 0) {
-        chatMessages[chatMessages.length - 1].id = String(userMsg.id);
+        chatMessages[chatMessages.length - 1].id = String(userMessageId);
       }
     }
   } catch (err) {
-    console.error('[image-generation] Error saving user message:', err);
+    console.error('[image-gen] Error saving user message:', err);
   }
 
   if (isFirst) updateConvTitle(getActiveConversationId(), userText);
@@ -1455,34 +1461,51 @@ async function handleImageGeneration(intent, userText) {
   const finalPrompt = window.SavePrincessImagePolicy.buildImagePrompt(route, userText);
   const params = window.SavePrincessImagePolicy.getDefaultImageParams();
 
-  console.log('[image-generation] Final prompt:', finalPrompt.slice(0, 200) + '...');
-  console.log('[image-generation] Params:', params);
+  console.log('[image-gen] Final prompt:', finalPrompt.slice(0, 200) + '...');
+  console.log('[image-gen] Params:', params);
 
-  // Show loading indicator
-  showTypingIndicator();
+  // Show loading message
+  const loadingEl = addMessage("正在生成图片...", "assistant");
+  const loadingRow = loadingEl?.closest('.msg-row');
+  console.log('[image-gen] Loading message added');
 
   try {
     // Call existing image generation function
-    console.log('[image-generation] Calling callImageGenerationDirect...');
+    console.log('[image-gen] Calling callImageGenerationDirect...');
     const result = await callImageGenerationDirect(finalPrompt, params);
 
-    console.log('[image-generation] Result:', result);
+    console.log('[image-gen] response:', result);
 
     if (result.success) {
-      removeTypingIndicator();
-      console.log('[image-generation] Success! Image URL:', result.image_url);
-      console.log('[image-generation] Reloading history to display image...');
+      // Remove loading message
+      if (loadingRow) {
+        loadingRow.remove();
+        console.log('[image-gen] Loading message removed');
+      }
+
+      console.log('[image-gen] Success! Image URL:', result.image_url);
+      console.log('[image-gen] Message ID:', result.message_id);
+      console.log('[image-gen] Reloading history to display image...');
+
       // Reload history to show new image
       await reloadHistory();
-      console.log('[image-generation] ✅ Complete! Image should now be visible in chat.');
+
+      console.log('[image-gen] ========== AUTO IMAGE GENERATION COMPLETE ==========');
     } else {
       throw new Error(result.error || '生成失败');
     }
 
   } catch (error) {
-    console.error('[image-generation] ❌ Error:', error);
-    removeTypingIndicator();
+    console.error('[image-gen] ❌ Error:', error);
+
+    // Update loading message to error state
+    if (loadingEl) {
+      loadingEl.textContent = "图片生成失败，可以稍后再试";
+      loadingEl.style.color = "var(--text-muted)";
+    }
+
     showToast(`图片生成失败：${error.message}`);
+    console.log('[image-gen] ========== AUTO IMAGE GENERATION FAILED ==========');
   }
 }
 
@@ -1669,6 +1692,20 @@ async function reloadHistory(opts = {}) {
     if (m.is_deleted) {
       // Optionally: render as deleted placeholder, for now just skip
       continue;
+    }
+
+    // Debug log for image messages
+    if (m.type === "image" || m.image_storage_path) {
+      console.log("[image-gen] Loading image message:", {
+        id: m.id,
+        role: m.role,
+        type: m.type,
+        content: m.content?.slice?.(0, 100) || m.content,
+        image_storage_path: m.image_storage_path,
+        isArray: Array.isArray(m.content),
+        contentType: typeof m.content,
+        hasImageUrl: m.content && Array.isArray(m.content) && m.content.some(p => p.type === "image_url"),
+      });
     }
 
     // Render recalled messages as system notice
