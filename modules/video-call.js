@@ -49,6 +49,11 @@
       // Change state to connecting
       setState("connecting");
 
+      // Check if GsEyes module is available
+      if (!window.GsEyes || typeof window.GsEyes.start !== "function") {
+        throw new Error("GsEyes module not loaded");
+      }
+
       // Start G's Eyes (camera + visual recognition)
       const result = await window.GsEyes.start();
       if (!result.ok) {
