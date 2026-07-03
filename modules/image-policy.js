@@ -43,7 +43,8 @@
     const t = text.trim();
 
     // portrait: 用户想看 cha 本人
-    if (/我想看你|给我你的照片|你的脸|你长什么样|自拍|头像|正脸|你的样子/.test(t)) {
+    // Enhanced patterns to catch more variations
+    if (/我想看你|想看看你|看看你(?!.*干)|给我你的照片|你的照片|你.*照片|发.*你.*照|给我.*你.*照片|你的脸|你长什么样|自拍|头像|正脸|你的样子/.test(t)) {
       return {
         should_generate: true,
         route: "portrait",

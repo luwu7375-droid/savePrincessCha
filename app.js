@@ -1377,33 +1377,39 @@ async function callImageGenerationDirect(prompt, params) {
 async function handleImageGeneration(intent, userText) {
   const { route, face_policy, reason } = intent;
 
-  console.log(`[image-generation] Auto-generating: route=${route}, face_policy=${face_policy}, reason=${reason}`);
+  console.log(`[image-generation] Starting auto-generation...`);
+  console.log(`[image-generation] Route: ${route}, Face policy: ${face_policy}, Reason: ${reason}`);
 
   // Build prompt using template system
   const finalPrompt = window.SavePrincessImagePolicy.buildImagePrompt(route, userText);
   const params = window.SavePrincessImagePolicy.getDefaultImageParams();
 
-  console.log('[image-generation] finalPrompt:', finalPrompt);
-  console.log('[image-generation] params:', params);
+  console.log('[image-generation] Final prompt:', finalPrompt.slice(0, 200) + '...');
+  console.log('[image-generation] Params:', params);
 
   // Show loading indicator
   showTypingIndicator();
 
   try {
     // Call existing image generation function
+    console.log('[image-generation] Calling callImageGenerationDirect...');
     const result = await callImageGenerationDirect(finalPrompt, params);
+
+    console.log('[image-generation] Result:', result);
 
     if (result.success) {
       removeTypingIndicator();
+      console.log('[image-generation] Success! Image URL:', result.image_url);
+      console.log('[image-generation] Reloading history to display image...');
       // Reload history to show new image
       await reloadHistory();
-      console.log('[image-generation] Success:', result.image_url);
+      console.log('[image-generation] ✅ Complete! Image should now be visible in chat.');
     } else {
       throw new Error(result.error || '生成失败');
     }
 
   } catch (error) {
-    console.error('[image-generation] Error:', error);
+    console.error('[image-generation] ❌ Error:', error);
     removeTypingIndicator();
     showToast(`图片生成失败：${error.message}`);
   }
@@ -7726,11 +7732,17 @@ async function handleSubmit() {
 
   // ── Image Intent Detection ──────────────────────────────────────────────
   // Check if user wants to generate an image (only for text-only messages)
+  console.log('[image-policy] Module loaded:', !!window.SavePrincessImagePolicy);
+  console.log('[image-policy] User text:', text);
+
   if (text && !pendingImage?.dataUrl && window.SavePrincessImagePolicy) {
     const imageIntent = window.SavePrincessImagePolicy.detectImageIntent(text);
-    console.log('[image-policy]', imageIntent);
+    console.log('[image-policy] Detection result:', imageIntent);
 
     if (imageIntent.should_generate) {
+      console.log('[image-generation] Intent detected! Intercepting normal chat flow');
+      console.log('[image-generation] Route:', imageIntent.route, 'Face policy:', imageIntent.face_policy);
+
       // Clear input and handle image generation directly
       messageInput.value = "";
       autoResizeTextarea(messageInput);
@@ -7748,7 +7760,11 @@ async function handleSubmit() {
       // Generate image and skip normal chat flow
       await handleImageGeneration(imageIntent, text);
       return;
+    } else {
+      console.log('[image-policy] No image intent detected, proceeding with normal chat');
     }
+  } else if (!window.SavePrincessImagePolicy) {
+    console.warn('[image-policy] SavePrincessImagePolicy module not loaded!');
   }
 
   // ── URL detection: confirm before send ──────────────────────────────────
