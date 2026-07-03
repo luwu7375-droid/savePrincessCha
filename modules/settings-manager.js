@@ -166,7 +166,10 @@ function _renderApiSubpage() {
 
     rolesMappingHtml += `
       <div class="settings-card-row settings-card-row--stacked">
-        <div><strong>${role.label}</strong><small>${role.description}</small></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+          <div><strong>${role.label}</strong><small>${role.description}</small></div>
+          ${hasValidProvider && currentMapping.model ? `<button type="button" class="settings-test-single-btn-inline" data-role-id="${roleId}" style="padding:4px 12px;font-size:13px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text);cursor:pointer;white-space:nowrap;">单独测试</button>` : ''}
+        </div>
         <small class="settings-row-model-hint">${providerLabel} · ${modelLabel}</small>
       </div>
       <div class="settings-card-row settings-card-row--selects">
@@ -1028,6 +1031,90 @@ function _initSettingsApiSubpage(container) {
     });
   }
 
+  // Handle inline single test buttons
+  container.querySelectorAll('.settings-test-single-btn-inline').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const roleId = btn.dataset.roleId;
+
+      // Disable button during test
+      btn.disabled = true;
+      btn.textContent = '测试中…';
+
+      const mapping = getModelRoleMapping();
+      const config = mapping[roleId];
+      const role = MODEL_ROLES.find(r => r.id === roleId);
+
+      try {
+        // Resolve provider endpoint and apiKey from custom_providers
+        const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+        const providerData = customProviders[config.providerGroup];
+
+        if (!providerData || !providerData.endpoint || !providerData.apiKey) {
+          throw new Error('通道配置不完整（缺少 endpoint 或 apiKey）');
+        }
+
+        // Proxy through edge function to avoid CORS
+        const supabaseUrl = window.supabaseClient?.supabaseUrl || 'https://zbpbkyzisamleqspijnr.supabase.co';
+        const proxyUrl = `${supabaseUrl}/functions/v1/chat-test`;
+
+        const response = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: providerData.endpoint,
+            apiKey: providerData.apiKey,
+            model: config.model
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`代理请求失败 (${response.status})`);
+        }
+
+        const result = await response.json();
+
+        if (result.error) {
+          throw new Error(result.error);
+        }
+
+        if (result.status && result.status >= 200 && result.status < 300) {
+          btn.textContent = '✅ 通过';
+          btn.style.color = '#66bb6a';
+          if (typeof showToast === 'function') {
+            showToast(`${role.label} 测试通过`);
+          }
+        } else {
+          btn.textContent = '❌ 失败';
+          btn.style.color = '#e57373';
+          let errorMsg = `上游返回 ${result.status}`;
+          if (result.data?.error?.message) {
+            errorMsg += `: ${result.data.error.message}`;
+          }
+          if (typeof showToast === 'function') {
+            showToast(errorMsg);
+          }
+        }
+
+      } catch (error) {
+        console.error('[single test] error:', error);
+        btn.textContent = '❌ 失败';
+        btn.style.color = '#e57373';
+        if (typeof showToast === 'function') {
+          showToast(`测试失败：${error.message}`);
+        }
+      }
+
+      // Re-enable button after 2 seconds
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = '单独测试';
+        btn.style.color = '';
+      }, 2000);
+    });
+  });
+
   // Handle test button
   const testBtn = container.querySelector('#testModelRoleMappingBtn');
   const testResultsSection = container.querySelector('#testResultsSection');
@@ -1142,27 +1229,14 @@ function _initSettingsApiSubpage(container) {
               <small style="display:block;margin-top:2px;color:var(--text-muted);">${config && config.providerGroup ? `${PROVIDER_GROUPS[config.providerGroup]?.name || config.providerGroup} · ${config.model}` : '未配置'}</small>
               ${detailText ? `<small style="display:block;margin-top:4px;color:${statusColor};">${detailText}</small>` : ''}
             </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              ${config && config.providerGroup && config.model ? `<button type="button" class="settings-test-single-btn" data-role-id="${roleId}" style="padding:4px 12px;font-size:13px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text);cursor:pointer;">单独测试</button>` : ''}
-              <div style="text-align:right;">
-                <span style="font-size:20px;">${statusIcon}</span>
-                <small style="display:block;color:${statusColor};margin-top:2px;font-weight:500;">${statusText}</small>
-              </div>
+            <div style="text-align:right;">
+              <span style="font-size:20px;">${statusIcon}</span>
+              <small style="display:block;color:${statusColor};margin-top:2px;font-weight:500;">${statusText}</small>
             </div>
           </div>`;
 
         if (!testResultsContainer.contains(card)) {
           testResultsContainer.appendChild(card);
-        }
-
-        // Add single test button listener
-        const singleTestBtn = card.querySelector('.settings-test-single-btn');
-        if (singleTestBtn) {
-          singleTestBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const targetRoleId = singleTestBtn.dataset.roleId;
-            await testSingleModel(targetRoleId, card);
-          });
         }
       }
 
@@ -1173,151 +1247,6 @@ function _initSettingsApiSubpage(container) {
         showToast(allPassed ? '所有配置测试通过' : '部分配置测试失败');
       }
     });
-  }
-
-  // ── Single Model Test ──────────────────────────────────────────────────────
-  async function testSingleModel(roleId, card) {
-    const mapping = getModelRoleMapping();
-    const config = mapping[roleId];
-    const role = MODEL_ROLES.find(r => r.id === roleId);
-
-    if (!config || !config.providerGroup || !config.model) {
-      if (typeof showToast === 'function') {
-        showToast('该模型未配置');
-      }
-      return;
-    }
-
-    // Update card to show testing status
-    const statusArea = card.querySelector('[style*="text-align:right"]');
-    if (statusArea) {
-      statusArea.innerHTML = `
-        <span style="font-size:20px;">⏳</span>
-        <small style="display:block;color:var(--text-muted);margin-top:2px;font-weight:500;">测试中…</small>
-      `;
-    }
-
-    const singleTestBtn = card.querySelector('.settings-test-single-btn');
-    if (singleTestBtn) singleTestBtn.disabled = true;
-
-    try {
-      // Resolve provider endpoint and apiKey from custom_providers
-      const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
-      const providerData = customProviders[config.providerGroup];
-
-      if (!providerData || !providerData.endpoint || !providerData.apiKey) {
-        throw new Error('通道配置不完整（缺少 endpoint 或 apiKey）');
-      }
-
-      // Proxy through edge function to avoid CORS
-      const supabaseUrl = window.supabaseClient?.supabaseUrl || 'https://zbpbkyzisamleqspijnr.supabase.co';
-      const proxyUrl = `${supabaseUrl}/functions/v1/chat-test`;
-
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          endpoint: providerData.endpoint,
-          apiKey: providerData.apiKey,
-          model: config.model
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`代理请求失败 (${response.status})`);
-      }
-
-      const result = await response.json();
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      let statusIcon = '✅';
-      let statusText = '测试通过';
-      let statusColor = '#66bb6a';
-      let detailText = '';
-
-      if (result.status && result.status >= 200 && result.status < 300) {
-        detailText = '连接正常，模型响应成功';
-      } else {
-        statusIcon = '❌';
-        statusText = '测试失败';
-        statusColor = '#e57373';
-        detailText = `上游返回 ${result.status}`;
-        if (result.data?.error?.message) {
-          detailText += `: ${result.data.error.message}`;
-        } else if (result.data?.raw) {
-          detailText += `: ${result.data.raw.slice(0, 100)}`;
-        }
-      }
-
-      // Update card with result
-      card.innerHTML = `
-        <div class="settings-card-row">
-          <div style="flex:1;">
-            <strong>${role.label}</strong>
-            <small style="display:block;margin-top:2px;color:var(--text-muted);">${PROVIDER_GROUPS[config.providerGroup]?.name || config.providerGroup} · ${config.model}</small>
-            ${detailText ? `<small style="display:block;margin-top:4px;color:${statusColor};">${detailText}</small>` : ''}
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <button type="button" class="settings-test-single-btn" data-role-id="${roleId}" style="padding:4px 12px;font-size:13px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text);cursor:pointer;">单独测试</button>
-            <div style="text-align:right;">
-              <span style="font-size:20px;">${statusIcon}</span>
-              <small style="display:block;color:${statusColor};margin-top:2px;font-weight:500;">${statusText}</small>
-            </div>
-          </div>
-        </div>`;
-
-      // Re-attach event listener
-      const newSingleTestBtn = card.querySelector('.settings-test-single-btn');
-      if (newSingleTestBtn) {
-        newSingleTestBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await testSingleModel(roleId, card);
-        });
-      }
-
-      if (typeof showToast === 'function') {
-        showToast(statusIcon === '✅' ? '测试通过' : '测试失败');
-      }
-
-    } catch (error) {
-      console.error('[testSingleModel] error:', error);
-
-      // Update card with error
-      const statusColor = '#e57373';
-      const detailText = error.message || '无法连接到服务器';
-
-      card.innerHTML = `
-        <div class="settings-card-row">
-          <div style="flex:1;">
-            <strong>${role.label}</strong>
-            <small style="display:block;margin-top:2px;color:var(--text-muted);">${PROVIDER_GROUPS[config.providerGroup]?.name || config.providerGroup} · ${config.model}</small>
-            <small style="display:block;margin-top:4px;color:${statusColor};">${detailText}</small>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <button type="button" class="settings-test-single-btn" data-role-id="${roleId}" style="padding:4px 12px;font-size:13px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text);cursor:pointer;">单独测试</button>
-            <div style="text-align:right;">
-              <span style="font-size:20px;">❌</span>
-              <small style="display:block;color:${statusColor};margin-top:2px;font-weight:500;">测试失败</small>
-            </div>
-          </div>
-        </div>`;
-
-      // Re-attach event listener
-      const newSingleTestBtn = card.querySelector('.settings-test-single-btn');
-      if (newSingleTestBtn) {
-        newSingleTestBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await testSingleModel(roleId, card);
-        });
-      }
-
-      if (typeof showToast === 'function') {
-        showToast('测试失败：' + detailText);
-      }
-    }
   }
 }
 

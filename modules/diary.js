@@ -179,16 +179,22 @@
 
       // Get user's session token for RLS
       const { data: { session } } = await supabaseClient.auth.getSession();
-      const authToken = session?.access_token || supabaseClient.supabaseKey;
+      // Use getConfigValue to get SUPABASE_ANON_KEY (supabaseClient.supabaseKey doesn't exist in v2)
+      const anonKey = window.getConfigValue?.('SUPABASE_ANON_KEY', '') || '';
+      const authToken = session?.access_token || anonKey;
+
+      // Use getConfigValue to get SUPABASE_URL (supabaseClient.supabaseUrl doesn't exist in v2)
+      const supabaseUrl = window.getConfigValue?.('SUPABASE_URL', '') || 'https://zbpbkyzisamleqspijnr.supabase.co';
 
       console.log('[diary] Auth debug:', {
         hasSession: !!session,
         hasAccessToken: !!session?.access_token,
         userId: window.currentUserId,
-        usingSessionToken: !!session?.access_token
+        usingSessionToken: !!session?.access_token,
+        hasSupabaseUrl: !!supabaseUrl
       });
 
-      const response = await fetch(`${supabaseClient.supabaseUrl}/functions/v1/diary`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/diary`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
