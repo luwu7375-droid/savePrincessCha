@@ -1044,7 +1044,7 @@ function _initSettingsApiSubpage(container) {
 
       const mapping = getModelRoleMapping();
       const config = mapping[roleId];
-      const role = MODEL_ROLES.find(r => r.id === roleId);
+      const role = MODEL_ROLES[roleId];
 
       try {
         // Resolve provider endpoint and apiKey from custom_providers
