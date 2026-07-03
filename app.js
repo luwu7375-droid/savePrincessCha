@@ -1269,7 +1269,7 @@ async function generateChaImage(prompt, options = {}) {
         conversation_id: conversationId,
         provider_config: {
           endpoint: provider.endpoint,
-          api_key: provider.api_key,
+          api_key: provider.apiKey,
           model: imageGenConfig.model,
         },
         size: options.size || "1024x1024",
@@ -1339,7 +1339,7 @@ async function callImageGenerationDirect(prompt, params) {
     providerGroup: imageGenConfig.providerGroup,
     model: imageGenConfig.model,
     endpoint: provider.endpoint,
-    hasApiKey: !!provider.api_key
+    hasApiKey: !!provider.apiKey
   });
 
   try {
@@ -1362,7 +1362,7 @@ async function callImageGenerationDirect(prompt, params) {
         conversation_id: conversationId,
         provider_config: {
           endpoint: provider.endpoint,
-          api_key: provider.api_key,
+          api_key: provider.apiKey,
           model: imageGenConfig.model,
         },
         size: params.size,
