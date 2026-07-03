@@ -1,7 +1,7 @@
 import { corsHeaders, corsOptionsResponse } from "../_shared/cors.ts";
 
 /**
- * chat-test: Proxy a minimal chat completion request to an upstream provider.
+ * chat-test: Proxy a minimal chat/image completion request to an upstream provider.
  * Used by the settings page to validate provider/model configurations.
  *
  * Request body: { endpoint, apiKey, model }
@@ -19,28 +19,57 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Normalize endpoint to chat/completions
-    let chatUrl = endpoint.replace(/\/+$/, "");
-    if (!chatUrl.endsWith("/chat/completions")) {
-      chatUrl = chatUrl.replace(/\/completions$/, "");
-      if (!chatUrl.match(/\/v\d+$/)) chatUrl += "/v1";
-      chatUrl += "/chat/completions";
+    // Detect if this is an image generation model
+    const isImageModel = model.includes("dall-e") ||
+                        model.includes("image") ||
+                        model.toLowerCase().includes("生图") ||
+                        model.includes("flux") ||
+                        model.includes("sd-") ||
+                        model.includes("stable-diffusion");
+
+    let testUrl = endpoint.replace(/\/+$/, "");
+    let requestBody: any;
+
+    if (isImageModel) {
+      // Image generation endpoint
+      if (!testUrl.endsWith("/images/generations")) {
+        testUrl = testUrl.replace(/\/completions$/, "");
+        testUrl = testUrl.replace(/\/chat\/completions$/, "");
+        if (!testUrl.match(/\/v\d+$/)) testUrl += "/v1";
+        testUrl += "/images/generations";
+      }
+
+      requestBody = {
+        model,
+        prompt: "test",
+        n: 1,
+        size: "256x256", // Use smallest size for testing
+      };
+    } else {
+      // Chat completion endpoint
+      if (!testUrl.endsWith("/chat/completions")) {
+        testUrl = testUrl.replace(/\/completions$/, "");
+        if (!testUrl.match(/\/v\d+$/)) testUrl += "/v1";
+        testUrl += "/chat/completions";
+      }
+
+      requestBody = {
+        model,
+        messages: [{ role: "user", content: "hi" }],
+        max_tokens: 1,
+        stream: false,
+      };
     }
 
     let upstream: Response;
     try {
-      upstream = await fetch(chatUrl, {
+      upstream = await fetch(testUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: "hi" }],
-          max_tokens: 1,
-          stream: false,
-        }),
+        body: JSON.stringify(requestBody),
       });
     } catch (fetchErr) {
       // Network-level failure (DNS, connection refused, TLS error, etc.)
