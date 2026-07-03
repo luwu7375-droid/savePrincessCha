@@ -453,50 +453,106 @@
     }
 
     try {
-      // Use existing TTS system if available
-      if (window.SPVoice && typeof window.SPVoice.speak === "function") {
-        // SPVoice.speak returns a promise
-        await window.SPVoice.speak(text);
-
-        // After TTS completes, return to watching state
-        if (callState === "speaking") {
-          setState("watching");
-        }
-
-        // Clear subtitle after 3 seconds
-        setTimeout(() => {
-          if (subtitleDisplay && callState === "watching") {
-            subtitleDisplay.textContent = "";
-          }
-        }, 3000);
-      } else {
-        // Fallback: show text subtitle
-        console.warn("[video-call] TTS not available, showing text only");
-        setState("watching");
-        if (subtitleDisplay) {
-          subtitleDisplay.textContent = `cha: ${text} (语音生成失败)`;
-        }
-        setTimeout(() => {
-          if (subtitleDisplay && callState === "watching") {
-            subtitleDisplay.textContent = "";
-          }
-        }, 5000);
-      }
+      await speakWithSPVoice(text);
     } catch (err) {
       console.error("[video-call] TTS error", err);
-      setState("watching");
-      if (subtitleDisplay) {
-        subtitleDisplay.textContent = `cha: ${text} (语音播放失败)`;
-        setTimeout(() => {
-          if (subtitleDisplay && callState === "watching") {
-            subtitleDisplay.textContent = "";
-          }
-        }, 5000);
-      }
     }
+
+    // After TTS completes (or fails), return to watching state
+    if (callState === "speaking") {
+      setState("watching");
+    }
+
+    // Clear subtitle after 3 seconds
+    setTimeout(() => {
+      if (subtitleDisplay && callState === "watching") {
+        subtitleDisplay.textContent = "";
+      }
+    }, 3000);
+  }
+
+  // Wraps SPVoice TTS in a Promise so we can await completion.
+  function speakWithSPVoice(text) {
+    return new Promise((resolve, reject) => {
+      if (!window.SPVoice) {
+        console.warn("[video-call] SPVoice not available");
+        return resolve();
+      }
+
+      const engine = window.SPVoice.getTTSEngine ? window.SPVoice.getTTSEngine() : "system";
+
+      if (engine === "system") {
+        // Web Speech API path
+        if (!("speechSynthesis" in window)) {
+          console.warn("[video-call] speechSynthesis not supported");
+          return resolve();
+        }
+        const cleanText = text.replace(/\|\|\|/g, "").replace(/:[a-zA-Z0-9_+-]+:/g, "").trim();
+        if (!cleanText) return resolve();
+
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.rate = window.SPVoice.getTTSRate ? window.SPVoice.getTTSRate() : 1.0;
+        utterance.volume = window.SPVoice.getTTSVolume ? window.SPVoice.getTTSVolume() : 1.0;
+        utterance.onend = () => resolve();
+        utterance.onerror = (e) => { console.error("[video-call] SpeechSynthesis error", e); resolve(); };
+        window.speechSynthesis.speak(utterance);
+      } else {
+        // ElevenLabs / MiniMax / local_http path via backend TTS endpoint
+        const cfg = window.SPVoice.getTTSConfig ? window.SPVoice.getTTSConfig() : {};
+        const supabaseUrl = (window.SAVE_PRINCESS_CONFIG || {}).SUPABASE_URL;
+        const anonKey = (window.SAVE_PRINCESS_CONFIG || {}).SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || supabaseUrl === "YOUR_KEY_HERE" || !anonKey || anonKey === "YOUR_KEY_HERE") {
+          console.warn("[video-call] TTS endpoint not configured");
+          if (subtitleDisplay) {
+            subtitleDisplay.textContent = `cha: ${text} (TTS未配置)`;
+          }
+          return resolve();
+        }
+
+        const endpoint = `${supabaseUrl}/functions/v1/tts`;
+        const lang = window.SPVoice.detectTtsLanguage ? window.SPVoice.detectTtsLanguage(text, null) : "zh";
+        const profiles = cfg.profiles || {};
+        const profile = profiles[lang] || profiles.default || {};
+        const voice_id = profile.voice_id || "";
+        const model_id = cfg.model_id || "eleven_v3";
+
+        fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${anonKey}`,
+            "apikey": anonKey,
+          },
+          body: JSON.stringify({
+            text,
+            language_hint: lang,
+            provider: cfg.provider || "elevenlabs",
+            voice_profile: { voice_id, model_id },
+          }),
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (!data.ok || !data.audio_url) {
+              console.error("[video-call] TTS API error", data);
+              return resolve();
+            }
+            const audio = new Audio(data.audio_url);
+            currentTTSAudio = audio;
+            audio.onended = () => { currentTTSAudio = null; resolve(); };
+            audio.onerror = (e) => { console.error("[video-call] audio playback error", e); currentTTSAudio = null; resolve(); };
+            audio.play().catch(e => { console.error("[video-call] audio.play() failed", e); currentTTSAudio = null; resolve(); });
+          })
+          .catch(err => { console.error("[video-call] TTS fetch error", err); resolve(); });
+      }
+    });
   }
 
   function stopTTS() {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     if (window.SPVoice && typeof window.SPVoice.stopSpeaking === "function") {
       window.SPVoice.stopSpeaking();
     }
@@ -583,7 +639,7 @@
       const response = await window.SavePrincessChatAPI.callChatAPI(messages, "auto");
       const text = await readResponseText(response);
 
-      const cleaned = cleanVideoCallReply(text);
+      const cleaned = text.replace(/\|\|\|/g, "").trim();
 
       if (!cleaned || cleaned === "<NO_REPLY>" || cleaned.includes("<NO_REPLY>")) {
         setState("watching");
