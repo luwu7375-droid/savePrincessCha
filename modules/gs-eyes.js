@@ -17,6 +17,14 @@
   let lastSpeakTime = Date.now(); // Track silence duration
   let detectionReady = false; // Track if MediaPipe loaded successfully
 
+  // Visual event tracking
+  let pendingVisualEvents = [];
+  let lastEventAt = {};
+  let lastFacePresent = null;
+  let faceAbsentSince = null;
+  let smileSince = null;
+  let awaySince = null;
+
   // Visual state signals (low-risk, strategy-focused)
   let currentState = {
     camera_on: false,
@@ -224,6 +232,96 @@
     });
   }
 
+  // ── Visual Event Emission ──────────────────────────────────────────────────
+
+  function emitVisualEvent(type, confidence, description, extra = {}) {
+    const now = Date.now();
+    const cooldown = {
+      user_smiled: 45000,
+      user_returned: 45000,
+      user_long_silence: 90000,
+      user_looked_away_long: 90000,
+      user_left_frame_long: 90000,
+    }[type] || 60000;
+
+    if (lastEventAt[type] && now - lastEventAt[type] < cooldown) return;
+
+    lastEventAt[type] = now;
+    pendingVisualEvents.push({
+      type,
+      confidence,
+      description,
+      ts: new Date().toISOString(),
+      state: { ...currentState },
+      ...extra,
+    });
+
+    if (pendingVisualEvents.length > 5) pendingVisualEvents.shift();
+    console.log(`[gs-eyes] Visual event: ${type} (${description})`);
+  }
+
+  let lastSmile = "none";
+
+  function evaluateVisualEvents() {
+    if (!detectionReady || !isActive) return;
+
+    const now = Date.now();
+
+    // 1. user_returned
+    if (lastFacePresent === false && currentState.face_present === true) {
+      if (faceAbsentSince && now - faceAbsentSince > 3000) {
+        emitVisualEvent("user_returned", 0.8, "用户刚刚回到镜头前");
+      }
+      faceAbsentSince = null;
+    }
+
+    // Track face absence
+    if (currentState.face_present === false && lastFacePresent !== false) {
+      faceAbsentSince = now;
+    }
+
+    // 2. user_smiled
+    if (currentState.smile !== "none" && currentState.smile !== lastSmile) {
+      if (!smileSince) {
+        smileSince = now;
+      } else if (now - smileSince > 1200) {
+        emitVisualEvent(
+          "user_smiled",
+          currentState.smile === "clear" ? 0.85 : 0.65,
+          "用户刚刚露出笑意"
+        );
+        smileSince = null;
+      }
+    } else if (currentState.smile === "none") {
+      smileSince = null;
+    }
+
+    // 3. user_long_silence
+    if (currentState.face_present === true && currentState.silence_duration_sec > 35) {
+      emitVisualEvent("user_long_silence", 0.6, "用户在镜头前沉默了一段时间");
+    }
+
+    // 4. user_looked_away_long
+    if (currentState.face_present === true && currentState.attention === "away") {
+      if (!awaySince) {
+        awaySince = now;
+      } else if (now - awaySince > 15000) {
+        emitVisualEvent("user_looked_away_long", 0.55, "用户看向别处或低头有一段时间");
+      }
+    } else {
+      awaySince = null;
+    }
+
+    // 5. user_left_frame_long
+    if (currentState.face_present === false && faceAbsentSince && now - faceAbsentSince > 15000) {
+      emitVisualEvent("user_left_frame_long", 0.7, "用户暂时离开镜头");
+    }
+
+    // Update tracking state
+    lastFacePresent = currentState.face_present;
+    lastSmile = currentState.smile;
+  }
+
   // ── Detection Loop ───────────────��─────────────────────────────────────────
 
   async function runDetection() {
@@ -278,6 +376,7 @@
       currentState.last_update = new Date().toISOString();
       lastDetectionTime = now;
       logState();
+      evaluateVisualEvents();
     } catch (err) {
       console.error("[gs-eyes] Detection error", err);
       currentState.face_present = null;
@@ -427,6 +526,8 @@
     onUserSpeak,
     isActive: () => isActive,
     getMediaStream: () => mediaStream,
+    getPendingVisualEvent: () => pendingVisualEvents.shift() || null,
+    peekPendingVisualEvent: () => pendingVisualEvents[0] || null,
   };
 
   window.GsEyes = GsEyes;

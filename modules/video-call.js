@@ -53,6 +53,12 @@
   // ── TTS Playback ───────────────────────────────────────────────────────────
   let currentTTSAudio = null;
 
+  // ── Proactive Companion ────────────────────────────────────────────────────
+  let proactiveTimer = null;
+  let lastProactiveSpeakAt = 0;
+  let proactiveEnabled = true;
+  let proactiveCountInCall = 0;
+
   // ── Visual Context Integration ────────────────────────────────────────────
   let visualContextEnabled = false;
 
@@ -96,6 +102,10 @@
       // Change state to watching
       setState("watching");
 
+      // Start proactive companion loop
+      proactiveCountInCall = 0;
+      startProactiveLoop();
+
       console.log("[video-call] Video call started successfully");
     } catch (err) {
       console.error("[video-call] Start failed", err);
@@ -104,6 +114,9 @@
   }
 
   async function endVideoCall() {
+    // Stop proactive loop
+    stopProactiveLoop();
+
     // Stop TTS if playing
     stopTTS();
 
@@ -346,6 +359,11 @@
       return;
     }
 
+    // Reset silence timer in G's Eyes
+    if (window.GsEyes?.onUserSpeak) {
+      window.GsEyes.onUserSpeak();
+    }
+
     setState("thinking");
 
     if (subtitleDisplay) {
@@ -488,6 +506,136 @@
     }
   }
 
+  // ── Proactive Companion Loop ───────────────────────────────────────────────
+
+  function startProactiveLoop() {
+    stopProactiveLoop();
+    proactiveTimer = setInterval(checkProactiveVisualEvent, 2000);
+  }
+
+  function stopProactiveLoop() {
+    if (proactiveTimer) {
+      clearInterval(proactiveTimer);
+      proactiveTimer = null;
+    }
+  }
+
+  async function checkProactiveVisualEvent() {
+    if (!proactiveEnabled) return;
+    if (callState !== "watching") return;
+    if (!window.GsEyes?.getPendingVisualEvent) return;
+
+    const now = Date.now();
+
+    // Global cooldown to avoid being annoying
+    if (now - lastProactiveSpeakAt < 60000) return;
+
+    // Max 3 proactive speaks per call session
+    if (proactiveCountInCall >= 3) return;
+
+    const event = window.GsEyes.getPendingVisualEvent();
+    if (!event) return;
+
+    // Don't call user back when they leave frame
+    if (event.type === "user_left_frame_long") return;
+
+    await sendProactiveVisualEvent(event);
+  }
+
+  async function sendProactiveVisualEvent(event) {
+    lastProactiveSpeakAt = Date.now();
+    proactiveCountInCall += 1;
+
+    setState("thinking");
+
+    const visualContext = window.getGsEyesVisualContext
+      ? window.getGsEyesVisualContext()
+      : null;
+
+    const eventPrompt = [
+      "[G's Eyes 主动陪伴事件]",
+      `type=${event.type}`,
+      `description=${event.description}`,
+      `confidence=${event.confidence}`,
+      "",
+      "请根据这个即时状态，自然决定要不要轻轻说一句。",
+      "如果不适合说话，回复 <NO_REPLY>。",
+      "不要说\"我检测到/系统显示/视觉状态\"。",
+      "不要分析用户情绪，不要下诊断。",
+      "只说一句很短的话，���视频通话里顺口开口。"
+    ].join("\n");
+
+    const messages = [];
+
+    if (window.chatMessages && Array.isArray(window.chatMessages)) {
+      messages.push(...window.chatMessages.slice(-8).map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      })));
+    }
+
+    messages.push({
+      role: "user",
+      content: eventPrompt,
+    });
+
+    try {
+      const response = await window.SavePrincessChatAPI.callChatAPI(messages, "auto");
+      const text = await readResponseText(response);
+
+      const cleaned = cleanVideoCallReply(text);
+
+      if (!cleaned || cleaned === "<NO_REPLY>" || cleaned.includes("<NO_REPLY>")) {
+        setState("watching");
+        return;
+      }
+
+      await speakResponse(cleaned);
+
+      // Reset proactive cooldown after speaking
+      lastProactiveSpeakAt = Date.now();
+    } catch (err) {
+      console.error("[video-call] proactive event failed", err);
+      setState("watching");
+    }
+  }
+
+  async function readResponseText(response) {
+    if (!response || !response.body) {
+      throw new Error("No response body");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
+
+      for (const line of lines) {
+        if (!line.trim() || !line.startsWith("data: ")) continue;
+        const data = line.substring(6);
+        if (data === "[DONE]") break;
+
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (delta) {
+            fullText += delta;
+          }
+        } catch (e) {
+          // Skip invalid JSON
+        }
+      }
+    }
+
+    return fullText;
+  }
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   window.VideoCall = {
@@ -495,6 +643,10 @@
     end: endVideoCall,
     getState: () => ({ state: callState, error: errorMessage }),
     isActive: () => callState !== "idle",
+    setProactiveEnabled: (enabled) => {
+      proactiveEnabled = !!enabled;
+      console.log(`[video-call] Proactive companion ${enabled ? "enabled" : "disabled"}`);
+    },
   };
 
   console.log("[video-call] Module loaded");
