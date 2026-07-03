@@ -1363,7 +1363,7 @@ async function reloadHistory(opts = {}) {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, type, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_type_explicit, audio_transcribed_text, edited, edited_at, edit_count, edit_history")
+    .select("id, role, content, type, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_type_explicit, audio_transcribed_text, edited, edited_at, edit_count, edit_history, thought")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
