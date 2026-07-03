@@ -1365,8 +1365,14 @@ async function callImageGenerationDirect(prompt, params) {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: "生成失败" }));
-      return { success: false, error: error.error || error.details };
+      const errorText = await response.text();
+      console.error('[callImageGenerationDirect] HTTP error:', response.status, errorText);
+      try {
+        const error = JSON.parse(errorText);
+        return { success: false, error: error.error || error.details || errorText };
+      } catch {
+        return { success: false, error: errorText || "生成失败" };
+      }
     }
 
     const result = await response.json();
