@@ -1250,11 +1250,19 @@ async function generateChaImage(prompt, options = {}) {
   showTypingIndicator("正在生成图片...");
 
   try {
+    // Get user session token for authentication
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session?.access_token) {
+      removeTypingIndicator();
+      showToast("用户未登录，无法生成图片");
+      return null;
+    }
+
     const response = await fetch(`${SUPABASE_URL}/functions/v1/image-generation`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "Authorization": `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
         prompt: prompt.trim(),
@@ -1329,13 +1337,18 @@ async function callImageGenerationDirect(prompt, params) {
 
   try {
     const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
-    const anonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+
+    // Get user session token for authentication
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session?.access_token) {
+      return { success: false, error: '用户未登录' };
+    }
 
     const response = await fetch(`${supabaseUrl}/functions/v1/image-generation`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${anonKey}`,
+        "Authorization": `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
         prompt: prompt,
