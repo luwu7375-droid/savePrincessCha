@@ -63,7 +63,8 @@ const MODEL_ROLES = {
   chat: { label: "对话模型", description: "主聊天回复" },
   diary: { label: "日记模型", description: "自动写日记、手动生成日记" },
   webReader: { label: "联网工具读取模型", description: "读取网页、搜索结果总结" },
-  utility: { label: "脏活/后台任务模型", description: "摘要、分类、标签提取等低成本任务" }
+  utility: { label: "脏活/后台任务模型", description: "摘要、分类、标签提取等低成本任务" },
+  imageGeneration: { label: "图片生成模型", description: "Cha 生成图片时使用" }
 };
 
 // Storage key for model role mapping
