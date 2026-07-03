@@ -710,6 +710,13 @@ async function uploadImageToStorage(dataUrl, userId, conversationId) {
  */
 async function getSignedImageUrl(storagePath) {
   if (!supabaseClient || !storagePath) return null;
+
+  // If storagePath is already a full URL (external image), return it directly
+  if (storagePath.startsWith("http://") || storagePath.startsWith("https://")) {
+    console.log("[getSignedImageUrl] External URL detected, returning directly:", storagePath.slice(0, 100));
+    return storagePath;
+  }
+
   const signedUrl = await getStorageSignedUrl("chat-images", storagePath, 3600);
   if (signedUrl) return signedUrl;
   const { data, error } = await supabaseClient.storage
@@ -1405,6 +1412,44 @@ async function handleImageGeneration(intent, userText) {
 
   console.log(`[image-generation] Starting auto-generation...`);
   console.log(`[image-generation] Route: ${route}, Face policy: ${face_policy}, Reason: ${reason}`);
+
+  // First, save user message to database and render it
+  const now = new Date().toISOString();
+  const isFirst = chatMessages.length === 0;
+  const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+  // Render user message optimistically
+  addMessage(userText, "user", now, { tempId });
+  chatMessages.push({ role: "user", content: userText, created_at: now, id: null });
+
+  // Save user message to database
+  try {
+    const { data: userMsg, error: userMsgError } = await supabaseClient
+      .from("messages")
+      .insert({
+        role: "user",
+        content: userText,
+        conversation_id: getActiveConversationId(),
+        user_id: currentUserId,
+        created_at: now,
+      })
+      .select("id")
+      .single();
+
+    if (userMsgError) {
+      console.error('[image-generation] Failed to save user message:', userMsgError);
+    } else {
+      console.log('[image-generation] User message saved with id:', userMsg.id);
+      // Update the last message in chatMessages with the real ID
+      if (chatMessages.length > 0) {
+        chatMessages[chatMessages.length - 1].id = String(userMsg.id);
+      }
+    }
+  } catch (err) {
+    console.error('[image-generation] Error saving user message:', err);
+  }
+
+  if (isFirst) updateConvTitle(getActiveConversationId(), userText);
 
   // Build prompt using template system
   const finalPrompt = window.SavePrincessImagePolicy.buildImagePrompt(route, userText);
