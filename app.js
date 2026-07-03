@@ -808,7 +808,15 @@ async function saveMessage(role, content, imageStoragePath = null, eventFields =
 }
 
 function isExplicitVoiceMessage(message) {
-  return message?.type === "voice" || message?.audio_type_explicit === true;
+  // Voice message if:
+  // 1. type is "voice" (legacy), or
+  // 2. audio_type_explicit is true (user explicitly sent voice), or
+  // 3. has audio_type = "fake" (user fake voice message), or
+  // 4. has audio_transcribed_text (any voice message with transcription)
+  return message?.type === "voice"
+    || message?.audio_type_explicit === true
+    || message?.audio_type === "fake"
+    || (message?.audio_transcribed_text && message?.role === "user");
 }
 
 function shouldRenderVoiceMessage(message) {
