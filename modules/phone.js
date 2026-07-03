@@ -318,38 +318,25 @@
     }
   }
 
-  // ── G's Eyes Video Call Integration ──────────────────────────────────────
+  // ── Video Call Integration ────────────────────────────────────────────────
 
   function initGsEyes() {
     const toggleBtn = document.getElementById("gsEyesToggleBtn");
     if (!toggleBtn) return;
 
     toggleBtn.addEventListener("click", async () => {
-      const isActive = toggleBtn.dataset.gsEyesActive === "true";
+      // Close phone overlay and start video call in chat interface
+      closePhoneOverlay();
 
-      if (!isActive) {
-        // Start G's Eyes
-        const result = await window.GsEyes.start();
-        if (result.ok) {
-          toggleBtn.dataset.gsEyesActive = "true";
-          toggleBtn.querySelector(".video-call-label").textContent = "结束";
-          toggleBtn.querySelector(".video-call-icon").textContent = "⏹";
+      // Wait a moment for overlay to close
+      setTimeout(async () => {
+        if (window.VideoCall && typeof window.VideoCall.start === "function") {
+          await window.VideoCall.start();
         } else {
-          alert("摄像头启动失败: " + result.error);
+          console.error("[phone] VideoCall module not available");
+          alert("视频聊天功能不可用");
         }
-      } else {
-        // Stop G's Eyes
-        await window.GsEyes.stop();
-        toggleBtn.dataset.gsEyesActive = "false";
-        toggleBtn.querySelector(".video-call-label").textContent = "开始";
-        toggleBtn.querySelector(".video-call-icon").textContent = "📹";
-
-        // Reset video preview
-        const preview = document.querySelector("#phoneVideoScreen .video-preview");
-        if (preview && !preview.querySelector("video")) {
-          preview.textContent = "📹 视频预览";
-        }
-      }
+      }, 300);
     });
   }
 

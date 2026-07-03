@@ -8025,25 +8025,6 @@ function _syncChatMoreSubsheet(id) {
     }
   });
 
-  document.getElementById("cmsVideoCallBtn")?.addEventListener("click", async () => {
-    const valSpan = document.getElementById("cmsVideoCallVal");
-    if (!valSpan) return;
-
-    const isActive = window.VideoCall?.isActive();
-
-    if (!isActive) {
-      // Start video call
-      closeChatMoreSheet();
-      await window.VideoCall.start();
-      valSpan.textContent = "运行中";
-    } else {
-      // End video call
-      await window.VideoCall.end();
-      valSpan.textContent = "已关闭";
-      closeChatMoreSheet();
-    }
-  });
-
   document.getElementById("cmsAppearanceBtn")?.addEventListener("click", () => {
     openChatMoreSubsheet("cmsAppearanceSheet");
   });
@@ -10562,11 +10543,23 @@ function initV2Composer() {
     });
 
     addPanelItem(actions, {
-      label: "G 的眼睛",
-      desc: "本地摄像头状态",
+      label: "视频聊天",
+      desc: "语音+视频交互",
       icon: '<span>◉</span>',
-      onClick: () => {
-        window.openGsEyesOverlay?.();
+      onClick: async () => {
+        closePanel();
+        setTimeout(async () => {
+          if (window.VideoCall && typeof window.VideoCall.start === "function") {
+            await window.VideoCall.start();
+          } else {
+            console.error("[app] VideoCall module not available");
+            showDialog({
+              title: "视频聊天不可用",
+              body: "VideoCall 模块未加载",
+              confirmLabel: "知道了",
+            });
+          }
+        }, 300);
       },
     });
 
