@@ -28,6 +28,28 @@
   let isListening = false;
   let recognizedText = "";
 
+  // ── Microphone Permission ──────────────────────────────────────────────────
+
+  async function ensureMicrophonePermission() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return { ok: false, error: "浏览器不支持麦克风权限检查" };
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      });
+      stream.getTracks().forEach(track => track.stop());
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err?.name || err?.message || "microphone permission denied",
+      };
+    }
+  }
+
   // ── TTS Playback ───────────────────────────────────────────────────────────
   let currentTTSAudio = null;
 
@@ -194,14 +216,16 @@
     // Show G's Eyes status if available
     if (callState === "watching" && window.GsEyes) {
       const state = window.GsEyes.getState();
-      if (state.face_present === false) {
-        // Detection ready but no face detected
+
+      if (state.detection_ready === false) {
+        statusDisplay.textContent = "摄像头已开启，本地识别加载中/不可用 · 按住麦克风说话";
+      } else if (state.face_present === false) {
         statusDisplay.textContent = "未检测到人脸 · 按住麦克风说话";
-      } else if (state.face_present === null && !state.detection_ready) {
-        // MediaPipe not loaded
-        statusDisplay.textContent = "摄像头已开启 · 本地识别加载中";
+      } else if (state.face_present === true) {
+        statusDisplay.textContent = "视频已开启，按住麦克风说话";
+      } else {
+        statusDisplay.textContent = "摄像头已开启，正在准备本地识别 · 按住麦克风说话";
       }
-      // If face_present === true, keep default "视频已开启，按住麦克风说话"
     }
   }
 
@@ -246,10 +270,16 @@
       setState("watching");
       isListening = false;
       if (subtitleDisplay) {
-        subtitleDisplay.textContent = "语音识别失败";
+        if (event.error === "not-allowed") {
+          subtitleDisplay.textContent = "麦克风权限被拒绝，请在浏览器地址栏允许麦克风";
+        } else if (event.error === "no-speech") {
+          subtitleDisplay.textContent = "没有听到声音，请再试一次";
+        } else {
+          subtitleDisplay.textContent = `语音识别失败：${event.error}`;
+        }
         setTimeout(() => {
           subtitleDisplay.textContent = "";
-        }, 2000);
+        }, 3000);
       }
     };
 
@@ -262,8 +292,21 @@
     };
   }
 
-  function startListening() {
+  async function startListening() {
     if (callState !== "watching" || !recognition) return;
+
+    // Check microphone permission first
+    const micPermission = await ensureMicrophonePermission();
+    if (!micPermission.ok) {
+      console.error("[video-call] Microphone permission denied", micPermission.error);
+      if (subtitleDisplay) {
+        subtitleDisplay.textContent = "麦克风权限被拒绝，请在浏览器地址栏允许麦克风后重试";
+        setTimeout(() => {
+          subtitleDisplay.textContent = "";
+        }, 5000);
+      }
+      return;
+    }
 
     setState("listening");
     isListening = true;

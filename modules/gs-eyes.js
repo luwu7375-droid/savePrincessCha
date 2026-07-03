@@ -28,13 +28,12 @@
     last_update: null,
     silence_duration_sec: 0,
     detection_ready: false, // Whether MediaPipe is loaded
+    error_reason: "", // Error message if MediaPipe failed to load
   };
 
-  // MediaPipe CDN URLs
-  const MEDIAPIPE_VERSION = "0.10.22";
-  const MEDIAPIPE_VISION_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
-  const MEDIAPIPE_BUNDLE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/vision_bundle.mjs`;
-  const MEDIAPIPE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+  // MediaPipe CDN URLs - try multiple versions
+  const MEDIAPIPE_VERSIONS = ["0.10.8", "0.10.3"];
+  const MEDIAPIPE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
 
   // ── Initialization ─────────────────────────────────────────────────────────
 
@@ -73,6 +72,10 @@
         await loadMediaPipe();
       } catch (err) {
         console.warn("[gs-eyes] MediaPipe load failed, continuing with basic mode", err);
+        detectionReady = false;
+        currentState.detection_ready = false;
+        currentState.face_present = null;
+        currentState.error_reason = err.message || "MediaPipe load failed";
       }
 
       isActive = true;
@@ -135,6 +138,7 @@
       last_update: null,
       silence_duration_sec: 0,
       detection_ready: false,
+      error_reason: "",
     };
 
     updateStatusUI("已关闭");
@@ -145,61 +149,68 @@
 
   // ── MediaPipe Loading ──────────────────────────────────────────────────────
 
+  async function createFaceLandmarker(filesetResolver, delegate) {
+    return await FaceLandmarker.createFromOptions(filesetResolver, {
+      baseOptions: {
+        modelAssetPath: MEDIAPIPE_MODEL_URL,
+        delegate,
+      },
+      runningMode: "VIDEO",
+      numFaces: 1,
+      minFaceDetectionConfidence: 0.5,
+      minFacePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: false,
+    });
+  }
+
   async function loadMediaPipe() {
-    try {
-      // Dynamically import MediaPipe Vision ESM bundle
-      const vision = await import(MEDIAPIPE_BUNDLE_URL);
-      const { FaceLandmarker, FilesetResolver } = vision;
+    let vision = null;
+    let loadError = null;
 
-      if (!FaceLandmarker || !FilesetResolver) {
-        throw new Error("FaceLandmarker or FilesetResolver not available in vision bundle");
-      }
-
-      const wasmFileset = await FilesetResolver.forVisionTasks(MEDIAPIPE_VISION_URL);
-
-      // Try GPU first, fallback to CPU if GPU fails
+    // Try multiple versions
+    for (const version of MEDIAPIPE_VERSIONS) {
       try {
-        faceLandmarker = await FaceLandmarker.createFromOptions(wasmFileset, {
-          baseOptions: {
-            modelAssetPath: MEDIAPIPE_MODEL_URL,
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          numFaces: 1,
-          minFaceDetectionConfidence: 0.5,
-          minFacePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-          outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: false,
-        });
-        console.log("[gs-eyes] MediaPipe Face Landmarker loaded (GPU)");
-      } catch (gpuError) {
-        console.warn("[gs-eyes] GPU delegate failed, trying CPU", gpuError);
-        // Fallback to CPU
-        faceLandmarker = await FaceLandmarker.createFromOptions(wasmFileset, {
-          baseOptions: {
-            modelAssetPath: MEDIAPIPE_MODEL_URL,
-            delegate: "CPU",
-          },
-          runningMode: "VIDEO",
-          numFaces: 1,
-          minFaceDetectionConfidence: 0.5,
-          minFacePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-          outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: false,
-        });
-        console.log("[gs-eyes] MediaPipe Face Landmarker loaded (CPU)");
+        console.log(`[gs-eyes] Trying MediaPipe @${version}...`);
+        vision = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${version}`);
+        console.log(`[gs-eyes] MediaPipe @${version} loaded`);
+        break;
+      } catch (err) {
+        console.warn(`[gs-eyes] MediaPipe @${version} failed:`, err);
+        loadError = err;
       }
-
-      detectionReady = true;
-      currentState.detection_ready = true;
-    } catch (err) {
-      console.error("[gs-eyes] MediaPipe load failed", err);
-      detectionReady = false;
-      currentState.detection_ready = false;
-      throw err;
     }
+
+    if (!vision) {
+      throw new Error(`Failed to load MediaPipe from any version: ${loadError?.message || "unknown error"}`);
+    }
+
+    const { FaceLandmarker, FilesetResolver } = vision;
+
+    if (!FaceLandmarker || !FilesetResolver) {
+      throw new Error("FaceLandmarker or FilesetResolver not available in vision module");
+    }
+
+    // Use the same version for wasm files
+    const workingVersion = MEDIAPIPE_VERSIONS[0]; // Default to first version
+    const wasmFileset = await FilesetResolver.forVisionTasks(
+      `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${workingVersion}/wasm`
+    );
+
+    // Try GPU first, fallback to CPU if GPU fails
+    try {
+      faceLandmarker = await createFaceLandmarker(wasmFileset, "GPU");
+      console.log("[gs-eyes] MediaPipe Face Landmarker loaded (GPU)");
+    } catch (gpuErr) {
+      console.warn("[gs-eyes] GPU init failed, retrying CPU", gpuErr);
+      faceLandmarker = await createFaceLandmarker(wasmFileset, "CPU");
+      console.log("[gs-eyes] MediaPipe Face Landmarker loaded (CPU)");
+    }
+
+    detectionReady = true;
+    currentState.detection_ready = true;
+    currentState.error_reason = "";
   }
 
   function loadScript(src) {
@@ -232,7 +243,7 @@
       currentState.smile = "none";
       currentState.fatigue_hint = "unknown";
       currentState.last_update = new Date().toISOString();
-      updateStatusUI("摄像头已开启，本地识别不可用");
+      updateStatusUI("摄像头已开启，本地识别未加载");
       logState();
       return;
     }
