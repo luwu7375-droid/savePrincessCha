@@ -414,7 +414,7 @@ function resolveCustomProvider(customModel: CustomModelConfig): TierProviders {
     apiKey: apiKey,
     model: model,
     maxTokens: maxTokens,
-    tier: "general",
+    tier: "advanced",
     role: "primary",
   };
 

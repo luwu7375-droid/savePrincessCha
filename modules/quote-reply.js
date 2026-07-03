@@ -177,6 +177,13 @@ function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo, thought) {
 }
 
 function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false, replyTo = null, thought = null) {
+  // If rawContent is an array (vision content with images), use addMessage directly
+  if (Array.isArray(rawContent)) {
+    console.log("[addAssistantBubbles] Vision content detected, using addMessage");
+    addMessage(rawContent, "assistant", createdAt, { replyTo }, msgId);
+    return;
+  }
+
   const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
   if (bubbles.length === 0) return;
   const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo, thought);

@@ -103,10 +103,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Construct correct endpoint URL (same logic as chat-test)
+    let imageEndpoint = provider_config.endpoint.replace(/\/+$/, "");
+
+    if (!imageEndpoint.endsWith("/images/generations")) {
+      imageEndpoint = imageEndpoint.replace(/\/completions$/, "");
+      imageEndpoint = imageEndpoint.replace(/\/chat\/completions$/, "");
+      if (!imageEndpoint.match(/\/v\d+$/)) imageEndpoint += "/v1";
+      imageEndpoint += "/images/generations";
+    }
+
     console.log("[image-generation] Generating image:", {
       finalPrompt: finalPrompt.slice(0, 100) + "...",
       provider: provider_config.model,
-      endpoint: provider_config.endpoint
+      originalEndpoint: provider_config.endpoint,
+      constructedEndpoint: imageEndpoint
     });
 
     // Call image generation API
@@ -137,7 +148,7 @@ Deno.serve(async (req: Request) => {
       promptLength: requestBody.prompt.length
     });
 
-    const response = await fetch(provider_config.endpoint, {
+    const response = await fetch(imageEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
