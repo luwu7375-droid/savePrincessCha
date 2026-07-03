@@ -4,7 +4,14 @@ import { makeCorsHeaders } from "../_shared/cors.ts";
 const corsHeaders = makeCorsHeaders();
 
 interface ImageGenerationRequest {
-  prompt: string;
+  // Legacy field (P0 uses this)
+  prompt?: string;
+
+  // Future tool calling fields (P1)
+  image_type?: "portrait" | "slice_of_life" | "together" | "mood";
+  description?: string;
+  style_hints?: string;
+
   conversation_id: string;
   provider_config?: {
     endpoint: string;
@@ -48,10 +55,42 @@ Deno.serve(async (req: Request) => {
     }
 
     const body: ImageGenerationRequest = await req.json();
-    const { prompt, conversation_id, provider_config, size, quality, style } = body;
+    const {
+      prompt: legacyPrompt,
+      image_type,
+      description,
+      style_hints,
+      conversation_id,
+      provider_config,
+      size,
+      quality,
+      style
+    } = body;
 
-    if (!prompt || !conversation_id) {
-      return new Response(JSON.stringify({ error: "Missing prompt or conversation_id" }), {
+    // Determine final prompt
+    let finalPrompt: string;
+
+    if (legacyPrompt) {
+      // P0 path: use provided prompt directly
+      finalPrompt = legacyPrompt;
+      console.log(`[image-generation] Legacy mode: prompt provided directly`);
+    } else if (image_type && description) {
+      // P1 path: build prompt from template (future tool calling)
+      const userDescription = style_hints ? `${description}, ${style_hints}` : description;
+      // TODO: Import and use buildImagePrompt() when implementing P1
+      finalPrompt = `${image_type}: ${userDescription}`;
+      console.log(`[image-generation] Tool calling mode: type=${image_type}`);
+    } else {
+      return new Response(JSON.stringify({
+        error: "Missing required parameters: either prompt or (image_type + description)"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!conversation_id) {
+      return new Response(JSON.stringify({ error: "Missing conversation_id" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -64,17 +103,23 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    console.log("[image-generation] Generating image:", { prompt, provider: provider_config.model });
+    console.log("[image-generation] Generating image:", {
+      finalPrompt: finalPrompt.slice(0, 100) + "...",
+      provider: provider_config.model
+    });
 
     // Call image generation API
     const requestBody: any = {
-      prompt,
+      prompt: finalPrompt,
       model: provider_config.model,
     };
 
     // Add optional parameters based on provider
     if (size) requestBody.size = size;
-    if (quality) requestBody.quality = quality;
+    if (quality) {
+      // Map "medium" to "standard" for providers that don't support it
+      requestBody.quality = quality === "medium" ? "standard" : quality;
+    }
     if (style) requestBody.style = style;
 
     // For OpenAI format
@@ -145,13 +190,13 @@ Deno.serve(async (req: Request) => {
       .from("messages")
       .insert({
         role: "assistant",
-        content: `[图片] ${prompt}`,
+        content: `[图片] ${finalPrompt}`,
         type: "image",
         conversation_id,
         user_id: user.id,
         image_storage_path: imageUrl, // Store external URL directly
-        image_prompt: prompt,
-        image_description: prompt,
+        image_prompt: finalPrompt,
+        image_description: finalPrompt,
       })
       .select("id")
       .single();
@@ -177,7 +222,7 @@ Deno.serve(async (req: Request) => {
       success: true,
       image_url: imageUrl,
       message_id: message.id,
-      prompt,
+      prompt: finalPrompt,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -1299,6 +1299,117 @@ async function generateChaImage(prompt, options = {}) {
 window.generateChaImage = generateChaImage;
 
 /**
+ * Call image-generation edge function directly with prompt (for auto-generation)
+ * @param {string} prompt - Final image prompt
+ * @param {Object} params - Image parameters (size, quality, style)
+ * @returns {Promise<{success: boolean, image_url?: string, message_id?: string, error?: string}>}
+ */
+async function callImageGenerationDirect(prompt, params) {
+  if (!supabaseClient) return { success: false, error: '未初始化' };
+
+  const conversationId = getActiveConversationId();
+  if (!conversationId) {
+    return { success: false, error: '未找到当前对话' };
+  }
+
+  // Get image generation model config
+  const modelMapping = getModelRoleMapping();
+  const imageGenConfig = modelMapping?.imageGeneration;
+
+  if (!imageGenConfig?.providerGroup || !imageGenConfig?.model) {
+    return { success: false, error: '请先配置图片生成模型' };
+  }
+
+  const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+  const provider = customProviders[imageGenConfig.providerGroup];
+
+  if (!provider) {
+    return { success: false, error: '图片生成通道配置不存在' };
+  }
+
+  try {
+    const supabaseUrl = getConfigValue("SUPABASE_URL", "YOUR_SUPABASE_URL");
+    const anonKey = getConfigValue("SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY");
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/image-generation`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({
+        prompt: prompt,
+        conversation_id: conversationId,
+        provider_config: {
+          endpoint: provider.endpoint,
+          api_key: provider.api_key,
+          model: imageGenConfig.model,
+        },
+        size: params.size,
+        quality: params.quality,
+        style: params.style,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "生成失败" }));
+      return { success: false, error: error.error || error.details };
+    }
+
+    const result = await response.json();
+    return {
+      success: true,
+      image_url: result.image_url,
+      message_id: result.message_id
+    };
+
+  } catch (error) {
+    console.error('[callImageGenerationDirect] error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Handle automatic image generation based on intent detection
+ * @param {Object} intent - Intent detection result from SavePrincessImagePolicy.detectImageIntent
+ * @param {string} userText - Original user message
+ */
+async function handleImageGeneration(intent, userText) {
+  const { route, face_policy, reason } = intent;
+
+  console.log(`[image-generation] Auto-generating: route=${route}, face_policy=${face_policy}, reason=${reason}`);
+
+  // Build prompt using template system
+  const finalPrompt = window.SavePrincessImagePolicy.buildImagePrompt(route, userText);
+  const params = window.SavePrincessImagePolicy.getDefaultImageParams();
+
+  console.log('[image-generation] finalPrompt:', finalPrompt);
+  console.log('[image-generation] params:', params);
+
+  // Show loading indicator
+  showTypingIndicator();
+
+  try {
+    // Call existing image generation function
+    const result = await callImageGenerationDirect(finalPrompt, params);
+
+    if (result.success) {
+      removeTypingIndicator();
+      // Reload history to show new image
+      await reloadHistory();
+      console.log('[image-generation] Success:', result.image_url);
+    } else {
+      throw new Error(result.error || '生成失败');
+    }
+
+  } catch (error) {
+    console.error('[image-generation] Error:', error);
+    removeTypingIndicator();
+    showToast(`图片生成失败：${error.message}`);
+  }
+}
+
+/**
  * Add a voice playback indicator to an existing text message
  * Shows a small voice icon that allows playing the TTS audio
  */
@@ -7611,6 +7722,33 @@ async function handleSubmit() {
     setChatStatus("Cha 正在回复，等他说完再发～");
     setTimeout(() => setChatStatus(""), 2000);
     return;
+  }
+
+  // ── Image Intent Detection ──────────────────────────────────────────────
+  // Check if user wants to generate an image (only for text-only messages)
+  if (text && !pendingImage?.dataUrl && window.SavePrincessImagePolicy) {
+    const imageIntent = window.SavePrincessImagePolicy.detectImageIntent(text);
+    console.log('[image-policy]', imageIntent);
+
+    if (imageIntent.should_generate) {
+      // Clear input and handle image generation directly
+      messageInput.value = "";
+      autoResizeTextarea(messageInput);
+
+      // Reset composer state
+      if (window.updateComposerState) {
+        window.updateComposerState({
+          hasText: false,
+          hasImage: false,
+          hasQuote: false,
+          hasAttachment: false
+        });
+      }
+
+      // Generate image and skip normal chat flow
+      await handleImageGeneration(imageIntent, text);
+      return;
+    }
   }
 
   // ── URL detection: confirm before send ──────────────────────────────────
