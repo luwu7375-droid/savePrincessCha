@@ -129,12 +129,21 @@ function renderReplyPreview() {
   bar.appendChild(closeBtn);
 }
 
-function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo) {
+function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo, thought) {
   const el = document.createElement("div");
   el.className = "message assistant cha-message message-text";
   setMessageContent(el, text, { messageId: msgId != null ? String(msgId) : undefined });
   if (replyTo && !isSibling) {
     el.prepend(makeQuoteBlock(replyTo));
+  }
+
+  // Add thought bubble before the main bubble (only for first bubble, not siblings)
+  if (thought && !isSibling) {
+    const thoughtEl = document.createElement("div");
+    thoughtEl.className = "message assistant cha-message message-thought";
+    thoughtEl.textContent = thought;
+    thoughtEl.style.cssText = "opacity: 0.7; font-style: italic; font-size: 0.9em; margin-bottom: 4px;";
+    el.prepend(thoughtEl);
   }
 
   const stack = document.createElement("div");
@@ -167,10 +176,10 @@ function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo) {
   return row;
 }
 
-function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false, replyTo = null) {
+function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false, replyTo = null, thought = null) {
   const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
   if (bubbles.length === 0) return;
-  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo);
+  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo, thought);
   if (isAlreadyRead && firstRow) delete firstRow.dataset.unreadCha;
   for (let i = 1; i < bubbles.length; i++) {
     insertBubbleSync(bubbles[i], createdAt, null, String(msgId));

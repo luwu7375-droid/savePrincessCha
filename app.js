@@ -779,7 +779,7 @@ function buildMessageEventFields(fields = {}) {
   return out;
 }
 
-async function saveMessage(role, content, imageStoragePath = null, eventFields = {}, replyTo = null) {
+async function saveMessage(role, content, imageStoragePath = null, eventFields = {}, replyTo = null, thought = null) {
   if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
   const { data: { user } } = await supabaseClient.auth.getUser();
@@ -797,6 +797,7 @@ async function saveMessage(role, content, imageStoragePath = null, eventFields =
     row.reply_to_preview    = replyTo.preview || null;
     row.reply_to_role       = replyTo.role   || null;
   }
+  if (thought) row.thought = thought;
   const { data, error } = await supabaseClient
     .from("messages")
     .insert(row)
@@ -1362,7 +1363,7 @@ async function reloadHistory(opts = {}) {
 
   const { data, error } = await supabaseClient
     .from("messages")
-    .select("id, role, content, type, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_type_explicit, audio_transcribed_text, edited, edited_at, edit_count, edit_history")
+    .select("id, role, content, type, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_type_explicit, audio_transcribed_text, edited, edited_at, edit_count, edit_history, thought")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_PAGE_SIZE);
@@ -1403,7 +1404,7 @@ async function reloadHistory(opts = {}) {
       // Render voice message
       renderVoiceMessage(m, replyTo);
     } else if (m.role === "assistant") {
-      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null, !!m.read_by_user_at, replyTo);
+      addAssistantBubbles(m.content, m.created_at, m.id != null ? String(m.id) : null, !!m.read_by_user_at, replyTo, m.thought);
     } else {
       addMessage(m.content, m.role, m.created_at, { readByChaAt: m.read_by_cha_at, replyTo }, m.id);
     }
@@ -1433,6 +1434,7 @@ async function reloadHistory(opts = {}) {
       edited_at: m.edited_at ?? null,
       edit_count: m.edit_count ?? 0,
       edit_history: m.edit_history ?? [],
+      thought: m.thought ?? null,
       replyTo: replyToData
     });
 
@@ -1803,7 +1805,7 @@ async function requestStreamingReply(replyMode = "auto") {
   // Parse assistant proactive quote FIRST (before visible thought parsing loses it)
   const { cleanText: replyWithoutQuote, replyTo: assistantReplyTo } = parseAssistantReplyTo(fullReply);
 
-  const { bubbles: thoughtBubbles, reply: cleanReply } = parseVisibleThought(replyWithoutQuote);
+  const { bubbles: thoughtBubbles, reply: cleanReply, thought } = parseVisibleThought(replyWithoutQuote);
   console.log("[VT-debug] bubbles:", JSON.stringify(thoughtBubbles));
   if (cleanReply === "<NO_REPLY>") {
     removeTypingIndicator();
@@ -1814,9 +1816,9 @@ async function requestStreamingReply(replyMode = "auto") {
   const finalReply = cleanReply;
 
   const replyTime = new Date().toISOString();
-  const replyId = await saveMessage("assistant", finalReply, null, {}, assistantReplyTo);
+  const replyId = await saveMessage("assistant", finalReply, null, {}, assistantReplyTo, thought);
   const replyIdStr = replyId != null ? String(replyId) : null;
-  chatMessages.push({ role: "assistant", content: finalReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null, replyTo: assistantReplyTo });
+  chatMessages.push({ role: "assistant", content: finalReply, created_at: replyTime, id: replyIdStr, read_by_cha_at: null, read_by_user_at: null, replyTo: assistantReplyTo, thought });
   lastMessageTime = new Date(replyTime).getTime();
 
   // Fire-and-forget: Auto-generate Cha voice for this reply
