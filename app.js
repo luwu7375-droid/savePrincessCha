@@ -1214,6 +1214,91 @@ window.sendChaVoiceMessage = sendChaVoiceMessage;
 window.generateChaVoiceMessage = sendChaVoiceMessage;
 
 /**
+ * Generate an image using the configured image generation model
+ * @param {string} prompt - Image generation prompt
+ * @param {Object} options - Optional parameters
+ * @returns {Promise<string|null>} - Message ID or null on failure
+ */
+async function generateChaImage(prompt, options = {}) {
+  if (!supabaseClient || !prompt || !prompt.trim()) return null;
+
+  const conversationId = getActiveConversationId();
+  if (!conversationId) {
+    showToast("无法生成图片：未找到当前对话");
+    return null;
+  }
+
+  // Get image generation model config
+  const modelMapping = getModelRoleMapping();
+  const imageGenConfig = modelMapping?.imageGeneration;
+
+  if (!imageGenConfig?.providerGroup || !imageGenConfig?.model) {
+    showToast("请先在设置中配置图片生成模型");
+    return null;
+  }
+
+  // Get provider config
+  const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+  const provider = customProviders[imageGenConfig.providerGroup];
+
+  if (!provider) {
+    showToast("图片生成通道配置不存在");
+    return null;
+  }
+
+  // Show loading indicator
+  showTypingIndicator("正在生成图片...");
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/image-generation`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        prompt: prompt.trim(),
+        conversation_id: conversationId,
+        provider_config: {
+          endpoint: provider.endpoint,
+          api_key: provider.api_key,
+          model: imageGenConfig.model,
+        },
+        size: options.size || "1024x1024",
+        quality: options.quality || "standard",
+        style: options.style,
+      }),
+    });
+
+    removeTypingIndicator();
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "生成失败" }));
+      console.error("Image generation failed:", error);
+      showToast(`图片生成失败：${error.error || error.details || "未知错误"}`);
+      return null;
+    }
+
+    const result = await response.json();
+    console.log("Image generated:", result);
+
+    // Reload messages to show the new image
+    await reloadHistory();
+
+    showToast("图片已生成");
+    return result.message_id;
+
+  } catch (error) {
+    removeTypingIndicator();
+    console.error("Image generation error:", error);
+    showToast(`图片生成失败：${error.message}`);
+    return null;
+  }
+}
+
+window.generateChaImage = generateChaImage;
+
+/**
  * Add a voice playback indicator to an existing text message
  * Shows a small voice icon that allows playing the TTS audio
  */
