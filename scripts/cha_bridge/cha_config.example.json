@@ -1,9 +1,18 @@
 {
-  "host_port": 7842,
-  "cha_port": 7843,
+  "cha_base_url": "http://localhost:7843",
+  "kk_base_url": "http://localhost:7842",
+  "expected_cha_name": "cha",
+  "expected_kk_name": "kk",
   "dry_run": true,
   "provider": "mock",
   "memory_backend": "local",
-  "nagi_scripts_dir": "C:/path/to/NagiBridge/scripts"
+  "nagi_scripts_dir": "C:/path/to/NagiBridge/scripts",
+  "voice": {
+    "voice_mode": "off",
+    "voice_lang": "zh",
+    "voice_config_path": "scripts/cha_bridge/data/chat_tts_config.json",
+    "max_voice_chars": 120,
+    "voice_cooldown_seconds": 8,
+    "voice_session_char_budget": 2000
+  }
 }
-

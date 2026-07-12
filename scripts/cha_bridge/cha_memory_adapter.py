@@ -1,8 +1,8 @@
-"""Local fallback memory adapter for ChaBridge P0.
+"""Local fallback memory adapter for ChaBridge.
 
-This module intentionally does not connect to Supabase. The interface is shaped
-so a future SupabaseMemoryAdapter can be added without changing the companion
-loop.
+This module intentionally does not connect to Supabase or savePrincessCha yet.
+The interface is shaped so a future SupabaseMemoryAdapter can be added without
+changing the Mode B runtime.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ class StardewEvent:
 
 
 class LocalMemoryAdapter:
-    """File-backed memory adapter for the ChaBridge MVP."""
+    """File-backed memory adapter for ChaBridge."""
 
     def __init__(self, data_dir: str | Path | None = None) -> None:
         base_dir = Path(__file__).resolve().parent
@@ -45,10 +45,9 @@ class LocalMemoryAdapter:
     def load_relevant_memories(self, query: str, limit: int = 8) -> list[str]:
         del query
         memories: list[str] = []
-        if self.summary_path.exists():
-            text = self.summary_path.read_text(encoding="utf-8").strip()
-            if text:
-                memories.append("上次星露谷总结：\n" + text)
+        summary = self.load_stardew_session_state()
+        if summary:
+            memories.append("最近一次星露谷总结：\n" + summary)
 
         for event in self._read_events()[-limit:]:
             memories.append(f"{event.get('created_at', '未知时间')}：{event.get('text', '')}")
@@ -59,7 +58,7 @@ class LocalMemoryAdapter:
             text = self.summary_path.read_text(encoding="utf-8").strip()
             if text:
                 return text
-        return "还没有本地星露谷游玩总结。"
+        return ""
 
     def append_stardew_event(self, event: dict[str, Any] | str) -> None:
         if isinstance(event, str):
@@ -88,6 +87,17 @@ class LocalMemoryAdapter:
         self.summary_path.write_text(summary, encoding="utf-8")
         return summary
 
+    def build_session_summary(self, max_events: int = 20) -> str:
+        return self._build_summary(self._read_events(), max_events=max_events)
+
+    def summarize_events_since(self, started_at: str, max_events: int = 30) -> str:
+        events = [
+            event
+            for event in self._read_events()
+            if str(event.get("created_at", "")) >= started_at
+        ]
+        return self._build_summary(events, max_events=max_events)
+
     def _read_events(self) -> list[dict[str, Any]]:
         if not self.events_path.exists():
             return []
@@ -104,9 +114,10 @@ class LocalMemoryAdapter:
                 rows.append(parsed)
         return rows
 
-    def _build_summary(self, events: list[dict[str, Any]]) -> str:
+    def _build_summary(self, events: list[dict[str, Any]], max_events: int = 20) -> str:
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
-        recent = events[-12:]
+        summary_noise = {"voice_failed", "voice_chars_used"}
+        recent = [event for event in events if str(event.get("type", "")) not in summary_noise][-max_events:]
         lines = [
             "# Stardew Session Summary",
             "",
@@ -120,9 +131,10 @@ class LocalMemoryAdapter:
             lines.append("- 这次还没有记录到明确的星露谷事件。")
         else:
             for event in recent:
+                event_type = str(event.get("type", "note"))
                 text = str(event.get("text", "")).strip() or "未命名事件"
                 created_at = str(event.get("created_at", "未知时间"))
-                lines.append(f"- {created_at}：{text}")
+                lines.append(f"- {created_at} [{event_type}] {text}")
 
         lines.extend(
             [
@@ -130,6 +142,7 @@ class LocalMemoryAdapter:
                 "## 下次延续",
                 "- 继续以低打扰、慢节奏的方式陪 KK 玩。",
                 "- cha 只控制自己的 farmhand，不控制 KK 的 host 角色。",
+                "- 后续再把这份本地总结写回 savePrincessCha。",
                 "",
             ]
         )
@@ -138,4 +151,3 @@ class LocalMemoryAdapter:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
