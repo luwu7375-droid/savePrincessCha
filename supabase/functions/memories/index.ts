@@ -1,5 +1,7 @@
 import { runAutoMemoryVault, promoteAutoMemoryCandidates } from "../chat/auto_memory_vault.ts";
 import { makeCorsHeaders } from "../_shared/cors.ts";
+import { retrieveMemorySources, enrichMemoriesWithSources } from "../_shared/source-backed-memory.ts";
+import type { MemoryWithSources } from "../_shared/source-backed-memory-types.ts";
 
 const corsHeaders = makeCorsHeaders({
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-memory-admin-token",
@@ -89,34 +91,30 @@ Deno.serve(async (req) => {
 
     // Step 1: memories table, filtered by user_id
     const memUrl = userId
-      ? `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at,source_msg_ids&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`
-      : `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at,source_msg_ids&order=created_at.desc&limit=3`;
+      ? `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at,source_msg_ids,source_conversation_id,source_start_at,source_end_at,extraction_model,extraction_version&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`
+      : `${supabaseUrl}/rest/v1/memories?select=id,content,category,created_at,source_msg_ids,source_conversation_id,source_start_at,source_end_at,extraction_model,extraction_version&order=created_at.desc&limit=3`;
     const memRes = await fetch(memUrl, { headers: dbHeaders });
     if (memRes.ok) {
-      const memRows = await memRes.json() as { id: string; content: string; category: string; created_at: string; source_msg_ids: number[] | null }[];
+      const memRows = await memRes.json() as MemoryWithSources[];
       if (Array.isArray(memRows) && memRows.length > 0) {
-        const rowsWithPreview = await Promise.all(memRows.map(async (mem) => ({
-          ...mem,
-          source_preview: await fetchSourcePreview(mem.source_msg_ids),
-        })));
-        return json({ source: "memories", rows: rowsWithPreview }, 200);
+        // Use new source-backed retrieval
+        const enriched = await enrichMemoriesWithSources(supabaseUrl, serviceKey, memRows);
+        return json({ source: "memories", rows: enriched }, 200);
       }
     }
 
     // Step 2: fallback to auto_memory_candidates filtered by userId
     if (userId) {
       const candRes = await fetch(
-        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,content,status,candidate_type,created_at,user_id,source_msg_ids&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`,
+        `${supabaseUrl}/rest/v1/auto_memory_candidates?select=id,content,status,candidate_type,created_at,user_id,source_msg_ids,source_conversation_id,source_start_at,source_end_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=3`,
         { headers: dbHeaders }
       );
       if (candRes.ok) {
-        const candRows = await candRes.json() as { source_msg_ids: number[] | null; [key: string]: unknown }[];
+        const candRows = await candRes.json() as MemoryWithSources[];
         if (Array.isArray(candRows) && candRows.length > 0) {
-          const rowsWithPreview = await Promise.all(candRows.map(async (c) => ({
-            ...c,
-            source_preview: await fetchSourcePreview(c.source_msg_ids),
-          })));
-          return json({ source: "candidates", rows: rowsWithPreview }, 200);
+          // Use new source-backed retrieval for candidates too
+          const enriched = await enrichMemoriesWithSources(supabaseUrl, serviceKey, candRows);
+          return json({ source: "candidates", rows: enriched }, 200);
         }
         return json({ source: "candidates", rows: [] }, 200);
       }
@@ -1144,6 +1142,9 @@ Deno.serve(async (req) => {
 
     const userToken = authHeader.slice(7);
     try {
+      if (!supabaseUrl || !serviceKey) {
+        return { userId: null, error: json({ error: "server_error", reason: "DB not configured" }, 500) };
+      }
       const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
       const supabaseAdmin = createClient(supabaseUrl, serviceKey);
       const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(userToken);
