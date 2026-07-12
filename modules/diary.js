@@ -114,6 +114,8 @@
       sceneContext = '',
       chaStatus = '',
       diaryLength = 'normal',
+      diaryDate = '',
+      timezone = 'Asia/Shanghai',
       debug = false
     } = options;
 
@@ -163,6 +165,8 @@
         scene_context: sceneContext,
         cha_status: chaStatus,
         diary_length: diaryLength,
+        diary_date: diaryDate,
+        timezone,
         debug
       };
 

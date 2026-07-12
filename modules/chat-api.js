@@ -294,7 +294,28 @@ async function callChatAPI(messages, replyMode = "auto") {
     : null;
 
   // 编译引用消息到 content 中
-  const compiledMessages = messages.map(msg => {
+  const firstSightImageIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i]?.role !== "user") continue;
+      return Array.isArray(messages[i]?.content) && !messages[i]?.image_description &&
+        messages[i].content.some(part => part?.type === "image_url") ? i : -1;
+    }
+    return -1;
+  })();
+
+  const compiledMessages = messages.map((msg, messageIndex) => {
+    // Images are sent to the vision model exactly once: on the first request that
+    // contains the newest user image. Older images use Cha's persisted recognition
+    // result, which avoids re-downloading expired signed/provider URLs on every turn.
+    if (Array.isArray(msg.content) && messageIndex !== firstSightImageIndex) {
+      const text = extractTextFromMessageContent(msg.content).trim();
+      const description = (msg.image_description || msg.image_prompt || "").trim();
+      const historicalText = [
+        text,
+        description ? `[图片内容（Cha 首次看到时的识别结果）] ${description}` : "[历史图片，未保存识别结果]",
+      ].filter(Boolean).join("\n");
+      return { role: msg.role, content: historicalText };
+    }
     if (!msg.replyTo || msg.role !== "user") {
       return { role: msg.role, content: msg.content };
     }

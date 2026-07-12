@@ -220,14 +220,40 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    console.log("[image-generation] Image generated:", imageUrl);
+    console.log("[image-generation] Image generated; persisting to Storage");
     console.log("[image-generation] finalPrompt:", finalPrompt.slice(0, 200));
     console.log("[image-generation] Saving assistant image message...");
+
+    // Provider URLs are often temporary. Download once and persist the bytes in
+    // our private bucket before writing the message row.
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Generated image download failed: ${imageResponse.status}`);
+    }
+    const imageBytes = await imageResponse.arrayBuffer();
+    const contentType = imageResponse.headers.get("content-type") || "image/png";
+    const extension = contentType.includes("jpeg") ? "jpg" : contentType.includes("webp") ? "webp" : "png";
+    const storagePath = `${user.id}/generated/${conversation_id}/${crypto.randomUUID()}.${extension}`;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceRoleKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
+    const admin = createClient(supabaseUrl, serviceRoleKey);
+    const { error: uploadError } = await admin.storage
+      .from("chat-images")
+      .upload(storagePath, imageBytes, { contentType, upsert: false });
+    if (uploadError) throw new Error(`Generated image persistence failed: ${uploadError.message}`);
+    const { data: signedData, error: signedError } = await admin.storage
+      .from("chat-images")
+      .createSignedUrl(storagePath, 3600);
+    if (signedError || !signedData?.signedUrl) {
+      throw new Error(`Generated image signed URL failed: ${signedError?.message || "unknown"}`);
+    }
+    const persistedImageUrl = signedData.signedUrl;
 
     // Prepare metadata with all image generation details
     const metadata = {
       type: "generated_image",
-      image_url: imageUrl,
+      image_url: persistedImageUrl,
+      image_storage_path: storagePath,
       image_prompt: finalPrompt,
       image_description: legacyPrompt || description || "生成的图片",
       image_type: image_type || "portrait",
@@ -245,7 +271,7 @@ Deno.serve(async (req: Request) => {
         type: "image",
         conversation_id,
         user_id: user.id,
-        image_storage_path: imageUrl, // Store external URL directly
+        image_storage_path: storagePath,
         image_prompt: finalPrompt, // Keep for backward compatibility
         image_description: legacyPrompt || description || "生成的图片",
         metadata: metadata, // Store all details in metadata
@@ -274,7 +300,7 @@ Deno.serve(async (req: Request) => {
 
     return new Response(JSON.stringify({
       success: true,
-      image_url: imageUrl,
+      image_url: persistedImageUrl,
       message_id: message.id,
       prompt: finalPrompt,
     }), {

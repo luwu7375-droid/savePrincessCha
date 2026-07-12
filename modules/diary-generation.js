@@ -14,39 +14,81 @@
       throw new Error('Supabase client not available');
     }
 
-    const userId = window.currentUserId || 'default';
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    const userId = user?.id || window.currentUserId;
+    if (!userId) throw new Error('User session is required for diary generation');
     const conversationId = typeof getActiveConversationId === 'function'
       ? getActiveConversationId()
       : (window.currentConversationId || 'default');
 
-    // Fetch recent messages
+    // A diary day is always a Shanghai civil day, independent of the device or
+    // server timezone. Convert its [00:00, next 00:00) boundary to UTC.
+    const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+    const now = new Date();
+    const shanghaiNow = new Date(now.getTime() + SHANGHAI_OFFSET_MS);
+    const diaryDate = [
+      shanghaiNow.getUTCFullYear(),
+      String(shanghaiNow.getUTCMonth() + 1).padStart(2, '0'),
+      String(shanghaiNow.getUTCDate()).padStart(2, '0')
+    ].join('-');
+    const startUtc = new Date(`${diaryDate}T00:00:00+08:00`);
+    const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+
+    // Fetch every message from this Shanghai day across all conversations.
     const { data: messages, error } = await supabaseClient
       .from('messages')
       .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
-      .limit(messageCount);
+      .eq('user_id', userId)
+      .gte('created_at', startUtc.toISOString())
+      .lt('created_at', endUtc.toISOString())
+      .order('created_at', { ascending: true })
+      .limit(1000);
 
     if (error) {
       console.error('Failed to fetch messages:', error);
       throw new Error('Failed to fetch recent messages');
     }
 
-    if (!messages || messages.length === 0) {
-      throw new Error('No messages found in current conversation');
-    }
-
     // Convert messages to source_events format
-    const sourceEvents = messages.reverse().map(msg => ({
+    const messageEvents = (messages || []).map(msg => ({
       id: `msg_${msg.id}`,
-      source_type: 'chat',
-      source_boundary: 'current_experience',
+      source_type: msg.system_action === 'game_played' ? 'game' : 'chat',
+      source_boundary: msg.system_action === 'game_played' ? 'shared_activity' : 'current_experience',
       role: msg.role,
       content: msg.content,
       created_at: msg.created_at,
       with_kk: msg.role === 'user' || msg.role === 'assistant',
       reliability: 'experienced'
     }));
+
+    // Merge Cha/Playground activity recorded by web reads, phone actions and
+    // future Playground modules. Preserve timestamps and source boundaries.
+    const { data: activities, error: activityError } = await supabaseClient
+      .from('cha_activity_log')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('created_at', startUtc.toISOString())
+      .lt('created_at', endUtc.toISOString())
+      .order('created_at', { ascending: true })
+      .limit(1000);
+    if (activityError) console.warn('[diary] Failed to fetch activity sources:', activityError);
+
+    const activityEvents = (activities || [])
+      .filter(activity => activity.status !== 'error' && activity.status !== 'timeout')
+      .map(activity => ({
+        id: `activity_${activity.id}`,
+        source_type: activity.action_type || 'activity',
+        source_boundary: activity.source_type === 'shared_activity' ? 'shared_activity' : 'self_life',
+        content: activity.summary || activity.excerpt || activity.title || activity.query || activity.url || activity.action_type,
+        created_at: activity.created_at,
+        with_kk: activity.source_type === 'shared_activity',
+        reliability: 'experienced'
+      }));
+
+    const sourceEvents = [...messageEvents, ...activityEvents]
+      .filter(event => event.content)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (sourceEvents.length === 0) throw new Error(`No diary sources found for ${diaryDate} (Asia/Shanghai)`);
 
     // Scene context — diary generation does not use worldbooks
     // (worldbooks are chat-only; injected by supabase/functions/chat/index.ts)
@@ -60,6 +102,8 @@
       sceneContext,
       chaStatus: '独处',
       diaryLength: 'normal',
+      diaryDate,
+      timezone: 'Asia/Shanghai',
       debug: true  // Enable debug mode to see raw responses
     });
 

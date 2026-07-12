@@ -1,11 +1,12 @@
 -- Create chat-images bucket for user-uploaded images.
--- Private bucket (signed URLs for access), 1 MB per file limit.
+-- Private bucket (signed URLs for access), 20 MB per file limit. Generated
+-- images can exceed the old 1 MB upload limit.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'chat-images',
   'chat-images',
   false,
-  1048576,
+  20971520,
   ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 )
 ON CONFLICT (id) DO UPDATE SET

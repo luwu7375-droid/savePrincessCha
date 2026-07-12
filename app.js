@@ -2170,6 +2170,23 @@ async function requestStreamingReply(replyMode = "auto") {
 
   const finalReply = cleanReply;
 
+  // Persist Cha's first recognition of the newest user image. Future turns send
+  // this text instead of asking the upstream model to download the image again.
+  const latestUserImage = [...chatMessages].reverse().find(m =>
+    m.role === "user" && Array.isArray(m.content) &&
+    m.content.some(part => part?.type === "image_url") && !m.image_description
+  );
+  if (latestUserImage?.id && finalReply.trim() && supabaseClient) {
+    const recognizedDescription = finalReply.trim().slice(0, 4000);
+    latestUserImage.image_description = recognizedDescription;
+    supabaseClient.from("messages")
+      .update({ image_description: recognizedDescription })
+      .eq("id", latestUserImage.id)
+      .then(({ error }) => {
+        if (error) console.warn("Failed to persist first image recognition:", error);
+      });
+  }
+
   const replyTime = new Date().toISOString();
   const replyId = await saveMessage("assistant", finalReply, null, {}, assistantReplyTo, thought);
   const replyIdStr = replyId != null ? String(replyId) : null;

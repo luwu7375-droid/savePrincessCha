@@ -39,6 +39,8 @@ type DiaryGenerationRequest = {
   scene_context?: string;
   cha_status?: string;
   diary_length?: "tiny" | "short" | "normal" | "long";
+  diary_date?: string;
+  timezone?: string;
   debug?: boolean;
   customModel?: CustomModelConfig;
 };
@@ -119,6 +121,8 @@ Deno.serve(async (req) => {
       scene_context = "",
       cha_status = "",
       diary_length = "normal",
+      diary_date = "",
+      timezone = "Asia/Shanghai",
       debug = false,
       custom_system_prompt,
     } = body;
@@ -158,8 +162,15 @@ created_at: ${evt.created_at}
 content: ${evt.content}
 ---`).join("\n\n");
 
+    const effectiveDiaryDate = diary_date || new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    const datedSourceEventsText = `[日记日期] ${effectiveDiaryDate}\n[日期时区] ${timezone}\n` +
+      `[硬性时间规则] 只有上海时间 ${effectiveDiaryDate} 00:00:00 至次日 00:00:00 之前的事件可写成“今天”。` +
+      `早于该日的材料只能明确写成过去的回想，绝不能改写成今天发生。\n\n` + sourceEventsText;
+
     const diaryPrompt = DIARY_PROMPT
-      .replace("{{source_events}}", sourceEventsText)
+      .replace("{{source_events}}", datedSourceEventsText)
       .replace("{{scene_context}}", scene_context)
       .replace("{{cha_status}}", cha_status)
       .replace("{{diary_length}}", diary_length);
@@ -236,7 +247,8 @@ content: ${evt.content}
     const sourceEventIds = source_events.map(evt => evt.id);
     const checkerPromptWithContext = CHECKER_PROMPT
       .replace("{{diary_json}}", JSON.stringify(diaryJson, null, 2))
-      .replace("{{source_event_ids}}", JSON.stringify(sourceEventIds));
+      .replace("{{source_event_ids}}", JSON.stringify(sourceEventIds)) +
+      `\n\n时间一致性检查：日记日期是上海时间 ${effectiveDiaryDate}。凡是把其他日期事件写成“今天”，必须判定 pass=false。`;
     const checkerCallResult = await callModelTextWithFallback(
       providers,
       [{ role: "user", content: checkerPromptWithContext }],
