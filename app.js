@@ -169,8 +169,8 @@ const openEmojiPanel            = () => window.SPEmojiPanel.openEmojiPanel();
 const closeEmojiPanel           = () => window.SPEmojiPanel.closeEmojiPanel();
 
 
-// ── Pending image state ────────────────────────────────────────────────────────
-let pendingImage = null; // { dataUrl: string|null, loading: boolean, error: string|null, file: File|null } | null
+// ── Pending images state (multi-image support) ────────────────────────────
+let pendingImages = []; // Array<{ id: string, dataUrl: string|null, loading: boolean, error: string|null, file: File }>
 
 // ── Inline edit-message state ─────────────────────────────────────────────────
 let composerEditMode = "send"; // "send" | "edit"
@@ -1649,9 +1649,7 @@ async function reloadHistory(opts = {}) {
   if (!supabaseClient) { renderWelcomeMessage(); return; }
   const conversationId = getActiveConversationId();
   if (!conversationId) { renderWelcomeMessage(); return; }
-  pendingImage = null;
-  updateAttachmentCard();
-  if (imageInput) imageInput.value = "";
+  clearAllImages();
 
   // Reset pagination state
   historyHasMore = false;
@@ -6907,9 +6905,8 @@ function enterEditMessageMode(row, msgId, originalText) {
   // ── Mutual exclusion: clear reply/attachment state ──
   // Edit mode is incompatible with pending replies and image attachments.
   clearReplyDraft();
-  if (pendingImage) {
-    pendingImage = null;
-    updateAttachmentCard();
+  if (pendingImages.length > 0) {
+    clearAllImages();
   }
 
   messageInput.value = originalText;
@@ -7284,11 +7281,11 @@ function compressImage(file) {
 
 function updateAttachmentCard() {
   if (!imagePreviewBar) return;
-  if (!pendingImage) {
+
+  if (pendingImages.length === 0) {
     imagePreviewBar.classList.add("hidden");
-    imagePreviewBar.classList.remove("loading", "error");
-    const thumb = imagePreviewBar.querySelector(".img-preview-thumb");
-    if (thumb) thumb.src = "";
+    const listContainer = document.getElementById("imgPreviewList");
+    if (listContainer) listContainer.innerHTML = '';
 
     // Update composer state for mic/send toggle
     if (window.updateComposerState) {
@@ -7296,20 +7293,69 @@ function updateAttachmentCard() {
     }
     return;
   }
+
   imagePreviewBar.classList.remove("hidden");
-  imagePreviewBar.classList.toggle("loading", !!pendingImage.loading);
-  imagePreviewBar.classList.toggle("error", !!pendingImage.error);
-  const thumb = imagePreviewBar.querySelector(".img-preview-thumb");
-  if (thumb && pendingImage.dataUrl) thumb.src = pendingImage.dataUrl;
-  const errorMsg = imagePreviewBar.querySelector(".img-preview-error-msg");
-  const errorRow = imagePreviewBar.querySelector(".img-preview-error-row");
-  if (errorMsg) errorMsg.textContent = pendingImage.error || "";
-  if (errorRow) errorRow.classList.toggle("hidden", !pendingImage.error);
+
+  const listContainer = document.getElementById("imgPreviewList");
+  const counter = document.getElementById("imgPreviewCount");
+
+  if (!listContainer) return;
+
+  listContainer.innerHTML = '';
+
+  pendingImages.forEach(item => {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'img-preview-item';
+    itemEl.dataset.id = item.id;
+
+    if (item.loading) {
+      itemEl.innerHTML = `<div class="img-preview-skeleton"></div>`;
+    } else if (item.error) {
+      itemEl.innerHTML = `
+        <div class="img-preview-error" title="${item.error}">
+          <span>❌</span>
+        </div>
+      `;
+    } else if (item.dataUrl) {
+      itemEl.innerHTML = `
+        <img class="img-preview-thumb" src="${item.dataUrl}" alt="预览">
+        <button type="button" class="img-preview-remove" data-id="${item.id}" aria-label="删除">✕</button>
+      `;
+    }
+
+    listContainer.appendChild(itemEl);
+  });
+
+  // 绑定删除按钮事件
+  listContainer.querySelectorAll('.img-preview-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      removeImage(id);
+    });
+  });
+
+  // 更新计数
+  if (counter) {
+    counter.textContent = pendingImages.length;
+  }
 
   // Update composer state for mic/send toggle
+  const hasValidImages = pendingImages.some(img => img.dataUrl && !img.error);
   if (window.updateComposerState) {
-    window.updateComposerState({ hasImage: !!(pendingImage.dataUrl && !pendingImage.error) });
+    window.updateComposerState({ hasImage: hasValidImages });
   }
+}
+
+function removeImage(id) {
+  pendingImages = pendingImages.filter(img => img.id !== id);
+  updateAttachmentCard();
+}
+
+function clearAllImages() {
+  pendingImages = [];
+  updateAttachmentCard();
+  if (imageInput) imageInput.value = "";
 }
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -7318,26 +7364,68 @@ async function handleImageFile(file) {
   if (!file) return;
   // Block image attachment while in edit mode
   if (composerEditMode === "edit") return;
+
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    pendingImage = { dataUrl: null, loading: false, error: "仅支持 JPEG、PNG、WebP、GIF 格式。", file: null };
-    updateAttachmentCard();
+    // Show error notification but don't add to pending
+    if (window.showToast) {
+      window.showToast(`文件 ${file.name} 格式不支持`, 'error');
+    }
     return;
   }
+
   if (file.size > 20 * 1024 * 1024) {
-    pendingImage = { dataUrl: null, loading: false, error: "图片超过 20MB 限制，请选择更小的图片。", file: null };
-    updateAttachmentCard();
+    if (window.showToast) {
+      window.showToast(`文件 ${file.name} 超过 20MB 限制`, 'error');
+    }
     return;
   }
-  pendingImage = { dataUrl: null, loading: true, error: null, file };
+
+  // Limit to 9 images maximum
+  if (pendingImages.length >= 9) {
+    if (window.showToast) {
+      window.showToast('最多只能选择 9 张图片', 'warning');
+    }
+    return;
+  }
+
+  const id = Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+  const imageItem = { id, dataUrl: null, loading: true, error: null, file };
+  pendingImages.push(imageItem);
   updateAttachmentCard();
+
   try {
     const dataUrl = await compressImage(file);
-    pendingImage = { dataUrl, loading: false, error: null, file };
-    updateAttachmentCard();
+    const item = pendingImages.find(img => img.id === id);
+    if (item) {
+      item.dataUrl = dataUrl;
+      item.loading = false;
+      updateAttachmentCard();
+    }
   } catch (err) {
-    pendingImage = { dataUrl: null, loading: false, error: `压缩失败：${err.message}`, file };
-    updateAttachmentCard();
+    const item = pendingImages.find(img => img.id === id);
+    if (item) {
+      item.error = `压缩失败`;
+      item.loading = false;
+      updateAttachmentCard();
+    }
   }
+}
+
+// Handle multiple files
+function handleMultipleImageFiles(files) {
+  if (!files || files.length === 0) return;
+  const fileArray = Array.from(files);
+
+  // Check total count
+  const remainingSlots = 9 - pendingImages.length;
+  if (fileArray.length > remainingSlots) {
+    if (window.showToast) {
+      window.showToast(`只能再添加 ${remainingSlots} 张图片（最多 9 张）`, 'warning');
+    }
+  }
+
+  // Process up to remaining slots
+  fileArray.slice(0, remainingSlots).forEach(file => handleImageFile(file));
 }
 
 function showLightbox(src) {
@@ -7371,10 +7459,13 @@ function showImageBottomSheet() {
   const albumInput = document.createElement("input");
   albumInput.type = "file";
   albumInput.accept = "image/*";
+  albumInput.multiple = true; // Enable multiple selection
   albumInput.style.display = "none";
   albumInput.addEventListener("change", () => {
-    const f = albumInput.files?.[0];
-    if (f) { imageInput.value = ""; handleImageFile(f); }
+    const files = albumInput.files;
+    if (files && files.length > 0) {
+      handleMultipleImageFiles(files);
+    }
   });
   document.body.appendChild(albumInput);
 
@@ -7421,19 +7512,22 @@ imageAttachBtn?.addEventListener("click", () => {
 });
 
 imageInput?.addEventListener("change", () => {
-  const file = imageInput.files?.[0];
+  const files = imageInput.files;
   imageInput.value = "";
-  if (file) handleImageFile(file);
+  if (files && files.length > 0) {
+    handleMultipleImageFiles(files);
+  }
 });
 
+// Remove old single-image remove button (no longer in HTML)
+// Keep for backward compatibility if needed
 document.getElementById("imgPreviewRemove")?.addEventListener("click", () => {
-  pendingImage = null;
-  updateAttachmentCard();
-  imageInput.value = "";
+  clearAllImages();
 });
 
 document.getElementById("imgPreviewRetry")?.addEventListener("click", () => {
-  if (pendingImage?.file) handleImageFile(pendingImage.file);
+  // Retry is now handled per-image in the new multi-image UI
+  // This is kept for backward compatibility but won't be used
 });
 
 const chatShell = document.querySelector(".chat-shell");
@@ -7836,7 +7930,11 @@ async function handleSubmit() {
   }
 
   const text = messageInput.value.trim();
-  if ((!text && !pendingImage?.dataUrl) || pendingImage?.loading) return;
+  const validImages = pendingImages.filter(img => img.dataUrl && !img.error);
+  const hasValidImages = validImages.length > 0;
+  const isLoadingImages = pendingImages.some(img => img.loading);
+
+  if ((!text && !hasValidImages) || isLoadingImages) return;
   if (isReplying) {
     setChatStatus("Cha 正在回复，等他说完再发～");
     setTimeout(() => setChatStatus(""), 2000);
@@ -7848,7 +7946,7 @@ async function handleSubmit() {
   console.log('[image-policy] Module loaded:', !!window.SavePrincessImagePolicy);
   console.log('[image-policy] User text:', text);
 
-  if (text && !pendingImage?.dataUrl && window.SavePrincessImagePolicy) {
+  if (text && !hasValidImages && window.SavePrincessImagePolicy) {
     const imageIntent = window.SavePrincessImagePolicy.detectImageIntent(text);
     console.log('[image-policy] Detection result:', imageIntent);
 
@@ -7905,10 +8003,12 @@ async function handleSubmit() {
 
   messageInput.value = "";
   autoResizeTextarea(messageInput);
-  const snapshot = pendingImage?.dataUrl ? { dataUrl: pendingImage.dataUrl } : null;
-  pendingImage = null;
-  updateAttachmentCard();
-  imageInput.value = "";
+
+  // Snapshot all valid images
+  const imageSnapshots = validImages.map(img => ({ dataUrl: img.dataUrl }));
+
+  // Clear pending images
+  clearAllImages();
 
   // Capture and clear reply state before render
   const replyId      = _replyToId;
@@ -7930,10 +8030,12 @@ async function handleSubmit() {
   const now = new Date().toISOString();
 
   let content;
-  if (snapshot) {
+  if (imageSnapshots.length > 0) {
     content = [];
     if (text) content.push({ type: "text", text });
-    content.push({ type: "image_url", image_url: { url: snapshot.dataUrl, detail: "low" } });
+    imageSnapshots.forEach(snapshot => {
+      content.push({ type: "image_url", image_url: { url: snapshot.dataUrl, detail: "low" } });
+    });
   } else {
     content = text;
   }
@@ -7948,40 +8050,57 @@ async function handleSubmit() {
     ? Array.from(messageList.querySelectorAll(`.msg-row[data-group-id="${msgGroupId}"]`))
     : (msgEl.closest(".msg-row") ? [msgEl.closest(".msg-row")] : []);
   maintainBottomAnchor("send");
-  const dbContent = snapshot ? (text ? `[图片] ${text}` : "[图片]") : text;
+  const dbContent = imageSnapshots.length > 0
+    ? (text ? `[图片${imageSnapshots.length > 1 ? `×${imageSnapshots.length}` : ''}] ${text}` : `[图片${imageSnapshots.length > 1 ? `×${imageSnapshots.length}` : ''}]`)
+    : text;
   chatMessages.push({ role: "user", content, created_at: now, id: null, read_by_cha_at: null, read_by_user_at: null, replyTo });
   refreshMessageActions();
-  if (isFirst) updateConvTitle(getActiveConversationId(), text || "[图片]");
+  if (isFirst) updateConvTitle(getActiveConversationId(), text || `[图片${imageSnapshots.length > 1 ? `×${imageSnapshots.length}` : ''}]`);
 
   // 后台保存：有图时先上传 Storage，拿到 path 后再写 DB
   (async () => {
     let storagePath = null;
-    if (snapshot) {
+    if (imageSnapshots.length > 0) {
       const { data: { user } } = await supabaseClient.auth.getUser().catch(() => ({ data: { user: null } }));
       const uid = user?.id || window.currentUserId;
-      const uploadResult = await uploadImageToStorage(snapshot.dataUrl, uid, getActiveConversationId());
-      if (uploadResult === null) {
-        setChatStatus("图片上传失败，消息未发送，请重试");
-        // 回滚乐观渲染，清理 temp render cache
-        chatMessages.pop();
-        getMsgRows().forEach(r => r.remove());
-        invalidateRenderCache(tempId);
-        // Restore reply state so the user doesn't lose their reply context
-        if (replyId) setReplyDraft(replyId, replyPreview, replyRole);
-        return;
-      }
-      storagePath = uploadResult.path;
-      // Replace base64 in chatMessages with the signed URL so subsequent
-      // API calls don't retransmit the full base64 payload
-      if (uploadResult.signedUrl) {
-        const entry = chatMessages.findLast?.(m => m.role === "user" && m.id === null);
-        if (entry && Array.isArray(entry.content)) {
-          entry.content = entry.content.map(part =>
-            part.type === "image_url"
-              ? { ...part, image_url: { ...part.image_url, url: uploadResult.signedUrl } }
-              : part
-          );
+
+      // Upload all images
+      const uploadResults = [];
+      for (const snapshot of imageSnapshots) {
+        const uploadResult = await uploadImageToStorage(snapshot.dataUrl, uid, getActiveConversationId());
+        if (uploadResult === null) {
+          setChatStatus("图片上传失败，消息未发送，请重试");
+          // 回滚乐观渲染，清理 temp render cache
+          chatMessages.pop();
+          getMsgRows().forEach(r => r.remove());
+          invalidateRenderCache(tempId);
+          // Restore reply state so the user doesn't lose their reply context
+          if (replyId) setReplyDraft(replyId, replyPreview, replyRole);
+          return;
         }
+        uploadResults.push(uploadResult);
+      }
+
+      // For single image, use the old path format for backward compatibility
+      if (uploadResults.length === 1) {
+        storagePath = uploadResults[0].path;
+      } else {
+        // For multiple images, store as JSON array
+        storagePath = JSON.stringify(uploadResults.map(r => r.path));
+      }
+
+      // Replace base64 in chatMessages with the signed URLs
+      const entry = chatMessages.findLast?.(m => m.role === "user" && m.id === null);
+      if (entry && Array.isArray(entry.content)) {
+        let imageIndex = 0;
+        entry.content = entry.content.map(part => {
+          if (part.type === "image_url" && uploadResults[imageIndex]) {
+            const result = { ...part, image_url: { ...part.image_url, url: uploadResults[imageIndex].signedUrl } };
+            imageIndex++;
+            return result;
+          }
+          return part;
+        });
       }
     }
     const msgId = await saveMessage("user", dbContent, storagePath, {}, replyTo).catch(() => null);

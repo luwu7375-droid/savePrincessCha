@@ -395,14 +395,11 @@
       </div>
 
           <div id="imagePreviewBar" class="image-preview-bar hidden">
-            <div class="img-preview-wrap">
-              <div class="img-preview-skeleton"></div>
-              <img class="img-preview-thumb" src="" alt="预览">
-              <button type="button" id="imgPreviewRemove" class="img-preview-remove" aria-label="删除图片">✕</button>
+            <div class="img-preview-list" id="imgPreviewList">
+              <!-- 动态插入多个缩略图 -->
             </div>
-            <div class="img-preview-error-row hidden">
-              <span class="img-preview-error-msg"></span>
-              <button type="button" id="imgPreviewRetry" class="img-preview-retry-btn">重试</button>
+            <div class="img-preview-counter">
+              <span id="imgPreviewCount">0</span> 张
             </div>
           </div>
 
@@ -414,7 +411,7 @@
           <div id="replyPreviewBar" class="reply-preview-bar hidden"></div>
 
           <form class="input-bar" id="chatForm">
-            <input type="file" id="imageInput" accept="image/*" style="display:none">
+            <input type="file" id="imageInput" accept="image/*" multiple style="display:none">
             <button id="composerMenuBtn" type="button" class="ghost-icon-btn" title="更多操作" aria-label="更多操作">✦</button>
             <div class="input-wrapper">
               <textarea id="messageInput" rows="1" placeholder="说点什么…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
