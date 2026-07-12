@@ -7469,22 +7469,97 @@ function handleMultipleImageFiles(files) {
   fileArray.slice(0, remainingSlots).forEach(file => handleImageFile(file));
 }
 
-function showLightbox(src) {
+function showLightbox(src, allImages = null, currentIndex = 0) {
+  let currentIdx = currentIndex;
+
   const overlay = document.createElement("div");
   overlay.className = "lightbox-overlay";
+
   const img = document.createElement("img");
   img.className = "lightbox-img";
   img.src = src;
   img.alt = "";
+
   const closeBtn = document.createElement("button");
   closeBtn.className = "lightbox-close";
   closeBtn.textContent = "✕";
   closeBtn.setAttribute("aria-label", "关闭");
-  const close = () => overlay.remove();
+
+  // Navigation controls (only if multiple images)
+  let prevBtn, nextBtn, positionCounter;
+
+  const updateImage = () => {
+    if (!allImages || !allImages.length) return;
+    img.src = allImages[currentIdx];
+    if (positionCounter) {
+      positionCounter.textContent = `${currentIdx + 1} / ${allImages.length}`;
+    }
+    if (prevBtn) prevBtn.disabled = currentIdx === 0;
+    if (nextBtn) nextBtn.disabled = currentIdx === allImages.length - 1;
+  };
+
+  if (allImages && allImages.length > 1) {
+    prevBtn = document.createElement("button");
+    prevBtn.className = "lightbox-nav lightbox-prev";
+    prevBtn.textContent = "‹";
+    prevBtn.setAttribute("aria-label", "上一张");
+    prevBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (currentIdx > 0) {
+        currentIdx--;
+        updateImage();
+      }
+    });
+
+    nextBtn = document.createElement("button");
+    nextBtn.className = "lightbox-nav lightbox-next";
+    nextBtn.textContent = "›";
+    nextBtn.setAttribute("aria-label", "下一张");
+    nextBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (currentIdx < allImages.length - 1) {
+        currentIdx++;
+        updateImage();
+      }
+    });
+
+    positionCounter = document.createElement("div");
+    positionCounter.className = "lightbox-counter";
+    positionCounter.textContent = `${currentIdx + 1} / ${allImages.length}`;
+
+    overlay.appendChild(prevBtn);
+    overlay.appendChild(nextBtn);
+    overlay.appendChild(positionCounter);
+
+    updateImage();
+  }
+
+  const close = () => {
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
+
   closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
-  const onKey = (e) => { if (e.key === "Escape") { close(); document.removeEventListener("keydown", onKey); } };
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+
+  const onKey = (e) => {
+    if (e.key === "Escape") {
+      close();
+    } else if (allImages && allImages.length > 1) {
+      if (e.key === "ArrowLeft" && currentIdx > 0) {
+        currentIdx--;
+        updateImage();
+      } else if (e.key === "ArrowRight" && currentIdx < allImages.length - 1) {
+        currentIdx++;
+        updateImage();
+      }
+    }
+  };
+
   document.addEventListener("keydown", onKey);
+
   overlay.appendChild(img);
   overlay.appendChild(closeBtn);
   document.body.appendChild(overlay);
