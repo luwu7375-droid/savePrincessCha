@@ -20,6 +20,13 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
   const hasImages  = imageParts.length > 0;
   const hasText    = textParts.length > 0 || (!isArray && text);
 
+  // ── PhotoStack Integration: Use stacked photo card for multiple images ──
+  if (imageParts.length >= 2 && window.PhotoStackIntegration) {
+    return window.PhotoStackIntegration.addMessageWithPhotoStack(
+      text, role, createdAt, options, msgId
+    );
+  }
+
   // For user messages: read_by_cha_at comes from options (history load) or null (new send).
   // New sends start as "未读"; history loads use stored value.
   const readByChaAt = options.readByChaAt ?? null;

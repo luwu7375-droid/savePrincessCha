@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhotoStack 集成演示 - SavePrincessCha</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 2em;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 1.1em;
+    }
+
+    .demo-container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 800px;
+      width: 100%;
+    }
+
+    .chat-mockup {
+      background: #f5f5f5;
+      border-radius: 15px;
+      padding: 20px;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    .msg-row {
+      display: flex;
+      align-items: flex-end;
+      margin-bottom: 15px;
+      gap: 10px;
+    }
+
+    .msg-row.user {
+      flex-direction: row-reverse;
+    }
+
+    .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+    }
+
+    .msg-row.user .avatar {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .msg-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .message {
+      padding: 12px 16px;
+      border-radius: 18px;
+      max-width: 280px;
+    }
+
+    .msg-row.assistant .message {
+      background: white;
+      color: #333;
+    }
+
+    .msg-row.user .message {
+      background: #667eea;
+      color: white;
+    }
+
+    .message-text {
+      line-height: 1.5;
+    }
+
+    .controls {
+      margin-top: 30px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 1em;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .info-box {
+      background: #f0f7ff;
+      border-left: 4px solid #667eea;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+
+    .info-box h3 {
+      color: #667eea;
+      margin-bottom: 10px;
+    }
+
+    .info-box ul {
+      padding-left: 20px;
+      color: #555;
+    }
+
+    .info-box li {
+      margin-bottom: 8px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 768px) {
+      .demo-container {
+        padding: 20px;
+      }
+
+      .header h1 {
+        font-size: 1.5em;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="css/photo-stack.css">
+</head>
+<body>
+  <div class="header">
+    <h1>📸 PhotoStack 集成演示</h1>
+    <p>微信式堆叠照片卡片 · 为 SavePrincessCha 设计</p>
+  </div>
+
+  <div class="demo-container">
+    <div class="chat-mockup">
+      <!-- Assistant message with text -->
+      <div class="msg-row assistant">
+        <div class="avatar">茶</div>
+        <div class="msg-stack">
+          <div class="message message-text">
+            今天拍了好多照片，分享给你看看~
+          </div>
+        </div>
+      </div>
+
+      <!-- PhotoStack message -->
+      <div class="msg-row assistant" id="photostack-demo">
+        <div class="avatar">茶</div>
+        <div class="msg-stack">
+          <!-- PhotoStack will be inserted here -->
+        </div>
+      </div>
+
+      <!-- User response -->
+      <div class="msg-row user">
+        <div class="avatar">你</div>
+        <div class="msg-stack">
+          <div class="message message-text">
+            哇，好漂亮！😍
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button onclick="changePhoto(-1)">← 上一张</button>
+      <button onclick="changePhoto(1)">下一张 →</button>
+      <button onclick="jumpToPhoto(0)">跳到第1张</button>
+      <button onclick="addMorePhotos()">添加更多照片</button>
+    </div>
+
+    <div class="info-box">
+      <h3>✨ 交互特性</h3>
+      <ul>
+        <li><strong>堆叠展示</strong>：多张照片以堆叠形式展示，恒定显示三层</li>
+        <li><strong>探边效果</strong>：可以看到左右探出的照片边缘</li>
+        <li><strong>跟手翻页</strong>：拖拽照片可以左右翻页，松手后自动完成或回弹</li>
+        <li><strong>快甩切换</strong>：快速滑动可以直接切换到下一张</li>
+        <li><strong>点击预览</strong>：点击当前照片可以查看大图（集成到现有的 lightbox）</li>
+        <li><strong>页码显示</strong>：右下角显示当前是第几张 (n/N)</li>
+      </ul>
+    </div>
+
+    <div class="info-box" style="margin-top: 20px; background: #fff7ed; border-left-color: #f59e0b;">
+      <h3>🎯 使用场景</h3>
+      <ul>
+        <li>用户一次性发送多张照片</li>
+        <li>助手回复包含多张参考图片</li>
+        <li>旅行照片、食物照片等场景</li>
+        <li>自动检测：2张及以上图片自动使用 PhotoStack</li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="modules/photo-stack-integration.js"></script>
+  <script>
+    // 演示图片（使用 placeholder 图片）
+    const demoImages = [
+      'https://picsum.photos/400/500?random=1',
+      'https://picsum.photos/400/500?random=2',
+      'https://picsum.photos/400/500?random=3',
+      'https://picsum.photos/400/500?random=4'
+    ];
+
+    let photoStackInstance = null;
+
+    // 初始化 PhotoStack
+    function initPhotoStack() {
+      const row = document.getElementById('photostack-demo');
+      const msgStack = row.querySelector('.msg-stack');
+
+      // 清空
+      msgStack.innerHTML = '';
+
+      // 创建容器
+      const container = document.createElement('div');
+      container.className = 'message message-photostack';
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'photostack-wrapper';
+      container.appendChild(wrapper);
+
+      msgStack.appendChild(container);
+
+      // 创建 PhotoStack 实例
+      if (window.PhotoStackIntegration && window.PhotoStackIntegration.PhotoStack) {
+        photoStackInstance = new window.PhotoStackIntegration.PhotoStack(
+          wrapper,
+          demoImages,
+          {
+            width: 220,
+            height: 280,
+            counter: true,
+            onTap: (index) => {
+              alert(`点击了第 ${index + 1} 张照片\n\n在实际应用中，这里会打开图片查看器 (lightbox)`);
+            },
+            onChange: (index) => {
+              console.log('切换到第', index + 1, '张照片');
+            }
+          }
+        );
+      }
+    }
+
+    // 控制函数
+    function changePhoto(direction) {
+      if (!photoStackInstance) return;
+      if (direction < 0) {
+        photoStackInstance.prev();
+      } else {
+        photoStackInstance.next();
+      }
+    }
+
+    function jumpToPhoto(index) {
+      if (!photoStackInstance) return;
+      photoStackInstance.goto(index);
+    }
+
+    function addMorePhotos() {
+      alert('在实际应用中，这个功能会：\n\n1. 检测用户选择的多张图片\n2. 自动创建 PhotoStack 展示\n3. 替代原有的单张图片逐条展示\n\n实现位置：message-renderer.js 的 addMessage 函数');
+    }
+
+    // 页面加载完成后初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      initPhotoStack();
+    });
+  </script>
+</body>
+</html>

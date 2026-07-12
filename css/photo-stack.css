@@ -1,0 +1,226 @@
+/*!
+ * PhotoStack Integration Styles for SavePrincessCha
+ * Based on: Wren036/PhotoStack - WeChat-style stacked photo card
+ */
+
+/* ── PhotoStack Stage ────────────────────────────────────────────────── */
+.pstack-stage {
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: grab;
+}
+
+.pstack-stage:active {
+  cursor: grabbing;
+}
+
+/* ── PhotoStack Cards ────────────────────────────────────────────────── */
+.pstack-card {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  border-radius: 14px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, .14);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .32s cubic-bezier(.2, .7, .3, 1), opacity .3s;
+}
+
+.pstack-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  transform: scale(1.04);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── PhotoStack Badge (n/N counter) ──────────────────────────────────── */
+.pstack-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 120;
+  background: rgba(0, 0, 0, .45);
+  color: #fff;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  pointer-events: none;
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+/* Dark mode support */
+[data-theme="dark"] .pstack-badge {
+  background: rgba(0, 0, 0, .65);
+}
+
+/* ── Message Integration ─────────────────────────────────────────────── */
+.message-photostack {
+  padding: 0 !important;
+  overflow: visible;
+  background-color: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  min-width: 0;
+}
+
+.message-photostack::after,
+.message-photostack::before {
+  display: none !important;
+  content: none !important;
+}
+
+.photostack-wrapper {
+  display: inline-block;
+  position: relative;
+}
+
+/* Animation for PhotoStack message entry */
+.msg-row.assistant .message-photostack {
+  animation: photostack-in-cha 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.msg-row.user .message-photostack {
+  animation: photostack-in-user 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes photostack-in-cha {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes photostack-in-user {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ── Responsive Adjustments ──────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .pstack-stage {
+    /* 移动设备上稍微调整尺寸 */
+  }
+
+  .pstack-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    right: 6px;
+    bottom: 6px;
+  }
+}
+
+@media (max-width: 390px) {
+  .photostack-wrapper {
+    /* 小屏幕设备的调整 */
+  }
+}
+
+/* ── Quote Reply Integration ─────────────────────────────────────────── */
+.message-photostack .quote-block {
+  margin-bottom: 8px;
+  background: var(--surface);
+  border-left: 3px solid var(--accent-primary);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.9em;
+  opacity: 0.85;
+  max-width: 220px;
+}
+
+.message-photostack .quote-block .quote-author {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--accent-primary);
+}
+
+.message-photostack .quote-block .quote-preview {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Touch Interaction Enhancements ──────────────────────────────────── */
+.pstack-stage {
+  /* 确保触摸滚动不被阻止 */
+  touch-action: pan-y;
+}
+
+/* Prevent text selection during swipe */
+.pstack-stage,
+.pstack-card,
+.pstack-card img {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* ── Loading State ───────────────────────────────────────────────────── */
+.pstack-card.loading {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: pstack-loading 1.5s infinite;
+}
+
+[data-theme="dark"] .pstack-card.loading {
+  background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+  background-size: 200% 100%;
+}
+
+@keyframes pstack-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Accessibility ───────────────────────────────────────────────────── */
+.pstack-stage:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 14px;
+}
+
+/* Screen reader only content */
+.pstack-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Performance Optimizations ───────────────────────────────────────── */
+.pstack-card {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.pstack-card img {
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
