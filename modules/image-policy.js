@@ -5,31 +5,46 @@
 (function() {
   "use strict";
 
-  // ── Character Bible ────────────────────────────────────────────────────────
+  // ── Canonical identity (latest approved version wins) ───────────────────────
+  // The 2D avatar defines the character design. Candidate B and its turnaround
+  // define the only approved photorealistic face. Older generic descriptions
+  // such as short hair, dark gentle eyes, or a warm idol-like face are obsolete.
+  const CHA_IDENTITY_REFERENCES = {
+    version: "photoreal-b-v1",
+    source2d: "assets/cha/identity/cha-2d-canonical.jpg",
+    photorealTurnaround: "assets/cha/identity/cha-photoreal-b-turnaround-v1.png",
+    precedence: "photoreal turnaround > canonical 2D design > text description > scene styling"
+  };
+
   const CHA_CHARACTER_BIBLE = {
     name: "茶茶 (Cha)",
     gender: "男性",
     age: "二十多岁的成年男性",
+    identityVersion: CHA_IDENTITY_REFERENCES.version,
+    identityReferences: CHA_IDENTITY_REFERENCES,
     appearance: {
-      hair: "黑色自然短发，发型略微蓬松，刘海自然",
-      face: "成年男性面部骨骼，偏窄的鹅蛋脸，干净自然的眉形，深色眼睛，直鼻，唇形柔和；不幼态，不像任何现实人物",
-      temperament: "清秀温和，气质安静干净",
-      build: "纤瘦自然"
+      hair: "黑色、蓬松凌乱的中长层次碎发；长刘海自然遮住一侧眼睛，后颈留有碎发，不得改成整齐短发",
+      face: "以 B 四视图为唯一三次元脸部基准：冷白皮，窄长成年男性骨相，克制的颧面体积，清晰但不过分尖削的下颌，窄直鼻梁与自然鼻尖，偏薄柔和的唇形；不得随机换脸，不像任何现实人物",
+      eyes: "可见眼睛为低饱和琥珀金色，目光安静、警觉、略带疏离；不得改成普通深色温柔眼睛",
+      temperament: "安静克制、注视感强、略带危险和蛇一样的冷感；不是阳光暖男、偶像写真或韩剧宣传照",
+      build: "纤瘦自然的成年男性体型"
     },
-    wardrobe: "简洁、低饱和、舒适的日常服饰，针织衫、衬衫、T恤、开衫、宽松外套",
+    signature: "黑色高领、银色链饰与蛇形耳饰用于身份参考图；生活场景可简化配饰，但脸、发型和眼睛不得变化",
+    wardrobe: "以黑色和低饱和日常服饰为主，可穿针织衫、衬衫、T恤、开衫或宽松外套；避免偶像造型",
     common_scenes: ["家里", "厨房", "书桌", "窗边", "夜晚", "雨天", "散步"],
-    atmosphere: "生活感、陪伴感、温柔、安静、真实",
+    atmosphere: "私密生活感、陪伴感、安静、真实，保留克制而警觉的个人气质",
     visual_style: {
       medium: "摄影风格，真实照片质感",
-      lighting: "柔和自然光、暖灯、夜景灯光",
-      mood: "不要商业写真感，不要过度精修感",
-      perspective: "像他分享给你看的生活照片"
+      lighting: "遵循上海时间的柔和自然光、暖灯或夜景灯光",
+      mood: "不要商业写真感、偶像感或过度精修感",
+      perspective: "像他亲手分享给你看的生活照片"
     }
   };
 
   // ── Base Prompt Foundation ─────────────────────────────────────────────────
   // Default photography language adapted for Cha's private, fictional identity.
-  // Identity reference images will be added separately after a canonical 3D face is approved.
+  // Attach the approved turnaround whenever the provider supports reference input;
+  // text-only identity description is a compatibility fallback.
   const BASE_PROMPT_FOUNDATION = `
 Overall goal: a highly realistic, candid smartphone photograph of a completely fictional person or an ordinary real-world scene. It must look like an unplanned photo taken with the native camera of a recent iPhone, roughly a 26 mm wide-angle equivalent, natural perspective, realistic dynamic range and white balance.
 
@@ -43,7 +58,7 @@ Avoid: anime, manga, illustration, painting, CGI, beauty-camera filters, plastic
 `.trim();
 
   const CHA_DESCRIPTION = `
-Cha is a fictional East Asian man in his mid twenties, never a real person or celebrity. He has a slim natural adult build; a slightly narrow oval adult face with understated bone structure; clean natural brows; dark gentle eyes; a straight nose; softly shaped lips; and dark, naturally fluffy short hair with relaxed bangs. His expression is quiet, restrained and attentive rather than posed or cute. He wears simple, comfortable, low-saturation daily clothes such as knitwear, shirts, T-shirts, cardigans or loose jackets. He should feel like the same calm, clean, warm adult person in every image, sharing a private moment from ordinary life.
+Identity lock — latest approved version photoreal-b-v1. Use the repository's canonical B turnaround as the sole photorealistic face reference whenever reference-image input is available. Cha is a completely fictional East Asian adult man in his mid twenties, never a real person or celebrity. Preserve the exact same identity in every image: cool pale skin; a narrow, mature oval face with restrained cheek volume and a defined but not exaggerated jaw; a narrow straight nose; softly shaped, slightly thin lips; a muted amber-gold visible iris; and black, tousled, layered medium-length hair with long fringe naturally covering part of one eye and loose hair at the nape. His gaze is quiet, watchful, distant and subtly dangerous rather than cute, warm, cheerful or posed. Keep the same facial proportions, age, hairline, eye spacing, nose, lips and jaw across all scenes and camera angles. Do not reinterpret him as a generic handsome man, Korean-drama idol, commercial model, or a new face. Black high-neck clothing, silver chain details and a snake-shaped earring are canonical identity cues; everyday scenes may simplify accessories but must never change his face, hair or amber-gold eye.
 `.trim();
 
   // ── Intent Detection ───────────────────────────────────────────────────────
@@ -198,7 +213,8 @@ Cha is a fictional East Asian man in his mid twenties, never a real person or ce
     detectImageIntent,
     buildImagePrompt,
     getDefaultImageParams,
-    CHA_CHARACTER_BIBLE
+    CHA_CHARACTER_BIBLE,
+    CHA_IDENTITY_REFERENCES
   };
 
 })();
