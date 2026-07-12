@@ -33,12 +33,12 @@ async function fetchCandidates(
     select: "*",
     user_id: `eq.${userId}`,
     created_at: `gte.${sinceTimestamp}`,
-    promoted_to_memory: "is.false", // Only unprocessed candidates
+    promoted_to_memory: "eq.false", // Only unprocessed candidates
     order: "created_at.asc",
   });
 
   if (untilTimestamp) {
-    query.set("created_at", `gte.${sinceTimestamp},lte.${untilTimestamp}`);
+    query.append("created_at", `lte.${untilTimestamp}`);
   }
 
   const res = await fetch(
