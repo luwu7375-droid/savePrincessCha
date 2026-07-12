@@ -319,16 +319,26 @@ async function callChatAPI(messages, replyMode = "auto") {
   if (chatModel && chatModel.providerGroup && chatModel.model) {
     // Use custom model mapping
     const providerGroup = PROVIDER_GROUPS[chatModel.providerGroup];
+    const customProviders = JSON.parse(localStorage.getItem('custom_providers') || '{}');
+    const providerConfig = customProviders[chatModel.providerGroup];
     console.log("[model-mapping] Found providerGroup:", providerGroup);
-    if (providerGroup) {
+    if (providerGroup && providerConfig?.endpoint && providerConfig?.apiKey) {
       customModelParams = {
         providerGroup: chatModel.providerGroup,
         provider: providerGroup.name,
-        model: chatModel.model
+        model: chatModel.model,
+        endpoint: providerConfig.endpoint,
+        apiKey: providerConfig.apiKey
       };
-      console.log("[model-mapping] Using chat model mapping:", customModelParams);
+      console.log("[model-mapping] Using chat model mapping:", {
+        providerGroup: customModelParams.providerGroup,
+        provider: customModelParams.provider,
+        model: customModelParams.model,
+        endpoint: customModelParams.endpoint,
+        hasApiKey: true,
+      });
     } else {
-      console.warn("[model-mapping] Provider group not found:", chatModel.providerGroup);
+      console.warn("[model-mapping] Provider config incomplete:", chatModel.providerGroup);
     }
   } else {
     console.log("[model-mapping] No custom model configured for chat role");
