@@ -2,12 +2,16 @@ import { APP_SETTINGS_SINGLETON_ID } from "../_shared/app_settings_types.ts";
 import type { SchedulerJobName, SchedulerRunStatus } from "../_shared/scheduler_types.ts";
 import { makeCorsHeaders } from "../_shared/cors.ts";
 import { json } from "../_shared/response-helpers.ts";
+import { runCompanionTick } from "../_shared/companion-tick.ts";
 
 const corsHeaders = makeCorsHeaders({
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 });
 
 type AppSettingsForScheduler = {
+  companion_state_enabled: boolean;
+  proactive_contact_min_interval_minutes: number;
+  proactive_contact_connection_threshold: number;
   tool_web_explore_enabled: boolean;
   tool_web_explore_frequency: "hourly" | "daily" | "manual";
   tool_web_explore_token_cap: number;
@@ -21,8 +25,8 @@ type JobResult = {
   metadata?: Record<string, unknown>;
 };
 
-const SCHEDULER_VERSION = "pg2-v1";
-const JOBS: SchedulerJobName[] = ["web_explore", "dream_nightly"];
+const SCHEDULER_VERSION = "pg3-v1"; // Updated for companion_tick
+const JOBS: SchedulerJobName[] = ["companion_tick", "web_explore", "dream_nightly"];
 
 function dbHeaders(serviceRoleKey: string) {
   return {
@@ -34,7 +38,7 @@ function dbHeaders(serviceRoleKey: string) {
 
 async function readSettings(supabaseUrl: string, serviceRoleKey: string): Promise<AppSettingsForScheduler> {
   const query = new URLSearchParams({
-    select: "tool_web_explore_enabled,tool_web_explore_frequency,tool_web_explore_token_cap,dream_trigger_mode",
+    select: "companion_state_enabled,proactive_contact_min_interval_minutes,proactive_contact_connection_threshold,tool_web_explore_enabled,tool_web_explore_frequency,tool_web_explore_token_cap,dream_trigger_mode",
     id: `eq.${APP_SETTINGS_SINGLETON_ID}`,
     limit: "1",
   });
@@ -135,12 +139,58 @@ async function runDreamNightly(settings: AppSettingsForScheduler): Promise<JobRe
   };
 }
 
+async function runCompanionTickJob(
+  settings: AppSettingsForScheduler,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<JobResult> {
+  if (!settings.companion_state_enabled) {
+    return {
+      job_name: "companion_tick",
+      status: "skipped",
+      reason: "companion_state_enabled=false",
+    };
+  }
+
+  try {
+    const tickResult = await runCompanionTick(
+      supabaseUrl,
+      serviceRoleKey,
+      settings.proactive_contact_min_interval_minutes,
+      settings.proactive_contact_connection_threshold
+    );
+
+    return {
+      job_name: "companion_tick",
+      status: tickResult.errors.length > 0 ? "partial_success" : "succeeded",
+      reason: `processed ${tickResult.users_processed} users, ${tickResult.contacts_sent} contacts sent`,
+      metadata: {
+        users_processed: tickResult.users_processed,
+        actions_triggered: tickResult.actions_triggered,
+        contacts_sent: tickResult.contacts_sent,
+        observations_logged: tickResult.observations_logged,
+        activities_started: tickResult.activities_started,
+        errors_count: tickResult.errors.length,
+        errors: tickResult.errors.slice(0, 5), // Only include first 5 errors
+      },
+    };
+  } catch (err) {
+    console.error("companion_tick job error:", err);
+    return {
+      job_name: "companion_tick",
+      status: "failed",
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 async function runJob(
   jobName: SchedulerJobName,
   settings: AppSettingsForScheduler,
   supabaseUrl: string,
   serviceRoleKey: string,
 ): Promise<JobResult> {
+  if (jobName === "companion_tick") return runCompanionTickJob(settings, supabaseUrl, serviceRoleKey);
   if (jobName === "web_explore") return runWebExplore(settings, supabaseUrl, serviceRoleKey);
   if (jobName === "dream_nightly") return runDreamNightly(settings);
   return { job_name: jobName, status: "skipped", reason: "reserved hook" };
