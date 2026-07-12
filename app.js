@@ -742,26 +742,66 @@ async function resolveImagePaths(rows) {
   const needsUrl = rows.filter(r => r.image_storage_path);
   if (!needsUrl.length) return rows;
 
-  // Parallel signed URL generation
+  // Parse image_storage_path: could be single string or JSON array
+  const pathsToResolve = [];
+  const pathIndexMap = new Map(); // path -> [row, index]
+
+  needsUrl.forEach(r => {
+    let paths;
+    try {
+      // Try to parse as JSON array first
+      paths = JSON.parse(r.image_storage_path);
+      if (!Array.isArray(paths)) paths = [r.image_storage_path];
+    } catch {
+      // Not JSON, treat as single path
+      paths = [r.image_storage_path];
+    }
+
+    paths.forEach((path, idx) => {
+      if (!pathIndexMap.has(path)) {
+        pathIndexMap.set(path, []);
+        pathsToResolve.push(path);
+      }
+      pathIndexMap.get(path).push({ row: r, index: idx, totalPaths: paths.length });
+    });
+  });
+
+  // Parallel signed URL generation for all unique paths
   const urlResults = await Promise.all(
-    needsUrl.map(r => getSignedImageUrl(r.image_storage_path))
+    pathsToResolve.map(path => getSignedImageUrl(path))
   );
 
-  // Build a map: image_storage_path → signedUrl
+  // Build a map: path → signedUrl
   const urlMap = new Map();
-  needsUrl.forEach((r, i) => {
-    if (urlResults[i]) urlMap.set(r.image_storage_path, urlResults[i]);
+  pathsToResolve.forEach((path, i) => {
+    if (urlResults[i]) urlMap.set(path, urlResults[i]);
   });
 
   // Rebuild rows: upgrade content to vision array when signed URL is available
   return rows.map(r => {
     if (!r.image_storage_path) return r;
-    const signedUrl = urlMap.get(r.image_storage_path);
-    if (!signedUrl) return r; // fallback: keep text-only content
-    const textPart = r.content.replace(/^\[图片\]\s*/, "").trim();
+
+    let paths;
+    try {
+      paths = JSON.parse(r.image_storage_path);
+      if (!Array.isArray(paths)) paths = [r.image_storage_path];
+    } catch {
+      paths = [r.image_storage_path];
+    }
+
+    const signedUrls = paths.map(path => urlMap.get(path)).filter(Boolean);
+    if (!signedUrls.length) return r; // fallback: keep text-only content
+
+    // Extract text content (remove [图片] or [图片×N] prefix)
+    const textPart = r.content.replace(/^\[图片(?:×\d+)?\]\s*/, "").trim();
     const parts = [];
     if (textPart) parts.push({ type: "text", text: textPart });
-    parts.push({ type: "image_url", image_url: { url: signedUrl, detail: "low" } });
+
+    // Add all image URLs
+    signedUrls.forEach(url => {
+      parts.push({ type: "image_url", image_url: { url, detail: "low" } });
+    });
+
     return { ...r, content: parts };
   });
 }
