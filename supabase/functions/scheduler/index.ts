@@ -3,6 +3,7 @@ import type { SchedulerJobName, SchedulerRunStatus } from "../_shared/scheduler_
 import { makeCorsHeaders } from "../_shared/cors.ts";
 import { json } from "../_shared/response-helpers.ts";
 import { runCompanionTick } from "../_shared/companion-tick.ts";
+import { consolidateMemoryCandidates } from "../_shared/consolidation.ts";
 
 const corsHeaders = makeCorsHeaders({
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -16,6 +17,7 @@ type AppSettingsForScheduler = {
   tool_web_explore_frequency: "hourly" | "daily" | "manual";
   tool_web_explore_token_cap: number;
   dream_trigger_mode: "manual" | "manual_and_nightly";
+  nightly_consolidation_enabled: boolean;
 };
 
 type JobResult = {
@@ -25,7 +27,7 @@ type JobResult = {
   metadata?: Record<string, unknown>;
 };
 
-const SCHEDULER_VERSION = "pg3-v1"; // Updated for companion_tick
+const SCHEDULER_VERSION = "pg5-v1"; // Updated for consolidation
 const JOBS: SchedulerJobName[] = ["companion_tick", "web_explore", "dream_nightly"];
 
 function dbHeaders(serviceRoleKey: string) {
@@ -38,7 +40,7 @@ function dbHeaders(serviceRoleKey: string) {
 
 async function readSettings(supabaseUrl: string, serviceRoleKey: string): Promise<AppSettingsForScheduler> {
   const query = new URLSearchParams({
-    select: "companion_state_enabled,proactive_contact_min_interval_minutes,proactive_contact_connection_threshold,tool_web_explore_enabled,tool_web_explore_frequency,tool_web_explore_token_cap,dream_trigger_mode",
+    select: "companion_state_enabled,proactive_contact_min_interval_minutes,proactive_contact_connection_threshold,tool_web_explore_enabled,tool_web_explore_frequency,tool_web_explore_token_cap,dream_trigger_mode,nightly_consolidation_enabled",
     id: `eq.${APP_SETTINGS_SINGLETON_ID}`,
     limit: "1",
   });
@@ -128,10 +130,87 @@ async function runWebExplore(
   };
 }
 
-async function runDreamNightly(settings: AppSettingsForScheduler): Promise<JobResult> {
+async function runDreamNightly(
+  settings: AppSettingsForScheduler,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<JobResult> {
   if (settings.dream_trigger_mode !== "manual_and_nightly") {
     return { job_name: "dream_nightly", status: "skipped", reason: "dream_trigger_mode is manual" };
   }
+
+  // Run nightly consolidation if enabled
+  if (settings.nightly_consolidation_enabled) {
+    try {
+      // Get all users who need consolidation
+      const usersQuery = new URLSearchParams({
+        select: "user_id",
+      });
+      const usersRes = await fetch(
+        `${supabaseUrl}/rest/v1/companion_state?${usersQuery}`,
+        { headers: dbHeaders(serviceRoleKey) }
+      );
+
+      if (!usersRes.ok) {
+        throw new Error(`Failed to fetch users: ${usersRes.status}`);
+      }
+
+      const users = await usersRes.json() as Array<{ user_id: string }>;
+
+      let totalCandidates = 0;
+      let totalEpisodes = 0;
+      const errors: string[] = [];
+
+      // Consolidate for each user
+      for (const user of users) {
+        try {
+          // Consolidate candidates from last 7 days
+          const sinceTimestamp = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+          const consolidationResult = await consolidateMemoryCandidates(
+            supabaseUrl,
+            serviceRoleKey,
+            {
+              userId: user.user_id,
+              sinceTimestamp,
+              dryRun: false,
+            }
+          );
+
+          totalCandidates += consolidationResult.candidates_processed;
+          totalEpisodes += consolidationResult.episodes_created;
+
+          if (consolidationResult.errors.length > 0) {
+            errors.push(...consolidationResult.errors.slice(0, 2)); // Max 2 errors per user
+          }
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          errors.push(`User ${user.user_id.slice(0, 6)}: ${errorMsg}`);
+        }
+      }
+
+      return {
+        job_name: "dream_nightly",
+        status: errors.length > 0 ? "partial_success" : "succeeded",
+        reason: `consolidated ${totalCandidates} candidates into ${totalEpisodes} episodes for ${users.length} users`,
+        metadata: {
+          users_processed: users.length,
+          candidates_processed: totalCandidates,
+          episodes_created: totalEpisodes,
+          errors_count: errors.length,
+          errors: errors.slice(0, 5),
+        },
+      };
+    } catch (err) {
+      console.error("dream_nightly consolidation error:", err);
+      return {
+        job_name: "dream_nightly",
+        status: "failed",
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
   return {
     job_name: "dream_nightly",
     status: "succeeded",
@@ -192,7 +271,7 @@ async function runJob(
 ): Promise<JobResult> {
   if (jobName === "companion_tick") return runCompanionTickJob(settings, supabaseUrl, serviceRoleKey);
   if (jobName === "web_explore") return runWebExplore(settings, supabaseUrl, serviceRoleKey);
-  if (jobName === "dream_nightly") return runDreamNightly(settings);
+  if (jobName === "dream_nightly") return runDreamNightly(settings, supabaseUrl, serviceRoleKey);
   return { job_name: jobName, status: "skipped", reason: "reserved hook" };
 }
 
