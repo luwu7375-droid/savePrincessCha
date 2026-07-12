@@ -12,7 +12,7 @@
   const CHA_IDENTITY_REFERENCES = {
     version: "photoreal-b-v1",
     source2d: "assets/cha/identity/cha-2d-canonical.jpg",
-    photorealTurnaround: "assets/cha/identity/cha-photoreal-b-turnaround-v1.png",
+    photorealTurnaround: "assets/cha/identity/cha-photoreal-b-turnaround-v1.jpg",
     precedence: "photoreal turnaround > canonical 2D design > text description > scene styling"
   };
 
