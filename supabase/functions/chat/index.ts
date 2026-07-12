@@ -106,8 +106,18 @@ type ChatRequest = {
     providerGroup?: string;
     provider?: string;
     model?: string;
+    endpoint?: string;
+    apiKey?: string;
   };
 };
+
+function normalizeCustomEndpoint(raw: string): string {
+  const url = new URL(raw);
+  if (url.protocol !== "https:") {
+    throw new Error("自定义模型 endpoint 必须使用 HTTPS");
+  }
+  return toCompletionsUrl(url.toString());
+}
 
 // ── Model tier ────────────────────────────────────────────────────────────────
 // Provider/tier/fallback logic lives in ../_shared/model-client.ts
@@ -1428,24 +1438,50 @@ Deno.serve(async (request) => {
   // ── Custom model override ─────────────────────────────────────────────────
   let customModelApplied = false;
   let customModelInvalidReason: string | null = null;
-  console.log("[custom-model] Received payload.customModel:", JSON.stringify(payload.customModel));
-  console.log("[custom-model] tierProviders.primary before override:", JSON.stringify(tierProviders.primary));
+  console.log("[custom-model] Received custom model:", JSON.stringify({
+    providerGroup: payload.customModel?.providerGroup,
+    provider: payload.customModel?.provider,
+    model: payload.customModel?.model,
+    endpoint: payload.customModel?.endpoint,
+    hasApiKey: Boolean(payload.customModel?.apiKey),
+  }));
 
   if (payload.customModel && typeof payload.customModel === "object") {
     const cm = payload.customModel;
-    if (typeof cm.model === "string" && cm.model.trim()) {
-      tierProviders.primary = { ...tierProviders.primary, model: cm.model.trim() };
-      customModelApplied = true;
-      console.log("[custom-model] Applied custom model override:", cm.model.trim());
+    if (
+      typeof cm.model === "string" && cm.model.trim() &&
+      typeof cm.endpoint === "string" && cm.endpoint.trim() &&
+      typeof cm.apiKey === "string" && cm.apiKey.trim()
+    ) {
+      try {
+        tierProviders.primary = {
+          ...tierProviders.primary,
+          providerName: "openrouter",
+          baseUrl: normalizeCustomEndpoint(cm.endpoint.trim()),
+          apiKey: cm.apiKey.trim(),
+          model: cm.model.trim(),
+        };
+        tierProviders.fallback = null;
+        customModelApplied = true;
+        console.log("[custom-model] Applied custom provider and model:", cm.providerGroup, cm.model.trim());
+      } catch (error) {
+        customModelInvalidReason = error instanceof Error ? error.message : "custom endpoint 无效";
+        console.log("[custom-model] Invalid customModel:", customModelInvalidReason);
+      }
     } else {
-      customModelInvalidReason = "customModel.model is empty or not a string";
+      customModelInvalidReason = "customModel 缺少 model、endpoint 或 apiKey";
       console.log("[custom-model] Invalid customModel:", customModelInvalidReason);
     }
   } else {
     console.log("[custom-model] No custom model in payload");
   }
 
-  console.log("[custom-model] tierProviders.primary after override:", JSON.stringify(tierProviders.primary));
+  console.log("[custom-model] provider after override:", JSON.stringify({
+    providerName: tierProviders.primary.providerName,
+    baseUrl: tierProviders.primary.baseUrl,
+    model: tierProviders.primary.model,
+    hasApiKey: Boolean(tierProviders.primary.apiKey),
+  }));
 
   const providerConfig = tierProviders.primary;
 
