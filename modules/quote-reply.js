@@ -43,12 +43,22 @@ function scrollToQuotedMessage(id) {
 function getMessageQuotePreview(row) {
   const textEl = row.querySelector(".message-text");
   const imgEl = row.querySelector(".message-image");
+  const photoStackEl = row.querySelector(".message-photostack");
   const voiceEl = row.querySelector(".message-voice");
 
   let preview = "";
 
-  // 图片消息
-  if (imgEl) {
+  // PhotoStack 多图消息
+  if (photoStackEl) {
+    const stackWrapper = photoStackEl.querySelector(".photostack-wrapper");
+    const imageCount = stackWrapper?.querySelectorAll("img").length || 0;
+    preview = imageCount > 1 ? `[图片×${imageCount}]` : "[图片]";
+    if (textEl?.textContent) {
+      preview += " " + textEl.textContent.trim();
+    }
+  }
+  // 单图消息
+  else if (imgEl) {
     preview = "[图片]";
     if (textEl?.textContent) {
       preview += " " + textEl.textContent.trim();
