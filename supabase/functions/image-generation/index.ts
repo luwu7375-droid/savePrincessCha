@@ -192,10 +192,15 @@ Deno.serve(async (req: Request) => {
 
     // Extract image URL based on provider format
     let imageUrl: string | null = null;
+    let imageBase64: string | null = null;
 
     // OpenAI DALL-E format
     if (result.data && Array.isArray(result.data) && result.data[0]?.url) {
       imageUrl = result.data[0].url;
+    }
+    // OpenAI image models commonly return inline PNG bytes instead of a URL.
+    else if (result.data && Array.isArray(result.data) && result.data[0]?.b64_json) {
+      imageBase64 = result.data[0].b64_json;
     }
     // Flux/Replicate format
     else if (result.output) {
@@ -210,7 +215,7 @@ Deno.serve(async (req: Request) => {
       imageUrl = result.image_url;
     }
 
-    if (!imageUrl) {
+    if (!imageUrl && !imageBase64) {
       console.error("[image-generation] Could not extract image URL from response:", result);
       return new Response(JSON.stringify({
         error: "Could not extract image URL from provider response",
@@ -239,12 +244,23 @@ Deno.serve(async (req: Request) => {
 
     // Provider URLs are often temporary. Download once and persist the bytes in
     // our private bucket before writing the message row.
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`Generated image download failed: ${imageResponse.status}`);
+    let imageBytes: ArrayBuffer | Uint8Array;
+    let contentType = "image/png";
+    if (imageBase64) {
+      try {
+        const binary = atob(imageBase64.replace(/^data:image\/[^;]+;base64,/, ""));
+        imageBytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      } catch {
+        throw new Error("Generated image base64 decode failed");
+      }
+    } else {
+      const imageResponse = await fetch(imageUrl!);
+      if (!imageResponse.ok) {
+        throw new Error(`Generated image download failed: ${imageResponse.status}`);
+      }
+      imageBytes = await imageResponse.arrayBuffer();
+      contentType = imageResponse.headers.get("content-type") || "image/png";
     }
-    const imageBytes = await imageResponse.arrayBuffer();
-    const contentType = imageResponse.headers.get("content-type") || "image/png";
     const extension = contentType.includes("jpeg") ? "jpg" : contentType.includes("webp") ? "webp" : "png";
     const storagePath = `${user.id}/generated/${conversation_id}/${crypto.randomUUID()}.${extension}`;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
