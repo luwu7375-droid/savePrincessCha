@@ -22,6 +22,7 @@ interface ImageGenerationRequest {
   quality?: string;
   style?: string;
   test_only?: boolean;
+  generation_source?: "explicit" | "proactive";
 }
 
 Deno.serve(async (req: Request) => {
@@ -65,7 +66,8 @@ Deno.serve(async (req: Request) => {
       provider_config,
       size,
       quality,
-      style
+      style,
+      generation_source = "explicit"
     } = body;
 
     // Determine final prompt
@@ -102,6 +104,64 @@ Deno.serve(async (req: Request) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Hard server-side guard for unsolicited images. This runs before the
+    // provider request, so blocked attempts cannot consume image-generation credit.
+    if (generation_source === "proactive") {
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!serviceRoleKey) {
+        throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
+      }
+      const adminForLimit = createClient(supabaseUrl, serviceRoleKey);
+      const shanghaiDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+      const dayStart = new Date(`${shanghaiDate}T00:00:00+08:00`);
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+      const { data: generatedToday, error: limitError } = await adminForLimit
+        .from("messages")
+        .select("created_at, metadata")
+        .eq("user_id", user.id)
+        .eq("type", "image")
+        .gte("created_at", dayStart.toISOString())
+        .lt("created_at", dayEnd.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (limitError) {
+        throw new Error(`Proactive image limit check failed: ${limitError.message}`);
+      }
+      const proactiveToday = (generatedToday || []).filter((row: any) =>
+        row?.metadata?.generation_source === "proactive"
+      );
+      const latestAt = proactiveToday[0]?.created_at
+        ? new Date(proactiveToday[0].created_at).getTime()
+        : 0;
+      const cooldownMs = 4 * 60 * 60 * 1000;
+      if (proactiveToday.length >= 2) {
+        return new Response(JSON.stringify({
+          error: "Proactive image daily limit reached",
+          code: "proactive_daily_limit",
+          limit: 2,
+          timezone: "Asia/Shanghai",
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (latestAt && Date.now() - latestAt < cooldownMs) {
+        return new Response(JSON.stringify({
+          error: "Proactive image cooldown active",
+          code: "proactive_cooldown",
+          retry_after_seconds: Math.ceil((cooldownMs - (Date.now() - latestAt)) / 1000),
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Construct correct endpoint URL (same logic as chat-test)
@@ -289,6 +349,7 @@ Deno.serve(async (req: Request) => {
       size: size || "1024x1024",
       quality: quality || "standard",
       style: style || "natural",
+      generation_source,
     };
 
     // Save image message to database
