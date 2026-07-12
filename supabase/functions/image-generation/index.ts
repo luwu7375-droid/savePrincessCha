@@ -114,12 +114,14 @@ Deno.serve(async (req: Request) => {
         throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
       }
       const adminForLimit = createClient(supabaseUrl, serviceRoleKey);
-      const shanghaiDate = new Intl.DateTimeFormat("en-CA", {
+      const dateParts = new Intl.DateTimeFormat("en-US", {
         timeZone: "Asia/Shanghai",
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
-      }).format(new Date());
+      }).formatToParts(new Date());
+      const datePart = (type: string) => dateParts.find(part => part.type === type)?.value || "";
+      const shanghaiDate = `${datePart("year")}-${datePart("month")}-${datePart("day")}`;
       const dayStart = new Date(`${shanghaiDate}T00:00:00+08:00`);
       const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
       const { data: generatedToday, error: limitError } = await adminForLimit
