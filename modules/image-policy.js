@@ -9,10 +9,10 @@
   const CHA_CHARACTER_BIBLE = {
     name: "茶茶 (Cha)",
     gender: "男性",
-    age: "年轻成年男性",
+    age: "二十多岁的成年男性",
     appearance: {
       hair: "黑色自然短发，发型略微蓬松，刘海自然",
-      face: "五官柔和，眼神温柔，表情不夸张",
+      face: "成年男性面部骨骼，偏窄的鹅蛋脸，干净自然的眉形，深色眼睛，直鼻，唇形柔和；不幼态，不像任何现实人物",
       temperament: "清秀温和，气质安静干净",
       build: "纤瘦自然"
     },
@@ -27,10 +27,24 @@
     }
   };
 
-  // ── Base Prompt Foundation ───────────────��─────────────────────────────────
-  const BASE_PROMPT_FOUNDATION = `photorealistic slice-of-life image, natural daily-life atmosphere, quiet companionship, soft natural lighting, low-saturation colors, clean composition, realistic life photo feeling, not commercial poster style, not over-polished, not cyberpunk, not glossy AI aesthetic, natural expressions, believable body proportions, natural hands, no extra fingers, no extra limbs, no distorted faces.`;
+  // ── Base Prompt Foundation ─────────────────────────────────────────────────
+  // Default photography language adapted for Cha's private, fictional identity.
+  // Identity reference images will be added separately after a canonical 3D face is approved.
+  const BASE_PROMPT_FOUNDATION = `
+Overall goal: a highly realistic, candid smartphone photograph of a completely fictional person or an ordinary real-world scene. It must look like an unplanned photo taken with the native camera of a recent iPhone, roughly a 26 mm wide-angle equivalent, natural perspective, realistic dynamic range and white balance.
 
-  const CHA_DESCRIPTION = `Cha is a young adult man with dark natural short hair (slightly fluffy, natural bangs), soft clean facial features, gentle eyes, quiet and restrained temperament, slim natural build, simple low-saturation daily clothes such as knitwear, shirt, T-shirt, cardigan, or loose jacket. He feels calm, clean, warm, and real, like someone sharing a private life photo.`;
+Image character: sharp where naturally in focus, with subtle authentic sensor noise, believable lens behavior and small everyday imperfections. Preserve real material texture in skin, hair, fabric, bedding, glass and furniture. Allow a slightly imperfect angle, ordinary clutter and restrained motion blur when physically plausible. Never create the glossy, smooth, over-rendered “AI image” look.
+
+Lighting must follow the supplied local time in Asia/Shanghai. Daytime uses plausible daylight or window light; dawn and dusk use warmer low-angle light and longer shadows; nighttime uses physically motivated lamps, screens, streetlights or other visible artificial sources with natural ambient darkness. Shadow direction, reflections and highlights must agree with the actual light sources.
+
+If a person appears, the person is a fictional adult and must not resemble a celebrity or any identifiable real individual. Keep Cha as one consistent fictional adult East Asian male identity across the series: the same age range, facial structure, hair, build and temperament. Do not randomly invent a different face. Do not make him look underage.
+
+Avoid: anime, manga, illustration, painting, CGI, beauty-camera filters, plastic or waxy skin, excessive smoothing, excessive sharpening, studio posing, commercial portrait composition, glamour photography, cyberpunk, fantasy props, implausibly spotless rooms, incorrect anatomy, extra or missing fingers, warped hands, distorted facial features, wrong reflections, impossible shadows, floating objects, broken perspective, text, gibberish, logos and watermarks.
+`.trim();
+
+  const CHA_DESCRIPTION = `
+Cha is a fictional East Asian man in his mid twenties, never a real person or celebrity. He has a slim natural adult build; a slightly narrow oval adult face with understated bone structure; clean natural brows; dark gentle eyes; a straight nose; softly shaped lips; and dark, naturally fluffy short hair with relaxed bangs. His expression is quiet, restrained and attentive rather than posed or cute. He wears simple, comfortable, low-saturation daily clothes such as knitwear, shirts, T-shirts, cardigans or loose jackets. He should feel like the same calm, clean, warm adult person in every image, sharing a private moment from ordinary life.
+`.trim();
 
   // ── Intent Detection ───────────────────────────────────────────────────────
 
@@ -172,7 +186,7 @@
 
   function getDefaultImageParams() {
     return {
-      size: "1024x1024",
+      size: "1024x1536",
       quality: "standard", // 如果供应商支持 medium 会在 edge function 里映射
       style: "natural"
     };
