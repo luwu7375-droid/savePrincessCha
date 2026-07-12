@@ -28,10 +28,12 @@ function extractTextFromMessageContent(content) {
 
 /** Build a short preview string for a message used in quoteCandidates. */
 function buildQuotePreview(msg) {
-  const text = extractTextFromMessageContent(msg.content);
-  if (msg.image_storage_path || msg.type === "image") {
-    return "[图片] " + (msg.image_description || text).slice(0, 60);
-  }
+  // For image messages, use db_content (which has [图片×N] prefix) if available
+  // Otherwise extract text from vision content array
+  const text = (msg.image_storage_path && msg.db_content)
+    ? msg.db_content
+    : extractTextFromMessageContent(msg.content);
+
   if (msg.type === "voice" || msg.audio_type_explicit === true) {
     return "[语音] " + (msg.audio_transcribed_text || "").slice(0, 60);
   }

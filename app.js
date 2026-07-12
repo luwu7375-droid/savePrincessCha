@@ -802,7 +802,8 @@ async function resolveImagePaths(rows) {
       parts.push({ type: "image_url", image_url: { url, detail: "low" } });
     });
 
-    return { ...r, content: parts };
+    // Preserve original database content for quote preview
+    return { ...r, db_content: r.content, content: parts };
   });
 }
 
