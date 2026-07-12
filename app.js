@@ -1342,7 +1342,7 @@ window.generateChaImage = generateChaImage;
  * @param {Object} params - Image parameters (size, quality, style)
  * @returns {Promise<{success: boolean, image_url?: string, message_id?: string, error?: string}>}
  */
-async function callImageGenerationDirect(prompt, params) {
+async function callImageGenerationDirect(prompt, params, options = {}) {
   if (!supabaseClient) return { success: false, error: '未初始化' };
 
   const conversationId = getActiveConversationId();
@@ -1398,6 +1398,7 @@ async function callImageGenerationDirect(prompt, params) {
           size: params.size,
           quality: params.quality,
           style: params.style,
+          generation_source: options.source === "proactive" ? "proactive" : "explicit",
         }),
       });
 
@@ -1426,6 +1427,109 @@ async function callImageGenerationDirect(prompt, params) {
     console.error('[callImageGenerationDirect] error:', error);
     return { success: false, error: error.message };
   }
+}
+
+// ── Proactive image sharing policy ───────────────────────────────────────────
+// Explicit user requests bypass this policy. It only controls photos Cha chooses
+// to share on his own, and the server repeats the hard checks before billing.
+const PROACTIVE_IMAGE_POLICY = Object.freeze({
+  enabled: true,
+  minAssistantTurns: 10,
+  cooldownMs: 4 * 60 * 60 * 1000,
+  maxPerShanghaiDay: 2,
+  fallbackChance: 0.25,
+});
+
+function getShanghaiDayKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function readProactiveImageState() {
+  try {
+    return JSON.parse(localStorage.getItem("cha_proactive_image_state") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function getAssistantTurnCount() {
+  return chatMessages.filter(message => message.role === "assistant").length;
+}
+
+function recentUserRejectedImages() {
+  return chatMessages
+    .filter(message => message.role === "user")
+    .slice(-8)
+    .some(message => /不(用|要|必)发图|别发图|不要(发|生成|画|拍)|图片功能|生图功能|图片模型.*(失败|坏|不可用)/i
+      .test(extractTextFromMessageContent(message.content)));
+}
+
+function canShareProactiveImage() {
+  if (!PROACTIVE_IMAGE_POLICY.enabled || recentUserRejectedImages()) {
+    return { allowed: false, reason: "disabled_or_rejected" };
+  }
+  const now = Date.now();
+  const dayKey = getShanghaiDayKey();
+  const state = readProactiveImageState();
+  const todayCount = state.dayKey === dayKey ? Number(state.count || 0) : 0;
+  if (todayCount >= PROACTIVE_IMAGE_POLICY.maxPerShanghaiDay) {
+    return { allowed: false, reason: "daily_limit" };
+  }
+  if (state.lastSuccessAt && now - Number(state.lastSuccessAt) < PROACTIVE_IMAGE_POLICY.cooldownMs) {
+    return { allowed: false, reason: "cooldown" };
+  }
+  const assistantTurns = getAssistantTurnCount();
+  if (state.lastAssistantTurn != null &&
+      assistantTurns - Number(state.lastAssistantTurn) < PROACTIVE_IMAGE_POLICY.minAssistantTurns) {
+    return { allowed: false, reason: "turn_interval" };
+  }
+  // New installs/conversations must also build a little context before Cha
+  // spontaneously spends an image-generation request.
+  if (!state.lastSuccessAt && assistantTurns < PROACTIVE_IMAGE_POLICY.minAssistantTurns) {
+    return { allowed: false, reason: "initial_turn_interval" };
+  }
+  return { allowed: true, reason: "eligible" };
+}
+
+function recordProactiveImageSuccess() {
+  const dayKey = getShanghaiDayKey();
+  const oldState = readProactiveImageState();
+  const count = oldState.dayKey === dayKey ? Number(oldState.count || 0) + 1 : 1;
+  localStorage.setItem("cha_proactive_image_state", JSON.stringify({
+    dayKey,
+    count,
+    lastSuccessAt: Date.now(),
+    lastAssistantTurn: getAssistantTurnCount(),
+  }));
+}
+
+function buildFallbackProactiveImageAction(finalReply) {
+  if (Math.random() >= PROACTIVE_IMAGE_POLICY.fallbackChance) return null;
+  const latestUser = [...chatMessages].reverse().find(message => message.role === "user");
+  const latestText = extractTextFromMessageContent(latestUser?.content).trim();
+  // Project/debug/meta conversations are poor moments for an unsolicited,
+  // billable lifestyle image.
+  if (/代码|报错|日志|部署|模型|通道|生图|图片功能|prompt|github|supabase|修复|测试/i.test(latestText)) {
+    return null;
+  }
+  const shanghaiHour = Number(new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    hour12: false,
+  }).format(new Date()));
+  const moment = shanghaiHour < 6 ? "上海时间的深夜" :
+    shanghaiHour < 11 ? "上海时间的早晨" :
+    shanghaiHour < 17 ? "上海时间的白天" :
+    shanghaiHour < 21 ? "上海时间的傍晚" : "上海时间的夜晚";
+  return {
+    route: "slice_of_life",
+    description: `${moment}，Cha 自然地分享此刻正在做的小事。画面要承接刚才聊天的情绪，但不要出现文字、聊天界面或摆拍感。当前回复语气参考：${String(finalReply || "").slice(0, 180)}`,
+  };
 }
 
 /**
@@ -2310,19 +2414,32 @@ async function requestStreamingReply(replyMode = "auto") {
   refreshUserReceipts();
   // Maintain bottom anchor after assistant reply completes
   maintainBottomAnchor("assistant-done");
-  if (assistantImageAction && window.SavePrincessImagePolicy) {
-    const imagePrompt = window.SavePrincessImagePolicy.buildImagePrompt(
-      assistantImageAction.route,
-      assistantImageAction.description,
-    );
-    const imageParams = window.SavePrincessImagePolicy.getDefaultImageParams();
-    callImageGenerationDirect(imagePrompt, imageParams).then(async (result) => {
-      if (result.success) {
-        await reloadHistory();
-      } else {
-        console.warn("[image-action] Generation failed:", result.error);
-      }
-    }).catch(error => console.warn("[image-action] Unexpected failure:", error));
+  if (window.SavePrincessImagePolicy) {
+    const proactiveGate = canShareProactiveImage();
+    const proactiveAction = proactiveGate.allowed
+      ? (assistantImageAction || buildFallbackProactiveImageAction(finalReply))
+      : null;
+    console.info("[image-action] proactive decision:", {
+      modelProposed: !!assistantImageAction,
+      allowed: proactiveGate.allowed,
+      reason: proactiveGate.reason,
+      selected: !!proactiveAction,
+    });
+    if (proactiveAction) {
+      const imagePrompt = window.SavePrincessImagePolicy.buildImagePrompt(
+        proactiveAction.route,
+        proactiveAction.description,
+      );
+      const imageParams = window.SavePrincessImagePolicy.getDefaultImageParams();
+      callImageGenerationDirect(imagePrompt, imageParams, { source: "proactive" }).then(async (result) => {
+        if (result.success) {
+          recordProactiveImageSuccess();
+          await reloadHistory();
+        } else {
+          console.warn("[image-action] Proactive generation failed:", result.error);
+        }
+      }).catch(error => console.warn("[image-action] Unexpected proactive failure:", error));
+    }
   }
   // After stream ends, start short-polling for memory promotion results
   startMemoryPromotionPoller(_currentRequestStartTime, _currentRequestUserMessageId);
