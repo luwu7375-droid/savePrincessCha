@@ -187,6 +187,13 @@ function _renderApiSubpage() {
             ).join('') :
             ''}
         </select>
+        ${roleId === 'imageGeneration' ? `<select class="settings-select" data-role="${roleId}" data-type="fallback-model" ${!hasValidProvider ? 'disabled' : ''}>
+          <option value="">备用模型（可选）</option>
+          ${hasValidProvider && PROVIDER_GROUPS[currentMapping.providerGroup]?.models ?
+            PROVIDER_GROUPS[currentMapping.providerGroup].models.map(m =>
+              `<option value="${m}"${currentMapping?.fallbackModel === m ? ' selected' : ''}>${m}</option>`
+            ).join('') : ''}
+        </select>` : ''}
       </div>`;
   });
 
@@ -965,6 +972,12 @@ function _initSettingsApiSubpage(container) {
           PROVIDER_GROUPS[providerGroup].models.map(m =>
             `<option value="${m}">${m}</option>`
           ).join('');
+        const fallbackSelect = container.querySelector(`select[data-type="fallback-model"][data-role="${role}"]`);
+        if (fallbackSelect) {
+          fallbackSelect.disabled = false;
+          fallbackSelect.innerHTML = '<option value="">备用模型（可选）</option>' +
+            PROVIDER_GROUPS[providerGroup].models.map(m => `<option value="${m}">${m}</option>`).join('');
+        }
       } else {
         // Disable model select
         modelSelect.disabled = true;
@@ -986,9 +999,11 @@ function _initSettingsApiSubpage(container) {
         const providerGroup = providerSelect.value;
         const modelSelect = container.querySelector(`select[data-type="model"][data-role="${role}"]`);
         const model = modelSelect ? modelSelect.value : '';
+        const fallbackSelect = container.querySelector(`select[data-type="fallback-model"][data-role="${role}"]`);
+        const fallbackModel = fallbackSelect ? fallbackSelect.value : '';
 
         if (providerGroup && model) {
-          newMapping[role] = { providerGroup, model };
+          newMapping[role] = { providerGroup, model, ...(fallbackModel && fallbackModel !== model ? { fallbackModel } : {}) };
           hasChanges = true;
         }
       });
@@ -1055,17 +1070,31 @@ function _initSettingsApiSubpage(container) {
           throw new Error('通道配置不完整（缺少 endpoint 或 apiKey）');
         }
 
-        // Proxy through edge function to avoid CORS
+        // Image roles must be tested through the real image endpoint. A chat
+        // completion test can pass even when /images/generations has no channel.
         const supabaseUrl = window.supabaseClient?.supabaseUrl || 'https://zbpbkyzisamleqspijnr.supabase.co';
-        const proxyUrl = `${supabaseUrl}/functions/v1/chat-test`;
+        const proxyUrl = roleId === 'imageGeneration'
+          ? `${supabaseUrl}/functions/v1/image-generation`
+          : `${supabaseUrl}/functions/v1/chat-test`;
+        const session = roleId === 'imageGeneration'
+          ? (await window.supabaseClient.auth.getSession()).data.session
+          : null;
 
         const response = await fetch(proxyUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            endpoint: providerData.endpoint,
-            apiKey: providerData.apiKey,
-            model: config.model
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
+          },
+          body: JSON.stringify(roleId === 'imageGeneration' ? {
+            prompt: 'a simple small red circle on white background',
+            conversation_id: typeof getActiveConversationId === 'function' ? getActiveConversationId() : 'model-test',
+            provider_config: { endpoint: providerData.endpoint, api_key: providerData.apiKey, model: config.model },
+            size: '1024x1024',
+            quality: 'standard',
+            test_only: true
+          } : {
+            endpoint: providerData.endpoint, apiKey: providerData.apiKey, model: config.model
           })
         });
 
@@ -1079,7 +1108,8 @@ function _initSettingsApiSubpage(container) {
           throw new Error(result.error);
         }
 
-        if (result.status && result.status >= 200 && result.status < 300) {
+        if ((roleId === 'imageGeneration' && result.success) ||
+            (result.status && result.status >= 200 && result.status < 300)) {
           btn.textContent = '✅ 通过';
           btn.style.color = '#66bb6a';
           if (typeof showToast === 'function') {
@@ -1176,22 +1206,35 @@ function _initSettingsApiSubpage(container) {
               throw new Error('通道配置不完整（缺少 endpoint 或 apiKey）');
             }
 
-            // Proxy through edge function to avoid CORS
+            // Image availability must be checked against the real image route.
             const supabaseUrl = window.supabaseClient?.supabaseUrl || 'https://zbpbkyzisamleqspijnr.supabase.co';
-            const proxyUrl = `${supabaseUrl}/functions/v1/chat-test`;
+            const isImageRole = roleId === 'imageGeneration';
+            const proxyUrl = isImageRole
+              ? `${supabaseUrl}/functions/v1/image-generation`
+              : `${supabaseUrl}/functions/v1/chat-test`;
+            const session = isImageRole
+              ? (await window.supabaseClient.auth.getSession()).data.session
+              : null;
 
             const response = await fetch(proxyUrl, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                endpoint: providerData.endpoint,
-                apiKey: providerData.apiKey,
-                model: config.model
+              headers: {
+                'Content-Type': 'application/json',
+                ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
+              },
+              body: JSON.stringify(isImageRole ? {
+                prompt: 'a simple small red circle on white background',
+                conversation_id: typeof getActiveConversationId === 'function' ? getActiveConversationId() : 'model-test',
+                provider_config: { endpoint: providerData.endpoint, api_key: providerData.apiKey, model: config.model },
+                size: '1024x1024', quality: 'standard', test_only: true
+              } : {
+                endpoint: providerData.endpoint, apiKey: providerData.apiKey, model: config.model
               })
             });
 
             if (!response.ok) {
-              throw new Error(`代理请求失败 (${response.status})`);
+              const errorBody = await response.json().catch(() => null);
+              throw new Error(errorBody?.details || errorBody?.error || `代理请求失败 (${response.status})`);
             }
 
             const result = await response.json();
@@ -1200,7 +1243,8 @@ function _initSettingsApiSubpage(container) {
               throw new Error(result.error);
             }
 
-            if (result.status && result.status >= 200 && result.status < 300) {
+            if ((isImageRole && result.success) ||
+                (result.status && result.status >= 200 && result.status < 300)) {
               statusIcon = '✅';
               statusText = '测试通过';
               statusColor = '#4CAF50';

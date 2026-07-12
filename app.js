@@ -1306,36 +1306,18 @@ async function generateChaImage(prompt, options = {}) {
       return null;
     }
 
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/image-generation`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        prompt: prompt.trim(),
-        conversation_id: conversationId,
-        provider_config: {
-          endpoint: provider.endpoint,
-          api_key: provider.apiKey,
-          model: imageGenConfig.model,
-        },
-        size: options.size || "1024x1024",
-        quality: options.quality || "standard",
-        style: options.style,
-      }),
+    const result = await callImageGenerationDirect(prompt.trim(), {
+      size: options.size || "1024x1024",
+      quality: options.quality || "standard",
+      style: options.style,
     });
-
     removeTypingIndicator();
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: "生成失败" }));
-      console.error("Image generation failed:", error);
-      showToast(`图片生成失败：${error.error || error.details || "未知错误"}`);
+    if (!result.success) {
+      console.error("Image generation failed:", result.error);
+      showToast(`图片生成失败：${result.error || "未知错误"}`);
       return null;
     }
-
-    const result = await response.json();
     console.log("Image generated:", result);
 
     // Reload messages to show the new image
@@ -1399,43 +1381,46 @@ async function callImageGenerationDirect(prompt, params) {
       return { success: false, error: '用户未登录' };
     }
 
-    const response = await fetch(`${supabaseUrl}/functions/v1/image-generation`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({
-        prompt: prompt,
-        conversation_id: conversationId,
-        provider_config: {
-          endpoint: provider.endpoint,
-          api_key: provider.apiKey,
-          model: imageGenConfig.model,
+    const candidates = [...new Set([imageGenConfig.model, imageGenConfig.fallbackModel].filter(Boolean))];
+    let lastError = '生成失败';
+    for (let i = 0; i < candidates.length; i++) {
+      const model = candidates[i];
+      const response = await fetch(`${supabaseUrl}/functions/v1/image-generation`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
         },
-        size: params.size,
-        quality: params.quality,
-        style: params.style,
-      }),
-    });
+        body: JSON.stringify({
+          prompt,
+          conversation_id: conversationId,
+          provider_config: { endpoint: provider.endpoint, api_key: provider.apiKey, model },
+          size: params.size,
+          quality: params.quality,
+          style: params.style,
+        }),
+      });
 
-    if (!response.ok) {
+      if (response.ok) {
+        const result = await response.json();
+        if (i > 0) console.info('[image-generation] fallback model used:', model);
+        return { success: true, image_url: result.image_url, message_id: result.message_id, model };
+      }
+
       const errorText = await response.text();
       console.error('[callImageGenerationDirect] HTTP error:', response.status, errorText);
       try {
         const error = JSON.parse(errorText);
-        return { success: false, error: error.error || error.details || errorText };
+        const rawError = error.details || error.error || errorText;
+        lastError = typeof rawError === 'string' ? rawError : JSON.stringify(rawError);
       } catch {
-        return { success: false, error: errorText || "生成失败" };
+        lastError = errorText || "生成失败";
       }
+      const retryable = response.status === 429 || response.status >= 500 ||
+        /model_not_found|no available channel|渠道|通道/i.test(lastError);
+      if (!retryable) break;
     }
-
-    const result = await response.json();
-    return {
-      success: true,
-      image_url: result.image_url,
-      message_id: result.message_id
-    };
+    return { success: false, error: lastError };
 
   } catch (error) {
     console.error('[callImageGenerationDirect] error:', error);

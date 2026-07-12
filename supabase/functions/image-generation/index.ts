@@ -21,6 +21,7 @@ interface ImageGenerationRequest {
   size?: string;
   quality?: string;
   style?: string;
+  test_only?: boolean;
 }
 
 Deno.serve(async (req: Request) => {
@@ -216,6 +217,18 @@ Deno.serve(async (req: Request) => {
         response: result
       }), {
         status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Availability probe used by Settings. It performs the real image request
+    // but deliberately does not create a message or persist the test asset.
+    if (body.test_only) {
+      return new Response(JSON.stringify({
+        success: true,
+        available: true,
+        model: provider_config.model,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
