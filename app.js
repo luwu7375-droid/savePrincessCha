@@ -2139,8 +2139,26 @@ async function requestStreamingReply(replyMode = "auto") {
   console.log("[VT-debug] fullReply contains <visible_thought>:", fullReply.includes("<visible_thought>"));
   console.log("[VT-debug] fullReply contains <reply>:", fullReply.includes("<reply>"));
 
+  function parseAssistantImageAction(text) {
+    const match = text.match(/<image_action>\s*([\s\S]*?)\s*<\/image_action>/i);
+    if (!match) return { cleanText: text, action: null };
+    let action = null;
+    try {
+      const parsed = JSON.parse(match[1]);
+      const validRoutes = new Set(["portrait", "slice_of_life", "together", "mood"]);
+      if (validRoutes.has(parsed?.route) && typeof parsed?.description === "string" && parsed.description.trim()) {
+        action = { route: parsed.route, description: parsed.description.trim().slice(0, 1200) };
+      }
+    } catch (error) {
+      console.warn("[image-action] Invalid model action:", error);
+    }
+    return { cleanText: text.replace(match[0], "").trim(), action };
+  }
+
+  const { cleanText: replyWithoutImageAction, action: assistantImageAction } = parseAssistantImageAction(fullReply);
+
   // Parse assistant proactive quote FIRST (before visible thought parsing loses it)
-  const { cleanText: replyWithoutQuote, replyTo: assistantReplyTo } = parseAssistantReplyTo(fullReply);
+  const { cleanText: replyWithoutQuote, replyTo: assistantReplyTo } = parseAssistantReplyTo(replyWithoutImageAction);
   console.log("[VT-debug] replyWithoutQuote (first 500):", replyWithoutQuote.slice(0, 500));
 
   const { bubbles: thoughtBubbles, reply: cleanReply, thought } = parseVisibleThought(replyWithoutQuote);
@@ -2292,6 +2310,20 @@ async function requestStreamingReply(replyMode = "auto") {
   refreshUserReceipts();
   // Maintain bottom anchor after assistant reply completes
   maintainBottomAnchor("assistant-done");
+  if (assistantImageAction && window.SavePrincessImagePolicy) {
+    const imagePrompt = window.SavePrincessImagePolicy.buildImagePrompt(
+      assistantImageAction.route,
+      assistantImageAction.description,
+    );
+    const imageParams = window.SavePrincessImagePolicy.getDefaultImageParams();
+    callImageGenerationDirect(imagePrompt, imageParams).then(async (result) => {
+      if (result.success) {
+        await reloadHistory();
+      } else {
+        console.warn("[image-action] Generation failed:", result.error);
+      }
+    }).catch(error => console.warn("[image-action] Unexpected failure:", error));
+  }
   // After stream ends, start short-polling for memory promotion results
   startMemoryPromotionPoller(_currentRequestStartTime, _currentRequestUserMessageId);
 }
