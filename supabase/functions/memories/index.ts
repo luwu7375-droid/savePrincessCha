@@ -64,6 +64,33 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("DB_URL");
   const serviceKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
 
+  // ── episodes: narrative episodes (城南旧事) ──────────────────────────────
+  if (type === "episodes" && req.method === "GET") {
+    if (!supabaseUrl || !serviceKey) return json({ error: "DB not configured" }, 500);
+
+    const dbHeaders = {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    };
+
+    const userId = url.searchParams.get("userId");
+    if (!userId) return json({ error: "userId required" }, 400);
+
+    const limit = parseInt(url.searchParams.get("limit") || "10", 10);
+
+    // Fetch narrative episodes
+    const episodesUrl = `${supabaseUrl}/rest/v1/narrative_episodes?select=*&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=${limit}`;
+    const episodesRes = await fetch(episodesUrl, { headers: dbHeaders });
+
+    if (!episodesRes.ok) {
+      return json({ error: "Failed to fetch episodes", status: episodesRes.status }, 500);
+    }
+
+    const episodes = await episodesRes.json();
+    return json({ source: "episodes", episodes });
+  }
+
   // ── recent updates: read-only, no admin token required ───────────────────
   if (type === "recent" && req.method === "GET") {
     if (!supabaseUrl || !serviceKey) return json({ error: "DB not configured" }, 500);

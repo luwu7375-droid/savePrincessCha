@@ -1,0 +1,257 @@
+/* ── memory-episodes.css ────────────────────────────────────────────────────
+ *
+ * Styles for Memory Episodes (城南旧事) UI
+ */
+
+/* Episodes container */
+.memory-episodes-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.episodes-loading,
+.no-episodes {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary, #666);
+  font-size: 14px;
+}
+
+/* Episode card */
+.memory-episode-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  transition: box-shadow 0.2s ease;
+}
+
+.memory-episode-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Episode header */
+.episode-header {
+  margin-bottom: 16px;
+}
+
+.episode-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.episode-type {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.episode-type-fact {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.episode-type-preference {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.episode-type-relationship_event {
+  background: #fce4ec;
+  color: #c2185b;
+}
+
+.episode-type-unfinished_thread {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.episode-type-shared_experience {
+  background: #e8f5e9;
+  color: #388e3c;
+}
+
+.episode-type-cha_reflection {
+  background: #fff9c4;
+  color: #f57f17;
+}
+
+.episode-date {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.episode-favorited {
+  color: #ffc107;
+  font-size: 16px;
+}
+
+.episode-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text, #333);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Episode content */
+.episode-content {
+  margin-bottom: 16px;
+}
+
+.episode-narrative {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text, #333);
+  white-space: pre-wrap;
+  margin: 0 0 12px 0;
+}
+
+.episode-feeling {
+  background: #f5f5f5;
+  border-left: 3px solid #ff6b9d;
+  padding: 12px;
+  margin: 12px 0;
+  border-radius: 4px;
+}
+
+.episode-feeling strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #ff6b9d;
+  font-size: 13px;
+}
+
+.episode-feeling p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text, #333);
+}
+
+.episode-themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.episode-theme {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #f0f0f0;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+/* Episode footer */
+.episode-footer {
+  border-top: 1px solid var(--border, #e0e0e0);
+  padding-top: 12px;
+}
+
+.episode-expand-btn {
+  background: transparent;
+  border: none;
+  color: var(--primary, #1976d2);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.episode-expand-btn:hover {
+  color: var(--primary-hover, #1565c0);
+}
+
+.episode-sources {
+  margin-top: 12px;
+}
+
+.sources-loading,
+.no-sources,
+.sources-error {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  padding: 8px 0;
+}
+
+.sources-error {
+  color: #d32f2f;
+}
+
+.sources-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #666);
+  margin-bottom: 8px;
+}
+
+.sources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.source-message {
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.source-user {
+  border-left: 3px solid #4caf50;
+}
+
+.source-assistant {
+  border-left: 3px solid #ff6b9d;
+}
+
+.source-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.source-role {
+  font-weight: 600;
+  color: var(--text, #333);
+}
+
+.source-time {
+  color: var(--text-secondary, #999);
+}
+
+.source-content {
+  line-height: 1.5;
+  color: var(--text, #333);
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+  .memory-episodes-container {
+    padding: 12px;
+  }
+
+  .memory-episode-card {
+    padding: 16px;
+  }
+
+  .episode-title {
+    font-size: 16px;
+  }
+
+  .episode-meta {
+    flex-wrap: wrap;
+  }
+}
