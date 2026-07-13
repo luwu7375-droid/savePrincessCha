@@ -798,6 +798,10 @@
             <span class="app-icon">📹</span>
             <span class="app-label">视频通话</span>
           </button>
+          <button type="button" class="phone-app-icon" data-app="games">
+            <span class="app-icon">🎮</span>
+            <span class="app-label">游戏中心</span>
+          </button>
         </div>
         <div class="phone-dock">
           <button type="button" class="phone-dock-icon" data-action="search">
@@ -945,6 +949,45 @@
               <span class="video-call-icon">📹</span>
               <span class="video-call-label">开始</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Game Center -->
+      <div id="phoneGamesScreen" class="phone-screen hidden" data-screen="games">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">游戏中心</span>
+        </div>
+        <div class="phone-game-center-content">
+          <div id="phoneGameCenterLoading" class="phone-game-center-loading">加载中…</div>
+          <div id="phoneGameCenterEmpty" class="phone-game-center-empty hidden">
+            <div class="game-center-empty-icon">🎮</div>
+            <div class="game-center-empty-text">没有正在进行的游戏</div>
+          </div>
+          <div id="phoneGameCenterActive" class="phone-game-center-active hidden">
+            <div class="game-center-header">
+              <h3 id="phoneGameName">游戏名称</h3>
+              <span id="phoneGameStatus" class="game-status-badge">进行中</span>
+            </div>
+            <div class="game-center-stats">
+              <div class="game-stat">
+                <span class="game-stat-label">开始时间</span>
+                <span id="phoneGameStarted" class="game-stat-value">--</span>
+              </div>
+              <div class="game-stat">
+                <span class="game-stat-label">进行步数</span>
+                <span id="phoneGameActions" class="game-stat-value">0</span>
+              </div>
+            </div>
+            <div class="game-center-state">
+              <h4>当前状态</h4>
+              <div id="phoneGameStateText" class="game-state-text">--</div>
+            </div>
+            <div class="game-center-history">
+              <h4>最近动作</h4>
+              <div id="phoneGameHistory" class="game-history-list"></div>
+            </div>
           </div>
         </div>
       </div>

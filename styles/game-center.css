@@ -273,3 +273,153 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Phone Game Center Styles */
+
+.phone-game-center-content {
+  padding: 16px;
+  overflow-y: auto;
+  height: calc(100% - 60px);
+}
+
+.phone-game-center-loading,
+.phone-game-center-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-secondary, #666);
+}
+
+.game-center-empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.game-center-empty-text {
+  font-size: 14px;
+}
+
+.phone-game-center-active {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.phone-game-center-active .game-center-header {
+  border: none;
+  padding: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.phone-game-center-active .game-center-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.game-status-badge {
+  background: rgba(147, 112, 219, 0.1);
+  color: #9370db;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.game-center-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.game-stat {
+  background: var(--bg-card, #f8f8f8);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.game-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.game-stat-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #000);
+}
+
+.game-center-state {
+  background: var(--bg-card, #f8f8f8);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.game-center-state h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #000);
+}
+
+.game-state-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary, #666);
+  white-space: pre-wrap;
+}
+
+.game-center-history {
+  background: var(--bg-card, #f8f8f8);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.game-center-history h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #000);
+}
+
+.game-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.game-history-item {
+  background: var(--bg-surface, #fff);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.game-history-action {
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: var(--text-primary, #000);
+}
+
+.game-history-result {
+  color: var(--text-secondary, #666);
+  line-height: 1.4;
+}
+
+.game-history-time {
+  font-size: 10px;
+  color: var(--text-tertiary, #999);
+  margin-top: 4px;
+}

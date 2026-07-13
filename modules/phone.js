@@ -79,6 +79,11 @@
       }
     });
     currentScreen = screenName;
+
+    // Load data when entering specific screens
+    if (screenName === "games") {
+      loadGameCenterData();
+    }
   }
 
   function navigateToScreen(screenName) {
@@ -315,6 +320,144 @@
       notificationClose.addEventListener("click", () => {
         notificationPanel.classList.add("hidden");
       });
+    }
+  }
+
+  // ── Game Center Integration ───────────────────────────────────────────────
+
+  async function loadGameCenterData() {
+    const loadingEl = el("phoneGameCenterLoading");
+    const emptyEl = el("phoneGameCenterEmpty");
+    const activeEl = el("phoneGameCenterActive");
+
+    // Show loading state
+    if (loadingEl) loadingEl.classList.remove("hidden");
+    if (emptyEl) emptyEl.classList.add("hidden");
+    if (activeEl) activeEl.classList.add("hidden");
+
+    try {
+      const sc = window.supabaseClient;
+      const userId = getCurrentUserId();
+      if (!sc || !userId) {
+        showGameCenterEmpty();
+        return;
+      }
+
+      // Query active game session
+      const { data: sessions, error } = await sc
+        .from("game_sessions")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .order("started_at", { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error("[phone-game-center] Query error:", error);
+        showGameCenterEmpty();
+        return;
+      }
+
+      if (!sessions || sessions.length === 0) {
+        showGameCenterEmpty();
+        return;
+      }
+
+      // Display active session
+      displayActiveGameSession(sessions[0]);
+    } catch (err) {
+      console.error("[phone-game-center] Load error:", err);
+      showGameCenterEmpty();
+    } finally {
+      if (loadingEl) loadingEl.classList.add("hidden");
+    }
+  }
+
+  function showGameCenterEmpty() {
+    const loadingEl = el("phoneGameCenterLoading");
+    const emptyEl = el("phoneGameCenterEmpty");
+    const activeEl = el("phoneGameCenterActive");
+
+    if (loadingEl) loadingEl.classList.add("hidden");
+    if (emptyEl) emptyEl.classList.remove("hidden");
+    if (activeEl) activeEl.classList.add("hidden");
+  }
+
+  function displayActiveGameSession(session) {
+    const emptyEl = el("phoneGameCenterEmpty");
+    const activeEl = el("phoneGameCenterActive");
+
+    if (emptyEl) emptyEl.classList.add("hidden");
+    if (activeEl) activeEl.classList.remove("hidden");
+
+    // Update game name
+    const gameNameEl = el("phoneGameName");
+    if (gameNameEl) {
+      gameNameEl.textContent = session.game_display_name || session.game_name;
+    }
+
+    // Update status badge
+    const statusEl = el("phoneGameStatus");
+    if (statusEl) {
+      statusEl.textContent = session.status === "active" ? "进行中" : "已暂停";
+    }
+
+    // Update started time
+    const startedEl = el("phoneGameStarted");
+    if (startedEl) {
+      const startTime = new Date(session.started_at);
+      const now = new Date();
+      const diffMin = Math.floor((now - startTime) / 60000);
+      if (diffMin < 60) {
+        startedEl.textContent = `${diffMin} 分钟前`;
+      } else if (diffMin < 1440) {
+        startedEl.textContent = `${Math.floor(diffMin / 60)} 小时前`;
+      } else {
+        startedEl.textContent = startTime.toLocaleDateString();
+      }
+    }
+
+    // Update action count
+    const actionsEl = el("phoneGameActions");
+    if (actionsEl) {
+      actionsEl.textContent = String(session.action_count || 0);
+    }
+
+    // Update game state
+    const stateTextEl = el("phoneGameStateText");
+    if (stateTextEl) {
+      const state = session.current_state || {};
+      if (state.lastResponse) {
+        stateTextEl.textContent = state.lastResponse;
+      } else if (state.description) {
+        stateTextEl.textContent = state.description;
+      } else {
+        stateTextEl.textContent = "游戏进行中...";
+      }
+    }
+
+    // Update action history
+    const historyEl = el("phoneGameHistory");
+    if (historyEl) {
+      const actions = Array.isArray(session.action_history) ? session.action_history : [];
+      const recentActions = actions.slice(-5).reverse(); // Last 5 actions
+
+      if (recentActions.length === 0) {
+        historyEl.innerHTML = '<div style="color: var(--text-secondary); font-size: 12px;">暂无动作记录</div>';
+      } else {
+        historyEl.innerHTML = recentActions.map(action => {
+          const actionTime = new Date(action.timestamp || action.created_at);
+          const timeStr = actionTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+          return `
+            <div class="game-history-item">
+              <div class="game-history-action">${escapeHtml(action.action || "未知动作")}</div>
+              ${action.result?.text ? `<div class="game-history-result">${escapeHtml(action.result.text.slice(0, 100))}${action.result.text.length > 100 ? '...' : ''}</div>` : ''}
+              <div class="game-history-time">${timeStr}</div>
+            </div>
+          `;
+        }).join('');
+      }
     }
   }
 
