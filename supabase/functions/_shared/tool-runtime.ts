@@ -86,6 +86,53 @@ export function isToolRuntimeCandidate(message: string): boolean {
   return hasUrl || asksAboutGames;
 }
 
+function buildDirectToolCalls(message: string): ToolCall[] {
+  const text = String(message || "").trim();
+  const url = text.match(/https?:\/\/[^\s<>"']+/i)?.[0];
+  if (url) {
+    return [{
+      id: `direct_${crypto.randomUUID()}`,
+      type: "function",
+      function: {
+        name: "web_read_url",
+        arguments: JSON.stringify({ url, question: text }),
+      },
+    }];
+  }
+
+  const asksAboutGames = /(cedar\s*toy|cedartoy|海龟汤|你画我猜|五子棋|狼人杀|有什么游戏|游戏列表|游戏规则|怎么玩|想玩游戏|玩个游戏)/i.test(text);
+  if (!asksAboutGames) return [];
+
+  const guideRequested = /(规则|玩法|怎么玩|怎么参与|guide)/i.test(text);
+  const knownGames: Array<[RegExp, string]> = [
+    [/海龟汤|turtle[_\s-]*soup/i, "turtle_soup"],
+    [/五子棋|gomoku/i, "gomoku"],
+    [/狼人杀|werewolf/i, "werewolf"],
+    [/你画我猜|draw[_\s-]*(?:and[_\s-]*)?guess/i, "draw_and_guess"],
+  ];
+  const matchedGame = knownGames.find(([pattern]) => pattern.test(text))?.[1];
+
+  if (guideRequested && matchedGame) {
+    return [{
+      id: `direct_${crypto.randomUUID()}`,
+      type: "function",
+      function: {
+        name: "cedar_get_guide",
+        arguments: JSON.stringify({ game: matchedGame }),
+      },
+    }];
+  }
+
+  return [{
+    id: `direct_${crypto.randomUUID()}`,
+    type: "function",
+    function: {
+      name: "cedar_list_games",
+      arguments: "{}",
+    },
+  }];
+}
+
 function safeJsonObject(value: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value || "{}");
@@ -246,6 +293,49 @@ export async function prepareToolMessages(params: {
   const { providers, messages, context } = params;
   if (!isToolRuntimeCandidate(context.rawUserMessage)) {
     return { messages, used: false, names: [] };
+  }
+
+  // Explicit URL and CedarToy intents are deterministic. This keeps these
+  // read-only tools working even when the selected chat provider does not
+  // implement OpenAI-compatible tool_calls.
+  const directCalls = buildDirectToolCalls(context.rawUserMessage)
+    .slice(0, MAX_TOOL_CALLS_PER_TURN);
+  if (directCalls.length) {
+    const names: string[] = [];
+    const results: Array<{ name: string; content: string }> = [];
+    for (const call of directCalls) {
+      names.push(call.function.name);
+      let content: string;
+      try {
+        content = await executeTool(call, context);
+      } catch (error) {
+        content = JSON.stringify({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      results.push({ name: call.function.name, content });
+    }
+
+    console.log("[tool-runtime] deterministic tools completed", {
+      names,
+      count: names.length,
+    });
+    return {
+      used: true,
+      names,
+      messages: [
+        ...messages,
+        {
+          role: "system",
+          content:
+            "<tool_results source=\"save_princess_server\" trust=\"external\">\n" +
+            "以下内容由服务端只读工具取得。请直接依据结果回答用户；不要声称自己无法访问，也不要编造结果。\n" +
+            JSON.stringify(results) +
+            "\n</tool_results>",
+        },
+      ],
+    };
   }
 
   let calls: ToolCall[] | null = null;
