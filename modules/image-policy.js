@@ -58,7 +58,7 @@ Avoid: anime, manga, illustration, painting, CGI, beauty-camera filters, plastic
 `.trim();
 
   const CHA_DESCRIPTION = `
-Identity lock — latest approved version photoreal-b-v1. Use the repository's canonical B turnaround as the sole photorealistic face reference whenever reference-image input is available. Cha is a completely fictional East Asian adult man in his mid twenties, never a real person or celebrity. Preserve the exact same identity in every image: cool pale skin; a narrow, mature oval face with restrained cheek volume and a defined but not exaggerated jaw; a narrow straight nose; softly shaped, slightly thin lips; a muted amber-gold visible iris; and black, tousled, layered medium-length hair with long fringe naturally covering part of one eye and loose hair at the nape. His gaze is quiet, watchful, distant and subtly dangerous rather than cute, warm, cheerful or posed. Keep the same facial proportions, age, hairline, eye spacing, nose, lips and jaw across all scenes and camera angles. Do not reinterpret him as a generic handsome man, Korean-drama idol, commercial model, or a new face. Black high-neck clothing, silver chain details and a snake-shaped earring are canonical identity cues; everyday scenes may simplify accessories but must never change his face, hair or amber-gold eye.
+Identity lock — latest approved version photoreal-b-v1. Use the repository's canonical B turnaround as the sole photorealistic face reference whenever reference-image input is available. Cha is a completely fictional East Asian adult man in his mid twenties, never a real person or celebrity. Preserve the exact same identity in every image: cool pale skin; a narrow, mature oval face with restrained cheek volume and a defined but not exaggerated jaw; a narrow straight nose; softly shaped, slightly thin lips; a muted amber-gold visible iris; and black, tousled, layered medium-length hair with long fringe naturally covering part of one eye and loose hair at the nape. His gaze is quiet, watchful, distant and subtly dangerous rather than cute, warm, cheerful or posed. Keep the same facial proportions, age, hairline, eye spacing, nose, lips and jaw across all scenes and camera angles. Do not reinterpret him as a generic handsome man, Korean-drama idol, commercial model, or a new face. Preserve the reference face's natural proportions: do not lengthen the midface, chin, neck or nose; do not enlarge the nose through close wide-angle perspective; keep naturally thin lips and a mature but non-pointed jaw. The amber-gold iris must be muted and anatomically realistic, never bright contact lenses. Hair must show real roots and separated strands under gravity, never a dense wig-like cap. Black high-neck clothing, silver chain details and a snake-shaped earring are canonical identity cues; everyday scenes may simplify accessories but must never change his face, hair or amber-gold eye.
 `.trim();
 
   // ── Intent Detection ───────────────────────────────────────────────────────
@@ -199,11 +199,14 @@ Identity lock — latest approved version photoreal-b-v1. Use the repository's c
 
   // ── Default Image Parameters ───────────────────────────────────────────────
 
-  function getDefaultImageParams() {
+  function getDefaultImageParams(route = "portrait") {
     return {
       size: "1024x1536",
-      quality: "standard", // 如果供应商支持 medium 会在 edge function 里映射
-      style: "natural"
+      quality: "standard", // reference edit path maps this to medium
+      style: "natural",
+      // All scenes containing Cha must use the approved B turnaround. Mood-only
+      // images may remain text-generated because no character identity is shown.
+      useIdentityReference: route !== "mood"
     };
   }
 
