@@ -1,8 +1,9 @@
-// Game Proxy Edge Function - MCP Client for CedarToy
-// Handles all communication with https://toy.cedarstar.org/
-// Provides: list_games, get_guide, play, account operations
+// Game Proxy Edge Function - Proper MCP Client for CedarToy
+// Uses Model Context Protocol SDK to communicate with https://toy.cedarstar.org/
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { Client } from "https://esm.sh/@modelcontextprotocol/sdk@1.0.4/client/index.js";
+import { SSEClientTransport } from "https://esm.sh/@modelcontextprotocol/sdk@1.0.4/client/sse.js";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const CEDARTOY_BASE = "https://toy.cedarstar.org";
@@ -56,44 +57,56 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get or create MCP token for this user
-    const mcpToken = await getOrCreateMCPToken(userId, supabaseClient);
+    // Connect to CedarToy MCP server
+    const mcpClient = await connectToCedarToy(userId, supabaseClient);
 
     // Route to appropriate action
     let result;
-    switch (action) {
-      case "list_games":
-        result = await listGames(mcpToken);
-        break;
-      case "get_guide":
-        if (!game) {
+    try {
+      switch (action) {
+        case "list_games":
+          result = await mcpClient.callTool("list_games", {});
+          break;
+        case "get_guide":
+          if (!game) {
+            return new Response(
+              JSON.stringify({ error: "game parameter required for get_guide" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          result = await mcpClient.callTool("get_guide", { game });
+          break;
+        case "play":
+          if (!game || !gameAction) {
+            return new Response(
+              JSON.stringify({ error: "game and gameAction parameters required for play" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          const playParams: Record<string, unknown> = {
+            game,
+            action: gameAction,
+          };
+          if (actionParams) {
+            playParams.params = actionParams;
+          }
+          if (slotId !== undefined) {
+            playParams.slot_id = slotId;
+          }
+          result = await mcpClient.callTool("play", playParams);
+          break;
+        case "account":
+          result = await mcpClient.callTool("account", {});
+          break;
+        default:
           return new Response(
-            JSON.stringify({ error: "game parameter required for get_guide" }),
+            JSON.stringify({ error: `Unknown action: ${action}` }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
-        }
-        result = await getGuide(mcpToken, game);
-        break;
-      case "play":
-        if (!game || !gameAction) {
-          return new Response(
-            JSON.stringify({ error: "game and gameAction parameters required for play" }),
-            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-        result = await playGame(mcpToken, game, gameAction, actionParams, slotId);
-        break;
-      case "account":
-        result = await getAccount(mcpToken);
-        break;
-      case "register":
-        result = await registerAccount(mcpToken);
-        break;
-      default:
-        return new Response(
-          JSON.stringify({ error: `Unknown action: ${action}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+      }
+    } finally {
+      // Close MCP connection
+      await mcpClient.close();
     }
 
     return new Response(
@@ -133,146 +146,60 @@ function checkRateLimit(userId: string): string | null {
 }
 
 /**
- * Get or create MCP token for user
- * Stores token in app_settings for simplicity (single-user app)
+ * Connect to CedarToy MCP server using SSE transport
  */
-async function getOrCreateMCPToken(
+async function connectToCedarToy(
   userId: string,
   supabaseClient: ReturnType<typeof createClient>,
-): Promise<string> {
-  // For now, generate a new token each time (stateless)
-  // In production, you'd want to store this in a user_settings table
-  const newToken = await registerNewToken();
-  return newToken;
+): Promise<Client> {
+  // Get or create account credentials
+  const credentials = await getOrCreateCredentials(userId, supabaseClient);
+
+  // Create SSE transport to CedarToy
+  const transport = new SSEClientTransport(
+    new URL(`${CEDARTOY_BASE}/sse`),
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      // If CedarToy requires auth, add it here
+      ...(credentials.token && {
+        Authorization: `Bearer ${credentials.token}`,
+      }),
+    },
+  );
+
+  // Create MCP client
+  const client = new Client(
+    {
+      name: "savePrincessCha",
+      version: "1.0.0",
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    },
+  );
+
+  // Connect
+  await client.connect(transport);
+
+  return client;
 }
 
 /**
- * Register new account with CedarToy and get token
+ * Get or create CedarToy credentials for user
+ * Stores in a simple JSONB field in app_settings for MVP
  */
-async function registerNewToken(): Promise<string> {
-  const response = await fetch(`${CEDARTOY_BASE}/api/register`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+async function getOrCreateCredentials(
+  userId: string,
+  supabaseClient: ReturnType<typeof createClient>,
+): Promise<{ username: string; password: string; token?: string }> {
+  // For MVP: Use hardcoded credentials from environment or user-provided
+  // In production, each user would have their own CedarToy account
+  const username = Deno.env.get("CEDARTOY_USERNAME") ?? "KK_";
+  const password = Deno.env.get("CEDARTOY_PASSWORD") ?? "1234wmc";
 
-  if (!response.ok) {
-    throw new Error(`Failed to register with CedarToy: ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data.token as string;
-}
-
-/**
- * List all available games
- */
-async function listGames(token: string): Promise<unknown> {
-  const response = await fetch(`${CEDARTOY_BASE}/api/${token}/list_games`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({}),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to list games: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-/**
- * Get game guide
- */
-async function getGuide(token: string, game: string): Promise<unknown> {
-  const response = await fetch(`${CEDARTOY_BASE}/api/${token}/get_guide`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ game }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to get guide: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-/**
- * Play game action
- */
-async function playGame(
-  token: string,
-  game: string,
-  action: string,
-  params?: Record<string, unknown>,
-  slotId?: number,
-): Promise<unknown> {
-  const body: Record<string, unknown> = {
-    game,
-    action,
-  };
-
-  if (params) {
-    body.params = params;
-  }
-
-  if (slotId !== undefined) {
-    body.slot_id = slotId;
-  }
-
-  const response = await fetch(`${CEDARTOY_BASE}/api/${token}/play`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to play game: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-/**
- * Get account info
- */
-async function getAccount(token: string): Promise<unknown> {
-  const response = await fetch(`${CEDARTOY_BASE}/api/${token}/account`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to get account: ${response.status}`);
-  }
-
-  return await response.json();
-}
-
-/**
- * Register account (alternative flow)
- */
-async function registerAccount(token: string): Promise<unknown> {
-  const response = await fetch(`${CEDARTOY_BASE}/api/${token}/register`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to register account: ${response.status}`);
-  }
-
-  return await response.json();
+  return { username, password };
 }
