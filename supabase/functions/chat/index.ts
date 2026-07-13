@@ -143,7 +143,7 @@ function normalizeCustomEndpoint(raw: string): string {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "server-tools-v2";
+const FUNCTION_VERSION = "server-tools-v3";
 
 // ── Legacy memory guard ────────────────────────────────────────────────────────
 //
