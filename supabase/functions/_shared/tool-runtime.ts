@@ -260,7 +260,7 @@ export async function prepareToolMessages(params: {
     } catch (error) {
       lastError = error;
       console.warn("[tool-runtime] provider does not support tool planning", {
-        provider: provider.provider,
+        provider: provider.providerName,
         model: provider.model,
         error: error instanceof Error ? error.message : String(error),
       });
