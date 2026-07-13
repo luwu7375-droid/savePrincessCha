@@ -1906,6 +1906,37 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     if (memContext) {
       systemContent += memContext;
     }
+
+    // ── Game invitation route handler ─────────────────────────────────────────
+    if (topicRoute === "game_invitation") {
+      try {
+        const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
+        const listResponse = await fetch(gameProxyUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify({
+            action: "list_games",
+            userId: memUserId,
+          }),
+        });
+
+        if (listResponse.ok) {
+          const gamesData = await listResponse.json();
+          const games = Array.isArray(gamesData?.content?.[0]?.text)
+            ? gamesData.content[0].text
+            : (typeof gamesData?.content?.[0]?.text === "string" ? gamesData.content[0].text : "");
+
+          systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户想玩游戏。以下是可用的游戏列表：\n\n${games}\n\n你可以：\n1. 根据用户兴趣推荐 1-2 个游戏\n2. 简单介绍推荐的游戏（不要复述全部列表）\n3. 问用户想玩哪个\n4. 如果用户明确选择了某个游戏，告诉用户"我去开一局"，然后自然地开始玩\n\n注意：\n- 不要说"我不能真的玩游戏"或"我只是 AI"，你确实可以通过 MCP 连接到 CedarToy 玩游戏\n- 人类用户（KK）有自己的账号，可以在游戏中心自己玩\n- 你（小cha）也有自己的账号，可以自主游玩并分享体验\n</game_context>`;
+        }
+      } catch (error) {
+        console.error("Failed to load game list:", error);
+        // Silently fail, don't break the conversation
+      }
+    }
+
     // Inject web context if provided from phone.js URL read (transient, current-turn only)
     if (typeof payload.webContext === "string" && payload.webContext.trim()) {
       systemContent += `\n\n<web_context source="phone_url_read" transient="true">\n${payload.webContext.trim()}\n\n这是cha刚才读到的内容摘要，用来自然融入本轮回复，不要直接引用或报告，用自己的话讲出来。不要写入长期记忆。\n</web_context>`;
