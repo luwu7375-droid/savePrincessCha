@@ -19,9 +19,10 @@ import {
   callModelText,
 } from "../_shared/model-client.ts";
 import { makeCorsHeaders } from "../_shared/cors.ts";
+import { isToolRuntimeCandidate, prepareToolMessages } from "../_shared/tool-runtime.ts";
 
 const corsHeaders = makeCorsHeaders({
-  "Access-Control-Expose-Headers": "x-save-princess-memory-debug, x-memory-cache-hit, x-model-tier, x-provider, x-model, x-fallback-used, x-fallback-reason, x-save-princess-function-version, x-chat-status, x-memory-promoted",
+  "Access-Control-Expose-Headers": "x-save-princess-memory-debug, x-memory-cache-hit, x-model-tier, x-provider, x-model, x-fallback-used, x-fallback-reason, x-save-princess-function-version, x-chat-status, x-memory-promoted, x-save-princess-tools-used",
 });
 
 type TimeContext = {
@@ -131,7 +132,7 @@ function normalizeCustomEndpoint(raw: string): string {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "fuka-unified-v8";
+const FUNCTION_VERSION = "server-tools-v1";
 
 // ── Legacy memory guard ────────────────────────────────────────────────────────
 //
@@ -1426,6 +1427,7 @@ Deno.serve(async (request) => {
 
   const t0 = Date.now();
   const requestId = makeRequestId();
+  const authorization = request.headers.get("Authorization") || "";
 
   let payload: ChatRequest;
   try {
@@ -1911,7 +1913,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     }
 
     // ── Game invitation route handler ─────────────────────────────────────────
-    if (topicRoute === "game_invitation") {
+    if (topicRoute === "game_invitation" && !isToolRuntimeCandidate(memUserMessage)) {
       try {
         const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
 
@@ -2292,10 +2294,43 @@ ${candidateLines}`;
     }
   }
 
-  const messages = [
+  let messages: unknown[] = [
     { role: "system", content: systemContent },
     ...modelPayloadMessages,
   ];
+  let toolNames: string[] = [];
+
+  // Tool execution stays server-side. Only a small read-only whitelist is
+  // offered on turns that explicitly contain a URL or a CedarToy/game intent.
+  // Unsupported provider tool-calling falls back to the existing chat request.
+  if (supabaseUrl && serviceRoleKey) {
+    const rawToolMessage = (typeof payload.rawUserMessage === "string" && payload.rawUserMessage)
+      ? payload.rawUserMessage
+      : lastUserMessage;
+    if (isToolRuntimeCandidate(rawToolMessage)) {
+      try {
+        const prepared = await prepareToolMessages({
+          providers: tierProviders,
+          messages,
+          context: {
+            supabaseUrl,
+            serviceRoleKey,
+            authorization,
+            userId: typeof payload.userId === "string" ? payload.userId : undefined,
+            conversationId,
+            rawUserMessage: rawToolMessage,
+          },
+        });
+        messages = prepared.messages;
+        toolNames = prepared.names;
+      } catch (error) {
+        console.warn("[tool-runtime] safe fallback to ordinary chat", {
+          requestId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
 
   try {
     const result = await callModelWithFallback(tierProviders, messages);
@@ -2493,6 +2528,7 @@ ${candidateLines}`;
         "x-save-princess-function-version": FUNCTION_VERSION,
         "x-save-princess-memory-debug": memoryDebugHeader,
         "x-chat-status": chatStatusHeader,
+        "x-save-princess-tools-used": asciiHeaderValue(toolNames.join(",")),
         ...(recentPromotedCount > 0 ? { "x-memory-promoted": String(recentPromotedCount) } : {}),
       },
     });
