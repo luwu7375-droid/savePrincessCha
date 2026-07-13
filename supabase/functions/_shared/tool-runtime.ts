@@ -82,9 +82,8 @@ export function isToolRuntimeCandidate(message: string): boolean {
   const text = String(message || "").trim();
   if (!text) return false;
   const hasUrl = /https?:\/\/[^\s<>"']+/i.test(text);
-  const asksToReadUrl = /(看看|读取|读一下|总结|分析|打开|这个链接|这个网页|网址|链接)/i.test(text);
   const asksAboutGames = /(cedar\s*toy|cedartoy|海龟汤|你画我猜|五子棋|狼人杀|有什么游戏|游戏列表|游戏规则|怎么玩|想玩游戏|玩个游戏)/i.test(text);
-  return (hasUrl && asksToReadUrl) || asksAboutGames;
+  return hasUrl || asksAboutGames;
 }
 
 function safeJsonObject(value: string): Record<string, unknown> {
