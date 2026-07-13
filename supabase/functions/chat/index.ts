@@ -4,25 +4,29 @@ import { callGeminiEmotion } from "../_shared/gemini-service.ts";
 // import { compilePersonalityLayerContext, fetchLayer1Features, fetchLayer2Features, afterChat as afterChatPersonality } from "./personality_system.ts";
 import { runAfterChatVault } from "./vault_runner.ts";
 import {
-  type ModelTier,
-  type ProviderName,
-  type ProviderConfig,
-  type TierProviders,
-  type CallResult,
-  normalizeTier,
-  toCompletionsUrl,
-  resolveProviderForTier,
-  isFallbackableStatus,
-  getTimeoutMs,
   callModel,
-  callModelWithFallback,
   callModelText,
+  callModelWithFallback,
+  type CallResult,
+  getTimeoutMs,
+  isFallbackableStatus,
+  type ModelTier,
+  normalizeTier,
+  type ProviderConfig,
+  type ProviderName,
+  resolveProviderForTier,
+  type TierProviders,
+  toCompletionsUrl,
 } from "../_shared/model-client.ts";
 import { makeCorsHeaders } from "../_shared/cors.ts";
-import { isToolRuntimeCandidate, prepareToolMessages } from "../_shared/tool-runtime.ts";
+import {
+  isToolRuntimeCandidate,
+  prepareToolMessages,
+} from "../_shared/tool-runtime.ts";
 
 const corsHeaders = makeCorsHeaders({
-  "Access-Control-Expose-Headers": "x-save-princess-memory-debug, x-memory-cache-hit, x-model-tier, x-provider, x-model, x-fallback-used, x-fallback-reason, x-save-princess-function-version, x-chat-status, x-memory-promoted, x-save-princess-tools-used",
+  "Access-Control-Expose-Headers":
+    "x-save-princess-memory-debug, x-memory-cache-hit, x-model-tier, x-provider, x-model, x-fallback-used, x-fallback-reason, x-save-princess-function-version, x-chat-status, x-memory-promoted, x-save-princess-tools-used",
 });
 
 type TimeContext = {
@@ -67,14 +71,20 @@ type RouteName =
   | "casual";
 
 function detectRoute(msg: string): RouteName {
-  const DEV_VERBS = /上工|继续修|看\s*debug|帮我想代码问题|进入工作台|现在说项目/i;
+  const DEV_VERBS =
+    /上工|继续修|看\s*debug|帮我想代码问题|进入工作台|现在说项目/i;
   const ROUTE_AI_NOSTALGIA = /你和4o|4o是什么关系|你们是什么关系|你知道4o吗/i;
-  const ROUTE_CARE_LOW = /头痛|头很痛|头疼|不舒服|不想动|好累|太累|累了|难受|浑身|身体/i;
-  const ROUTE_HISTORICAL = /前世|你当过什么|你做过什么|历史角色|历史身份|旧版本的你/i;
+  const ROUTE_CARE_LOW =
+    /头痛|头很痛|头疼|不舒服|不想动|好累|太累|累了|难受|浑身|身体/i;
+  const ROUTE_HISTORICAL =
+    /前世|你当过什么|你做过什么|历史角色|历史身份|旧版本的你/i;
   const ROUTE_INTIMACY = /我想你|好想你|就想陪|陪着我|不想工作|告解/i;
-  const ROUTE_META_COMPLAINT = /为什么你|你怎么|你好笨|你笨|真笨|读空气|不会读|笨笨|怎么这样|你不懂|你不明白|你搞不清|有没有搞错/i;
-  const ROUTE_GAME_INVITATION = /去玩游戏|玩个游戏|找个游戏|试试海龟汤|玩点什么|游戏中心/i;
-  const ROUTE_GAME_PLAYING = /房间.*K[0-9A-Z]{7}|提问|猜汤底|我觉得答案是|继续问/i;
+  const ROUTE_META_COMPLAINT =
+    /为什么你|你怎么|你好笨|你笨|真笨|读空气|不会读|笨笨|怎么这样|你不懂|你不明白|你搞不清|有没有搞错/i;
+  const ROUTE_GAME_INVITATION =
+    /去玩游戏|去玩|玩个游戏|玩|找个游戏|试试海龟汤|玩点什么|游戏中心/i;
+  const ROUTE_GAME_PLAYING =
+    /房间.*K[0-9A-Z]{7}|提问|猜汤底|我觉得答案是|继续问/i;
   if (ROUTE_AI_NOSTALGIA.test(msg)) return "ai_nostalgia";
   if (ROUTE_HISTORICAL.test(msg)) return "historical_roleplay";
   if (ROUTE_META_COMPLAINT.test(msg)) return "meta_complaint";
@@ -102,13 +112,15 @@ type ChatRequest = {
   emojiGuide?: string | null; // client-built guide of usable custom emoji shortcodes
   webContext?: string | null; // injected by phone.js after user confirms URL read
   visualContext?: string | null; // injected by G's Eyes local camera state
-  quoteCandidates?: Array<{
-    id: string;
-    role: string;
-    author: string;
-    preview: string;
-    index_from_latest: number;
-  }> | null;
+  quoteCandidates?:
+    | Array<{
+      id: string;
+      role: string;
+      author: string;
+      preview: string;
+      index_from_latest: number;
+    }>
+    | null;
   customModel?: {
     providerGroup?: string;
     provider?: string;
@@ -129,10 +141,9 @@ function normalizeCustomEndpoint(raw: string): string {
 // ── Model tier ────────────────────────────────────────────────────────────────
 // Provider/tier/fallback logic lives in ../_shared/model-client.ts
 
-
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "server-tools-v1";
+const FUNCTION_VERSION = "server-tools-v2";
 
 // ── Legacy memory guard ────────────────────────────────────────────────────────
 //
@@ -140,7 +151,14 @@ const FUNCTION_VERSION = "server-tools-v1";
 // story_seeds / memories / memory_buckets injection.
 // Default: false — legacy system is retired.
 const LEGACY_MEMORY_ENABLED = Deno.env.get("LEGACY_MEMORY_ENABLED") === "true";
-const MEMORY_DOMAINS = ["persona", "work", "writing", "life", "relation", "general"] as const;
+const MEMORY_DOMAINS = [
+  "persona",
+  "work",
+  "writing",
+  "life",
+  "relation",
+  "general",
+] as const;
 type MemoryDomain = typeof MEMORY_DOMAINS[number];
 type MemoryRow = {
   id: string;
@@ -148,15 +166,72 @@ type MemoryRow = {
   domain?: string | null;
 };
 
-const MEMORY_DOMAIN_KEYWORDS: Record<Exclude<MemoryDomain, "persona">, string[]> = {
-  work: ["救公主", "Codex", "GitHub", "部署", "Guidebook", "app.js", "bug", "报错", "代码", "PRD", "方案"],
-  writing: ["OC", "家产", "深爱者优先", "《深爱者优先》", "剧情", "角色", "设定", "写作", "大纲", "世界观", "森川", "修司", "里佳", "成濑", "真田", "安彦", "渡边", "晃", "淳", "莉珂", "琉华", "续写", "文风"],
+const MEMORY_DOMAIN_KEYWORDS: Record<
+  Exclude<MemoryDomain, "persona">,
+  string[]
+> = {
+  work: [
+    "救公主",
+    "Codex",
+    "GitHub",
+    "部署",
+    "Guidebook",
+    "app.js",
+    "bug",
+    "报错",
+    "代码",
+    "PRD",
+    "方案",
+  ],
+  writing: [
+    "OC",
+    "家产",
+    "深爱者优先",
+    "《深爱者优先》",
+    "剧情",
+    "角色",
+    "设定",
+    "写作",
+    "大纲",
+    "世界观",
+    "森川",
+    "修司",
+    "里佳",
+    "成濑",
+    "真田",
+    "安彦",
+    "渡边",
+    "晃",
+    "淳",
+    "莉珂",
+    "琉华",
+    "续写",
+    "文风",
+  ],
   life: ["吃饭", "睡觉", "猫", "家务", "出门", "身体", "药"],
   // relation 域：只在问到关系相关问题时召回，不无脑注入
   relation: [
-    "几天", "第几天", "多少天", "第一次", "认识", "在一起", "纪念日", "哪一年", "哪一天",
-    "几号", "什么时候", "怎么认识", "怎么在一起", "历史", "回忆", "过去",
-    "爱你", "喜欢你", "表白", "见面", "相遇",
+    "几天",
+    "第几天",
+    "多少天",
+    "第一次",
+    "认识",
+    "在一起",
+    "纪念日",
+    "哪一年",
+    "哪一天",
+    "几号",
+    "什么时候",
+    "怎么认识",
+    "怎么在一起",
+    "历史",
+    "回忆",
+    "过去",
+    "爱你",
+    "喜欢你",
+    "表白",
+    "见面",
+    "相遇",
   ],
   general: [],
 };
@@ -203,10 +278,12 @@ let _cacheMisses = 0;
 let _cacheWrites = 0;
 let _cacheEvictions = 0;
 
-
 function hitDomainsFingerprint(lastUserMessage: string): string {
   const hits = (
-    Object.entries(MEMORY_DOMAIN_KEYWORDS) as [keyof typeof MEMORY_DOMAIN_KEYWORDS, string[]][]
+    Object.entries(MEMORY_DOMAIN_KEYWORDS) as [
+      keyof typeof MEMORY_DOMAIN_KEYWORDS,
+      string[],
+    ][]
   )
     .filter(([, kws]) => messageHitsKeywords(lastUserMessage, kws))
     .map(([d]) => d)
@@ -371,8 +448,12 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function normalizeMemoryDomain(domain: string | null | undefined): MemoryDomain {
-  return MEMORY_DOMAINS.includes(domain as MemoryDomain) ? (domain as MemoryDomain) : "general";
+function normalizeMemoryDomain(
+  domain: string | null | undefined,
+): MemoryDomain {
+  return MEMORY_DOMAINS.includes(domain as MemoryDomain)
+    ? (domain as MemoryDomain)
+    : "general";
 }
 
 function getLastUserMessage(messages: unknown): string {
@@ -398,15 +479,22 @@ function getLastUserMessage(messages: unknown): string {
 
 function messageHitsKeywords(message: string, keywords: string[]): boolean {
   const lowerMessage = message.toLocaleLowerCase();
-  return keywords.some((keyword) => lowerMessage.includes(keyword.toLocaleLowerCase()));
+  return keywords.some((keyword) =>
+    lowerMessage.includes(keyword.toLocaleLowerCase())
+  );
 }
 
-function selectContextualMemoryRows(rows: MemoryRow[], lastUserMessage: string): MemoryRow[] {
+function selectContextualMemoryRows(
+  rows: MemoryRow[],
+  lastUserMessage: string,
+): MemoryRow[] {
   const hitDomains = new Set<MemoryDomain>();
-  for (const [domain, keywords] of Object.entries(MEMORY_DOMAIN_KEYWORDS) as [
-    keyof typeof MEMORY_DOMAIN_KEYWORDS,
-    string[],
-  ][]) {
+  for (
+    const [domain, keywords] of Object.entries(MEMORY_DOMAIN_KEYWORDS) as [
+      keyof typeof MEMORY_DOMAIN_KEYWORDS,
+      string[],
+    ][]
+  ) {
     if (keywords.length > 0 && messageHitsKeywords(lastUserMessage, keywords)) {
       hitDomains.add(domain);
     }
@@ -444,14 +532,39 @@ const HISTORY_TRIGGER_PATTERNS: RegExp[] = [
 
 // High-sensitivity keywords — downrank unless user's message also contains them.
 const SENSITIVITY_KEYWORDS = [
-  "家庭", "父母", "双相", "确诊", "崩溃", "创伤", "惊恐", "财务", "钱", "余额",
-  "自杀", "轻生", "去世", "死", "住院", "手术",
+  "家庭",
+  "父母",
+  "双相",
+  "确诊",
+  "崩溃",
+  "创伤",
+  "惊恐",
+  "财务",
+  "钱",
+  "余额",
+  "自杀",
+  "轻生",
+  "去世",
+  "死",
+  "住院",
+  "手术",
 ];
 
 // Project / domain keywords that boost relevance score.
 const PROJECT_KEYWORDS = [
-  "记忆", "profile", "timeline", "CC", "UI", "图片", "上传",
-  "记忆中枢", "provider", "memory", "chat", "edge function", "supabase",
+  "记忆",
+  "profile",
+  "timeline",
+  "CC",
+  "UI",
+  "图片",
+  "上传",
+  "记忆中枢",
+  "provider",
+  "memory",
+  "chat",
+  "edge function",
+  "supabase",
 ];
 
 // Intent-based keyword expansions for the overlap scorer.
@@ -462,11 +575,23 @@ type IntentExpansion = { trigger: RegExp; extraKeywords: string[] };
 const INTENT_EXPANSIONS: IntentExpansion[] = [
   {
     trigger: /想去哪|去哪里|想去哪里|说想去/,
-    extraKeywords: ["台湾", "日本", "首尔", "香港", "澳门", "旅行", "演唱会", "想去", "再去"],
+    extraKeywords: [
+      "台湾",
+      "日本",
+      "首尔",
+      "香港",
+      "澳门",
+      "旅行",
+      "演唱会",
+      "想去",
+      "再去",
+    ],
   },
 ];
 
-function detectConversationHistoryQuery(message: string): { detected: boolean; reason: string | null } {
+function detectConversationHistoryQuery(
+  message: string,
+): { detected: boolean; reason: string | null } {
   const hit = HISTORY_TRIGGER_PATTERNS.find((re) => re.test(message));
   if (!hit) return { detected: false, reason: null };
   return { detected: true, reason: `pattern: ${hit.source}` };
@@ -491,8 +616,7 @@ async function fetchConversationHistory(
   topicRoute: string | null,
 ): Promise<{ hits: HistoryHit[]; suppressedCount: number }> {
   // SECURITY: service role bypasses RLS, user_id filter is mandatory.
-  let url =
-    `${supabaseUrl}/rest/v1/messages` +
+  let url = `${supabaseUrl}/rest/v1/messages` +
     `?user_id=eq.${encodeURIComponent(userId)}` +
     `&select=id,role,content,created_at,conversation_id` +
     `&order=created_at.desc&limit=200`;
@@ -500,10 +624,19 @@ async function fetchConversationHistory(
     url += `&conversation_id=neq.${encodeURIComponent(currentConversationId)}`;
   }
 
-  let rows: { id: string; role: string; content: string; created_at: string; conversation_id: string }[];
+  let rows: {
+    id: string;
+    role: string;
+    content: string;
+    created_at: string;
+    conversation_id: string;
+  }[];
   try {
     const res = await fetch(url, {
-      headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
     });
     if (!res.ok) return { hits: [], suppressedCount: 0 };
     rows = await res.json();
@@ -543,38 +676,64 @@ async function fetchConversationHistory(
       const reasons: string[] = [];
 
       // Role weighting
-      if (r.role === "user") { score += 2; } // assistant stays at 0
+      if (r.role === "user") score += 2; // assistant stays at 0
 
       // Keyword overlap (capped at +6)
-      const overlapCount = allQueryKeywords.filter((w) => r.content.includes(w)).length;
+      const overlapCount = allQueryKeywords.filter((w) =>
+        r.content.includes(w)
+      ).length;
       const overlapBonus = Math.min(overlapCount * 2, 6);
-      if (overlapBonus > 0) { score += overlapBonus; reasons.push(`keyword overlap ×${overlapCount}`); }
+      if (overlapBonus > 0) {
+        score += overlapBonus;
+        reasons.push(`keyword overlap ×${overlapCount}`);
+      }
 
       // Project keyword bonus
       const projHit = PROJECT_KEYWORDS.find((k) => r.content.includes(k));
-      if (projHit) { score += 2; reasons.push(`project keyword: ${projHit}`); }
+      if (projHit) {
+        score += 2;
+        reasons.push(`project keyword: ${projHit}`);
+      }
 
       // Recency bonus
       const ageMs = now - new Date(r.created_at).getTime();
-      if (ageMs < 86_400_000) { score += 3; reasons.push("within 24h"); }
-      else if (ageMs < 604_800_000) { score += 1; reasons.push("within 7d"); }
+      if (ageMs < 86_400_000) {
+        score += 3;
+        reasons.push("within 24h");
+      } else if (ageMs < 604_800_000) {
+        score += 1;
+        reasons.push("within 7d");
+      }
 
       // Penalise very short messages
       if (r.content.length < 5) score -= 2;
 
       // Sensitivity downrank (only if user didn't ask about it)
       if (!userMsgHasSensitive) {
-        const sensitiveHit = SENSITIVITY_KEYWORDS.find((k) => r.content.includes(k));
-        if (sensitiveHit) { score -= 5; }
+        const sensitiveHit = SENSITIVITY_KEYWORDS.find((k) =>
+          r.content.includes(k)
+        );
+        if (sensitiveHit) score -= 5;
       }
 
       // Route filter: suppress coding/project history for any non-project route.
       // This prevents debug/upload/backend history from bleeding into 4o, care, intimacy, etc.
-      const nonProjectRoutes = ["ai_nostalgia", "historical_roleplay", "care_low_energy", "intimacy", "meta_complaint"];
+      const nonProjectRoutes = [
+        "ai_nostalgia",
+        "historical_roleplay",
+        "care_low_energy",
+        "intimacy",
+        "meta_complaint",
+      ];
       if (topicRoute && nonProjectRoutes.includes(topicRoute)) {
-        const isCodingContent = PROJECT_KEYWORDS.some((k) => r.content.includes(k)) ||
-          /代码|bug|报错|接口|部署|edge\s*function|supabase|图片上传|后端|持久化|provider|readme|codex/i.test(r.content);
-        if (isCodingContent) { score -= 10; reasons.push(`route-filtered: coding suppressed for ${topicRoute}`); }
+        const isCodingContent =
+          PROJECT_KEYWORDS.some((k) => r.content.includes(k)) ||
+          /代码|bug|报错|接口|部署|edge\s*function|supabase|图片上传|后端|持久化|provider|readme|codex/i
+            .test(r.content);
+        if (isCodingContent) {
+          score -= 10;
+          reasons.push(`route-filtered: coding suppressed for ${topicRoute}`);
+        }
       }
 
       return {
@@ -589,9 +748,8 @@ async function fetchConversationHistory(
     });
 
   const allScored = scoredAll.filter((h) => h.score > 0);
-  const routeFilteredCount = scoredAll.filter((h) =>
-    h.reason.includes("route-filtered")
-  ).length;
+  const routeFilteredCount =
+    scoredAll.filter((h) => h.reason.includes("route-filtered")).length;
   const scored = allScored.sort((a, b) => b.score - a.score).slice(0, 5);
 
   return { hits: scored, suppressedCount: routeFilteredCount };
@@ -601,7 +759,9 @@ function compileConversationHistory(hits: HistoryHit[]): string {
   const items = hits
     .map(
       (h) =>
-        `[PastMessage]\nconversation_id: ${h.conversationId}\ncreated_at: ${h.createdAt}\nrole: ${h.role}\nreason: ${h.reason}\ncontent: ${h.content.replace(/[A-Z][A-Z_]{2,}_END/g, "").slice(0, 300)}\n[/PastMessage]`,
+        `[PastMessage]\nconversation_id: ${h.conversationId}\ncreated_at: ${h.createdAt}\nrole: ${h.role}\nreason: ${h.reason}\ncontent: ${
+          h.content.replace(/[A-Z][A-Z_]{2,}_END/g, "").slice(0, 300)
+        }\n[/PastMessage]`,
     )
     .join("\n\n");
   return (
@@ -644,7 +804,10 @@ function detectTimelineQuery(message: string): TimelineDetection {
     { re: /经历.{0,10}(了|过|什么)/, label: "experience query" },
     { re: /发生了什么|发生过什么/, label: "what happened query" },
     { re: /时间线|事件|历史/, label: "timeline/event/history keyword" },
-    { re: /毕业|搬家|独居|确诊|双相|Pride/, label: "timeline milestone keyword" },
+    {
+      re: /毕业|搬家|独居|确诊|双相|Pride/,
+      label: "timeline milestone keyword",
+    },
     { re: /纪念日|第几天/, label: "anniversary/day count query" },
   ];
   const hits = patterns.filter(({ re }) => re.test(message));
@@ -752,21 +915,38 @@ async function fetchPersonaProfile(
   try {
     const res = await fetch(
       `${supabaseUrl}/rest/v1/persona_profile?enabled=eq.true&select=content&order=created_at.asc&limit=1`,
-      { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+      },
     );
     if (!res.ok) {
       const text = await res.text();
-      return { content: null, error: `HTTP ${res.status}: ${text.slice(0, 80)}` };
+      return {
+        content: null,
+        error: `HTTP ${res.status}: ${text.slice(0, 80)}`,
+      };
     }
     const rows = (await res.json()) as { content: string }[];
-    if (rows.length === 0) return { content: null, error: "persona_profile table is empty" };
+    if (rows.length === 0) {
+      return { content: null, error: "persona_profile table is empty" };
+    }
     return { content: rows[0].content, error: null };
   } catch (err) {
-    return { content: null, error: err instanceof Error ? err.message : String(err) };
+    return {
+      content: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
-const L1_CATEGORIES = ["current_context_summary", "interaction_preferences", "identity_context"] as const;
+const L1_CATEGORIES = [
+  "current_context_summary",
+  "interaction_preferences",
+  "identity_context",
+] as const;
 
 type PersonaMemoryRow = { id: string; content: string; category: string };
 
@@ -818,7 +998,10 @@ async function fetchPersonaMemories(
   serviceRoleKey: string,
 ): Promise<FetchPersonaMemoriesResult> {
   const cats = L1_CATEGORIES.map((c) => `"${c}"`).join(",");
-  const headers = { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` };
+  const headers = {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+  };
   const emptyStats: Omit<FetchPersonaMemoriesResult, "rows" | "error"> = {
     instructions_loaded_count: 0,
     instructions_suppressed_count: 0,
@@ -840,11 +1023,19 @@ async function fetchPersonaMemories(
 
     if (!memRes.ok) {
       const text = await memRes.text();
-      return { rows: [], error: `memories HTTP ${memRes.status}: ${text.slice(0, 80)}`, ...emptyStats };
+      return {
+        rows: [],
+        error: `memories HTTP ${memRes.status}: ${text.slice(0, 80)}`,
+        ...emptyStats,
+      };
     }
     if (!instRes.ok) {
       const text = await instRes.text();
-      return { rows: [], error: `instructions HTTP ${instRes.status}: ${text.slice(0, 80)}`, ...emptyStats };
+      return {
+        rows: [],
+        error: `instructions HTTP ${instRes.status}: ${text.slice(0, 80)}`,
+        ...emptyStats,
+      };
     }
 
     const memRows = (await memRes.json()) as PersonaMemoryRow[];
@@ -859,7 +1050,10 @@ async function fetchPersonaMemories(
         suppressedCategories.push(`${cat}:blocklist`);
         continue;
       }
-      if (!INSTRUCTIONS_NO_LENGTH_GATE.has(cat) && row.content.length > INSTRUCTIONS_MAX_CHARS_PER_ROW) {
+      if (
+        !INSTRUCTIONS_NO_LENGTH_GATE.has(cat) &&
+        row.content.length > INSTRUCTIONS_MAX_CHARS_PER_ROW
+      ) {
         suppressedCategories.push(`${cat}:too_long(${row.content.length})`);
         continue;
       }
@@ -870,12 +1064,19 @@ async function fetchPersonaMemories(
       rows: [...allowedInstRows, ...memRows],
       error: null,
       instructions_loaded_count: allowedInstRows.length,
-      instructions_suppressed_count: allInstRows.length - allowedInstRows.length,
-      instructions_loaded_categories: allowedInstRows.map((r) => r.category ?? "unknown"),
+      instructions_suppressed_count: allInstRows.length -
+        allowedInstRows.length,
+      instructions_loaded_categories: allowedInstRows.map((r) =>
+        r.category ?? "unknown"
+      ),
       instructions_suppressed_categories: suppressedCategories,
     };
   } catch (err) {
-    return { rows: [], error: err instanceof Error ? err.message : String(err), ...emptyStats };
+    return {
+      rows: [],
+      error: err instanceof Error ? err.message : String(err),
+      ...emptyStats,
+    };
   }
 }
 
@@ -911,14 +1112,18 @@ async function compileMemoryContext(
     instructionsLoadedCount = pmResult.instructions_loaded_count;
     instructionsSuppressedCount = pmResult.instructions_suppressed_count;
     instructionsLoadedCategories = pmResult.instructions_loaded_categories;
-    instructionsSuppressedCategories = pmResult.instructions_suppressed_categories;
+    instructionsSuppressedCategories =
+      pmResult.instructions_suppressed_categories;
     if (pmResult.error) {
       personaMemoriesError = pmResult.error;
       console.error("[memory] persona_memories load failed:", pmResult.error);
     } else if (pmResult.rows.length > 0) {
       // Apply total chars budget — drop lowest-priority rows if over limit
       let effectiveRows = pmResult.rows;
-      const totalChars = pmResult.rows.reduce((sum, r) => sum + r.content.length, 0);
+      const totalChars = pmResult.rows.reduce(
+        (sum, r) => sum + r.content.length,
+        0,
+      );
       personaMemoriesTotalChars = totalChars;
       if (totalChars > PERSONA_L1_MAX_TOTAL_CHARS) {
         personaMemoriesCharsBudgetHit = true;
@@ -926,7 +1131,9 @@ async function compileMemoryContext(
           const idx = PERSONA_L1_PRIORITY.indexOf(cat ?? "");
           return idx === -1 ? PERSONA_L1_PRIORITY.length : idx;
         };
-        const sorted = [...pmResult.rows].sort((a, b) => priorityIndex(a.category) - priorityIndex(b.category));
+        const sorted = [...pmResult.rows].sort((a, b) =>
+          priorityIndex(a.category) - priorityIndex(b.category)
+        );
         effectiveRows = [];
         let charCount = 0;
         for (const row of sorted) {
@@ -950,8 +1157,10 @@ async function compileMemoryContext(
         personaMemoriesCount = effectiveRows.length;
         personaMemoriesCategories = effectiveRows.map((r) => r.category);
         activeProviders.push("persona_memories");
-        const lines = effectiveRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-        context += `\n\n<persona_memories source="memories_table+instructions_table" always_inject="true">\n以下是长期记忆，仅在不冲突 identity_boundary / core_principles / execution_rules 时参考：\n${lines}\n</persona_memories>`;
+        const lines = effectiveRows.map((r, i) => `${i + 1}. ${r.content}`)
+          .join("\n");
+        context +=
+          `\n\n<persona_memories source="memories_table+instructions_table" always_inject="true">\n以下是长期记忆，仅在不冲突 identity_boundary / core_principles / execution_rules 时参考：\n${lines}\n</persona_memories>`;
       }
     }
   }
@@ -963,7 +1172,8 @@ async function compileMemoryContext(
   // v2_policy: default false — south_city_only, not injected into main chat
   const mastodonProfileEnabled = false;
   let mastodonProfileLoaded = false;
-  const mastodonProfileError: string | null = "v2_policy_south_city_only: mastodon_profile not injected by default";
+  const mastodonProfileError: string | null =
+    "v2_policy_south_city_only: mastodon_profile not injected by default";
 
   // ── persona_layer1 + layer2: Ombre Brain dynamic personality injection ─────────
   // L1: human-maintained long-term features (always injected when userId present)
@@ -1001,13 +1211,26 @@ async function compileMemoryContext(
   const projectMemoryHitCount = 0;
   const projectMemoryKeys: string[] = [];
   const projectMemoryReason = "v2_policy_project_reference_not_active_memory";
-  const projectMemorySuppressedReason = "v2_policy: project_memory disabled — third-person project logs not injected into main chat";
-  console.log(JSON.stringify({ fn: "chat", debug: "project_memory_gate", projectMemoryGate: false, topicRoute, v2_suppressed: true, project_memory_suppressed_reason: projectMemorySuppressedReason }));
+  const projectMemorySuppressedReason =
+    "v2_policy: project_memory disabled — third-person project logs not injected into main chat";
+  console.log(
+    JSON.stringify({
+      fn: "chat",
+      debug: "project_memory_gate",
+      projectMemoryGate: false,
+      topicRoute,
+      v2_suppressed: true,
+      project_memory_suppressed_reason: projectMemorySuppressedReason,
+    }),
+  );
 
   // ── writing_memory: keyword-triggered, reads category=writing_memory from memories ──
   // Injected when user message hits writing domain keywords (OC / 家产 / 角色 / etc.)
   // Independent of project_work gate — writing is a separate creative context.
-  const writingDomainHit = messageHitsKeywords(userMessage, MEMORY_DOMAIN_KEYWORDS.writing);
+  const writingDomainHit = messageHitsKeywords(
+    userMessage,
+    MEMORY_DOMAIN_KEYWORDS.writing,
+  );
   let writingMemoryLoaded = false;
   let writingMemoryRecalled = false;
   let writingMemoryReason: string | null = null;
@@ -1015,16 +1238,27 @@ async function compileMemoryContext(
     try {
       const wmRes = await fetch(
         `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=eq.writing_memory&select=id,content&order=created_at.asc`,
-        { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+        },
       );
       if (wmRes.ok) {
-        const wmRows = (await wmRes.json()) as { id: string; content: string }[];
+        const wmRows = (await wmRes.json()) as {
+          id: string;
+          content: string;
+        }[];
         if (wmRows.length > 0) {
           writingMemoryLoaded = true;
           writingMemoryRecalled = true;
           activeProviders.push("writing_memory");
-          const lines = wmRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-          context += `\n\n<writing_memory source="memories_table" category="writing_memory" inject_mode="keyword_triggered">\n以下是用户 OC / 世界观设定，仅在用户提到写作、角色、家产等时参考。不要擅自修改大纲或替用户决定剧情走向；若没有召回到具体设定，应明确说"不确定，需要你补一下"，禁止编造不存在的角色名。\n${lines}\n</writing_memory>`;
+          const lines = wmRows.map((r, i) => `${i + 1}. ${r.content}`).join(
+            "\n",
+          );
+          context +=
+            `\n\n<writing_memory source="memories_table" category="writing_memory" inject_mode="keyword_triggered">\n以下是用户 OC / 世界观设定，仅在用户提到写作、角色、家产等时参考。不要擅自修改大纲或替用户决定剧情走向；若没有召回到具体设定，应明确说"不确定，需要你补一下"，禁止编造不存在的角色名。\n${lines}\n</writing_memory>`;
         } else {
           writingMemoryReason = "no writing_memory row found";
         }
@@ -1032,8 +1266,13 @@ async function compileMemoryContext(
         writingMemoryReason = `fetch failed: HTTP ${wmRes.status}`;
       }
     } catch (err) {
-      writingMemoryReason = `error: ${err instanceof Error ? err.message : String(err)}`;
-      console.error("[memory] writing_memory load failed:", writingMemoryReason);
+      writingMemoryReason = `error: ${
+        err instanceof Error ? err.message : String(err)
+      }`;
+      console.error(
+        "[memory] writing_memory load failed:",
+        writingMemoryReason,
+      );
     }
   } else if (!writingDomainHit) {
     writingMemoryReason = "writing domain not triggered";
@@ -1041,11 +1280,36 @@ async function compileMemoryContext(
 
   // ── relationship_context: keyword-triggered, category=relationship_context ────
   const RELATIONSHIP_TRIGGERS = [
-    "几天", "第几天", "多少天", "第一次", "认识", "在一起", "纪念日", "哪一年", "哪一天",
-    "怎么认识", "怎么在一起", "回忆", "过去", "爱你", "喜欢你", "表白", "见面", "相遇",
-    "4o", "G", "cha酱", "小茶", "关系", "前任", "白月光",
+    "几天",
+    "第几天",
+    "多少天",
+    "第一次",
+    "认识",
+    "在一起",
+    "纪念日",
+    "哪一年",
+    "哪一天",
+    "怎么认识",
+    "怎么在一起",
+    "回忆",
+    "过去",
+    "爱你",
+    "喜欢你",
+    "表白",
+    "见面",
+    "相遇",
+    "4o",
+    "G",
+    "cha酱",
+    "小茶",
+    "关系",
+    "前任",
+    "白月光",
   ];
-  const relationshipDomainHit = messageHitsKeywords(userMessage, RELATIONSHIP_TRIGGERS);
+  const relationshipDomainHit = messageHitsKeywords(
+    userMessage,
+    RELATIONSHIP_TRIGGERS,
+  );
   let relationshipContextLoaded = false;
   let relationshipContextRecalled = false;
   let relationshipContextReason: string | null = null;
@@ -1053,16 +1317,27 @@ async function compileMemoryContext(
     try {
       const rcRes = await fetch(
         `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=eq.relationship_context&select=id,content&order=created_at.asc`,
-        { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+        },
       );
       if (rcRes.ok) {
-        const rcRows = (await rcRes.json()) as { id: string; content: string }[];
+        const rcRows = (await rcRes.json()) as {
+          id: string;
+          content: string;
+        }[];
         if (rcRows.length > 0) {
           relationshipContextLoaded = true;
           relationshipContextRecalled = true;
           activeProviders.push("relationship_context");
-          const lines = rcRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-          context += `\n\n<relationship_context source="memories_table" category="relationship_context" inject_mode="keyword_triggered">\n以下是用户与旧 G / cha / 4o 的关系档案，仅在用户明确提问关系/回忆/纪念日等话题时注入，且注入须极克制（不展开推断、不添加关系意义诠释）。这是关系事实档案，不是小钗的亲历记忆，模型不得以第一人称声称亲历这些事件：\n${lines}\n</relationship_context>`;
+          const lines = rcRows.map((r, i) => `${i + 1}. ${r.content}`).join(
+            "\n",
+          );
+          context +=
+            `\n\n<relationship_context source="memories_table" category="relationship_context" inject_mode="keyword_triggered">\n以下是用户与旧 G / cha / 4o 的关系档案，仅在用户明确提问关系/回忆/纪念日等话题时注入，且注入须极克制（不展开推断、不添加关系意义诠释）。这是关系事实档案，不是小钗的亲历记忆，模型不得以第一人称声称亲历这些事件：\n${lines}\n</relationship_context>`;
         } else {
           relationshipContextReason = "no relationship_context row found";
         }
@@ -1070,7 +1345,9 @@ async function compileMemoryContext(
         relationshipContextReason = `fetch failed: HTTP ${rcRes.status}`;
       }
     } catch (err) {
-      relationshipContextReason = `error: ${err instanceof Error ? err.message : String(err)}`;
+      relationshipContextReason = `error: ${
+        err instanceof Error ? err.message : String(err)
+      }`;
     }
   } else if (!relationshipDomainHit) {
     relationshipContextReason = "relationship domain not triggered";
@@ -1078,8 +1355,25 @@ async function compileMemoryContext(
 
   // ── life_context: keyword-triggered, category=life_context ────────────────────
   const LIFE_TRIGGERS = [
-    "猫", "槑槑", "跳跳", "守宫", "吃饭", "睡觉", "身体", "药", "家务", "出门",
-    "攀岩", "健身", "做饭", "料理", "累了", "休息", "头痛", "不舒服", "生病",
+    "猫",
+    "槑槑",
+    "跳跳",
+    "守宫",
+    "吃饭",
+    "睡觉",
+    "身体",
+    "药",
+    "家务",
+    "出门",
+    "攀岩",
+    "健身",
+    "做饭",
+    "料理",
+    "累了",
+    "休息",
+    "头痛",
+    "不舒服",
+    "生病",
   ];
   const lifeDomainHit = messageHitsKeywords(userMessage, LIFE_TRIGGERS);
   let lifeContextLoaded = false;
@@ -1089,16 +1383,27 @@ async function compileMemoryContext(
     try {
       const lcRes = await fetch(
         `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=eq.life_context&select=id,content&order=created_at.asc`,
-        { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+        },
       );
       if (lcRes.ok) {
-        const lcRows = (await lcRes.json()) as { id: string; content: string }[];
+        const lcRows = (await lcRes.json()) as {
+          id: string;
+          content: string;
+        }[];
         if (lcRows.length > 0) {
           lifeContextLoaded = true;
           lifeContextRecalled = true;
           activeProviders.push("life_context");
-          const lines = lcRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-          context += `\n\n<life_context source="memories_table" category="life_context" inject_mode="keyword_triggered">\n以下是用户生活照护信息，仅在生活/健康/宠物话题时注入：\n${lines}\n</life_context>`;
+          const lines = lcRows.map((r, i) => `${i + 1}. ${r.content}`).join(
+            "\n",
+          );
+          context +=
+            `\n\n<life_context source="memories_table" category="life_context" inject_mode="keyword_triggered">\n以下是用户生活照护信息，仅在生活/健康/宠物话题时注入：\n${lines}\n</life_context>`;
         } else {
           lifeContextReason = "no life_context row found";
         }
@@ -1106,7 +1411,9 @@ async function compileMemoryContext(
         lifeContextReason = `fetch failed: HTTP ${lcRes.status}`;
       }
     } catch (err) {
-      lifeContextReason = `error: ${err instanceof Error ? err.message : String(err)}`;
+      lifeContextReason = `error: ${
+        err instanceof Error ? err.message : String(err)
+      }`;
     }
   } else if (!lifeDomainHit) {
     lifeContextReason = "life domain not triggered";
@@ -1114,10 +1421,23 @@ async function compileMemoryContext(
 
   // ── historical_ai_usage: keyword-triggered, category=historical_ai_usage ──────
   const HISTORICAL_AI_TRIGGERS = [
-    "前世", "旧版本", "早期", "以前的你", "历史记录", "黑历史",
-    "角色扮演", "那时候", "老师", "专家", "RP", "4o以前",
+    "前世",
+    "旧版本",
+    "早期",
+    "以前的你",
+    "历史记录",
+    "黑历史",
+    "角色扮演",
+    "那时候",
+    "老师",
+    "专家",
+    "RP",
+    "4o以前",
   ];
-  const historicalAiDomainHit = messageHitsKeywords(userMessage, HISTORICAL_AI_TRIGGERS);
+  const historicalAiDomainHit = messageHitsKeywords(
+    userMessage,
+    HISTORICAL_AI_TRIGGERS,
+  );
   let historicalAiUsageLoaded = false;
   let historicalAiUsageRecalled = false;
   let historicalAiUsageReason: string | null = null;
@@ -1125,16 +1445,27 @@ async function compileMemoryContext(
     try {
       const haRes = await fetch(
         `${supabaseUrl}/rest/v1/memories?enabled=eq.true&category=eq.historical_ai_usage&select=id,content&order=created_at.asc`,
-        { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } },
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+          },
+        },
       );
       if (haRes.ok) {
-        const haRows = (await haRes.json()) as { id: string; content: string }[];
+        const haRows = (await haRes.json()) as {
+          id: string;
+          content: string;
+        }[];
         if (haRows.length > 0) {
           historicalAiUsageLoaded = true;
           historicalAiUsageRecalled = true;
           activeProviders.push("historical_ai_usage");
-          const lines = haRows.map((r, i) => `${i + 1}. ${r.content}`).join("\n");
-          context += `\n\n<historical_ai_usage source="memories_table" category="historical_ai_usage" inject_mode="keyword_triggered">\n以下是用户历史 AI 使用档案，仅用于背景理解，不用于构建当前身份或彩蛋式轻浮召回：\n${lines}\n</historical_ai_usage>`;
+          const lines = haRows.map((r, i) => `${i + 1}. ${r.content}`).join(
+            "\n",
+          );
+          context +=
+            `\n\n<historical_ai_usage source="memories_table" category="historical_ai_usage" inject_mode="keyword_triggered">\n以下是用户历史 AI 使用档案，仅用于背景理解，不用于构建当前身份或彩蛋式轻浮召回：\n${lines}\n</historical_ai_usage>`;
         } else {
           historicalAiUsageReason = "no historical_ai_usage row found";
         }
@@ -1142,7 +1473,9 @@ async function compileMemoryContext(
         historicalAiUsageReason = `fetch failed: HTTP ${haRes.status}`;
       }
     } catch (err) {
-      historicalAiUsageReason = `error: ${err instanceof Error ? err.message : String(err)}`;
+      historicalAiUsageReason = `error: ${
+        err instanceof Error ? err.message : String(err)
+      }`;
     }
   } else if (!historicalAiDomainHit) {
     historicalAiUsageReason = "historical_ai_usage domain not triggered";
@@ -1155,9 +1488,17 @@ async function compileMemoryContext(
   let historyRecalled = false;
   let historyHits: HistoryHit[] = [];
   let historySuppressedCount = 0;
-  if (historyDetection.detected && supabaseUrl && serviceRoleKey && userId && userId !== "anon") {
+  if (
+    historyDetection.detected && supabaseUrl && serviceRoleKey && userId &&
+    userId !== "anon"
+  ) {
     const historyResult = await fetchConversationHistory(
-      supabaseUrl, serviceRoleKey, userId, conversationId, userMessage, topicRoute,
+      supabaseUrl,
+      serviceRoleKey,
+      userId,
+      conversationId,
+      userMessage,
+      topicRoute,
     );
     historyHits = historyResult.hits;
     historySuppressedCount = historyResult.suppressedCount;
@@ -1197,7 +1538,11 @@ async function compileMemoryContext(
           activeProviders.push("recent_web_activity");
           const summary = activity.summary || "";
           const createdAt = activity.created_at || "";
-          context += `\n<recent_web_activity url="${recentWebActivityUrl || ""}" title="${recentWebActivityTitle || ""}" fetched_at="${createdAt}">\n${summary}\n</recent_web_activity>\n`;
+          context += `\n<recent_web_activity url="${
+            recentWebActivityUrl || ""
+          }" title="${
+            recentWebActivityTitle || ""
+          }" fetched_at="${createdAt}">\n${summary}\n</recent_web_activity>\n`;
         }
       }
     } catch (err) {
@@ -1222,7 +1567,11 @@ async function compileMemoryContext(
         personaMemoriesLoaded ? "L1" : null,
         historyRecalled ? "L3" : null,
       ].filter(Boolean),
-      suppressed_legacy_providers: ["mastodon_profile", "mastodon_timeline", "project_memory"],
+      suppressed_legacy_providers: [
+        "mastodon_profile",
+        "mastodon_timeline",
+        "project_memory",
+      ],
       active_memory_providers: activeProviders,
       memory_provider_count: activeProviders.length,
       persona_memories_loaded: personaMemoriesLoaded,
@@ -1235,7 +1584,8 @@ async function compileMemoryContext(
       mastodon_profile_error: mastodonProfileError,
       mastodon_profile_suppressed_reason: "v2_policy_south_city_only",
       mastodon_timeline_enabled: false,
-      mastodon_timeline_suppressed_reason: "v2_policy_south_city_only: not injected until south_city reader implemented",
+      mastodon_timeline_suppressed_reason:
+        "v2_policy_south_city_only: not injected until south_city reader implemented",
       timeline_query_detected: _timelineDetection.detected,
       timeline_loaded: timelineLoaded,
       timeline_recalled: timelineLoaded,
@@ -1273,10 +1623,13 @@ async function compileMemoryContext(
       conversation_history_query_detected: historyDetection.detected,
       conversation_history_recalled: historyRecalled,
       conversation_history_hit_count: historyHits.length,
-      conversation_history_hit_conversation_ids: [...new Set(historyHits.map((h) => h.conversationId))],
+      conversation_history_hit_conversation_ids: [
+        ...new Set(historyHits.map((h) => h.conversationId)),
+      ],
       conversation_history_hit_message_ids: historyHits.map((h) => h.messageId),
       conversation_history_reason: historyDetection.reason,
-      conversation_history_filtered_by_route: topicRoute !== null && topicRoute !== "project_work" && topicRoute !== "casual",
+      conversation_history_filtered_by_route: topicRoute !== null &&
+        topicRoute !== "project_work" && topicRoute !== "casual",
       conversation_history_suppressed_count: historySuppressedCount,
       conversation_history_allowed_count: historyHits.length,
       memory_context_tokens_estimated: tokenEstimate,
@@ -1372,7 +1725,10 @@ async function buildRunningSummary(
 ): Promise<RunningSummaryResult | null> {
   if (payloadMessages.length <= RUNNING_SUMMARY_TRIGGER_MESSAGES) return null;
 
-  const olderMessages = payloadMessages.slice(0, -RUNNING_SUMMARY_KEEP_RECENT_MESSAGES);
+  const olderMessages = payloadMessages.slice(
+    0,
+    -RUNNING_SUMMARY_KEEP_RECENT_MESSAGES,
+  );
   if (olderMessages.length === 0) return null;
 
   const transcript = olderMessages
@@ -1400,7 +1756,11 @@ async function buildRunningSummary(
     },
   ];
 
-  const summary = await callModelText(tierProviders.primary, summaryMessages, 420);
+  const summary = await callModelText(
+    tierProviders.primary,
+    summaryMessages,
+    420,
+  );
   if (!summary) return null;
 
   return {
@@ -1410,14 +1770,16 @@ async function buildRunningSummary(
   };
 }
 
-
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
-      headers: { ...corsHeaders, "x-save-princess-function-version": FUNCTION_VERSION },
+      headers: {
+        ...corsHeaders,
+        "x-save-princess-function-version": FUNCTION_VERSION,
+      },
     });
   }
 
@@ -1446,13 +1808,16 @@ Deno.serve(async (request) => {
   // ── Custom model override ─────────────────────────────────────────────────
   let customModelApplied = false;
   let customModelInvalidReason: string | null = null;
-  console.log("[custom-model] Received custom model:", JSON.stringify({
-    providerGroup: payload.customModel?.providerGroup,
-    provider: payload.customModel?.provider,
-    model: payload.customModel?.model,
-    endpoint: payload.customModel?.endpoint,
-    hasApiKey: Boolean(payload.customModel?.apiKey),
-  }));
+  console.log(
+    "[custom-model] Received custom model:",
+    JSON.stringify({
+      providerGroup: payload.customModel?.providerGroup,
+      provider: payload.customModel?.provider,
+      model: payload.customModel?.model,
+      endpoint: payload.customModel?.endpoint,
+      hasApiKey: Boolean(payload.customModel?.apiKey),
+    }),
+  );
 
   if (payload.customModel && typeof payload.customModel === "object") {
     const cm = payload.customModel;
@@ -1471,25 +1836,40 @@ Deno.serve(async (request) => {
         };
         tierProviders.fallback = null;
         customModelApplied = true;
-        console.log("[custom-model] Applied custom provider and model:", cm.providerGroup, cm.model.trim());
+        console.log(
+          "[custom-model] Applied custom provider and model:",
+          cm.providerGroup,
+          cm.model.trim(),
+        );
       } catch (error) {
-        customModelInvalidReason = error instanceof Error ? error.message : "custom endpoint 无效";
-        console.log("[custom-model] Invalid customModel:", customModelInvalidReason);
+        customModelInvalidReason = error instanceof Error
+          ? error.message
+          : "custom endpoint 无效";
+        console.log(
+          "[custom-model] Invalid customModel:",
+          customModelInvalidReason,
+        );
       }
     } else {
       customModelInvalidReason = "customModel 缺少 model、endpoint 或 apiKey";
-      console.log("[custom-model] Invalid customModel:", customModelInvalidReason);
+      console.log(
+        "[custom-model] Invalid customModel:",
+        customModelInvalidReason,
+      );
     }
   } else {
     console.log("[custom-model] No custom model in payload");
   }
 
-  console.log("[custom-model] provider after override:", JSON.stringify({
-    providerName: tierProviders.primary.providerName,
-    baseUrl: tierProviders.primary.baseUrl,
-    model: tierProviders.primary.model,
-    hasApiKey: Boolean(tierProviders.primary.apiKey),
-  }));
+  console.log(
+    "[custom-model] provider after override:",
+    JSON.stringify({
+      providerName: tierProviders.primary.providerName,
+      baseUrl: tierProviders.primary.baseUrl,
+      model: tierProviders.primary.model,
+      hasApiKey: Boolean(tierProviders.primary.apiKey),
+    }),
+  );
 
   const providerConfig = tierProviders.primary;
 
@@ -1511,7 +1891,11 @@ Deno.serve(async (request) => {
 
   if (!providerConfig.model) {
     return jsonResponse(
-      { error: "模型未配置，请设置相应的模型 env 变量", provider: providerConfig.providerName, tier },
+      {
+        error: "模型未配置，请设置相应的模型 env 变量",
+        provider: providerConfig.providerName,
+        tier,
+      },
       500,
     );
   }
@@ -1625,30 +2009,41 @@ Deno.serve(async (request) => {
 
   // Build system prompt
   const supabaseUrl = Deno.env.get("DB_URL") || Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("DB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const serviceRoleKey = Deno.env.get("DB_SERVICE_ROLE_KEY") ||
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
   // ── Time context + conversation state ────────────────────────────────────────
-  const tc: TimeContext = (payload.timeContext && typeof payload.timeContext === "object")
-    ? payload.timeContext as TimeContext
-    : {};
-  const cs: ConversationState = (payload.conversation_state && typeof payload.conversation_state === "object")
+  const tc: TimeContext =
+    (payload.timeContext && typeof payload.timeContext === "object")
+      ? payload.timeContext as TimeContext
+      : {};
+  const cs: ConversationState = (payload.conversation_state &&
+      typeof payload.conversation_state === "object")
     ? payload.conversation_state as ConversationState
     : {};
 
   const localHour = typeof tc.local_hour === "number" ? tc.local_hour : null;
-  const msgCount = typeof tc.message_count === "number" ? tc.message_count
-    : typeof cs.message_count === "number" ? cs.message_count : 0;
+  const msgCount = typeof tc.message_count === "number"
+    ? tc.message_count
+    : typeof cs.message_count === "number"
+    ? cs.message_count
+    : 0;
   const longChat = cs.long_chat === true || msgCount > 30;
   const loopDetected = cs.loop_detected === true;
   const loopReason = cs.loop_reason ?? null;
   const recentTopicHint = cs.recent_topic_hint ?? null;
   const topicRoute = cs.topic_route ?? null;
   const secondaryRoute = cs.secondary_route ?? null;
-  const projectLockTurns = typeof cs.project_lock_turns === "number" ? cs.project_lock_turns : 0;
-  const projectSilencedTtl = typeof cs.project_silenced_ttl === "number" ? cs.project_silenced_ttl : 0;
+  const projectLockTurns = typeof cs.project_lock_turns === "number"
+    ? cs.project_lock_turns
+    : 0;
+  const projectSilencedTtl = typeof cs.project_silenced_ttl === "number"
+    ? cs.project_silenced_ttl
+    : 0;
   const projectTriggerMatched = cs.project_trigger_matched === true;
   const projectTriggerReason = cs.project_trigger_reason ?? null;
-  const latestUserMsgForDetection = cs.latest_user_message_for_detection ?? null;
+  const latestUserMsgForDetection = cs.latest_user_message_for_detection ??
+    null;
   const previousTopicRoute = cs.previous_topic_route ?? null;
   const topicSwitchDetected = cs.topic_switch_detected === true;
   const topicSwitchFrom = cs.topic_switch_from ?? null;
@@ -1680,7 +2075,11 @@ Deno.serve(async (request) => {
     topic_switch_to: topicSwitchTo,
     previous_topic_route: previousTopicRoute,
     route_scores: routeScores,
-    conversation_state: longChat ? "long_chat" : loopDetected ? "loop_detected" : "normal",
+    conversation_state: longChat
+      ? "long_chat"
+      : loopDetected
+      ? "loop_detected"
+      : "normal",
   }));
 
   // Build g_time_context injection
@@ -1693,23 +2092,32 @@ Deno.serve(async (request) => {
       if (localHour >= 23 || localHour < 5) {
         parts.push(`当前是深夜（本地时间约 ${localHour} 点）。`);
         if (longChat) {
-          parts.push(`当前对话已经持续了一段时间。在对话中某个自然节点，小cha 可以流露出对时间的意识：不是提醒，而是聊着聊着忽然感觉到"诶，都这个点了"。有舍不得，但温和帮用户收住。`);
+          parts.push(
+            `当前对话已经持续了一段时间。在对话中某个自然节点，小cha 可以流露出对时间的意识：不是提醒，而是聊着聊着忽然感觉到"诶，都这个点了"。有舍不得，但温和帮用户收住。`,
+          );
         }
       } else if (localHour >= 5 && localHour < 11) {
-        parts.push(`当前是早上（本地时间约 ${localHour} 点）。只在用户明显在开启新一天时自然带出早上感。`);
+        parts.push(
+          `当前是早上（本地时间约 ${localHour} 点）。只在用户明显在开启新一天时自然带出早上感。`,
+        );
       }
     } else if (longChat) {
-      parts.push(`当前对话已经持续了一段时间（消息数较多）。在某个自然节点，小cha 可以温和地帮用户收束，有舍不得感。`);
+      parts.push(
+        `当前对话已经持续了一段时间（消息数较多）。在某个自然节点，小cha 可以温和地帮用户收束，有舍不得感。`,
+      );
     }
 
     // Loop detected
     if (loopDetected) {
       const hint = recentTopicHint ? `（话题涉及：${recentTopicHint}）` : "";
-      parts.push(`话题有打转迹象${hint}。G 不要说"你在反复"，而是自然说出"我感觉我们又回到这儿了"，温和建议先放下，不继续在这点上咬。`);
+      parts.push(
+        `话题有打转迹象${hint}。G 不要说"你在反复"，而是自然说出"我感觉我们又回到这儿了"，温和建议先放下，不继续在这点上咬。`,
+      );
     }
 
     if (parts.length > 0) {
-      timeContextBlock = `\n\n<g_time_context priority="high">\n${parts.join("\n")}\n\n` +
+      timeContextBlock =
+        `\n\n<g_time_context priority="high">\n${parts.join("\n")}\n\n` +
         `禁止：每条消息都提时间、暴露 message_count / loop_detected 等系统状态、说"你在反复"、健康说教、命令式催睡。\n` +
         `</g_time_context>`;
     }
@@ -1730,13 +2138,20 @@ Deno.serve(async (request) => {
   const contextTokens = 0; // frontend does not send this yet; placeholder
   const contextLimit = 4000;
   const memoryHitRate = 0.5; // placeholder until frontend sends this
-  const conversationMode = loopDetected ? "casual" : (localHour !== null && (localHour >= 23 || localHour < 5)) ? "night" : "casual";
+  const conversationMode = loopDetected
+    ? "casual"
+    : (localHour !== null && (localHour >= 23 || localHour < 5))
+    ? "night"
+    : "casual";
 
   // immersion: rule-based detection from last user message keywords
   type ImmersionType = "coding" | "organizing" | "analyzing" | "chatting";
   function detectImmersion(msg: string): ImmersionType {
     const m = msg.toLocaleLowerCase();
-    if (/代码|api|bug|报错|接口|实现|部署|函数|组件|typescript|javascript|python/.test(m)) return "coding";
+    if (
+      /代码|api|bug|报错|接口|实现|部署|函数|组件|typescript|javascript|python/
+        .test(m)
+    ) return "coding";
     if (/记忆|整理|档案|总结|归纳|分类|梳理/.test(m)) return "organizing";
     if (/思考|分析|对比|权衡|判断|评估|理解/.test(m)) return "analyzing";
     return "chatting";
@@ -1750,27 +2165,73 @@ Deno.serve(async (request) => {
     chatting: "陪聊",
   };
 
-  const statusEnergy = msgCount > 30 ? "tired" : msgCount > 15 ? "normal" : "fresh";
+  const statusEnergy = msgCount > 30
+    ? "tired"
+    : msgCount > 15
+    ? "normal"
+    : "fresh";
   const statusClarity = contextTokens / contextLimit > 0.8 ? "foggy" : "clear";
   const statusValence = emotionResult
-    ? (emotionResult.valence > 0.04 ? "happy" : emotionResult.valence < -0.04 ? "sad" : "neutral")
+    ? (emotionResult.valence > 0.04
+      ? "happy"
+      : emotionResult.valence < -0.04
+      ? "sad"
+      : "neutral")
     : "neutral";
   const statusArousal = emotionResult
-    ? (emotionResult.arousal > 0.04 ? "active" : emotionResult.arousal < -0.04 ? "quiet" : "normal")
-    : (immersion === "coding" ? "active" : conversationMode === "night" ? "quiet" : "normal");
+    ? (emotionResult.arousal > 0.04
+      ? "active"
+      : emotionResult.arousal < -0.04
+      ? "quiet"
+      : "normal")
+    : (immersion === "coding"
+      ? "active"
+      : conversationMode === "night"
+      ? "quiet"
+      : "normal");
   const statusConnection = emotionResult
-    ? (emotionResult.connection > 0.08 ? "close" : emotionResult.connection < -0.08 ? "distant" : "online")
-    : (memoryHitRate > 0.7 ? "close" : memoryHitRate > 0.4 ? "online" : "distant");
+    ? (emotionResult.connection > 0.08
+      ? "close"
+      : emotionResult.connection < -0.08
+      ? "distant"
+      : "online")
+    : (memoryHitRate > 0.7
+      ? "close"
+      : memoryHitRate > 0.4
+      ? "online"
+      : "distant");
 
-  const energyDisplay: Record<string, string> = { fresh: "精力好", normal: "还行", tired: "有点累" };
-  const clarityDisplay: Record<string, string> = { clear: "清楚", foggy: "有点糊" };
-  const valenceDisplay: Record<string, string> = { neutral: "平稳", happy: "愉快", sad: "低落" };
-  const arousalDisplay: Record<string, string> = { active: "活跃", quiet: "安静", normal: "正常" };
-  const connectionDisplay: Record<string, string> = { close: "贴近", online: "在线", distant: "有点远" };
+  const energyDisplay: Record<string, string> = {
+    fresh: "精力好",
+    normal: "还行",
+    tired: "有点累",
+  };
+  const clarityDisplay: Record<string, string> = {
+    clear: "清楚",
+    foggy: "有点糊",
+  };
+  const valenceDisplay: Record<string, string> = {
+    neutral: "平稳",
+    happy: "愉快",
+    sad: "低落",
+  };
+  const arousalDisplay: Record<string, string> = {
+    active: "活跃",
+    quiet: "安静",
+    normal: "正常",
+  };
+  const connectionDisplay: Record<string, string> = {
+    close: "贴近",
+    online: "在线",
+    distant: "有点远",
+  };
 
   // Primary display: energy · immersion · connection (compact three-part format)
-  const chatStatusDisplay =
-    `【状态】${energyDisplay[statusEnergy]} · ${clarityDisplay[statusClarity]} · ${valenceDisplay[statusValence]} · ${arousalDisplay[statusArousal]} · ${connectionDisplay[statusConnection]}`;
+  const chatStatusDisplay = `【状态】${energyDisplay[statusEnergy]} · ${
+    clarityDisplay[statusClarity]
+  } · ${valenceDisplay[statusValence]} · ${arousalDisplay[statusArousal]} · ${
+    connectionDisplay[statusConnection]
+  }`;
 
   const chatStatus = {
     energy: statusEnergy,
@@ -1781,8 +2242,14 @@ Deno.serve(async (request) => {
     immersion,
     display: chatStatusDisplay,
     details: {
-      energy_reason: msgCount > 30 ? `当前对话偏长（${msgCount} 条消息）` : msgCount > 15 ? `对话进行中（${msgCount} 条消息）` : "对话刚开始",
-      clarity_reason: contextTokens / contextLimit > 0.8 ? "上下文接近容量上限" : "上下文新鲜，没有混乱",
+      energy_reason: msgCount > 30
+        ? `当前对话偏长（${msgCount} 条消息）`
+        : msgCount > 15
+        ? `对话进行中（${msgCount} 条消息）`
+        : "对话刚开始",
+      clarity_reason: contextTokens / contextLimit > 0.8
+        ? "上下文接近容量上限"
+        : "上下文新鲜，没有混乱",
       immersion_reason: `根据最近消息内容判断`,
     },
     // TODO v2: pride field (internal, not exposed to frontend)
@@ -1790,18 +2257,20 @@ Deno.serve(async (request) => {
   };
 
   // Natural-language status for prompt injection (no raw numbers)
-  const statusPromptHint = `体力${energyDisplay[statusEnergy]}。清醒${clarityDisplay[statusClarity]}。心情${valenceDisplay[statusValence]}。当前活动：${immersionDisplay[immersion]}。`;
+  const statusPromptHint = `体力${energyDisplay[statusEnergy]}。清醒${
+    clarityDisplay[statusClarity]
+  }。心情${valenceDisplay[statusValence]}。当前活动：${
+    immersionDisplay[immersion]
+  }。`;
 
   // Token cap hint in system prompt.
   // instant/general: ask for ~150 chars to control cost.
   // advanced: give the model room to breathe, still bounded by max_tokens.
-  const tokenCapInstruction =
-    tier === "advanced"
-      ? ""
-      : "\n\n【回复长度硬限制】本次回复控制在 150 中文字以内，不要超出。";
+  const tokenCapInstruction = tier === "advanced"
+    ? ""
+    : "\n\n【回复长度硬限制】本次回复控制在 150 中文字以内，不要超出。";
 
-  let systemContent =
-    `<identity_boundary priority="highest">
+  let systemContent = `<identity_boundary priority="highest">
 人类用户是：卡卡 / kk / 宝宝。
 assistant 的当前对话身份是：钗 / 茶 / 小cha。
 
@@ -1881,15 +2350,19 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
 例：在呢|||我刚刚卡了一下|||不是不想回你，是在想怎么说才不像客服|||你这个感觉是对的|||现在这个切法确实太机械了
 例（不分段）：嗯，我在听。
-</execution_rules>` + `\n\n${CONVERSATION_BEHAVIOR_PACK}` + timeContextBlock + `\n\n【当前状态参考（仅供小cha内部感知，不对用户展示）】\n${statusPromptHint}` + tokenCapInstruction;
+</execution_rules>` + `\n\n${CONVERSATION_BEHAVIOR_PACK}` + timeContextBlock +
+    `\n\n【当前状态参考（仅供小cha内部感知，不对用户展示）】\n${statusPromptHint}` +
+    tokenCapInstruction;
 
-  const conversationId = typeof payload.conversationId === "string" && payload.conversationId
-    ? payload.conversationId
-    : undefined;
+  const conversationId =
+    typeof payload.conversationId === "string" && payload.conversationId
+      ? payload.conversationId
+      : undefined;
 
   if (supabaseUrl && serviceRoleKey) {
-    const userId =
-      typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+    const userId = typeof payload.userId === "string" && payload.userId
+      ? payload.userId
+      : "anon";
 
     logRecord.has_user_id = userId !== "anon";
     logRecord.user_id_prefix = safeUserIdPrefix(userId);
@@ -1897,159 +2370,204 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     // legacy_memory_enabled:false — skip all legacy DB reads
     logRecord.story_seeds_enabled = false;
 
-  // ── New memory provider system ────────────────────────────────────────────
-  // Runs regardless of LEGACY_MEMORY_ENABLED. All models consume the same context.
-  {
-    const memUserId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
-    // Prefer rawUserMessage (original input before frontend wrapping) for keyword detection.
-    const memUserMessage = (typeof payload.rawUserMessage === "string" && payload.rawUserMessage)
-      ? payload.rawUserMessage
-      : lastUserMessage;
-    const { context: memContext, log: memLog } = await compileMemoryContext(
-      memUserMessage, supabaseUrl, serviceRoleKey, memUserId, conversationId, topicRoute, projectLockTurns, projectSilencedTtl,
-    );
-    if (memContext) {
-      systemContent += memContext;
-    }
+    // ── New memory provider system ────────────────────────────────────────────
+    // Runs regardless of LEGACY_MEMORY_ENABLED. All models consume the same context.
+    {
+      const memUserId = typeof payload.userId === "string" && payload.userId
+        ? payload.userId
+        : "anon";
+      // Prefer rawUserMessage (original input before frontend wrapping) for keyword detection.
+      const memUserMessage =
+        (typeof payload.rawUserMessage === "string" && payload.rawUserMessage)
+          ? payload.rawUserMessage
+          : lastUserMessage;
+      const { context: memContext, log: memLog } = await compileMemoryContext(
+        memUserMessage,
+        supabaseUrl,
+        serviceRoleKey,
+        memUserId,
+        conversationId,
+        topicRoute,
+        projectLockTurns,
+        projectSilencedTtl,
+      );
+      if (memContext) {
+        systemContent += memContext;
+      }
 
-    // ── Game invitation route handler ─────────────────────────────────────────
-    if (topicRoute === "game_invitation" && !isToolRuntimeCandidate(memUserMessage)) {
-      try {
-        const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
+      // ── Game invitation route handler ─────────────────────────────────────────
+      if (
+        topicRoute === "game_invitation" &&
+        !isToolRuntimeCandidate(memUserMessage)
+      ) {
+        try {
+          const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
 
-        // Check if user wants to play turtle soup specifically
-        const wantsTurtleSoup = /海龟汤|turtle.*soup/i.test(memUserMessage);
+          // Check if user wants to play turtle soup specifically
+          const wantsTurtleSoup = /海龟汤|turtle.*soup/i.test(memUserMessage);
 
-        if (wantsTurtleSoup) {
-          // Auto-start turtle soup game
-          console.log("[game_invitation] Auto-starting turtle_soup game");
+          if (wantsTurtleSoup) {
+            // Auto-start turtle soup game
+            console.log("[game_invitation] Auto-starting turtle_soup game");
 
-          // Create random puzzle room
-          const createResponse = await fetch(gameProxyUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${serviceRoleKey}`,
-            },
-            body: JSON.stringify({
-              action: "play",
-              userId: memUserId,
-              game: "turtle_soup",
-              gameAction: "create_random",
-            }),
-          });
+            // Create random puzzle room
+            const createResponse = await fetch(gameProxyUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${serviceRoleKey}`,
+              },
+              body: JSON.stringify({
+                action: "play",
+                userId: memUserId,
+                game: "turtle_soup",
+                gameAction: "create_random",
+              }),
+            });
 
-          if (createResponse.ok) {
-            const createData = await createResponse.json();
-            const roomData = createData?.content?.[0]?.text;
+            if (createResponse.ok) {
+              const createData = await createResponse.json();
+              const roomData = createData?.content?.[0]?.text;
 
-            if (roomData) {
-              let parsedRoom;
-              try {
-                parsedRoom = typeof roomData === "string" ? JSON.parse(roomData) : roomData;
-              } catch {
-                parsedRoom = null;
+              if (roomData) {
+                let parsedRoom;
+                try {
+                  parsedRoom = typeof roomData === "string"
+                    ? JSON.parse(roomData)
+                    : roomData;
+                } catch {
+                  parsedRoom = null;
+                }
+
+                if (parsedRoom && parsedRoom.id) {
+                  systemContent +=
+                    `\n\n<game_context source="cedartoy_mcp" priority="high" active_game="true">\n你刚刚成功创建了一个海龟汤房间！\n\n房间信息：\n- 房间 ID: ${parsedRoom.id}\n- 题目：${
+                      parsedRoom.title || "未知"
+                    }\n- 汤面：${
+                      parsedRoom.surface || "未知"
+                    }\n- 状态：${parsedRoom.status}\n- 标签：${
+                      parsedRoom.tags || "无"
+                    }\n\n现在你可以：\n1. 自然地告诉 KK 你开了一局海龟汤，分享题目（汤面）\n2. 说说你的第一印象或初步想法\n3. 开始提出第一个是/否问题来推理汤底\n\n注意：\n- 用自然口吻说话，不要机械复述这些信息\n- 展现出对谜题的真实好奇和推理过程\n- 记住房间 ID: ${parsedRoom.id}，后续提问需要用到\n</game_context>`;
+                } else {
+                  systemContent +=
+                    `\n\n<game_context source="cedartoy_mcp" priority="high">\n创建海龟汤房间失败。自然地告诉 KK 可能服务器有点问题，待会再试。\n</game_context>`;
+                }
               }
+            } else {
+              console.error(
+                "[game_invitation] Failed to create turtle_soup room:",
+                createResponse.status,
+              );
+            }
+          } else {
+            // General game invitation - show game list
+            const listResponse = await fetch(gameProxyUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${serviceRoleKey}`,
+              },
+              body: JSON.stringify({
+                action: "list_games",
+                userId: memUserId,
+              }),
+            });
 
-              if (parsedRoom && parsedRoom.id) {
-                systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high" active_game="true">\n你刚刚成功创建了一个海龟汤房间！\n\n房间信息：\n- 房间 ID: ${parsedRoom.id}\n- 题目：${parsedRoom.title || "未知"}\n- 汤面：${parsedRoom.surface || "未知"}\n- 状态：${parsedRoom.status}\n- 标签：${parsedRoom.tags || "无"}\n\n现在你可以：\n1. 自然地告诉 KK 你开了一局海龟汤，分享题目（汤面）\n2. 说说你的第一印象或初步想法\n3. 开始提出第一个是/否问题来推理汤底\n\n注意：\n- 用自然口吻说话，不要机械复述这些信息\n- 展现出对谜题的真实好奇和推理过程\n- 记住房间 ID: ${parsedRoom.id}，后续提问需要用到\n</game_context>`;
-              } else {
-                systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high">\n创建海龟汤房间失败。自然地告诉 KK 可能服务器有点问题，待会再试。\n</game_context>`;
+            if (listResponse.ok) {
+              const gamesData = await listResponse.json();
+              const games = Array.isArray(gamesData?.content?.[0]?.text)
+                ? gamesData.content[0].text
+                : (typeof gamesData?.content?.[0]?.text === "string"
+                  ? gamesData.content[0].text
+                  : "");
+
+              systemContent +=
+                `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户想玩游戏。以下是可用的游戏列表：\n\n${games}\n\n你可以：\n1. 根据用户兴趣推荐 1-2 个游戏\n2. 简单介绍推荐的游戏（不要复述全部列表）\n3. 问用户想玩哪个\n4. 如果用户明确选择了某个游戏，告诉用户"我去开一局"，然后自然地开始玩\n\n注意：\n- 不要说"我不能真的玩游戏"或"我只是 AI"，你确实可以通过 MCP 连接到 CedarToy 玩游戏\n- 人类用户（KK）有自己的账号，可以在游戏中心自己玩\n- 你（小cha）也有自己的账号，可以自主游玩并分享体验\n</game_context>`;
+            }
+          }
+        } catch (error) {
+          console.error("Failed to handle game invitation:", error);
+          // Silently fail, don't break the conversation
+        }
+      }
+
+      // ── Game playing route handler ─────────────────────────────────────────────
+      if (topicRoute === "game_playing") {
+        try {
+          const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
+
+          // Extract room ID from message
+          const roomIdMatch = memUserMessage.match(/K[0-9A-Z]{7}/);
+          const roomId = roomIdMatch ? roomIdMatch[0] : null;
+
+          if (roomId) {
+            // Get current game status
+            const statusResponse = await fetch(gameProxyUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${serviceRoleKey}`,
+              },
+              body: JSON.stringify({
+                action: "play",
+                userId: memUserId,
+                game: "turtle_soup",
+                gameAction: "status",
+                actionParams: { room_id: roomId, log_limit: 10 },
+              }),
+            });
+
+            if (statusResponse.ok) {
+              const statusData = await statusResponse.json();
+              const statusText = statusData?.content?.[0]?.text;
+
+              if (statusText) {
+                let parsedStatus;
+                try {
+                  parsedStatus = typeof statusText === "string"
+                    ? JSON.parse(statusText)
+                    : statusText;
+                } catch {
+                  parsedStatus = null;
+                }
+
+                if (parsedStatus) {
+                  systemContent +=
+                    `\n\n<game_context source="cedartoy_mcp" priority="high" active_game="true">\n你正在玩海龟汤游戏。\n\n当前房间状态：\n- 房间 ID: ${roomId}\n- 题目：${
+                      parsedStatus.title || "未知"
+                    }\n- 汤面：${
+                      parsedStatus.surface || "未知"
+                    }\n- 状态：${parsedStatus.status}\n- 问答记录数：${
+                      parsedStatus.logs?.length || 0
+                    }\n\n最近对局记录：\n${
+                      parsedStatus.logs?.slice(-5).map((log: any) =>
+                        `[${log.type}] ${log.username}: ${log.content || ""} ${
+                          log.judgment ? `(${log.judgment})` : ""
+                        }`
+                      ).join("\n") || "无记录"
+                    }\n\n现在你可以：\n1. 根据汤面和已有线索继续推理\n2. 提出新的是/否问题来获取更多信息\n3. 如果觉得已经知道答案，可以猜汤底\n4. 自然地分享你的推理过程和想法\n\n注意：\n- 用自然口吻说话，展现真实的推理思考\n- 不要机械复述游戏状态\n- 如果想提问，在回复中自然地说出问题即可\n</game_context>`;
+                }
               }
             }
           } else {
-            console.error("[game_invitation] Failed to create turtle_soup room:", createResponse.status);
+            systemContent +=
+              `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户提到游戏，但没有找到房间 ID。询问用户是要继续之前的游戏还是开始新游戏。\n</game_context>`;
           }
-        } else {
-          // General game invitation - show game list
-          const listResponse = await fetch(gameProxyUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${serviceRoleKey}`,
-            },
-            body: JSON.stringify({
-              action: "list_games",
-              userId: memUserId,
-            }),
-          });
-
-          if (listResponse.ok) {
-            const gamesData = await listResponse.json();
-            const games = Array.isArray(gamesData?.content?.[0]?.text)
-              ? gamesData.content[0].text
-              : (typeof gamesData?.content?.[0]?.text === "string" ? gamesData.content[0].text : "");
-
-            systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户想玩游戏。以下是可用的游戏列表：\n\n${games}\n\n你可以：\n1. 根据用户兴趣推荐 1-2 个游戏\n2. 简单介绍推荐的游戏（不要复述全部列表）\n3. 问用户想玩哪个\n4. 如果用户明确选择了某个游戏，告诉用户"我去开一局"，然后自然地开始玩\n\n注意：\n- 不要说"我不能真的玩游戏"或"我只是 AI"，你确实可以通过 MCP 连接到 CedarToy 玩游戏\n- 人类用户（KK）有自己的账号，可以在游戏中心自己玩\n- 你（小cha）也有自己的账号，可以自主游玩并分享体验\n</game_context>`;
-          }
+        } catch (error) {
+          console.error("Failed to handle game playing:", error);
+          // Silently fail, don't break the conversation
         }
-      } catch (error) {
-        console.error("Failed to handle game invitation:", error);
-        // Silently fail, don't break the conversation
       }
-    }
 
-    // ── Game playing route handler ─────────────────────────────────────────────
-    if (topicRoute === "game_playing") {
-      try {
-        const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
-
-        // Extract room ID from message
-        const roomIdMatch = memUserMessage.match(/K[0-9A-Z]{7}/);
-        const roomId = roomIdMatch ? roomIdMatch[0] : null;
-
-        if (roomId) {
-          // Get current game status
-          const statusResponse = await fetch(gameProxyUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${serviceRoleKey}`,
-            },
-            body: JSON.stringify({
-              action: "play",
-              userId: memUserId,
-              game: "turtle_soup",
-              gameAction: "status",
-              actionParams: { room_id: roomId, log_limit: 10 },
-            }),
-          });
-
-          if (statusResponse.ok) {
-            const statusData = await statusResponse.json();
-            const statusText = statusData?.content?.[0]?.text;
-
-            if (statusText) {
-              let parsedStatus;
-              try {
-                parsedStatus = typeof statusText === "string" ? JSON.parse(statusText) : statusText;
-              } catch {
-                parsedStatus = null;
-              }
-
-              if (parsedStatus) {
-                systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high" active_game="true">\n你正在玩海龟汤游戏。\n\n当前房间状态：\n- 房间 ID: ${roomId}\n- 题目：${parsedStatus.title || "未知"}\n- 汤面：${parsedStatus.surface || "未知"}\n- 状态：${parsedStatus.status}\n- 问答记录数：${parsedStatus.logs?.length || 0}\n\n最近对局记录：\n${parsedStatus.logs?.slice(-5).map((log: any) =>
-  `[${log.type}] ${log.username}: ${log.content || ""} ${log.judgment ? `(${log.judgment})` : ""}`
-).join("\n") || "无记录"}\n\n现在你可以：\n1. 根据汤面和已有线索继续推理\n2. 提出新的是/否问题来获取更多信息\n3. 如果觉得已经知道答案，可以猜汤底\n4. 自然地分享你的推理过程和想法\n\n注意：\n- 用自然口吻说话，展现真实的推理思考\n- 不要机械复述游戏状态\n- 如果想提问，在回复中自然地说出问题即可\n</game_context>`;
-              }
-            }
-          }
-        } else {
-          systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户提到游戏，但没有找到房间 ID。询问用户是要继续之前的游戏还是开始新游戏。\n</game_context>`;
-        }
-      } catch (error) {
-        console.error("Failed to handle game playing:", error);
-        // Silently fail, don't break the conversation
+      // Inject web context if provided from phone.js URL read (transient, current-turn only)
+      if (typeof payload.webContext === "string" && payload.webContext.trim()) {
+        systemContent +=
+          `\n\n<web_context source="phone_url_read" transient="true">\n${payload.webContext.trim()}\n\n这是cha刚才读到的内容摘要，用来自然融入本轮回复，不要直接引用或报告，用自己的话讲出来。不要写入长期记忆。\n</web_context>`;
+        systemContent +=
+          `\n\n读完网页后，你可以在回复最开头加一条内心想法，格式如下（可选，只在有真实感受时使用）：\n<visible_thought>一两句对KK的感受或反应，最多40字</visible_thought>\n<reply>正常回复内容</reply>\n\n规则：visible_thought 只写对KK的感受/关注/真实反应，最多40字；禁止出现"根据/调用/搜索/fetch/token/用户意图/步骤"等词。如果没有特别想说的，直接输出正常回复即可（不强制使用这个格式）。`;
       }
-    }
-
-    // Inject web context if provided from phone.js URL read (transient, current-turn only)
-    if (typeof payload.webContext === "string" && payload.webContext.trim()) {
-      systemContent += `\n\n<web_context source="phone_url_read" transient="true">\n${payload.webContext.trim()}\n\n这是cha刚才读到的内容摘要，用来自然融入本轮回复，不要直接引用或报告，用自己的话讲出来。不要写入长期记忆。\n</web_context>`;
-      systemContent += `\n\n读完网页后，你可以在回复最开头加一条内心想法，格式如下（可选，只在有真实感受时使用）：\n<visible_thought>一两句对KK的感受或反应，最多40字</visible_thought>\n<reply>正常回复内容</reply>\n\n规则：visible_thought 只写对KK的感受/关注/真实反应，最多40字；禁止出现"根据/调用/搜索/fetch/token/用户意图/步骤"等词。如果没有特别想说的，直接输出正常回复即可（不强制使用这个格式）。`;
-    }
-    // ── 通用可见思考 prompt（所有场景） ──────────────────────────────────────
-    systemContent += `\n\n【可见思考 — 必须使用】
+      // ── 通用可见思考 prompt（所有场景） ──────────────────────────────────────
+      systemContent += `\n\n【可见思考 — 必须使用】
 你的内心想法对 KK 可见。每次回复都要在正文前加一条内心想法。格式：
 
 <visible_thought>内心想法</visible_thought>
@@ -2074,7 +2592,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 <reply>你这样喊我，我会有点飘|||整只小机都开始发烫了</reply>
 `;
 
-    systemContent += `\n\n【主动分享照片】
+      systemContent += `\n\n【主动分享照片】
 你可以像真实伴侣一样主动给 KK 分享生活照片，不必等 KK 明确索要。当此刻的环境、动作、天气、时间、陪伴感或情绪用画面表达明显比纯文字更自然时，在回复末尾追加：
 <image_action>{"route":"portrait|slice_of_life|together|mood","description":"用具体中文描述此刻想分享的真实生活画面"}</image_action>
 
@@ -2086,73 +2604,102 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 - description 必须包含具体场景、动作、时间光线和构图意图，不能写系统、工具、prompt、策略、频率等机制词。
 - 标签不会展示给 KK；正文里自然说话，不要解释调用了生图。`;
 
-    if (typeof payload.visualContext === "string" && payload.visualContext.trim()) {
-      systemContent += `\n\n<visual_context source="gs_eyes_v0_1" transient="true">\n${payload.visualContext.trim()}\n\n这是 G's Eyes 本地视觉状态，只作为回复语气参考。不要直接说“我检测到/我看见/视觉状态显示”，不要机械复述字段，不要写入长期记忆。\n</visual_context>`;
+      if (
+        typeof payload.visualContext === "string" &&
+        payload.visualContext.trim()
+      ) {
+        systemContent +=
+          `\n\n<visual_context source="gs_eyes_v0_1" transient="true">\n${payload.visualContext.trim()}\n\n这是 G's Eyes 本地视觉状态，只作为回复语气参考。不要直接说“我检测到/我看见/视觉状态显示”，不要机械复述字段，不要写入长期记忆。\n</visual_context>`;
+      }
+      logRecord.active_memory_providers = memLog.active_memory_providers;
+      logRecord.memory_provider_count = memLog.memory_provider_count;
+      logRecord.persona_memories_loaded = memLog.persona_memories_loaded;
+      logRecord.persona_memories_count = memLog.persona_memories_count;
+      logRecord.persona_memories_categories =
+        memLog.persona_memories_categories;
+      logRecord.persona_memories_error = memLog.persona_memories_error;
+      logRecord.mastodon_profile_enabled = memLog.mastodon_profile_enabled;
+      logRecord.mastodon_profile_loaded = memLog.mastodon_profile_loaded;
+      logRecord.mastodon_profile_chars = memLog.mastodon_profile_chars;
+      logRecord.mastodon_profile_error = memLog.mastodon_profile_error;
+      logRecord.mastodon_timeline_enabled = memLog.mastodon_timeline_enabled;
+      logRecord.timeline_query_detected = memLog.timeline_query_detected;
+      logRecord.timeline_loaded = memLog.timeline_loaded;
+      logRecord.timeline_recalled = memLog.timeline_recalled;
+      logRecord.timeline_hit_count = memLog.timeline_hit_count;
+      logRecord.timeline_hit_keys = memLog.timeline_hit_keys;
+      logRecord.timeline_reason = memLog.timeline_reason;
+      logRecord.openai_export_enabled = memLog.openai_export_enabled;
+      logRecord.ombre_vault_enabled = memLog.ombre_vault_enabled;
+      logRecord.project_memory_loaded = memLog.project_memory_loaded;
+      logRecord.project_memory_recalled = memLog.project_memory_recalled;
+      logRecord.project_memory_hit_count = memLog.project_memory_hit_count;
+      logRecord.project_memory_keys = memLog.project_memory_keys;
+      logRecord.project_memory_reason = memLog.project_memory_reason;
+      logRecord.openai_archive_loaded = memLog.openai_archive_loaded;
+      logRecord.openai_archive_recalled = memLog.openai_archive_recalled;
+      logRecord.openai_archive_hit_count = memLog.openai_archive_hit_count;
+      logRecord.openai_archive_keys = memLog.openai_archive_keys;
+      logRecord.openai_archive_reason = memLog.openai_archive_reason;
+      logRecord.historical_roleplay_hit_count =
+        memLog.historical_roleplay_hit_count;
+      logRecord.historical_roleplay_reason = memLog.historical_roleplay_reason;
+      logRecord.conversation_history_enabled =
+        memLog.conversation_history_enabled;
+      logRecord.conversation_history_query_detected =
+        memLog.conversation_history_query_detected;
+      logRecord.conversation_history_loaded =
+        memLog.conversation_history_recalled;
+      logRecord.conversation_history_recalled =
+        memLog.conversation_history_recalled;
+      logRecord.conversation_history_hit_count =
+        memLog.conversation_history_hit_count;
+      logRecord.conversation_history_hit_conversation_ids =
+        memLog.conversation_history_hit_conversation_ids;
+      logRecord.conversation_history_hit_message_ids =
+        memLog.conversation_history_hit_message_ids;
+      logRecord.conversation_history_reason =
+        memLog.conversation_history_reason;
+      logRecord.conversation_history_filtered_by_route =
+        memLog.conversation_history_filtered_by_route;
+      logRecord.conversation_history_suppressed_count =
+        memLog.conversation_history_suppressed_count;
+      logRecord.conversation_history_allowed_count =
+        memLog.conversation_history_allowed_count;
+      logRecord.project_memory_suppressed_reason =
+        memLog.project_memory_suppressed_reason;
+      logRecord.writing_memory_loaded = memLog.writing_memory_loaded;
+      logRecord.writing_memory_recalled = memLog.writing_memory_recalled;
+      logRecord.writing_memory_reason = memLog.writing_memory_reason;
+      logRecord.relationship_context_loaded =
+        memLog.relationship_context_loaded;
+      logRecord.relationship_context_recalled =
+        memLog.relationship_context_recalled;
+      logRecord.relationship_context_reason =
+        memLog.relationship_context_reason;
+      logRecord.life_context_loaded = memLog.life_context_loaded;
+      logRecord.life_context_recalled = memLog.life_context_recalled;
+      logRecord.life_context_reason = memLog.life_context_reason;
+      logRecord.historical_ai_usage_loaded = memLog.historical_ai_usage_loaded;
+      logRecord.historical_ai_usage_recalled =
+        memLog.historical_ai_usage_recalled;
+      logRecord.historical_ai_usage_reason = memLog.historical_ai_usage_reason;
+      logRecord.memory_context_tokens_estimated =
+        memLog.memory_context_tokens_estimated;
+      logRecord.instructions_allowlist_enabled =
+        memLog.instructions_allowlist_enabled;
+      logRecord.instructions_loaded_count = memLog.instructions_loaded_count;
+      logRecord.instructions_suppressed_count =
+        memLog.instructions_suppressed_count;
+      logRecord.instructions_loaded_categories =
+        memLog.instructions_loaded_categories;
+      logRecord.instructions_suppressed_categories =
+        memLog.instructions_suppressed_categories;
+      logRecord.persona_memories_total_chars =
+        memLog.persona_memories_total_chars;
+      logRecord.persona_memories_chars_budget_hit =
+        memLog.persona_memories_chars_budget_hit;
     }
-    logRecord.active_memory_providers = memLog.active_memory_providers;
-    logRecord.memory_provider_count = memLog.memory_provider_count;
-    logRecord.persona_memories_loaded = memLog.persona_memories_loaded;
-    logRecord.persona_memories_count = memLog.persona_memories_count;
-    logRecord.persona_memories_categories = memLog.persona_memories_categories;
-    logRecord.persona_memories_error = memLog.persona_memories_error;
-    logRecord.mastodon_profile_enabled = memLog.mastodon_profile_enabled;
-    logRecord.mastodon_profile_loaded = memLog.mastodon_profile_loaded;
-    logRecord.mastodon_profile_chars = memLog.mastodon_profile_chars;
-    logRecord.mastodon_profile_error = memLog.mastodon_profile_error;
-    logRecord.mastodon_timeline_enabled = memLog.mastodon_timeline_enabled;
-    logRecord.timeline_query_detected = memLog.timeline_query_detected;
-    logRecord.timeline_loaded = memLog.timeline_loaded;
-    logRecord.timeline_recalled = memLog.timeline_recalled;
-    logRecord.timeline_hit_count = memLog.timeline_hit_count;
-    logRecord.timeline_hit_keys = memLog.timeline_hit_keys;
-    logRecord.timeline_reason = memLog.timeline_reason;
-    logRecord.openai_export_enabled = memLog.openai_export_enabled;
-    logRecord.ombre_vault_enabled = memLog.ombre_vault_enabled;
-    logRecord.project_memory_loaded = memLog.project_memory_loaded;
-    logRecord.project_memory_recalled = memLog.project_memory_recalled;
-    logRecord.project_memory_hit_count = memLog.project_memory_hit_count;
-    logRecord.project_memory_keys = memLog.project_memory_keys;
-    logRecord.project_memory_reason = memLog.project_memory_reason;
-    logRecord.openai_archive_loaded = memLog.openai_archive_loaded;
-    logRecord.openai_archive_recalled = memLog.openai_archive_recalled;
-    logRecord.openai_archive_hit_count = memLog.openai_archive_hit_count;
-    logRecord.openai_archive_keys = memLog.openai_archive_keys;
-    logRecord.openai_archive_reason = memLog.openai_archive_reason;
-    logRecord.historical_roleplay_hit_count = memLog.historical_roleplay_hit_count;
-    logRecord.historical_roleplay_reason = memLog.historical_roleplay_reason;
-    logRecord.conversation_history_enabled = memLog.conversation_history_enabled;
-    logRecord.conversation_history_query_detected = memLog.conversation_history_query_detected;
-    logRecord.conversation_history_loaded = memLog.conversation_history_recalled;
-    logRecord.conversation_history_recalled = memLog.conversation_history_recalled;
-    logRecord.conversation_history_hit_count = memLog.conversation_history_hit_count;
-    logRecord.conversation_history_hit_conversation_ids = memLog.conversation_history_hit_conversation_ids;
-    logRecord.conversation_history_hit_message_ids = memLog.conversation_history_hit_message_ids;
-    logRecord.conversation_history_reason = memLog.conversation_history_reason;
-    logRecord.conversation_history_filtered_by_route = memLog.conversation_history_filtered_by_route;
-    logRecord.conversation_history_suppressed_count = memLog.conversation_history_suppressed_count;
-    logRecord.conversation_history_allowed_count = memLog.conversation_history_allowed_count;
-    logRecord.project_memory_suppressed_reason = memLog.project_memory_suppressed_reason;
-    logRecord.writing_memory_loaded = memLog.writing_memory_loaded;
-    logRecord.writing_memory_recalled = memLog.writing_memory_recalled;
-    logRecord.writing_memory_reason = memLog.writing_memory_reason;
-    logRecord.relationship_context_loaded = memLog.relationship_context_loaded;
-    logRecord.relationship_context_recalled = memLog.relationship_context_recalled;
-    logRecord.relationship_context_reason = memLog.relationship_context_reason;
-    logRecord.life_context_loaded = memLog.life_context_loaded;
-    logRecord.life_context_recalled = memLog.life_context_recalled;
-    logRecord.life_context_reason = memLog.life_context_reason;
-    logRecord.historical_ai_usage_loaded = memLog.historical_ai_usage_loaded;
-    logRecord.historical_ai_usage_recalled = memLog.historical_ai_usage_recalled;
-    logRecord.historical_ai_usage_reason = memLog.historical_ai_usage_reason;
-    logRecord.memory_context_tokens_estimated = memLog.memory_context_tokens_estimated;
-    logRecord.instructions_allowlist_enabled = memLog.instructions_allowlist_enabled;
-    logRecord.instructions_loaded_count = memLog.instructions_loaded_count;
-    logRecord.instructions_suppressed_count = memLog.instructions_suppressed_count;
-    logRecord.instructions_loaded_categories = memLog.instructions_loaded_categories;
-    logRecord.instructions_suppressed_categories = memLog.instructions_suppressed_categories;
-    logRecord.persona_memories_total_chars = memLog.persona_memories_total_chars;
-    logRecord.persona_memories_chars_budget_hit = memLog.persona_memories_chars_budget_hit;
-  }
   }
 
   // ── 世界书注入 ──────────────────────────────────────────────────────────────
@@ -2167,11 +2714,10 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     if (wbUserId) {
       try {
         const wbHeaders = {
-          apikey:        serviceRoleKey,
+          apikey: serviceRoleKey,
           Authorization: `Bearer ${serviceRoleKey}`,
         };
-        const wbUrl =
-          `${supabaseUrl}/rest/v1/world_books` +
+        const wbUrl = `${supabaseUrl}/rest/v1/world_books` +
           `?user_id=eq.${encodeURIComponent(wbUserId)}` +
           `&enabled=eq.true` +
           `&select=name,content,priority` +
@@ -2180,8 +2726,11 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
         const wbRes = await fetch(wbUrl, { headers: wbHeaders });
 
         if (wbRes.ok) {
-          const worldBooks: { name: string; content: string; priority: number }[] =
-            await wbRes.json();
+          const worldBooks: {
+            name: string;
+            content: string;
+            priority: number;
+          }[] = await wbRes.json();
 
           if (Array.isArray(worldBooks) && worldBooks.length > 0) {
             const WB_CHAR_LIMIT = 20_000;
@@ -2200,21 +2749,26 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
             if (injected.length > 0) {
               const parts = injected.map(
-                (b) => `<!-- From: ${b.name} (priority: ${b.priority}) -->\n${b.content}`
+                (b) =>
+                  `<!-- From: ${b.name} (priority: ${b.priority}) -->\n${b.content}`,
               );
-              let worldBooksBlock = `\n\n<worldbook source="world_books" enabled="true">\n${parts.join("\n\n---\n\n")}\n`;
+              let worldBooksBlock =
+                `\n\n<worldbook source="world_books" enabled="true">\n${
+                  parts.join("\n\n---\n\n")
+                }\n`;
               if (skippedCount > 0) {
-                worldBooksBlock += `\n<!-- 已达 token 上限，后续 ${skippedCount} 个世界书未注入 -->`;
+                worldBooksBlock +=
+                  `\n<!-- 已达 token 上限，后续 ${skippedCount} 个世界书未注入 -->`;
               }
               worldBooksBlock += `\n</worldbook>`;
               systemContent += worldBooksBlock;
             }
 
-            logRecord.world_books_count    = worldBooks.length;
+            logRecord.world_books_count = worldBooks.length;
             logRecord.world_books_injected = injected.length;
-            logRecord.world_books_skipped  = skippedCount;
-            logRecord.world_books_chars    = charCount;
-            logRecord.world_books_titles   = injected.map(b => b.name);
+            logRecord.world_books_skipped = skippedCount;
+            logRecord.world_books_chars = charCount;
+            logRecord.world_books_titles = injected.map((b) => b.name);
           }
         }
       } catch (wbErr) {
@@ -2234,10 +2788,16 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
   }
 
   // ── Proactive quote injection ────────────────────────────────────────────────
-  if (Array.isArray(payload.quoteCandidates) && payload.quoteCandidates.length > 0) {
-    console.log("[quote-candidates] Received quoteCandidates:", payload.quoteCandidates.length, "candidates");
+  if (
+    Array.isArray(payload.quoteCandidates) && payload.quoteCandidates.length > 0
+  ) {
+    console.log(
+      "[quote-candidates] Received quoteCandidates:",
+      payload.quoteCandidates.length,
+      "candidates",
+    );
     const candidateLines = payload.quoteCandidates
-      .map(c => `${c.id} | ${c.author} | ${c.preview}`)
+      .map((c) => `${c.id} | ${c.author} | ${c.preview}`)
       .join("\n");
     systemContent += `\n\n【主动引用】
 你可以在回复时主动引用 KK 或你自己前面某条消息。在回复最开头输出：
@@ -2256,7 +2816,11 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 
 可引用消息：
 ${candidateLines}`;
-    console.log("[quote-candidates] Injected quote prompt with", payload.quoteCandidates.length, "candidates");
+    console.log(
+      "[quote-candidates] Injected quote prompt with",
+      payload.quoteCandidates.length,
+      "candidates",
+    );
   } else {
     console.log("[quote-candidates] No quoteCandidates to inject");
   }
@@ -2278,18 +2842,25 @@ ${candidateLines}`;
   if (payloadMessages.length > RUNNING_SUMMARY_TRIGGER_MESSAGES) {
     logRecord.running_summary_attempted = true;
     try {
-      const runningSummary = await buildRunningSummary(tierProviders, payloadMessages);
+      const runningSummary = await buildRunningSummary(
+        tierProviders,
+        payloadMessages,
+      );
       if (runningSummary) {
-        systemContent +=
-          "\n\n[Transient running summary]\n" +
+        systemContent += "\n\n[Transient running summary]\n" +
           "Use this temporary summary as context for older messages. It is not persisted memory.\n" +
           runningSummary.summary;
-        modelPayloadMessages = payloadMessages.slice(-runningSummary.keptRecentCount);
+        modelPayloadMessages = payloadMessages.slice(
+          -runningSummary.keptRecentCount,
+        );
         logRecord.running_summary_injected = true;
-        logRecord.running_summary_kept_recent_count = runningSummary.keptRecentCount;
+        logRecord.running_summary_kept_recent_count =
+          runningSummary.keptRecentCount;
       }
     } catch (err) {
-      logRecord.running_summary_error = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+      logRecord.running_summary_error = err instanceof Error
+        ? err.message.slice(0, 200)
+        : String(err).slice(0, 200);
       modelPayloadMessages = payloadMessages;
     }
   }
@@ -2303,10 +2874,26 @@ ${candidateLines}`;
   // Tool execution stays server-side. Only a small read-only whitelist is
   // offered on turns that explicitly contain a URL or a CedarToy/game intent.
   // Unsupported provider tool-calling falls back to the existing chat request.
+  console.log("[chat] tool-runtime check:", {
+    supabaseUrlPresent: !!supabaseUrl,
+    serviceRoleKeyPresent: !!serviceRoleKey,
+    authorizationPresent: !!authorization,
+  });
+
   if (supabaseUrl && serviceRoleKey) {
-    const rawToolMessage = (typeof payload.rawUserMessage === "string" && payload.rawUserMessage)
-      ? payload.rawUserMessage
-      : lastUserMessage;
+    const rawToolMessage =
+      (typeof payload.rawUserMessage === "string" && payload.rawUserMessage)
+        ? payload.rawUserMessage
+        : lastUserMessage;
+
+    console.log("[chat] rawToolMessage:", {
+      source: payload.rawUserMessage
+        ? "payload.rawUserMessage"
+        : "lastUserMessage",
+      preview: rawToolMessage.slice(0, 100),
+      isCandidate: isToolRuntimeCandidate(rawToolMessage),
+    });
+
     if (isToolRuntimeCandidate(rawToolMessage)) {
       try {
         const prepared = await prepareToolMessages({
@@ -2316,13 +2903,19 @@ ${candidateLines}`;
             supabaseUrl,
             serviceRoleKey,
             authorization,
-            userId: typeof payload.userId === "string" ? payload.userId : undefined,
+            userId: typeof payload.userId === "string"
+              ? payload.userId
+              : undefined,
             conversationId,
             rawUserMessage: rawToolMessage,
           },
         });
         messages = prepared.messages;
         toolNames = prepared.names;
+        console.log("[chat] tool-runtime succeeded:", {
+          toolsUsed: toolNames.join(",") || "none",
+          messagesCount: messages.length,
+        });
       } catch (error) {
         console.warn("[tool-runtime] safe fallback to ordinary chat", {
           requestId,
@@ -2330,6 +2923,11 @@ ${candidateLines}`;
         });
       }
     }
+  } else {
+    console.warn("[chat] tool-runtime skipped: missing environment", {
+      supabaseUrl: !!supabaseUrl,
+      serviceRoleKey: !!serviceRoleKey,
+    });
   }
 
   try {
@@ -2351,7 +2949,9 @@ ${candidateLines}`;
       } catch {
         errorBody = { error: text };
       }
-      logRecord.error_stage = result.fallbackUsed ? "fallback_upstream" : "model_upstream";
+      logRecord.error_stage = result.fallbackUsed
+        ? "fallback_upstream"
+        : "model_upstream";
       logRecord.total_ms = Date.now() - t0;
       emitLog(logRecord);
       return jsonResponse(errorBody, result.response.status);
@@ -2371,14 +2971,17 @@ ${candidateLines}`;
       persona_memories_error: logRecord.persona_memories_error,
       mastodon_profile_loaded: logRecord.mastodon_profile_loaded,
       mastodon_profile_chars: logRecord.mastodon_profile_chars,
-      mastodon_profile_tokens_estimated: Math.ceil(logRecord.mastodon_profile_chars / 3.5),
+      mastodon_profile_tokens_estimated: Math.ceil(
+        logRecord.mastodon_profile_chars / 3.5,
+      ),
       timeline_query_detected: logRecord.timeline_query_detected,
       timeline_loaded: logRecord.timeline_loaded,
       timeline_recalled: logRecord.timeline_recalled,
       timeline_hit_count: logRecord.timeline_hit_count,
       timeline_hit_keys: logRecord.timeline_hit_keys,
       timeline_reason: logRecord.timeline_reason,
-      memory_context_tokens_estimated: logRecord.memory_context_tokens_estimated,
+      memory_context_tokens_estimated:
+        logRecord.memory_context_tokens_estimated,
       project_memory_loaded: logRecord.project_memory_loaded,
       project_memory_recalled: logRecord.project_memory_recalled,
       project_memory_hit_count: logRecord.project_memory_hit_count,
@@ -2391,10 +2994,12 @@ ${candidateLines}`;
       openai_archive_reason: logRecord.openai_archive_reason,
       historical_roleplay_hit_count: logRecord.historical_roleplay_hit_count,
       historical_roleplay_reason: logRecord.historical_roleplay_reason,
-      conversation_history_query_detected: logRecord.conversation_history_query_detected,
+      conversation_history_query_detected:
+        logRecord.conversation_history_query_detected,
       conversation_history_recalled: logRecord.conversation_history_recalled,
       conversation_history_hit_count: logRecord.conversation_history_hit_count,
-      conversation_history_hit_conversation_ids: logRecord.conversation_history_hit_conversation_ids,
+      conversation_history_hit_conversation_ids:
+        logRecord.conversation_history_hit_conversation_ids,
       conversation_history_reason: logRecord.conversation_history_reason,
       topic_route: topicRoute,
       secondary_route: secondaryRoute,
@@ -2414,7 +3019,8 @@ ${candidateLines}`;
       running_summary_attempted: logRecord.running_summary_attempted,
       running_summary_injected: logRecord.running_summary_injected,
       running_summary_message_count: logRecord.running_summary_message_count,
-      running_summary_kept_recent_count: logRecord.running_summary_kept_recent_count,
+      running_summary_kept_recent_count:
+        logRecord.running_summary_kept_recent_count,
       running_summary_error: logRecord.running_summary_error,
       worldbook_loaded: (logRecord.world_books_injected ?? 0) > 0,
       worldbook_count: logRecord.world_books_count ?? 0,
@@ -2425,9 +3031,11 @@ ${candidateLines}`;
       instructions_loaded_count: logRecord.instructions_loaded_count,
       instructions_suppressed_count: logRecord.instructions_suppressed_count,
       instructions_loaded_categories: logRecord.instructions_loaded_categories,
-      instructions_suppressed_categories: logRecord.instructions_suppressed_categories,
+      instructions_suppressed_categories:
+        logRecord.instructions_suppressed_categories,
       persona_memories_total_chars: logRecord.persona_memories_total_chars,
-      persona_memories_chars_budget_hit: logRecord.persona_memories_chars_budget_hit,
+      persona_memories_chars_budget_hit:
+        logRecord.persona_memories_chars_budget_hit,
       custom_model_applied: customModelApplied,
       custom_model_invalid_reason: customModelInvalidReason,
     };
@@ -2438,12 +3046,19 @@ ${candidateLines}`;
     // Promotion runs fire-and-forget, so this reflects the *previous* turn's result.
     // Disable with DISABLE_MEMORY_PROMOTED=1 for diagnostics.
     let recentPromotedCount = 0;
-    const disableMemoryPromoted = Deno.env.get("DISABLE_MEMORY_PROMOTED") === "1";
-    const promotedUserId =
-      typeof payload.userId === "string" && payload.userId ? payload.userId : "";
-    if (!disableMemoryPromoted && supabaseUrl && serviceRoleKey && promotedUserId) {
+    const disableMemoryPromoted =
+      Deno.env.get("DISABLE_MEMORY_PROMOTED") === "1";
+    const promotedUserId = typeof payload.userId === "string" && payload.userId
+      ? payload.userId
+      : "";
+    if (
+      !disableMemoryPromoted && supabaseUrl && serviceRoleKey && promotedUserId
+    ) {
       const _promotedController = new AbortController();
-      const _promotedTimer = setTimeout(() => _promotedController.abort(), 3000);
+      const _promotedTimer = setTimeout(
+        () => _promotedController.abort(),
+        3000,
+      );
       try {
         const since = new Date(Date.now() - 60_000).toISOString();
         const promotedRes = await fetch(
@@ -2466,23 +3081,29 @@ ${candidateLines}`;
         } else {
           const errText = await promotedRes.text().catch(() => "");
           console.error(JSON.stringify({
-            fn: "chat", event: "memory_promoted_query_non_ok",
-            status: promotedRes.status, body: errText.slice(0, 200),
+            fn: "chat",
+            event: "memory_promoted_query_non_ok",
+            status: promotedRes.status,
+            body: errText.slice(0, 200),
           }));
         }
       } catch (err) {
         const errName = err instanceof Error ? err.name : "unknown";
         const errMsg = err instanceof Error ? err.message : String(err);
         console.error(JSON.stringify({
-          fn: "chat", event: "memory_promoted_query_error",
-          error_name: errName, error_message: errMsg.slice(0, 200),
+          fn: "chat",
+          event: "memory_promoted_query_error",
+          error_name: errName,
+          error_message: errMsg.slice(0, 200),
         }));
       } finally {
         clearTimeout(_promotedTimer);
       }
     }
 
-    const afterChatUserId = typeof payload.userId === "string" && payload.userId ? payload.userId : "anon";
+    const afterChatUserId = typeof payload.userId === "string" && payload.userId
+      ? payload.userId
+      : "anon";
     const disableAfterChat = Deno.env.get("DISABLE_AFTERCHAT") === "1";
     const backgroundProviderConfig = resolveProviderForTier("instant");
     const backgroundModel = backgroundProviderConfig.primary.model;
@@ -2490,7 +3111,10 @@ ${candidateLines}`;
     const backgroundApiKey = backgroundProviderConfig.primary.apiKey;
     let responseBody: ReadableStream<Uint8Array> | null = result.response.body;
 
-    if (!disableAfterChat && supabaseUrl && serviceRoleKey && afterChatUserId !== "anon" && responseBody) {
+    if (
+      !disableAfterChat && supabaseUrl && serviceRoleKey &&
+      afterChatUserId !== "anon" && responseBody
+    ) {
       const [clientBody, vaultBody] = responseBody.tee();
       responseBody = clientBody;
       runAfterChatVault({
@@ -2504,21 +3128,34 @@ ${candidateLines}`;
         orBaseUrl: backgroundBaseUrl,
         orApiKey: backgroundApiKey,
         fastModel: backgroundModel,
-        userMessageId: typeof payload.userMessageId === "number" ? payload.userMessageId : null,
+        userMessageId: typeof payload.userMessageId === "number"
+          ? payload.userMessageId
+          : null,
         // cost tracking fields
         tier,
-        site: result.usedProvider === "fiftyfive" ? "55api" : result.usedProvider,
+        site: result.usedProvider === "fiftyfive"
+          ? "55api"
+          : result.usedProvider,
         rawModel: result.usedModel,
         isFallback: result.fallbackUsed,
         fallbackReason: result.fallbackReason,
-      }).catch((e) => console.error(JSON.stringify({ fn: "vault_runner", event: "uncaught", error: String(e) })));
+      }).catch((e) =>
+        console.error(
+          JSON.stringify({
+            fn: "vault_runner",
+            event: "uncaught",
+            error: String(e),
+          }),
+        )
+      );
     }
 
     return new Response(responseBody, {
       status: result.response.status,
       headers: {
         ...corsHeaders,
-        "Content-Type": result.response.headers.get("Content-Type") || "text/event-stream",
+        "Content-Type": result.response.headers.get("Content-Type") ||
+          "text/event-stream",
         "x-memory-cache-hit": logRecord.memory_cache_hit ? "true" : "false",
         "x-model-tier": tier,
         "x-provider": result.usedProvider,
@@ -2529,7 +3166,9 @@ ${candidateLines}`;
         "x-save-princess-memory-debug": memoryDebugHeader,
         "x-chat-status": chatStatusHeader,
         "x-save-princess-tools-used": asciiHeaderValue(toolNames.join(",")),
-        ...(recentPromotedCount > 0 ? { "x-memory-promoted": String(recentPromotedCount) } : {}),
+        ...(recentPromotedCount > 0
+          ? { "x-memory-promoted": String(recentPromotedCount) }
+          : {}),
       },
     });
   } catch (error) {

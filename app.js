@@ -2200,6 +2200,16 @@ async function requestStreamingReply(replyMode = "auto") {
     }
   } catch (_) {}
 
+  // 读取 server tools 执行结果
+  try {
+    const functionVersion = response.headers.get("x-save-princess-function-version");
+    const toolsUsed = response.headers.get("x-save-princess-tools-used");
+    console.log("[chat-tools] response:", {
+      functionVersion: functionVersion || "absent",
+      toolsUsed: toolsUsed || "none",
+    });
+  } catch (_) {}
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "", fullReply = "", streamDone = false;

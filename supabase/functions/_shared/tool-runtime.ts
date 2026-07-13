@@ -37,12 +37,19 @@ export const CHAT_TOOLS = [
     type: "function",
     function: {
       name: "web_read_url",
-      description: "读取用户明确提供的公开网页 URL，并提取和总结与问题相关的内容。只能读取 URL，不能搜索互联网。",
+      description:
+        "读取用户明确提供的公开网页 URL，并提取和总结与问题相关的内容。只能读取 URL，不能搜索互联网。",
       parameters: {
         type: "object",
         properties: {
-          url: { type: "string", description: "用户消息中出现的 http 或 https URL" },
-          question: { type: "string", description: "用户希望从网页中了解的问题" },
+          url: {
+            type: "string",
+            description: "用户消息中出现的 http 或 https URL",
+          },
+          question: {
+            type: "string",
+            description: "用户希望从网页中了解的问题",
+          },
         },
         required: ["url"],
         additionalProperties: false,
@@ -53,7 +60,8 @@ export const CHAT_TOOLS = [
     type: "function",
     function: {
       name: "cedar_list_games",
-      description: "列出 CedarToy 当前支持的游戏。只读，不创建房间，也不开始游戏。",
+      description:
+        "列出 CedarToy 当前支持的游戏。只读，不创建房间，也不开始游戏。",
       parameters: {
         type: "object",
         properties: {},
@@ -65,7 +73,8 @@ export const CHAT_TOOLS = [
     type: "function",
     function: {
       name: "cedar_get_guide",
-      description: "查询某个 CedarToy 游戏的玩法说明。只读，不创建房间，也不开始游戏。",
+      description:
+        "查询某个 CedarToy 游戏的玩法说明。只读，不创建房间，也不开始游戏。",
       parameters: {
         type: "object",
         properties: {
@@ -82,7 +91,9 @@ export function isToolRuntimeCandidate(message: string): boolean {
   const text = String(message || "").trim();
   if (!text) return false;
   const hasUrl = /https?:\/\/[^\s<>"']+/i.test(text);
-  const asksAboutGames = /(cedar\s*toy|cedartoy|海龟汤|你画我猜|五子棋|狼人杀|有什么游戏|游戏列表|游戏规则|怎么玩|想玩游戏|玩个游戏)/i.test(text);
+  const asksAboutGames =
+    /(cedar\s*toy|cedartoy|海龟汤|你画我猜|五子棋|狼人杀|有什么游戏|游戏列表|游戏规则|怎么玩|想玩游戏|玩个游戏)/i
+      .test(text);
   return hasUrl || asksAboutGames;
 }
 
@@ -100,7 +111,9 @@ function buildDirectToolCalls(message: string): ToolCall[] {
     }];
   }
 
-  const asksAboutGames = /(cedar\s*toy|cedartoy|海龟汤|你画我猜|五子棋|狼人杀|有什么游戏|游戏列表|游戏规则|怎么玩|想玩游戏|玩个游戏)/i.test(text);
+  const asksAboutGames =
+    /(cedar\s*toy|cedartoy|海龟汤|你画我猜|五子棋|狼人杀|有什么游戏|游戏列表|游戏规则|怎么玩|想玩游戏|玩个游戏)/i
+      .test(text);
   if (!asksAboutGames) return [];
 
   const guideRequested = /(规则|玩法|怎么玩|怎么参与|guide)/i.test(text);
@@ -186,7 +199,11 @@ async function executeTool(
       }
       const url = String(args.url || "").trim();
       if (!/^https?:\/\//i.test(url)) throw new Error("无效的网页 URL");
-      const question = String(args.question || context.rawUserMessage || "").trim();
+      const question = String(args.question || context.rawUserMessage || "")
+        .trim();
+      console.log("[tool-runtime] executing web_read_url:", {
+        url: url.slice(0, 100),
+      });
       const data = await fetchJson(
         `${context.supabaseUrl}/functions/v1/web?action=summarize_url`,
         {
@@ -204,9 +221,13 @@ async function executeTool(
           }),
         },
       );
+      console.log("[tool-runtime] web_read_url response:", {
+        ok: !!(data as { ok?: boolean }).ok,
+      });
       return compactResult(data);
     }
     case "cedar_list_games": {
+      console.log("[tool-runtime] executing cedar_list_games");
       const data = await fetchJson(
         `${context.supabaseUrl}/functions/v1/game-proxy`,
         {
@@ -215,14 +236,19 @@ async function executeTool(
             "Content-Type": "application/json",
             Authorization: `Bearer ${context.serviceRoleKey}`,
           },
-          body: JSON.stringify({ action: "list_games", userId: context.userId || "anon" }),
+          body: JSON.stringify({
+            action: "list_games",
+            userId: context.userId || "anon",
+          }),
         },
       );
+      console.log("[tool-runtime] cedar_list_games response received");
       return compactResult(data);
     }
     case "cedar_get_guide": {
       const game = String(args.game || "").trim();
       if (!game) throw new Error("缺少游戏名称");
+      console.log("[tool-runtime] executing cedar_get_guide:", { game });
       const data = await fetchJson(
         `${context.supabaseUrl}/functions/v1/game-proxy`,
         {
@@ -231,9 +257,14 @@ async function executeTool(
             "Content-Type": "application/json",
             Authorization: `Bearer ${context.serviceRoleKey}`,
           },
-          body: JSON.stringify({ action: "get_guide", game, userId: context.userId || "anon" }),
+          body: JSON.stringify({
+            action: "get_guide",
+            game,
+            userId: context.userId || "anon",
+          }),
         },
       );
+      console.log("[tool-runtime] cedar_get_guide response received");
       return compactResult(data);
     }
     default:
@@ -291,6 +322,17 @@ export async function prepareToolMessages(params: {
   context: ToolContext;
 }): Promise<ToolPlanResult> {
   const { providers, messages, context } = params;
+
+  console.log(
+    "[tool-runtime] candidateMatched:",
+    isToolRuntimeCandidate(context.rawUserMessage),
+    {
+      rawUserMessagePreview: context.rawUserMessage.slice(0, 100),
+      supabaseUrlPresent: !!context.supabaseUrl,
+      serviceRoleKeyPresent: !!context.serviceRoleKey,
+    },
+  );
+
   if (!isToolRuntimeCandidate(context.rawUserMessage)) {
     return { messages, used: false, names: [] };
   }
@@ -300,18 +342,32 @@ export async function prepareToolMessages(params: {
   // implement OpenAI-compatible tool_calls.
   const directCalls = buildDirectToolCalls(context.rawUserMessage)
     .slice(0, MAX_TOOL_CALLS_PER_TURN);
+
+  console.log("[tool-runtime] directCalls built:", {
+    count: directCalls.length,
+    selectedTools: directCalls.map((c) => c.function.name),
+  });
+
   if (directCalls.length) {
     const names: string[] = [];
     const results: Array<{ name: string; content: string }> = [];
     for (const call of directCalls) {
       names.push(call.function.name);
       let content: string;
+      console.log("[tool-runtime] toolStarted:", call.function.name);
       try {
         content = await executeTool(call, context);
+        console.log("[tool-runtime] toolSucceeded:", call.function.name, {
+          resultLength: content.length,
+        });
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error("[tool-runtime] toolFailed:", call.function.name, {
+          error: errorMsg,
+        });
         content = JSON.stringify({
           ok: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMsg,
         });
       }
       results.push({ name: call.function.name, content });
@@ -320,6 +376,7 @@ export async function prepareToolMessages(params: {
     console.log("[tool-runtime] deterministic tools completed", {
       names,
       count: names.length,
+      resultsInjected: true,
     });
     return {
       used: true,
@@ -329,7 +386,7 @@ export async function prepareToolMessages(params: {
         {
           role: "system",
           content:
-            "<tool_results source=\"save_princess_server\" trust=\"external\">\n" +
+            '<tool_results source="save_princess_server" trust="external">\n' +
             "以下内容由服务端只读工具取得。请直接依据结果回答用户；不要声称自己无法访问，也不要编造结果。\n" +
             JSON.stringify(results) +
             "\n</tool_results>",
@@ -340,7 +397,9 @@ export async function prepareToolMessages(params: {
 
   let calls: ToolCall[] | null = null;
   let lastError: unknown = null;
-  const candidates = [providers.primary, providers.fallback].filter(Boolean) as ProviderConfig[];
+  const candidates = [providers.primary, providers.fallback].filter(
+    Boolean,
+  ) as ProviderConfig[];
   for (const provider of candidates) {
     try {
       calls = await requestToolPlan(provider, messages);
