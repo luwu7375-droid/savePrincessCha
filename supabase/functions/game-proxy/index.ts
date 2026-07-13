@@ -321,12 +321,19 @@ async function ensureMachineAccount(
 
   const args = buildRegistrationArgs(registerTool, credentials);
   let registrationResult: unknown;
-  try {
-    registrationResult = await callTool(registerTool.name, args, undefined);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/http_(401|403)/.test(message)) throw error;
+  if (registerTool.name === "account") {
+    // CedarToy creates/loads the machine identity from Basic auth. Calling the
+    // account tool anonymously only describes an anonymous visitor and cannot
+    // return the machine binding code.
     registrationResult = await callTool(registerTool.name, args, credentials);
+  } else {
+    try {
+      registrationResult = await callTool(registerTool.name, args, undefined);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/http_(401|403)/.test(message)) throw error;
+      registrationResult = await callTool(registerTool.name, args, credentials);
+    }
   }
 
   let accountData = normalizeMcpResult(registrationResult);
@@ -454,10 +461,16 @@ function findRegistrationTool(tools: McpTool[]): McpTool | null {
     const tool = tools.find((candidate) => candidate.name === name);
     if (tool) return tool;
   }
-  return tools.find((tool) =>
-    /register|注册/i.test(`${tool.name} ${tool.description || ""}`) &&
-    /machine|agent|bot|ai|小机/i.test(`${tool.name} ${tool.description || ""}`)
-  ) || null;
+  const semantic = tools.find((tool) =>
+    /register|signup|create|注册|创建/i.test(`${tool.name} ${tool.description || ""}`) &&
+    /machine|agent|bot|ai|account|小机|账号/i.test(`${tool.name} ${tool.description || ""}`)
+  );
+  if (semantic) return semantic;
+
+  // CedarToy currently exposes registration through the authenticated
+  // `account` tool instead of a standalone register tool. The first account
+  // call with a new machine identity creates it and returns its binding state.
+  return tools.find((tool) => tool.name === "account") || null;
 }
 
 function findAccountTool(tools: McpTool[]): McpTool | null {
@@ -487,9 +500,19 @@ function buildRegistrationArgs(
     } else if (/display.?name|nickname|label/.test(lower)) {
       args[key] = "Cha";
     } else if (lower === "action" || lower === "operation") {
-      args[key] = schema.enum?.find((value) =>
-        String(value).toLowerCase().includes("register")
-      ) || "register";
+      const registrationAction = schema.enum?.find((value) =>
+        /register|signup|sign_up|create/i.test(String(value))
+      );
+      if (registrationAction !== undefined) {
+        args[key] = registrationAction;
+      } else if (required.includes(key)) {
+        // For CedarToy's account tool, authentication itself performs the
+        // create-or-load step. Use a schema-supported read action when one is
+        // mandatory instead of inventing an unsupported "register" value.
+        args[key] = schema.enum?.find((value) =>
+          /status|info|profile|whoami|get/i.test(String(value))
+        ) || schema.enum?.[0] || "status";
+      }
     } else if (/type|role|kind/.test(lower)) {
       args[key] = schema.enum?.find((value) =>
         /machine|agent|bot|ai/i.test(String(value))
