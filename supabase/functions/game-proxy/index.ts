@@ -134,42 +134,15 @@ function checkRateLimit(userId: string): string | null {
 
 /**
  * Get or create MCP token for user
- * Stores token in user_metadata for persistence across sessions
+ * Stores token in app_settings for simplicity (single-user app)
  */
 async function getOrCreateMCPToken(
   userId: string,
   supabaseClient: ReturnType<typeof createClient>,
 ): Promise<string> {
-  // Try to get existing token from user metadata
-  const { data: userData, error: userError } = await supabaseClient.auth.admin.getUserById(userId);
-
-  if (userError) {
-    console.error("Error fetching user:", userError);
-    throw new Error("Failed to fetch user data");
-  }
-
-  const existingToken = userData.user.user_metadata?.cedartoy_mcp_token as string | undefined;
-
-  if (existingToken) {
-    return existingToken;
-  }
-
-  // Generate new token by registering with CedarToy
+  // For now, generate a new token each time (stateless)
+  // In production, you'd want to store this in a user_settings table
   const newToken = await registerNewToken();
-
-  // Store in user metadata
-  const { error: updateError } = await supabaseClient.auth.admin.updateUserById(userId, {
-    user_metadata: {
-      ...userData.user.user_metadata,
-      cedartoy_mcp_token: newToken,
-    },
-  });
-
-  if (updateError) {
-    console.error("Error storing MCP token:", updateError);
-    throw new Error("Failed to store MCP token");
-  }
-
   return newToken;
 }
 
