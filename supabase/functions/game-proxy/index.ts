@@ -1,20 +1,65 @@
-// Game Proxy Edge Function - authenticated HTTP MCP client for CedarToy.
+// Authenticated CedarToy MCP client.
+// Human users log in on CedarToy themselves. This function creates and stores
+// one server-managed machine identity per SavePrincess user, then exposes its
+// binding code so the human can bind that machine in CedarToy.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const CEDARTOY_BASE = "https://toy.cedarstar.org";
 const CEDARTOY_TIMEOUT_MS = 8_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_CALLS = 30;
+const TOOL_CACHE_MS = 5 * 60_000;
+
+type GameProxyAction =
+  | "machine_status"
+  | "ensure_machine"
+  | "refresh_binding"
+  | "list_games"
+  | "get_guide"
+  | "play"
+  | "account";
 
 type GameProxyRequest = {
-  action: "list_games" | "get_guide" | "play" | "account";
+  action: GameProxyAction;
   userId?: string;
   game?: string;
   gameAction?: string;
   actionParams?: Record<string, unknown>;
   slotId?: number;
+};
+
+type MachineRow = {
+  user_id: string;
+  machine_username: string;
+  machine_id?: string | null;
+  binding_code?: string | null;
+  status: "unregistered" | "pending_binding" | "bound" | "error";
+  registration_tool?: string | null;
+  account_metadata?: Record<string, unknown> | null;
+  last_error?: string | null;
+  last_checked_at?: string | null;
+};
+
+type McpTool = {
+  name: string;
+  description?: string;
+  inputSchema?: {
+    type?: string;
+    properties?: Record<string, {
+      type?: string;
+      description?: string;
+      enum?: unknown[];
+      default?: unknown;
+    }>;
+    required?: string[];
+  };
+};
+
+type MachineCredentials = {
+  username: string;
+  password: string;
 };
 
 type RateLimitEntry = {
@@ -23,6 +68,7 @@ type RateLimitEntry = {
 };
 
 const rateLimitMap = new Map<string, RateLimitEntry>();
+let toolCache: { tools: McpTool[]; expiresAt: number } | null = null;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -43,11 +89,7 @@ async function authenticate(
 ): Promise<{ internal: boolean; userId: string | null } | Response> {
   const token = bearerToken(req);
   if (!token) return json({ error: "unauthorized" }, 401);
-
-  // Chat calls this function server-to-server with the service role key.
-  if (token === serviceRoleKey) {
-    return { internal: true, userId: null };
-  }
+  if (token === serviceRoleKey) return { internal: true, userId: null };
 
   const client = createClient(supabaseUrl, serviceRoleKey);
   const { data, error } = await client.auth.getUser(token);
@@ -66,8 +108,13 @@ Deno.serve(async (req) => {
     Deno.env.get("DB_SERVICE_ROLE_KEY") ||
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
     "";
+  const machineSecret = Deno.env.get("CEDARTOY_MACHINE_SECRET") || "";
+
   if (!supabaseUrl || !serviceRoleKey) {
     return json({ error: "supabase_server_config_missing" }, 503);
+  }
+  if (!machineSecret) {
+    return json({ error: "cedartoy_machine_secret_not_configured" }, 503);
   }
 
   const auth = await authenticate(req, supabaseUrl, serviceRoleKey);
@@ -85,64 +132,532 @@ Deno.serve(async (req) => {
     return json({ error: "forbidden" }, 403);
   }
   const effectiveUserId = auth.internal
-    ? (requestedUserId || "server")
+    ? requestedUserId
     : auth.userId as string;
+  if (!effectiveUserId) return json({ error: "user_id_required" }, 400);
 
   const rateLimitError = checkRateLimit(effectiveUserId);
   if (rateLimitError) return json({ error: rateLimitError }, 429);
 
-  const username = Deno.env.get("CEDARTOY_USERNAME") || "";
-  const password = Deno.env.get("CEDARTOY_PASSWORD") || "";
-  if (!username || !password) {
-    return json({ error: "cedartoy_credentials_not_configured" }, 503);
-  }
-  const credentials = { username, password };
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   try {
-    let result: unknown;
     switch (body.action) {
-      case "list_games":
-        result = await callCedarToyTool("list_games", {}, credentials);
-        break;
+      case "machine_status": {
+        const row = await getMachineRow(supabase, effectiveUserId);
+        return json({ ok: true, machine: publicMachineState(row) });
+      }
 
-      case "get_guide":
+      case "ensure_machine": {
+        const row = await ensureMachineAccount(
+          supabase,
+          effectiveUserId,
+          machineSecret,
+        );
+        return json({ ok: true, machine: publicMachineState(row) });
+      }
+
+      case "refresh_binding":
+      case "account": {
+        const row = await refreshMachineAccount(
+          supabase,
+          effectiveUserId,
+          machineSecret,
+        );
+        return json({ ok: true, machine: publicMachineState(row) });
+      }
+
+      case "list_games": {
+        const credentials = await requireMachineCredentials(
+          supabase,
+          effectiveUserId,
+          machineSecret,
+        );
+        return json(await callTool("list_games", {}, credentials));
+      }
+
+      case "get_guide": {
         if (!body.game) return json({ error: "game_required" }, 400);
-        result = await callCedarToyTool("get_guide", { game: body.game }, credentials);
-        break;
+        const credentials = await requireMachineCredentials(
+          supabase,
+          effectiveUserId,
+          machineSecret,
+        );
+        return json(await callTool("get_guide", { game: body.game }, credentials));
+      }
 
       case "play": {
         if (!body.game || !body.gameAction) {
           return json({ error: "game_and_gameAction_required" }, 400);
         }
+        const row = await getMachineRow(supabase, effectiveUserId);
+        if (!row || row.status !== "bound") {
+          return json({
+            error: "machine_not_bound",
+            machine: publicMachineState(row),
+          }, 409);
+        }
+        const credentials = await deriveCredentials(effectiveUserId, machineSecret);
         const playParams: Record<string, unknown> = {
           game: body.game,
           action: body.gameAction,
         };
         if (body.actionParams) playParams.params = body.actionParams;
         if (body.slotId !== undefined) playParams.slot_id = body.slotId;
-        result = await callCedarToyTool("play", playParams, credentials);
-        break;
+        return json(await callTool("play", playParams, credentials));
       }
-
-      case "account":
-        result = await callCedarToyTool("account", {}, credentials);
-        break;
 
       default:
         return json({ error: "unknown_action" }, 400);
     }
-
-    return json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[game-proxy] CedarToy call failed", {
+    console.error("[game-proxy] request failed", {
       action: body.action,
+      userIdPrefix: effectiveUserId.slice(0, 6),
       error: message.slice(0, 300),
     });
-    const timeout = message.startsWith("cedartoy_timeout");
-    return json({ error: timeout ? "cedartoy_timeout" : "cedartoy_upstream_error" }, timeout ? 504 : 502);
+    const status = message.startsWith("machine_registration_protocol")
+      ? 502
+      : message.startsWith("cedartoy_timeout")
+      ? 504
+      : message === "machine_registration_required"
+      ? 409
+      : 502;
+    return json({ error: message.slice(0, 300) }, status);
   }
 });
+
+function publicMachineState(row: MachineRow | null): Record<string, unknown> {
+  if (!row) {
+    return {
+      status: "unregistered",
+      machine_username: null,
+      binding_code: null,
+      machine_id: null,
+    };
+  }
+  return {
+    status: row.status,
+    machine_username: row.machine_username,
+    binding_code: row.status === "pending_binding" ? row.binding_code || null : null,
+    machine_id: row.machine_id || null,
+    last_error: row.last_error || null,
+    last_checked_at: row.last_checked_at || null,
+  };
+}
+
+async function getMachineRow(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<MachineRow | null> {
+  const { data, error } = await supabase
+    .from("cedartoy_machine_accounts")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(`machine_store_read_failed: ${error.message}`);
+  return data as MachineRow | null;
+}
+
+async function deriveCredentials(
+  userId: string,
+  machineSecret: string,
+): Promise<MachineCredentials> {
+  const compactUser = userId.replace(/-/g, "").slice(0, 16);
+  const username = `cha_${compactUser}`;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(machineSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signed = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`cedartoy-machine:${userId}`),
+  );
+  const password = btoa(String.fromCharCode(...new Uint8Array(signed)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "")
+    .slice(0, 32);
+  return { username, password };
+}
+
+async function requireMachineCredentials(
+  supabase: SupabaseClient,
+  userId: string,
+  machineSecret: string,
+): Promise<MachineCredentials> {
+  const row = await getMachineRow(supabase, userId);
+  if (!row || row.status === "unregistered" || row.status === "error") {
+    throw new Error("machine_registration_required");
+  }
+  return await deriveCredentials(userId, machineSecret);
+}
+
+async function ensureMachineAccount(
+  supabase: SupabaseClient,
+  userId: string,
+  machineSecret: string,
+): Promise<MachineRow> {
+  const existing = await getMachineRow(supabase, userId);
+  if (existing && ["pending_binding", "bound"].includes(existing.status)) {
+    return existing;
+  }
+
+  const credentials = await deriveCredentials(userId, machineSecret);
+  const tools = await discoverTools();
+  const registerTool = findRegistrationTool(tools);
+  if (!registerTool) {
+    throw new Error(
+      `machine_registration_protocol_missing: available=${
+        tools.map((tool) => tool.name).slice(0, 20).join(",")
+      }`,
+    );
+  }
+
+  const args = buildRegistrationArgs(registerTool, credentials);
+  let registrationResult: unknown;
+  try {
+    registrationResult = await callTool(registerTool.name, args, undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/http_(401|403)/.test(message)) throw error;
+    registrationResult = await callTool(registerTool.name, args, credentials);
+  }
+
+  let accountData = normalizeMcpResult(registrationResult);
+  let identity = extractIdentity(accountData);
+
+  if (!identity.bindingCode) {
+    const accountTool = findAccountTool(tools);
+    if (accountTool) {
+      const accountResult = await callTool(
+        accountTool.name,
+        buildAccountArgs(accountTool),
+        credentials,
+      );
+      accountData = {
+        registration: accountData,
+        account: normalizeMcpResult(accountResult),
+      };
+      identity = extractIdentity(accountData);
+    }
+  }
+
+  if (!identity.bindingCode && !identity.bound) {
+    throw new Error(
+      "machine_registration_protocol_invalid: registration succeeded but no binding code was returned",
+    );
+  }
+
+  const status: MachineRow["status"] = identity.bound
+    ? "bound"
+    : "pending_binding";
+  const payload = {
+    user_id: userId,
+    machine_username: credentials.username,
+    machine_id: identity.machineId,
+    binding_code: identity.bindingCode,
+    status,
+    registration_tool: registerTool.name,
+    account_metadata: safeMetadata(accountData),
+    last_error: null,
+    last_checked_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from("cedartoy_machine_accounts")
+    .upsert(payload, { onConflict: "user_id" })
+    .select("*")
+    .single();
+  if (error) throw new Error(`machine_store_write_failed: ${error.message}`);
+  return data as MachineRow;
+}
+
+async function refreshMachineAccount(
+  supabase: SupabaseClient,
+  userId: string,
+  machineSecret: string,
+): Promise<MachineRow> {
+  const row = await getMachineRow(supabase, userId);
+  if (!row) throw new Error("machine_registration_required");
+
+  const tools = await discoverTools();
+  const accountTool = findAccountTool(tools);
+  if (!accountTool) {
+    throw new Error("machine_registration_protocol_missing: account tool not found");
+  }
+  const credentials = await deriveCredentials(userId, machineSecret);
+  const result = normalizeMcpResult(
+    await callTool(accountTool.name, buildAccountArgs(accountTool), credentials),
+  );
+  const identity = extractIdentity(result);
+  const status: MachineRow["status"] = identity.bound
+    ? "bound"
+    : "pending_binding";
+
+  const { data, error } = await supabase
+    .from("cedartoy_machine_accounts")
+    .update({
+      machine_id: identity.machineId || row.machine_id,
+      binding_code: identity.bindingCode || row.binding_code,
+      status,
+      account_metadata: safeMetadata(result),
+      last_error: null,
+      last_checked_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+  if (error) throw new Error(`machine_store_write_failed: ${error.message}`);
+  return data as MachineRow;
+}
+
+async function discoverTools(): Promise<McpTool[]> {
+  if (toolCache && toolCache.expiresAt > Date.now()) return toolCache.tools;
+  const result = await callRpc("tools/list", {}, undefined);
+  const normalized = normalizeMcpResult(result) as { tools?: McpTool[] };
+  const tools = Array.isArray(normalized?.tools)
+    ? normalized.tools
+    : Array.isArray(result?.tools)
+    ? result.tools
+    : [];
+  if (!tools.length) {
+    throw new Error("machine_registration_protocol_missing: tools/list returned no tools");
+  }
+  toolCache = { tools, expiresAt: Date.now() + TOOL_CACHE_MS };
+  return tools;
+}
+
+function findRegistrationTool(tools: McpTool[]): McpTool | null {
+  const exact = [
+    "register_machine",
+    "machine_register",
+    "register_agent",
+    "register_ai",
+    "register",
+  ];
+  for (const name of exact) {
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (tool) return tool;
+  }
+  return tools.find((tool) =>
+    /register|注册/i.test(`${tool.name} ${tool.description || ""}`) &&
+    /machine|agent|bot|ai|小机/i.test(`${tool.name} ${tool.description || ""}`)
+  ) || null;
+}
+
+function findAccountTool(tools: McpTool[]): McpTool | null {
+  return tools.find((tool) =>
+    ["account", "machine_account", "account_status", "whoami"].includes(tool.name)
+  ) || tools.find((tool) =>
+    /account|binding|绑定|小机状态/i.test(
+      `${tool.name} ${tool.description || ""}`,
+    )
+  ) || null;
+}
+
+function buildRegistrationArgs(
+  tool: McpTool,
+  credentials: MachineCredentials,
+): Record<string, unknown> {
+  const properties = tool.inputSchema?.properties || {};
+  const required = tool.inputSchema?.required || [];
+  const args: Record<string, unknown> = {};
+
+  for (const [key, schema] of Object.entries(properties)) {
+    const lower = key.toLowerCase();
+    if (/user.?name|account.?name|machine.?name|^name$/.test(lower)) {
+      args[key] = credentials.username;
+    } else if (/password|passphrase|secret/.test(lower)) {
+      args[key] = credentials.password;
+    } else if (/display.?name|nickname|label/.test(lower)) {
+      args[key] = "Cha";
+    } else if (lower === "action" || lower === "operation") {
+      args[key] = schema.enum?.find((value) =>
+        String(value).toLowerCase().includes("register")
+      ) || "register";
+    } else if (/type|role|kind/.test(lower)) {
+      args[key] = schema.enum?.find((value) =>
+        /machine|agent|bot|ai/i.test(String(value))
+      ) || "machine";
+    } else if (schema.default !== undefined) {
+      args[key] = schema.default;
+    }
+  }
+
+  const missing = required.filter((key) => args[key] === undefined);
+  if (missing.length) {
+    throw new Error(
+      `machine_registration_protocol_unknown_fields: ${missing.join(",")}`,
+    );
+  }
+  return args;
+}
+
+function buildAccountArgs(tool: McpTool): Record<string, unknown> {
+  const properties = tool.inputSchema?.properties || {};
+  const args: Record<string, unknown> = {};
+  if (properties.action) {
+    args.action = properties.action.enum?.find((value) =>
+      /status|info|profile|whoami/i.test(String(value))
+    ) || "status";
+  }
+  return args;
+}
+
+function normalizeMcpResult(value: any): any {
+  if (value && Array.isArray(value.content)) {
+    const textParts = value.content
+      .filter((item: any) => item && typeof item.text === "string")
+      .map((item: any) => item.text);
+    if (textParts.length === 1) {
+      try {
+        return JSON.parse(textParts[0]);
+      } catch {
+        return { text: textParts[0] };
+      }
+    }
+    if (textParts.length > 1) return { content: textParts };
+  }
+  return value;
+}
+
+function extractIdentity(value: unknown): {
+  bindingCode: string | null;
+  machineId: string | null;
+  bound: boolean;
+} {
+  const objects: Record<string, unknown>[] = [];
+  const visit = (item: unknown, depth = 0) => {
+    if (depth > 5 || !item) return;
+    if (typeof item === "string") {
+      try {
+        visit(JSON.parse(item), depth + 1);
+      } catch {
+        const match = item.match(/(?:bind(?:ing)?[_\s-]*code|绑定码)[:：\s]*([A-Za-z0-9_-]{4,32})/i);
+        if (match) objects.push({ binding_code: match[1] });
+      }
+      return;
+    }
+    if (Array.isArray(item)) {
+      item.forEach((child) => visit(child, depth + 1));
+      return;
+    }
+    if (typeof item === "object") {
+      objects.push(item as Record<string, unknown>);
+      Object.values(item as Record<string, unknown>).forEach((child) =>
+        visit(child, depth + 1)
+      );
+    }
+  };
+  visit(value);
+
+  const get = (keys: string[]): unknown => {
+    for (const object of objects) {
+      for (const key of keys) {
+        if (object[key] !== undefined && object[key] !== null) return object[key];
+      }
+    }
+    return null;
+  };
+  const bindingCode = get([
+    "binding_code",
+    "bindingCode",
+    "bind_code",
+    "bindCode",
+    "code",
+  ]);
+  const machineId = get([
+    "machine_id",
+    "machineId",
+    "agent_id",
+    "agentId",
+    "id",
+  ]);
+  const status = String(get(["status", "binding_status", "bindingStatus"]) || "");
+  const boundValue = get(["bound", "is_bound", "isBound", "linked", "is_linked"]);
+  const bound = boundValue === true ||
+    ["bound", "linked", "active", "connected"].includes(status.toLowerCase());
+
+  return {
+    bindingCode: bindingCode ? String(bindingCode) : null,
+    machineId: machineId ? String(machineId) : null,
+    bound,
+  };
+}
+
+function safeMetadata(value: unknown): Record<string, unknown> {
+  try {
+    const text = JSON.stringify(value);
+    if (text.length > 8_000) {
+      return { truncated: true, preview: text.slice(0, 7_500) };
+    }
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed : { value: parsed };
+  } catch {
+    return { unavailable: true };
+  }
+}
+
+async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  credentials?: MachineCredentials,
+): Promise<any> {
+  return await callRpc("tools/call", {
+    name,
+    arguments: args,
+  }, credentials);
+}
+
+async function callRpc(
+  method: string,
+  params: Record<string, unknown>,
+  credentials?: MachineCredentials,
+): Promise<any> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CEDARTOY_TIMEOUT_MS);
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    };
+    if (credentials) {
+      headers.Authorization =
+        `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
+    }
+    const response = await fetch(CEDARTOY_BASE, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method,
+        params,
+        id: crypto.randomUUID(),
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`cedartoy_http_${response.status}`);
+    const payload = await response.json();
+    if (payload?.error) {
+      throw new Error(
+        `cedartoy_rpc_error: ${String(payload.error.message || "unknown").slice(0, 200)}`,
+      );
+    }
+    return payload?.result;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`cedartoy_timeout_after_${CEDARTOY_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function checkRateLimit(userId: string): string | null {
   const now = Date.now();
@@ -156,48 +671,4 @@ function checkRateLimit(userId: string): string | null {
   }
   entry.calls += 1;
   return null;
-}
-
-async function callCedarToyTool(
-  toolName: string,
-  toolArgs: Record<string, unknown>,
-  credentials: { username: string; password: string },
-): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CEDARTOY_TIMEOUT_MS);
-  try {
-    const response = await fetch(CEDARTOY_BASE, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization:
-          `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`,
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: { name: toolName, arguments: toolArgs },
-        id: crypto.randomUUID(),
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`cedartoy_http_${response.status}`);
-    }
-    const mcpResponse = await response.json();
-    if (mcpResponse?.error) {
-      throw new Error(
-        `cedartoy_rpc_error: ${String(mcpResponse.error.message || "unknown").slice(0, 200)}`,
-      );
-    }
-    return mcpResponse?.result;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`cedartoy_timeout_after_${CEDARTOY_TIMEOUT_MS}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
 }
