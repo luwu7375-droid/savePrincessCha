@@ -7,6 +7,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { corsHeaders } from "../_shared/cors.ts";
 
 const CEDARTOY_BASE = "https://toy.cedarstar.org";
+const GAME_PROXY_VERSION = "2026-07-14-cedartoy-account-token-v1";
 const CEDARTOY_TIMEOUT_MS = 8_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_CALLS = 30;
@@ -73,7 +74,11 @@ let toolCache: { tools: McpTool[]; expiresAt: number } | null = null;
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "X-Game-Proxy-Version": GAME_PROXY_VERSION,
+    },
   });
 }
 
@@ -319,13 +324,18 @@ async function ensureMachineAccount(
     );
   }
 
-  const args = buildRegistrationArgs(registerTool, credentials);
+  const args = registerTool.name === "account"
+    ? {
+      action: "login_or_register",
+      username: credentials.username,
+      password: credentials.password,
+    }
+    : buildRegistrationArgs(registerTool, credentials);
   let registrationResult: unknown;
   if (registerTool.name === "account") {
-    // CedarToy creates/loads the machine identity from Basic auth. Calling the
-    // account tool anonymously only describes an anonymous visitor and cannot
-    // return the machine binding code.
-    registrationResult = await callTool(registerTool.name, args, credentials);
+    // CedarToy account lifecycle is token-based: credentials are tool
+    // arguments, not HTTP Basic auth.
+    registrationResult = await callTool(registerTool.name, args, undefined);
   } else {
     try {
       registrationResult = await callTool(registerTool.name, args, undefined);
@@ -342,10 +352,16 @@ async function ensureMachineAccount(
   if (!identity.bindingCode) {
     const accountTool = findAccountTool(tools);
     if (accountTool) {
+      const accountToken = extractAccountToken(accountData);
+      if (!accountToken) {
+        throw new Error(
+          "machine_registration_protocol_invalid: login_or_register returned no account token",
+        );
+      }
       const accountResult = await callTool(
         accountTool.name,
-        buildAccountArgs(accountTool, "binding"),
-        credentials,
+        { action: "generate_binding_token", token: accountToken },
+        undefined,
       );
       const normalizedAccount = normalizeMcpResult(accountResult);
       const directText = typeof normalizedAccount?.text === "string"
@@ -412,8 +428,22 @@ async function refreshMachineAccount(
   if (!accountTool) {
     throw new Error("machine_registration_protocol_missing: account tool not found");
   }
+  const loginResult = normalizeMcpResult(
+    await callTool(accountTool.name, {
+      action: "login",
+      username: credentials.username,
+      password: credentials.password,
+    }, undefined),
+  );
+  const accountToken = extractAccountToken(loginResult);
+  if (!accountToken) {
+    throw new Error("machine_registration_protocol_invalid: login returned no account token");
+  }
   const result = normalizeMcpResult(
-    await callTool(accountTool.name, buildAccountArgs(accountTool, "status"), credentials),
+    await callTool(accountTool.name, {
+      action: "get_bindings",
+      token: accountToken,
+    }, undefined),
   );
   const identity = extractIdentity(result);
   const status: MachineRow["status"] = identity.bound
@@ -590,6 +620,48 @@ function normalizeMcpResult(value: any): any {
     if (textParts.length > 1) return { content: textParts };
   }
   return value;
+}
+
+function extractAccountToken(value: unknown): string | null {
+  const visit = (item: unknown, depth = 0): string | null => {
+    if (depth > 6 || item === null || item === undefined) return null;
+    if (typeof item === "string") {
+      try {
+        const parsed = JSON.parse(item);
+        const nested = visit(parsed, depth + 1);
+        if (nested) return nested;
+      } catch {
+        const match = item.match(/(?:account[_\\s-]*)?(?:access[_\\s-]*|session[_\\s-]*)?token[:：\\s=]+([A-Za-z0-9._-]{8,512})/i);
+        if (match) return match[1];
+      }
+      return null;
+    }
+    if (Array.isArray(item)) {
+      for (const child of item) {
+        const found = visit(child, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (typeof item === "object") {
+      for (const [key, child] of Object.entries(item as Record<string, unknown>)) {
+        if (
+          /^(?:token|access_token|accessToken|session_token|sessionToken|account_token|accountToken)$/i.test(key) &&
+          !/bind/i.test(key) &&
+          typeof child === "string" &&
+          child.length >= 8
+        ) {
+          return child;
+        }
+      }
+      for (const child of Object.values(item as Record<string, unknown>)) {
+        const found = visit(child, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  return visit(value);
 }
 
 function extractIdentity(value: unknown): {
