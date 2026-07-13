@@ -1087,11 +1087,12 @@ function _initSettingsApiSubpage(container) {
             ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
           },
           body: JSON.stringify(roleId === 'imageGeneration' ? {
-            prompt: 'a simple small red circle on white background',
+            prompt: 'Using the attached approved B identity turnaround, generate a neutral photorealistic close-up of the exact same fictional adult man. Preserve face identity, hair and muted amber-gold eye.',
             conversation_id: typeof getActiveConversationId === 'function' ? getActiveConversationId() : 'model-test',
             provider_config: { endpoint: providerData.endpoint, api_key: providerData.apiKey, model: config.model },
             size: '1024x1024',
             quality: 'standard',
+            use_identity_reference: true,
             test_only: true
           } : {
             endpoint: providerData.endpoint, apiKey: providerData.apiKey, model: config.model
@@ -1099,7 +1100,9 @@ function _initSettingsApiSubpage(container) {
         });
 
         if (!response.ok) {
-          throw new Error(`代理请求失败 (${response.status})`);
+          const errorBody = await response.json().catch(() => null);
+          const details = errorBody?.details || errorBody?.error || "";
+          throw new Error(`代理请求失败 (${response.status})${details ? `：${details}` : ""}`);
         }
 
         const result = await response.json();
