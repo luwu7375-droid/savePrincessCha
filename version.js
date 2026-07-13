@@ -1,6 +1,6 @@
 // Single source of truth for build version
 // Update this one constant when releasing a new version
-window.SAVE_PRINCESS_BUILD = "cloudflare-0713-cha-b-reference";
+window.SAVE_PRINCESS_BUILD = "cloudflare-0713-server-tools-v1";
 
 // Note: CSS files in index.html <head> also use version strings.
 // Update manually when CSS changes:
