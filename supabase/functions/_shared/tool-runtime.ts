@@ -1,17 +1,9 @@
+import type { TierProviders } from "./model-client.ts";
 import {
-  type ProviderConfig,
-  type TierProviders,
-  toCompletionsUrl,
-} from "./model-client.ts";
-
-type ToolContext = {
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  authorization: string;
-  userId?: string;
-  conversationId?: string;
-  rawUserMessage: string;
-};
+  executeMcpTool,
+  getOpenAiToolDefinitions,
+  type McpToolContext,
+} from "./mcp-registry.ts";
 
 type ToolCall = {
   id: string;
@@ -28,64 +20,9 @@ type ToolPlanResult = {
   names: string[];
 };
 
-const TOOL_TIMEOUT_MS = 30_000;
-const MAX_TOOL_RESULT_CHARS = 16_000;
 const MAX_TOOL_CALLS_PER_TURN = 2;
 
-export const CHAT_TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "web_read_url",
-      description:
-        "读取用户明确提供的公开网页 URL，并提取和总结与问题相关的内容。只能读取 URL，不能搜索互联网。",
-      parameters: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "用户消息中出现的 http 或 https URL",
-          },
-          question: {
-            type: "string",
-            description: "用户希望从网页中了解的问题",
-          },
-        },
-        required: ["url"],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "cedar_list_games",
-      description:
-        "列出 CedarToy 当前支持的游戏。只读，不创建房间，也不开始游戏。",
-      parameters: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "cedar_get_guide",
-      description:
-        "查询某个 CedarToy 游戏的玩法说明。只读，不创建房间，也不开始游戏。",
-      parameters: {
-        type: "object",
-        properties: {
-          game: { type: "string", description: "游戏名称或游戏标识" },
-        },
-        required: ["game"],
-        additionalProperties: false,
-      },
-    },
-  },
-] as const;
+export const CHAT_TOOLS = getOpenAiToolDefinitions();
 
 export function isToolRuntimeCandidate(message: string): boolean {
   const text = String(message || "").trim();
@@ -157,297 +94,84 @@ function safeJsonObject(value: string): Record<string, unknown> {
   }
 }
 
-function compactResult(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  if (text.length <= MAX_TOOL_RESULT_CHARS) return text;
-  return text.slice(0, MAX_TOOL_RESULT_CHARS) + "\n[工具结果过长，已截断]";
-}
-
-async function fetchJson(
-  url: string,
-  init: RequestInit,
-): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TOOL_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    const text = await response.text();
-    let data: unknown = text;
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      // Keep non-JSON response text for diagnostics.
-    }
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${compactResult(data)}`);
-    }
-    return data;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function executeTool(
-  call: ToolCall,
-  context: ToolContext,
-): Promise<string> {
-  const args = safeJsonObject(call.function.arguments);
-  switch (call.function.name) {
-    case "web_read_url": {
-      if (!context.authorization.toLowerCase().startsWith("bearer ")) {
-        throw new Error("网页读取需要有效的用户登录令牌");
-      }
-      const url = String(args.url || "").trim();
-      if (!/^https?:\/\//i.test(url)) throw new Error("无效的网页 URL");
-      const question = String(args.question || context.rawUserMessage || "")
-        .trim();
-      console.log("[tool-runtime] executing web_read_url:", {
-        url: url.slice(0, 100),
-      });
-      const data = await fetchJson(
-        `${context.supabaseUrl}/functions/v1/web?action=summarize_url`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: context.authorization,
-          },
-          body: JSON.stringify({
-            url,
-            question,
-            saveLog: true,
-            userId: context.userId || null,
-            conversationId: context.conversationId || null,
-          }),
-        },
-      );
-      console.log("[tool-runtime] web_read_url response:", {
-        ok: !!(data as { ok?: boolean }).ok,
-      });
-      return compactResult(data);
-    }
-    case "cedar_list_games": {
-      console.log("[tool-runtime] executing cedar_list_games");
-      const data = await fetchJson(
-        `${context.supabaseUrl}/functions/v1/game-proxy`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${context.serviceRoleKey}`,
-          },
-          body: JSON.stringify({
-            action: "list_games",
-            userId: context.userId || "anon",
-          }),
-        },
-      );
-      console.log("[tool-runtime] cedar_list_games response received");
-      return compactResult(data);
-    }
-    case "cedar_get_guide": {
-      const game = String(args.game || "").trim();
-      if (!game) throw new Error("缺少游戏名称");
-      console.log("[tool-runtime] executing cedar_get_guide:", { game });
-      const data = await fetchJson(
-        `${context.supabaseUrl}/functions/v1/game-proxy`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${context.serviceRoleKey}`,
-          },
-          body: JSON.stringify({
-            action: "get_guide",
-            game,
-            userId: context.userId || "anon",
-          }),
-        },
-      );
-      console.log("[tool-runtime] cedar_get_guide response received");
-      return compactResult(data);
-    }
-    default:
-      throw new Error(`不允许调用工具：${call.function.name}`);
-  }
-}
-
-async function requestToolPlan(
-  provider: ProviderConfig,
-  messages: unknown[],
-): Promise<ToolCall[] | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TOOL_TIMEOUT_MS);
-  try {
-    const response = await fetch(toCompletionsUrl(provider.baseUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${provider.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        messages,
-        stream: false,
-        max_tokens: Math.min(provider.maxTokens || 512, 512),
-        tools: CHAT_TOOLS,
-        tool_choice: "auto",
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 500);
-      throw new Error(`tool planning HTTP ${response.status}: ${detail}`);
-    }
-    const data = await response.json();
-    const calls = data?.choices?.[0]?.message?.tool_calls;
-    if (!Array.isArray(calls) || calls.length === 0) return null;
-    return calls
-      .filter((item: unknown) => {
-        const c = item as ToolCall;
-        return c?.type === "function" &&
-          typeof c?.id === "string" &&
-          typeof c?.function?.name === "string" &&
-          typeof c?.function?.arguments === "string";
-      })
-      .slice(0, MAX_TOOL_CALLS_PER_TURN);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export async function prepareToolMessages(params: {
-  providers: TierProviders;
+  providers?: TierProviders;
   messages: unknown[];
-  context: ToolContext;
+  context: McpToolContext;
 }): Promise<ToolPlanResult> {
-  const { providers, messages, context } = params;
+  const { messages, context } = params;
+  const candidateMatched = isToolRuntimeCandidate(context.rawUserMessage);
 
-  console.log(
-    "[tool-runtime] candidateMatched:",
-    isToolRuntimeCandidate(context.rawUserMessage),
-    {
-      rawUserMessagePreview: context.rawUserMessage.slice(0, 100),
-      supabaseUrlPresent: !!context.supabaseUrl,
-      serviceRoleKeyPresent: !!context.serviceRoleKey,
-    },
-  );
+  console.log("[tool-runtime] candidate check", {
+    candidateMatched,
+    rawUserMessagePreview: context.rawUserMessage.slice(0, 100),
+    supabaseUrlPresent: !!context.supabaseUrl,
+    serviceRoleKeyPresent: !!context.serviceRoleKey,
+  });
 
-  if (!isToolRuntimeCandidate(context.rawUserMessage)) {
+  if (!candidateMatched) {
     return { messages, used: false, names: [] };
   }
 
-  // Explicit URL and CedarToy intents are deterministic. This keeps these
-  // read-only tools working even when the selected chat provider does not
-  // implement OpenAI-compatible tool_calls.
-  const directCalls = buildDirectToolCalls(context.rawUserMessage)
+  // Registered P0 tools use deterministic routing. This avoids a second model
+  // request for tool planning and works with providers that do not implement
+  // OpenAI-compatible tool_calls.
+  const calls = buildDirectToolCalls(context.rawUserMessage)
     .slice(0, MAX_TOOL_CALLS_PER_TURN);
 
-  console.log("[tool-runtime] directCalls built:", {
-    count: directCalls.length,
-    selectedTools: directCalls.map((c) => c.function.name),
+  console.log("[tool-runtime] registered calls", {
+    count: calls.length,
+    selectedTools: calls.map((call) => call.function.name),
   });
 
-  if (directCalls.length) {
-    const names: string[] = [];
-    const results: Array<{ name: string; content: string }> = [];
-    for (const call of directCalls) {
-      names.push(call.function.name);
-      let content: string;
-      console.log("[tool-runtime] toolStarted:", call.function.name);
-      try {
-        content = await executeTool(call, context);
-        console.log("[tool-runtime] toolSucceeded:", call.function.name, {
-          resultLength: content.length,
-        });
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error("[tool-runtime] toolFailed:", call.function.name, {
-          error: errorMsg,
-        });
-        content = JSON.stringify({
-          ok: false,
-          error: errorMsg,
-        });
-      }
-      results.push({ name: call.function.name, content });
-    }
-
-    console.log("[tool-runtime] deterministic tools completed", {
-      names,
-      count: names.length,
-      resultsInjected: true,
-    });
-    return {
-      used: true,
-      names,
-      messages: [
-        ...messages,
-        {
-          role: "system",
-          content:
-            '<tool_results source="save_princess_server" trust="external">\n' +
-            "以下内容由服务端只读工具取得。请直接依据结果回答用户；不要声称自己无法访问，也不要编造结果。\n" +
-            JSON.stringify(results) +
-            "\n</tool_results>",
-        },
-      ],
-    };
-  }
-
-  let calls: ToolCall[] | null = null;
-  let lastError: unknown = null;
-  const candidates = [providers.primary, providers.fallback].filter(
-    Boolean,
-  ) as ProviderConfig[];
-  for (const provider of candidates) {
-    try {
-      calls = await requestToolPlan(provider, messages);
-      lastError = null;
-      break;
-    } catch (error) {
-      lastError = error;
-      console.warn("[tool-runtime] provider does not support tool planning", {
-        provider: provider.providerName,
-        model: provider.model,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  if (lastError || !calls?.length) {
+  if (!calls.length) {
     return { messages, used: false, names: [] };
   }
 
   const names: string[] = [];
-  const toolMessages: unknown[] = [];
+  const results: Array<{ name: string; ok: boolean; content: string }> = [];
+
   for (const call of calls) {
     names.push(call.function.name);
-    let content: string;
+    console.log("[tool-runtime] tool started", { name: call.function.name });
     try {
-      content = await executeTool(call, context);
+      const content = await executeMcpTool(
+        call.function.name,
+        safeJsonObject(call.function.arguments),
+        context,
+      );
+      results.push({ name: call.function.name, ok: true, content });
+      console.log("[tool-runtime] tool succeeded", {
+        name: call.function.name,
+        resultLength: content.length,
+      });
     } catch (error) {
-      content = JSON.stringify({
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      results.push({
+        name: call.function.name,
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        content: JSON.stringify({ error: errorMessage }),
+      });
+      console.error("[tool-runtime] tool failed", {
+        name: call.function.name,
+        error: errorMessage.slice(0, 300),
       });
     }
-    toolMessages.push({
-      role: "tool",
-      tool_call_id: call.id,
-      name: call.function.name,
-      content,
-    });
   }
 
-  console.log("[tool-runtime] completed", { names, count: names.length });
   return {
     used: true,
     names,
     messages: [
       ...messages,
-      { role: "assistant", content: null, tool_calls: calls },
-      ...toolMessages,
+      {
+        role: "system",
+        content:
+          '<tool_results source="save_princess_mcp_registry" trust="external">\n' +
+          "以下内容由服务端注册表中的只读工具取得。成功时请直接依据结果回答；失败时请如实说明工具暂时不可用，不要声称已经读取成功，也不要编造。\n" +
+          JSON.stringify(results) +
+          "\n</tool_results>",
+      },
     ],
   };
 }
