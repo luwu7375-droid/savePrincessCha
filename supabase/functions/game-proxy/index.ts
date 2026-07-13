@@ -156,17 +156,9 @@ async function connectToCedarToy(
   const credentials = await getOrCreateCredentials(userId, supabaseClient);
 
   // Create SSE transport to CedarToy
+  // CedarToy MCP server is at the base URL, not /sse
   const transport = new SSEClientTransport(
-    new URL(`${CEDARTOY_BASE}/sse`),
-    {
-      headers: {
-        "Content-Type": "application/json",
-      },
-      // If CedarToy requires auth, add it here
-      ...(credentials.token && {
-        Authorization: `Bearer ${credentials.token}`,
-      }),
-    },
+    new URL(CEDARTOY_BASE),
   );
 
   // Create MCP client
