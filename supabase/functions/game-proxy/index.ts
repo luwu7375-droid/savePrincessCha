@@ -1,9 +1,8 @@
-// Game Proxy Edge Function - Proper MCP Client for CedarToy
-// Uses Model Context Protocol SDK to communicate with https://toy.cedarstar.org/
+// Game Proxy Edge Function - HTTP-based MCP Client for CedarToy
+// Uses direct HTTP calls to communicate with https://toy.cedarstar.org/
+// (SSE transport not available in Deno edge functions)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { Client } from "https://esm.sh/@modelcontextprotocol/sdk@1.0.4/client/index.js";
-import { SSEClientTransport } from "https://esm.sh/@modelcontextprotocol/sdk@1.0.4/client/sse.js";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const CEDARTOY_BASE = "https://toy.cedarstar.org";
@@ -57,56 +56,51 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Connect to CedarToy MCP server
-    const mcpClient = await connectToCedarToy(userId, supabaseClient);
+    // Get credentials for CedarToy
+    const credentials = await getOrCreateCredentials(userId, supabaseClient);
 
     // Route to appropriate action
     let result;
-    try {
-      switch (action) {
-        case "list_games":
-          result = await mcpClient.callTool("list_games", {});
-          break;
-        case "get_guide":
-          if (!game) {
-            return new Response(
-              JSON.stringify({ error: "game parameter required for get_guide" }),
-              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-            );
-          }
-          result = await mcpClient.callTool("get_guide", { game });
-          break;
-        case "play":
-          if (!game || !gameAction) {
-            return new Response(
-              JSON.stringify({ error: "game and gameAction parameters required for play" }),
-              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-            );
-          }
-          const playParams: Record<string, unknown> = {
-            game,
-            action: gameAction,
-          };
-          if (actionParams) {
-            playParams.params = actionParams;
-          }
-          if (slotId !== undefined) {
-            playParams.slot_id = slotId;
-          }
-          result = await mcpClient.callTool("play", playParams);
-          break;
-        case "account":
-          result = await mcpClient.callTool("account", {});
-          break;
-        default:
+    switch (action) {
+      case "list_games":
+        result = await callCedarToyTool("list_games", {}, credentials);
+        break;
+      case "get_guide":
+        if (!game) {
           return new Response(
-            JSON.stringify({ error: `Unknown action: ${action}` }),
+            JSON.stringify({ error: "game parameter required for get_guide" }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
-      }
-    } finally {
-      // Close MCP connection
-      await mcpClient.close();
+        }
+        result = await callCedarToyTool("get_guide", { game }, credentials);
+        break;
+      case "play":
+        if (!game || !gameAction) {
+          return new Response(
+            JSON.stringify({ error: "game and gameAction parameters required for play" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        const playParams: Record<string, unknown> = {
+          game,
+          action: gameAction,
+        };
+        if (actionParams) {
+          playParams.params = actionParams;
+        }
+        if (slotId !== undefined) {
+          playParams.slot_id = slotId;
+        }
+        result = await callCedarToyTool("play", playParams, credentials);
+        break;
+      case "account":
+        result = await callCedarToyTool("account", {}, credentials);
+        break;
+      default:
+        return new Response(
+          JSON.stringify({ error: `Unknown action: ${action}` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
     }
 
     return new Response(
@@ -146,38 +140,47 @@ function checkRateLimit(userId: string): string | null {
 }
 
 /**
- * Connect to CedarToy MCP server using SSE transport
+ * Call CedarToy MCP tool via HTTP POST
+ * Uses JSON-RPC 2.0 format for MCP protocol
  */
-async function connectToCedarToy(
-  userId: string,
-  supabaseClient: ReturnType<typeof createClient>,
-): Promise<Client> {
-  // Get or create account credentials
-  const credentials = await getOrCreateCredentials(userId, supabaseClient);
-
-  // Create SSE transport to CedarToy
-  // CedarToy MCP server is at the base URL, not /sse
-  const transport = new SSEClientTransport(
-    new URL(CEDARTOY_BASE),
-  );
-
-  // Create MCP client
-  const client = new Client(
-    {
-      name: "savePrincessCha",
-      version: "1.0.0",
+async function callCedarToyTool(
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  credentials: { username: string; password: string },
+): Promise<unknown> {
+  // MCP JSON-RPC 2.0 request format
+  const mcpRequest = {
+    jsonrpc: "2.0",
+    method: "tools/call",
+    params: {
+      name: toolName,
+      arguments: toolArgs,
     },
-    {
-      capabilities: {
-        tools: {},
-      },
+    id: Date.now(),
+  };
+
+  const response = await fetch(CEDARTOY_BASE, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // Basic auth for CedarToy
+      "Authorization": `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`,
     },
-  );
+    body: JSON.stringify(mcpRequest),
+  });
 
-  // Connect
-  await client.connect(transport);
+  if (!response.ok) {
+    throw new Error(`CedarToy API error: ${response.status} ${response.statusText}`);
+  }
 
-  return client;
+  const mcpResponse = await response.json();
+
+  // Handle JSON-RPC error
+  if (mcpResponse.error) {
+    throw new Error(`CedarToy tool error: ${mcpResponse.error.message || JSON.stringify(mcpResponse.error)}`);
+  }
+
+  return mcpResponse.result;
 }
 
 /**
