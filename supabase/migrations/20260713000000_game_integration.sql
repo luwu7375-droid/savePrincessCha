@@ -2,33 +2,43 @@
 -- Creates game_sessions table, extends cha_activity_log and app_settings for gaming features
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 1. Create game_sessions table
+-- 1. Create or alter game_sessions table
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS public.game_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-
   game_name TEXT NOT NULL,
-  game_display_name TEXT,
-
-  status TEXT NOT NULL DEFAULT 'active'
-    CHECK (status IN ('active', 'paused', 'completed', 'abandoned')),
-  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  ended_at TIMESTAMPTZ,
-
-  action_history JSONB NOT NULL DEFAULT '[]'::JSONB,
-  current_state JSONB DEFAULT '{}'::JSONB,
-
-  token_cost INTEGER NOT NULL DEFAULT 0,
-  action_count INTEGER NOT NULL DEFAULT 0,
-
-  mcp_token TEXT,
-  slot_id INTEGER,
-
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Add columns if they don't exist
+ALTER TABLE public.game_sessions
+  ADD COLUMN IF NOT EXISTS game_display_name TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS action_history JSONB NOT NULL DEFAULT '[]'::JSONB,
+  ADD COLUMN IF NOT EXISTS current_state JSONB DEFAULT '{}'::JSONB,
+  ADD COLUMN IF NOT EXISTS token_cost INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS action_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS mcp_token TEXT,
+  ADD COLUMN IF NOT EXISTS slot_id INTEGER,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- Add constraint if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE table_name = 'game_sessions'
+      AND constraint_name = 'game_sessions_status_check'
+  ) THEN
+    ALTER TABLE public.game_sessions
+      ADD CONSTRAINT game_sessions_status_check
+        CHECK (status IN ('active', 'paused', 'completed', 'abandoned'));
+  END IF;
+END $$;
 
 -- Indexes for game_sessions
 CREATE INDEX IF NOT EXISTS idx_game_sessions_user_status
