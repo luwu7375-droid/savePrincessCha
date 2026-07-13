@@ -23,6 +23,7 @@ interface ImageGenerationRequest {
   style?: string;
   test_only?: boolean;
   generation_source?: "explicit" | "proactive";
+  use_identity_reference?: boolean;
 }
 
 Deno.serve(async (req: Request) => {
@@ -67,7 +68,8 @@ Deno.serve(async (req: Request) => {
       size,
       quality,
       style,
-      generation_source = "explicit"
+      generation_source = "explicit",
+      use_identity_reference = false
     } = body;
 
     // Determine final prompt
@@ -166,69 +168,111 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Construct correct endpoint URL (same logic as chat-test)
-    let imageEndpoint = provider_config.endpoint.replace(/\/+$/, "");
-
-    if (!imageEndpoint.endsWith("/images/generations")) {
-      imageEndpoint = imageEndpoint.replace(/\/completions$/, "");
-      imageEndpoint = imageEndpoint.replace(/\/chat\/completions$/, "");
-      if (!imageEndpoint.match(/\/v\d+$/)) imageEndpoint += "/v1";
-      imageEndpoint += "/images/generations";
-    }
+    // Build an OpenAI-compatible Image API endpoint. Face-bearing Cha images
+    // use the approved B turnaround through /images/edits; text-only generation
+    // is allowed only when the caller explicitly says no identity reference.
+    const endpointRoot = provider_config.endpoint
+      .replace(/\/+$/, "")
+      .replace(/\/images\/(generations|edits)$/, "")
+      .replace(/\/chat\/completions$/, "")
+      .replace(/\/completions$/, "");
+    const apiRoot = endpointRoot.match(/\/v\d+$/) ? endpointRoot : `${endpointRoot}/v1`;
+    const imageEndpoint = `${apiRoot}/images/${use_identity_reference ? "edits" : "generations"}`;
 
     console.log("[image-generation] Generating image:", {
       finalPrompt: finalPrompt.slice(0, 100) + "...",
       provider: provider_config.model,
       originalEndpoint: provider_config.endpoint,
-      constructedEndpoint: imageEndpoint
+      constructedEndpoint: imageEndpoint,
+      identityReference: use_identity_reference,
     });
 
-    // Call image generation API
-    const requestBody: any = {
-      prompt: finalPrompt,
-      model: provider_config.model,
-    };
+    let response: Response;
+    if (use_identity_reference) {
+      // Pin the approved B identity asset to its immutable approval commit.
+      // A moving dev/raw URL could silently change Cha's face.
+      const identityReferenceUrl =
+        "https://raw.githubusercontent.com/luwu7375-droid/savePrincessCha/71562ba6b74e38b203f7dc5af8c89632c01d416c/assets/cha/identity/cha-photoreal-b-turnaround-v1.jpg";
+      const referenceResponse = await fetch(identityReferenceUrl, {
+        headers: { "User-Agent": "savePrincessCha-image-generation" },
+      });
+      if (!referenceResponse.ok) {
+        throw new Error(`Cha identity reference download failed: ${referenceResponse.status}`);
+      }
+      const referenceBytes = await referenceResponse.arrayBuffer();
+      if (!referenceBytes.byteLength || referenceBytes.byteLength > 10 * 1024 * 1024) {
+        throw new Error(`Cha identity reference has invalid size: ${referenceBytes.byteLength}`);
+      }
 
-    // Add optional parameters based on provider
-    if (size) requestBody.size = size;
-    if (quality) {
-      // Map "medium" to "standard" for providers that don't support it
-      requestBody.quality = quality === "medium" ? "standard" : quality;
+      const form = new FormData();
+      form.append("model", provider_config.model);
+      form.append("prompt", finalPrompt);
+      form.append("image[]", new Blob([referenceBytes], { type: "image/jpeg" }), "cha-photoreal-b-turnaround-v1.jpg");
+      if (size) form.append("size", size);
+      if (quality) form.append("quality", quality === "standard" ? "medium" : quality);
+      // gpt-image-2 always processes image inputs at high fidelity and rejects
+      // input_fidelity. Older GPT Image models accept the explicit high setting.
+      if (!/gpt[-_.]?image[-_.]?2/i.test(provider_config.model)) {
+        form.append("input_fidelity", "high");
+      }
+
+      console.log("[image-generation] Reference edit request:", {
+        model: provider_config.model,
+        size,
+        quality: quality === "standard" ? "medium" : quality,
+        referenceBytes: referenceBytes.byteLength,
+        inputFidelity: /gpt[-_.]?image[-_.]?2/i.test(provider_config.model) ? "automatic" : "high",
+      });
+
+      response = await fetch(imageEndpoint, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${provider_config.api_key}` },
+        body: form,
+      });
+    } else {
+      const requestBody: any = {
+        prompt: finalPrompt,
+        model: provider_config.model,
+      };
+      if (size) requestBody.size = size;
+      if (quality) requestBody.quality = quality === "medium" ? "standard" : quality;
+      if (style) requestBody.style = style;
+      if (provider_config.model.includes("dall-e")) {
+        requestBody.n = 1;
+        requestBody.response_format = "url";
+      }
+      console.log("[image-generation] Text generation request:", {
+        model: requestBody.model,
+        size: requestBody.size,
+        quality: requestBody.quality,
+        style: requestBody.style,
+        promptLength: requestBody.prompt.length,
+      });
+      response = await fetch(imageEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${provider_config.api_key}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
     }
-    if (style) requestBody.style = style;
-
-    // For OpenAI format
-    if (provider_config.model.includes("dall-e")) {
-      requestBody.n = 1;
-      requestBody.response_format = "url";
-    }
-
-    console.log("[image-generation] Request body:", {
-      model: requestBody.model,
-      size: requestBody.size,
-      quality: requestBody.quality,
-      style: requestBody.style,
-      promptLength: requestBody.prompt.length
-    });
-
-    const response = await fetch(imageEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${provider_config.api_key}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error("[image-generation] API error:", response.status, errorText.slice(0, 500));
+      const referenceUnsupported = use_identity_reference && (
+        response.status === 404 ||
+        response.status === 405 ||
+        /images\/edits|edit.*not.*support|reference.*not.*support|multipart|unsupported endpoint/i.test(errorText)
+      );
       return new Response(JSON.stringify({
-        error: "Image generation failed",
-        details: errorText.slice(0, 200),
+        error: referenceUnsupported ? "Configured image model does not support Cha identity references" : "Image generation failed",
+        code: referenceUnsupported ? "reference_image_not_supported" : "image_generation_failed",
+        details: errorText.slice(0, 500),
         status: response.status
       }), {
-        status: response.status,
+        status: referenceUnsupported ? 422 : response.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -352,6 +396,8 @@ Deno.serve(async (req: Request) => {
       quality: quality || "standard",
       style: style || "natural",
       generation_source,
+      identity_reference_version: use_identity_reference ? "photoreal-b-v1" : null,
+      identity_reference_used: use_identity_reference,
     };
 
     // Save image message to database
