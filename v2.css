@@ -5269,3 +5269,62 @@ body {
 .cha-status-bar .status-action:hover {
   background: rgba(147, 112, 219, 0.25);
 }
+
+
+/* CedarToy machine binding */
+.cedartoy-binding-card {
+  margin: 0 16px 12px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border-radius: 14px;
+  background: var(--surface-card, #fff);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.cedartoy-binding-copy {
+  min-width: 0;
+}
+.cedartoy-binding-copy p {
+  margin: 5px 0;
+  color: var(--text-primary);
+}
+.cedartoy-binding-copy small {
+  display: block;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.cedartoy-binding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.cedartoy-binding-code-row {
+  margin: 8px 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cedartoy-binding-code-row[hidden] {
+  display: none;
+}
+.cedartoy-binding-code-row code {
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.055);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+@media (max-width: 640px) {
+  .cedartoy-binding-card {
+    flex-direction: column;
+  }
+  .cedartoy-binding-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
