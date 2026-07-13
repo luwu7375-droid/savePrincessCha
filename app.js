@@ -11964,7 +11964,16 @@ async function updateGameStatus() {
       return;
     }
 
-    const session = sessions && sessions.length > 0 ? sessions[0] : null;
+    const rawSession = sessions && sessions.length > 0 ? sessions[0] : null;
+    const displayName = rawSession
+      ? (rawSession.game_display_name || rawSession.game_name || rawSession.game || rawSession.game_type || "")
+      : "";
+    const session = rawSession && displayName ? rawSession : null;
+    if (rawSession && !displayName) {
+      console.warn("[game-status] Ignoring active session without a game name", {
+        sessionId: rawSession.id || null,
+      });
+    }
 
     // Update Home page card
     const homeCard = document.getElementById("gameStatusCard");
@@ -11975,7 +11984,6 @@ async function updateGameStatus() {
         const gameStatusTime = document.getElementById("gameStatusTime");
         
         if (gameStatusText) {
-          const displayName = session.game_display_name || session.game_name;
           const actionCount = session.action_count || 0;
           gameStatusText.textContent = `正在玩${displayName}，已经进行了 ${actionCount} 步`;
         }
@@ -11997,7 +12005,6 @@ async function updateGameStatus() {
         const chatStatusText = document.getElementById("chaGameStatusText");
         
         if (chatStatusText) {
-          const displayName = session.game_display_name || session.game_name;
           chatStatusText.textContent = `正在玩${displayName}...`;
         }
       } else {
