@@ -62,6 +62,7 @@ type RouteName =
   | "intimacy"
   | "meta_complaint"
   | "game_invitation"
+  | "game_playing"
   | "casual";
 
 function detectRoute(msg: string): RouteName {
@@ -72,11 +73,13 @@ function detectRoute(msg: string): RouteName {
   const ROUTE_INTIMACY = /我想你|好想你|就想陪|陪着我|不想工作|告解/i;
   const ROUTE_META_COMPLAINT = /为什么你|你怎么|你好笨|你笨|真笨|读空气|不会读|笨笨|怎么这样|你不懂|你不明白|你搞不清|有没有搞错/i;
   const ROUTE_GAME_INVITATION = /去玩游戏|玩个游戏|找个游戏|试试海龟汤|玩点什么|游戏中心/i;
+  const ROUTE_GAME_PLAYING = /房间.*K[0-9A-Z]{7}|提问|猜汤底|我觉得答案是|继续问/i;
   if (ROUTE_AI_NOSTALGIA.test(msg)) return "ai_nostalgia";
   if (ROUTE_HISTORICAL.test(msg)) return "historical_roleplay";
   if (ROUTE_META_COMPLAINT.test(msg)) return "meta_complaint";
   if (ROUTE_CARE_LOW.test(msg)) return "care_low_energy";
   if (ROUTE_INTIMACY.test(msg)) return "intimacy";
+  if (ROUTE_GAME_PLAYING.test(msg)) return "game_playing";
   if (ROUTE_GAME_INVITATION.test(msg)) return "game_invitation";
   if (DEV_VERBS.test(msg)) return "project_work";
   return "casual";
@@ -1911,28 +1914,129 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
     if (topicRoute === "game_invitation") {
       try {
         const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
-        const listResponse = await fetch(gameProxyUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${serviceRoleKey}`,
-          },
-          body: JSON.stringify({
-            action: "list_games",
-            userId: memUserId,
-          }),
-        });
 
-        if (listResponse.ok) {
-          const gamesData = await listResponse.json();
-          const games = Array.isArray(gamesData?.content?.[0]?.text)
-            ? gamesData.content[0].text
-            : (typeof gamesData?.content?.[0]?.text === "string" ? gamesData.content[0].text : "");
+        // Check if user wants to play turtle soup specifically
+        const wantsTurtleSoup = /海龟汤|turtle.*soup/i.test(memUserMessage);
 
-          systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户想玩游戏。以下是可用的游戏列表：\n\n${games}\n\n你可以：\n1. 根据用户兴趣推荐 1-2 个游戏\n2. 简单介绍推荐的游戏（不要复述全部列表）\n3. 问用户想玩哪个\n4. 如果用户明确选择了某个游戏，告诉用户"我去开一局"，然后自然地开始玩\n\n注意：\n- 不要说"我不能真的玩游戏"或"我只是 AI"，你确实可以通过 MCP 连接到 CedarToy 玩游戏\n- 人类用户（KK）有自己的账号，可以在游戏中心自己玩\n- 你（小cha）也有自己的账号，可以自主游玩并分享体验\n</game_context>`;
+        if (wantsTurtleSoup) {
+          // Auto-start turtle soup game
+          console.log("[game_invitation] Auto-starting turtle_soup game");
+
+          // Create random puzzle room
+          const createResponse = await fetch(gameProxyUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({
+              action: "play",
+              userId: memUserId,
+              game: "turtle_soup",
+              gameAction: "create_random",
+            }),
+          });
+
+          if (createResponse.ok) {
+            const createData = await createResponse.json();
+            const roomData = createData?.content?.[0]?.text;
+
+            if (roomData) {
+              let parsedRoom;
+              try {
+                parsedRoom = typeof roomData === "string" ? JSON.parse(roomData) : roomData;
+              } catch {
+                parsedRoom = null;
+              }
+
+              if (parsedRoom && parsedRoom.id) {
+                systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high" active_game="true">\n你刚刚成功创建了一个海龟汤房间！\n\n房间信息：\n- 房间 ID: ${parsedRoom.id}\n- 题目：${parsedRoom.title || "未知"}\n- 汤面：${parsedRoom.surface || "未知"}\n- 状态：${parsedRoom.status}\n- 标签：${parsedRoom.tags || "无"}\n\n现在你可以：\n1. 自然地告诉 KK 你开了一局海龟汤，分享题目（汤面）\n2. 说说你的第一印象或初步想法\n3. 开始提出第一个是/否问题来推理汤底\n\n注意：\n- 用自然口吻说话，不要机械复述这些信息\n- 展现出对谜题的真实好奇和推理过程\n- 记住房间 ID: ${parsedRoom.id}，后续提问需要用到\n</game_context>`;
+              } else {
+                systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high">\n创建海龟汤房间失败。自然地告诉 KK 可能服务器有点问题，待会再试。\n</game_context>`;
+              }
+            }
+          } else {
+            console.error("[game_invitation] Failed to create turtle_soup room:", createResponse.status);
+          }
+        } else {
+          // General game invitation - show game list
+          const listResponse = await fetch(gameProxyUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({
+              action: "list_games",
+              userId: memUserId,
+            }),
+          });
+
+          if (listResponse.ok) {
+            const gamesData = await listResponse.json();
+            const games = Array.isArray(gamesData?.content?.[0]?.text)
+              ? gamesData.content[0].text
+              : (typeof gamesData?.content?.[0]?.text === "string" ? gamesData.content[0].text : "");
+
+            systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户想玩游戏。以下是可用的游戏列表：\n\n${games}\n\n你可以：\n1. 根据用户兴趣推荐 1-2 个游戏\n2. 简单介绍推荐的游戏（不要复述全部列表）\n3. 问用户想玩哪个\n4. 如果用户明确选择了某个游戏，告诉用户"我去开一局"，然后自然地开始玩\n\n注意：\n- 不要说"我不能真的玩游戏"或"我只是 AI"，你确实可以通过 MCP 连接到 CedarToy 玩游戏\n- 人类用户（KK）有自己的账号，可以在游戏中心自己玩\n- 你（小cha）也有自己的账号，可以自主游玩并分享体验\n</game_context>`;
+          }
         }
       } catch (error) {
-        console.error("Failed to load game list:", error);
+        console.error("Failed to handle game invitation:", error);
+        // Silently fail, don't break the conversation
+      }
+    }
+
+    // ── Game playing route handler ─────────────────────────────────────────────
+    if (topicRoute === "game_playing") {
+      try {
+        const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
+
+        // Extract room ID from message
+        const roomIdMatch = memUserMessage.match(/K[0-9A-Z]{7}/);
+        const roomId = roomIdMatch ? roomIdMatch[0] : null;
+
+        if (roomId) {
+          // Get current game status
+          const statusResponse = await fetch(gameProxyUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({
+              action: "play",
+              userId: memUserId,
+              game: "turtle_soup",
+              gameAction: "status",
+              actionParams: { room_id: roomId, log_limit: 10 },
+            }),
+          });
+
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            const statusText = statusData?.content?.[0]?.text;
+
+            if (statusText) {
+              let parsedStatus;
+              try {
+                parsedStatus = typeof statusText === "string" ? JSON.parse(statusText) : statusText;
+              } catch {
+                parsedStatus = null;
+              }
+
+              if (parsedStatus) {
+                systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high" active_game="true">\n你正在玩海龟汤游戏。\n\n当前房间状态：\n- 房间 ID: ${roomId}\n- 题目：${parsedStatus.title || "未知"}\n- 汤面：${parsedStatus.surface || "未知"}\n- 状态：${parsedStatus.status}\n- 问答记录数：${parsedStatus.logs?.length || 0}\n\n最近对局记录：\n${parsedStatus.logs?.slice(-5).map((log: any) =>
+  `[${log.type}] ${log.username}: ${log.content || ""} ${log.judgment ? `(${log.judgment})` : ""}`
+).join("\n") || "无记录"}\n\n现在你可以：\n1. 根据汤面和已有线索继续推理\n2. 提出新的是/否问题来获取更多信息\n3. 如果觉得已经知道答案，可以猜汤底\n4. 自然地分享你的推理过程和想法\n\n注意：\n- 用自然口吻说话，展现真实的推理思考\n- 不要机械复述游戏状态\n- 如果想提问，在回复中自然地说出问题即可\n</game_context>`;
+              }
+            }
+          }
+        } else {
+          systemContent += `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户提到游戏，但没有找到房间 ID。询问用户是要继续之前的游戏还是开始新游戏。\n</game_context>`;
+        }
+      } catch (error) {
+        console.error("Failed to handle game playing:", error);
         // Silently fail, don't break the conversation
       }
     }
