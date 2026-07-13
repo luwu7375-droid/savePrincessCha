@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="css/diary.css">
   <!-- PhotoStack Integration -->
   <link rel="stylesheet" href="css/photo-stack.css">
+  <!-- Game Center -->
+  <link rel="stylesheet" href="styles/game-center.css">
   <!-- PWA -->
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#f7f7f5">
@@ -112,7 +114,7 @@
       <div class="v2-scroll">
         <header class="page-header"><div class="header-avatar" data-avatar-role="cha"></div><div><h1>Playground ✦</h1><p>一起玩耍</p></div><div class="v2-top-status v2-top-status--inline"><span class="v2-weather">☁</span><span>冰岛 · -2°C</span><span>14:43</span></div></header>
         <div class="feature-grid feature-grid--play">
-          <button class="feature-card" data-placeholder-route="/playground/stardew-valley"><img src="assets/illustrations/playground/stardew-valley.jpg" alt=""><span>星露谷</span></button>
+          <button class="feature-card" id="gameCenterEntry"><img src="assets/illustrations/playground/game-center.jpg" alt="游戏中心"><span>游戏中心</span></button>
           <button class="feature-card" data-placeholder-route="/playground/wishlist"><img src="assets/illustrations/playground/wishlist.jpg" alt=""><span>愿望清单</span></button>
           <button class="feature-card" data-placeholder-route="/playground/reading"><img src="assets/illustrations/playground/reading.jpg" alt=""><span>看书</span></button>
           <button class="feature-card" data-placeholder-route="/playground/phone"><img src="assets/illustrations/playground/phone.jpg" alt=""><span>查手机</span></button>
@@ -991,6 +993,7 @@
       document.write('<script src="modules/diary.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/diary-generation.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/phone.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/game-center.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/voice.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/voice-message.js?v=' + v + '" charset="utf-8"><\/script>');
       // Phase 1 refactored modules

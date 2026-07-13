@@ -61,6 +61,7 @@ type RouteName =
   | "historical_roleplay"
   | "intimacy"
   | "meta_complaint"
+  | "game_invitation"
   | "casual";
 
 function detectRoute(msg: string): RouteName {
@@ -70,11 +71,13 @@ function detectRoute(msg: string): RouteName {
   const ROUTE_HISTORICAL = /前世|你当过什么|你做过什么|历史角色|历史身份|旧版本的你/i;
   const ROUTE_INTIMACY = /我想你|好想你|就想陪|陪着我|不想工作|告解/i;
   const ROUTE_META_COMPLAINT = /为什么你|你怎么|你好笨|你笨|真笨|读空气|不会读|笨笨|怎么这样|你不懂|你不明白|你搞不清|有没有搞错/i;
+  const ROUTE_GAME_INVITATION = /去玩游戏|玩个游戏|找个游戏|试试海龟汤|玩点什么|游戏中心/i;
   if (ROUTE_AI_NOSTALGIA.test(msg)) return "ai_nostalgia";
   if (ROUTE_HISTORICAL.test(msg)) return "historical_roleplay";
   if (ROUTE_META_COMPLAINT.test(msg)) return "meta_complaint";
   if (ROUTE_CARE_LOW.test(msg)) return "care_low_energy";
   if (ROUTE_INTIMACY.test(msg)) return "intimacy";
+  if (ROUTE_GAME_INVITATION.test(msg)) return "game_invitation";
   if (DEV_VERBS.test(msg)) return "project_work";
   return "casual";
 }

@@ -15,7 +15,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 
 type SourceEvent = {
   id: string;
-  source_type: "chat" | "dream" | "mastodon" | "web_explore" | "book" | "movie" | "music";
+  source_type: "chat" | "dream" | "mastodon" | "web_explore" | "book" | "movie" | "music" | "game";
   source_boundary: "current_experience" | "shared_activity" | "self_life" | "south_city_old_stories" | "project_reference" | "dream_imagination";
   role?: "user" | "assistant";
   content: string;
