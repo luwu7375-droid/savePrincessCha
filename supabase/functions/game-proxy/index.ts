@@ -344,7 +344,7 @@ async function ensureMachineAccount(
     if (accountTool) {
       const accountResult = await callTool(
         accountTool.name,
-        buildAccountArgs(accountTool),
+        buildAccountArgs(accountTool, "binding"),
         credentials,
       );
       accountData = {
@@ -406,7 +406,7 @@ async function refreshMachineAccount(
     throw new Error("machine_registration_protocol_missing: account tool not found");
   }
   const result = normalizeMcpResult(
-    await callTool(accountTool.name, buildAccountArgs(accountTool), credentials),
+    await callTool(accountTool.name, buildAccountArgs(accountTool, "status"), credentials),
   );
   const identity = extractIdentity(result);
   const status: MachineRow["status"] = identity.bound
@@ -507,18 +507,19 @@ function buildRegistrationArgs(
     } else if (/display.?name|nickname|label/.test(lower)) {
       args[key] = "Cha";
     } else if (lower === "action" || lower === "operation") {
+      const actionDescription = schema.description || "";
       const registrationAction = schema.enum?.find((value) =>
-        /register|signup|sign_up|create/i.test(String(value))
+        /login_or_register|register|signup|sign_up|create/i.test(String(value))
       );
-      if (registrationAction !== undefined) {
+      if (
+        tool.name === "account" &&
+        /login_or_register/i.test(actionDescription)
+      ) {
+        args[key] = "login_or_register";
+      } else if (registrationAction !== undefined) {
         args[key] = registrationAction;
       } else if (required.includes(key)) {
-        // For CedarToy's account tool, authentication itself performs the
-        // create-or-load step. Use a schema-supported read action when one is
-        // mandatory instead of inventing an unsupported "register" value.
-        args[key] = schema.enum?.find((value) =>
-          /status|info|profile|whoami|get/i.test(String(value))
-        ) || schema.enum?.[0] || "status";
+        args[key] = schema.enum?.[0] || "login_or_register";
       }
     } else if (/type|role|kind/.test(lower)) {
       args[key] = schema.enum?.find((value) =>
@@ -538,22 +539,31 @@ function buildRegistrationArgs(
   return args;
 }
 
-function buildAccountArgs(tool: McpTool): Record<string, unknown> {
+function buildAccountArgs(
+  tool: McpTool,
+  purpose: "binding" | "status",
+): Record<string, unknown> {
   const properties = tool.inputSchema?.properties || {};
   const args: Record<string, unknown> = {};
-  if (properties.action) {
-    args.action = properties.action.enum?.find((value) =>
-      /bind|pair|link|claim|verification|code|register|create/i.test(String(value))
-    ) || properties.action.enum?.find((value) =>
-      /status|info|profile|whoami|get/i.test(String(value))
-    ) || "status";
-  }
-  if (properties.operation) {
-    args.operation = properties.operation.enum?.find((value) =>
-      /bind|pair|link|claim|verification|code|register|create/i.test(String(value))
-    ) || properties.operation.enum?.find((value) =>
-      /status|info|profile|whoami|get/i.test(String(value))
-    ) || "status";
+  const candidates = purpose === "binding"
+    ? ["generate_binding_token", "get_bindings", "get_profile"]
+    : ["get_bindings", "get_profile"];
+
+  for (const key of ["action", "operation"]) {
+    const schema = properties[key];
+    if (!schema) continue;
+    const enumValues = schema.enum || [];
+    const description = schema.description || "";
+    const selected = candidates.find((candidate) =>
+      enumValues.some((value) => String(value) === candidate) ||
+      new RegExp(`(?:^|[^a-z_])${candidate}(?:$|[^a-z_])`, "i").test(description)
+    );
+    args[key] = selected ||
+      enumValues.find((value) =>
+        /bind|pair|link|claim|profile|whoami|get/i.test(String(value))
+      ) ||
+      enumValues[0] ||
+      (purpose === "binding" ? "generate_binding_token" : "get_bindings");
   }
   return args;
 }
