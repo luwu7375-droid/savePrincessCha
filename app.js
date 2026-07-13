@@ -1399,6 +1399,7 @@ async function callImageGenerationDirect(prompt, params, options = {}) {
           quality: params.quality,
           style: params.style,
           generation_source: options.source === "proactive" ? "proactive" : "explicit",
+          use_identity_reference: params.useIdentityReference !== false,
         }),
       });
 
@@ -1418,7 +1419,7 @@ async function callImageGenerationDirect(prompt, params, options = {}) {
         lastError = errorText || "生成失败";
       }
       const retryable = response.status === 429 || response.status >= 500 ||
-        /model_not_found|no available channel|渠道|通道/i.test(lastError);
+        /model_not_found|no available channel|渠道|通道|reference_image_not_supported|does not support Cha identity references|images\/edits/i.test(lastError);
       if (!retryable) break;
     }
     return { success: false, error: lastError };
@@ -1589,7 +1590,7 @@ async function handleImageGeneration(intent, userText) {
 
   // Build prompt using template system
   const finalPrompt = window.SavePrincessImagePolicy.buildImagePrompt(route, userText);
-  const params = window.SavePrincessImagePolicy.getDefaultImageParams();
+  const params = window.SavePrincessImagePolicy.getDefaultImageParams(route);
 
   console.log('[image-gen] Final prompt:', finalPrompt.slice(0, 200) + '...');
   console.log('[image-gen] Params:', params);
@@ -2430,7 +2431,7 @@ async function requestStreamingReply(replyMode = "auto") {
         proactiveAction.route,
         proactiveAction.description,
       );
-      const imageParams = window.SavePrincessImagePolicy.getDefaultImageParams();
+      const imageParams = window.SavePrincessImagePolicy.getDefaultImageParams(proactiveAction.route);
       callImageGenerationDirect(imagePrompt, imageParams, { source: "proactive" }).then(async (result) => {
         if (result.success) {
           recordProactiveImageSuccess();
