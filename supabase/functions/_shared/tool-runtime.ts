@@ -169,7 +169,7 @@ async function executeTool(
             "Content-Type": "application/json",
             Authorization: `Bearer ${context.serviceRoleKey}`,
           },
-          body: JSON.stringify({ action: "list_games" }),
+          body: JSON.stringify({ action: "list_games", userId: context.userId || "anon" }),
         },
       );
       return compactResult(data);
@@ -185,7 +185,7 @@ async function executeTool(
             "Content-Type": "application/json",
             Authorization: `Bearer ${context.serviceRoleKey}`,
           },
-          body: JSON.stringify({ action: "get_guide", game }),
+          body: JSON.stringify({ action: "get_guide", game, userId: context.userId || "anon" }),
         },
       );
       return compactResult(data);
