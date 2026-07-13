@@ -1,17 +1,16 @@
-// Game Proxy Edge Function - HTTP-based MCP Client for CedarToy
-// Uses direct HTTP calls to communicate with https://toy.cedarstar.org/
-// (SSE transport not available in Deno edge functions)
+// Game Proxy Edge Function - authenticated HTTP MCP client for CedarToy.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const CEDARTOY_BASE = "https://toy.cedarstar.org";
-const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
-const RATE_LIMIT_MAX_CALLS = 60;
+const CEDARTOY_TIMEOUT_MS = 8_000;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_CALLS = 30;
 
 type GameProxyRequest = {
-  action: "list_games" | "get_guide" | "play" | "account" | "register";
-  userId: string;
+  action: "list_games" | "get_guide" | "play" | "account";
+  userId?: string;
   game?: string;
   gameAction?: string;
   actionParams?: Record<string, unknown>;
@@ -23,178 +22,182 @@ type RateLimitEntry = {
   windowStart: number;
 };
 
-// In-memory rate limiting (per-instance, resets on cold start)
 const rateLimitMap = new Map<string, RateLimitEntry>();
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function bearerToken(req: Request): string {
+  const auth = req.headers.get("Authorization") || "";
+  return auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+}
+
+async function authenticate(
+  req: Request,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<{ internal: boolean; userId: string | null } | Response> {
+  const token = bearerToken(req);
+  if (!token) return json({ error: "unauthorized" }, 401);
+
+  // Chat calls this function server-to-server with the service role key.
+  if (token === serviceRoleKey) {
+    return { internal: true, userId: null };
+  }
+
+  const client = createClient(supabaseUrl, serviceRoleKey);
+  const { data, error } = await client.auth.getUser(token);
+  if (error || !data.user?.id) return json({ error: "unauthorized" }, 401);
+  return { internal: false, userId: data.user.id };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  const supabaseUrl = Deno.env.get("DB_URL") || Deno.env.get("SUPABASE_URL") || "";
+  const serviceRoleKey =
+    Deno.env.get("DB_SERVICE_ROLE_KEY") ||
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+    "";
+  if (!supabaseUrl || !serviceRoleKey) {
+    return json({ error: "supabase_server_config_missing" }, 503);
   }
 
+  const auth = await authenticate(req, supabaseUrl, serviceRoleKey);
+  if (auth instanceof Response) return auth;
+
+  let body: GameProxyRequest;
   try {
-    const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-    );
+    body = await req.json() as GameProxyRequest;
+  } catch {
+    return json({ error: "invalid_json" }, 400);
+  }
 
-    const body = await req.json() as GameProxyRequest;
-    const { action, userId, game, gameAction, actionParams, slotId } = body;
+  const requestedUserId = typeof body.userId === "string" ? body.userId.trim() : "";
+  if (!auth.internal && requestedUserId && requestedUserId !== auth.userId) {
+    return json({ error: "forbidden" }, 403);
+  }
+  const effectiveUserId = auth.internal
+    ? (requestedUserId || "server")
+    : auth.userId as string;
 
-    if (!userId) {
-      return new Response(
-        JSON.stringify({ error: "userId is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
+  const rateLimitError = checkRateLimit(effectiveUserId);
+  if (rateLimitError) return json({ error: rateLimitError }, 429);
 
-    // Rate limiting check
-    const rateLimitError = checkRateLimit(userId);
-    if (rateLimitError) {
-      return new Response(
-        JSON.stringify({ error: rateLimitError }),
-        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
+  const username = Deno.env.get("CEDARTOY_USERNAME") || "";
+  const password = Deno.env.get("CEDARTOY_PASSWORD") || "";
+  if (!username || !password) {
+    return json({ error: "cedartoy_credentials_not_configured" }, 503);
+  }
+  const credentials = { username, password };
 
-    // Get credentials for CedarToy
-    const credentials = await getOrCreateCredentials(userId, supabaseClient);
-
-    // Route to appropriate action
-    let result;
-    switch (action) {
+  try {
+    let result: unknown;
+    switch (body.action) {
       case "list_games":
         result = await callCedarToyTool("list_games", {}, credentials);
         break;
+
       case "get_guide":
-        if (!game) {
-          return new Response(
-            JSON.stringify({ error: "game parameter required for get_guide" }),
-            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-        result = await callCedarToyTool("get_guide", { game }, credentials);
+        if (!body.game) return json({ error: "game_required" }, 400);
+        result = await callCedarToyTool("get_guide", { game: body.game }, credentials);
         break;
-      case "play":
-        if (!game || !gameAction) {
-          return new Response(
-            JSON.stringify({ error: "game and gameAction parameters required for play" }),
-            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
+
+      case "play": {
+        if (!body.game || !body.gameAction) {
+          return json({ error: "game_and_gameAction_required" }, 400);
         }
         const playParams: Record<string, unknown> = {
-          game,
-          action: gameAction,
+          game: body.game,
+          action: body.gameAction,
         };
-        if (actionParams) {
-          playParams.params = actionParams;
-        }
-        if (slotId !== undefined) {
-          playParams.slot_id = slotId;
-        }
+        if (body.actionParams) playParams.params = body.actionParams;
+        if (body.slotId !== undefined) playParams.slot_id = body.slotId;
         result = await callCedarToyTool("play", playParams, credentials);
         break;
+      }
+
       case "account":
         result = await callCedarToyTool("account", {}, credentials);
         break;
+
       default:
-        return new Response(
-          JSON.stringify({ error: `Unknown action: ${action}` }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+        return json({ error: "unknown_action" }, 400);
     }
 
-    return new Response(
-      JSON.stringify(result),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return json(result);
   } catch (error) {
-    console.error("Game proxy error:", error);
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : String(error),
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[game-proxy] CedarToy call failed", {
+      action: body.action,
+      error: message.slice(0, 300),
+    });
+    const timeout = message.startsWith("cedartoy_timeout");
+    return json({ error: timeout ? "cedartoy_timeout" : "cedartoy_upstream_error" }, timeout ? 504 : 502);
   }
 });
 
-/**
- * Rate limiting: 60 calls per minute per user
- */
 function checkRateLimit(userId: string): string | null {
   const now = Date.now();
   const entry = rateLimitMap.get(userId);
-
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    // Start new window
     rateLimitMap.set(userId, { calls: 1, windowStart: now });
     return null;
   }
-
   if (entry.calls >= RATE_LIMIT_MAX_CALLS) {
-    return `Rate limit exceeded: ${RATE_LIMIT_MAX_CALLS} calls per minute`;
+    return `rate_limit_exceeded_${RATE_LIMIT_MAX_CALLS}_per_minute`;
   }
-
-  entry.calls++;
+  entry.calls += 1;
   return null;
 }
 
-/**
- * Call CedarToy MCP tool via HTTP POST
- * Uses JSON-RPC 2.0 format for MCP protocol
- */
 async function callCedarToyTool(
   toolName: string,
   toolArgs: Record<string, unknown>,
   credentials: { username: string; password: string },
 ): Promise<unknown> {
-  // MCP JSON-RPC 2.0 request format
-  const mcpRequest = {
-    jsonrpc: "2.0",
-    method: "tools/call",
-    params: {
-      name: toolName,
-      arguments: toolArgs,
-    },
-    id: Date.now(),
-  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CEDARTOY_TIMEOUT_MS);
+  try {
+    const response = await fetch(CEDARTOY_BASE, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization:
+          `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { name: toolName, arguments: toolArgs },
+        id: crypto.randomUUID(),
+      }),
+      signal: controller.signal,
+    });
 
-  const response = await fetch(CEDARTOY_BASE, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Basic auth for CedarToy
-      "Authorization": `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`,
-    },
-    body: JSON.stringify(mcpRequest),
-  });
-
-  if (!response.ok) {
-    throw new Error(`CedarToy API error: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`cedartoy_http_${response.status}`);
+    }
+    const mcpResponse = await response.json();
+    if (mcpResponse?.error) {
+      throw new Error(
+        `cedartoy_rpc_error: ${String(mcpResponse.error.message || "unknown").slice(0, 200)}`,
+      );
+    }
+    return mcpResponse?.result;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`cedartoy_timeout_after_${CEDARTOY_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-
-  const mcpResponse = await response.json();
-
-  // Handle JSON-RPC error
-  if (mcpResponse.error) {
-    throw new Error(`CedarToy tool error: ${mcpResponse.error.message || JSON.stringify(mcpResponse.error)}`);
-  }
-
-  return mcpResponse.result;
-}
-
-/**
- * Get or create CedarToy credentials for user
- * Stores in a simple JSONB field in app_settings for MVP
- */
-async function getOrCreateCredentials(
-  userId: string,
-  supabaseClient: ReturnType<typeof createClient>,
-): Promise<{ username: string; password: string; token?: string }> {
-  // For MVP: Use hardcoded credentials from environment or user-provided
-  // In production, each user would have their own CedarToy account
-  const username = Deno.env.get("CEDARTOY_USERNAME") ?? "KK_";
-  const password = Deno.env.get("CEDARTOY_PASSWORD") ?? "1234wmc";
-
-  return { username, password };
 }
