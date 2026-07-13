@@ -420,8 +420,9 @@ async function callChatAPI(messages, replyMode = "auto") {
     }),
   });
 
-  const toolsUsed = response.headers.get("x-save-princess-tools-used");
-  if (toolsUsed) console.log("[chat-tools] server tools used:", toolsUsed);
+  const toolsUsed = response.headers.get("x-save-princess-tools-used") || "none";
+  const functionVersion = response.headers.get("x-save-princess-function-version") || "unknown";
+  console.log("[chat-tools] response:", { functionVersion, toolsUsed });
   return response;
 }
 
