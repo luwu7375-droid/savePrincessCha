@@ -11933,3 +11933,95 @@ document.addEventListener("contextmenu", (e) => {
   e.stopPropagation();
   return false;
 }, { capture: true });
+
+// ── Game Status Updates ────────────────────────────────────────────────────
+
+async function updateGameStatus() {
+  if (!window.supabaseClient || !window.currentUserId) return;
+
+  try {
+    // Query active game session
+    const { data: sessions, error } = await window.supabaseClient
+      .from("game_sessions")
+      .select("*")
+      .eq("user_id", window.currentUserId)
+      .eq("status", "active")
+      .order("started_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error("[game-status] Query error:", error);
+      return;
+    }
+
+    const session = sessions && sessions.length > 0 ? sessions[0] : null;
+
+    // Update Home page card
+    const homeCard = document.getElementById("gameStatusCard");
+    if (homeCard) {
+      if (session) {
+        homeCard.classList.remove("hidden");
+        const gameStatusText = document.getElementById("gameStatusText");
+        const gameStatusTime = document.getElementById("gameStatusTime");
+        
+        if (gameStatusText) {
+          const displayName = session.game_display_name || session.game_name;
+          const actionCount = session.action_count || 0;
+          gameStatusText.textContent = `正在玩${displayName}，已经进行了 ${actionCount} 步`;
+        }
+        
+        if (gameStatusTime) {
+          const duration = Date.now() - new Date(session.started_at).getTime();
+          gameStatusTime.textContent = formatDuration(duration);
+        }
+      } else {
+        homeCard.classList.add("hidden");
+      }
+    }
+
+    // Update Chat page status bar
+    const chatStatus = document.getElementById("chaGameStatus");
+    if (chatStatus) {
+      if (session) {
+        chatStatus.classList.remove("hidden");
+        const chatStatusText = document.getElementById("chaGameStatusText");
+        
+        if (chatStatusText) {
+          const displayName = session.game_display_name || session.game_name;
+          chatStatusText.textContent = `正在玩${displayName}...`;
+        }
+      } else {
+        chatStatus.classList.add("hidden");
+      }
+    }
+  } catch (err) {
+    console.error("[game-status] Update error:", err);
+  }
+}
+
+function formatDuration(ms) {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) {
+    return `${minutes}分钟`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}小时${remainingMinutes}分钟` : `${hours}小时`;
+}
+
+// Update game status periodically
+setInterval(updateGameStatus, 30000); // Every 30 seconds
+
+// Update on page visibility change
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    updateGameStatus();
+  }
+});
+
+// Initial update
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", updateGameStatus);
+} else {
+  updateGameStatus();
+}
