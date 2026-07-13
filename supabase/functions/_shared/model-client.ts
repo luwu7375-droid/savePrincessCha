@@ -174,9 +174,12 @@ export function getTimeoutMs(tier: ModelTier): number {
 export async function callModel(
   provider: ProviderConfig,
   messages: unknown[],
+  timeoutOverrideMs?: number,
 ): Promise<{ res: Response; ms: number }> {
   const t = Date.now();
-  const timeoutMs = getTimeoutMs(provider.tier);
+  const timeoutMs = typeof timeoutOverrideMs === "number"
+    ? Math.max(1_000, Math.min(timeoutOverrideMs, getTimeoutMs(provider.tier)))
+    : getTimeoutMs(provider.tier);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -217,11 +220,25 @@ export async function callModelWithFallback(
   messages: unknown[],
 ): Promise<CallResult> {
   const { primary, fallback } = tierProviders;
+  const startedAt = Date.now();
+  const configuredBudget = parseInt(
+    Deno.env.get("CHAT_MODEL_TOTAL_TIMEOUT_MS") || "42000",
+    10,
+  );
+  const totalBudgetMs = Number.isFinite(configuredBudget)
+    ? Math.max(15_000, Math.min(configuredBudget, 50_000))
+    : 42_000;
+  const primaryBudgetMs = fallback
+    ? Math.min(getTimeoutMs(primary.tier), Math.max(5_000, totalBudgetMs - 10_000))
+    : Math.min(getTimeoutMs(primary.tier), totalBudgetMs);
+  const fallbackBudgetMs = () =>
+    Math.max(1_000, totalBudgetMs - (Date.now() - startedAt));
+
   let primaryRes: Response;
   let primaryMs: number;
 
   try {
-    const result = await callModel(primary, messages);
+    const result = await callModel(primary, messages, primaryBudgetMs);
     primaryRes = result.res;
     primaryMs = result.ms;
   } catch (err) {
@@ -236,7 +253,7 @@ export async function callModelWithFallback(
     if (!fallback) throw err;
     const fallbackReason = `primary_error: ${errMsg.slice(0, 120)}`;
     try {
-      const fb = await callModel(fallback, messages);
+      const fb = await callModel(fallback, messages, fallbackBudgetMs());
       return {
         response: fb.res, usedModel: fallback.model, usedProvider: fallback.providerName,
         fallbackUsed: true, fallbackModel: fallback.model, fallbackProvider: fallback.providerName,
@@ -272,7 +289,11 @@ export async function callModelWithFallback(
 
   const bodySnippet = bodyText.slice(0, 120).replace(/[\r\n]+/g, " ");
   const fallbackReason = `primary_${primaryRes.status}: ${bodySnippet}`;
-  const { res: fallbackRes, ms: fallbackMs } = await callModel(fallback, messages);
+  const { res: fallbackRes, ms: fallbackMs } = await callModel(
+    fallback,
+    messages,
+    fallbackBudgetMs(),
+  );
   return {
     response: fallbackRes, usedModel: fallback.model, usedProvider: fallback.providerName,
     fallbackUsed: true, fallbackModel: fallback.model, fallbackProvider: fallback.providerName,
