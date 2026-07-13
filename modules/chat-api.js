@@ -367,9 +367,18 @@ async function callChatAPI(messages, replyMode = "auto") {
     console.log("[model-mapping] No custom model configured for chat role");
   }
 
-  return fetch(endpoint, {
+  const requestHeaders = { "Content-Type": "application/json" };
+  try {
+    const { data } = await window.supabaseClient?.auth?.getSession?.() || {};
+    const accessToken = data?.session?.access_token;
+    if (accessToken) requestHeaders.Authorization = `Bearer ${accessToken}`;
+  } catch (error) {
+    console.warn("[chat-tools] could not read auth session; ordinary chat will continue", error);
+  }
+
+  const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders,
     body: JSON.stringify({
       model: modelName,
       messages: compiledMessages,
@@ -410,6 +419,10 @@ async function callChatAPI(messages, replyMode = "auto") {
       quoteCandidates: quoteCandidates.length > 0 ? quoteCandidates : null,
     }),
   });
+
+  const toolsUsed = response.headers.get("x-save-princess-tools-used");
+  if (toolsUsed) console.log("[chat-tools] server tools used:", toolsUsed);
+  return response;
 }
 
 function showTypingIndicator() {
