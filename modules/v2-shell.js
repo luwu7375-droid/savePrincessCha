@@ -167,6 +167,13 @@
       }, true);
     }
 
+    var chaGameWatchBtn = document.getElementById("chaGameWatchBtn");
+    if (chaGameWatchBtn) {
+      chaGameWatchBtn.addEventListener("click", function () {
+        showPage("playground");
+      });
+    }
+
     // -- Settings subpage entries ---------------------------------------------
     document.querySelectorAll("[data-settings-subpage]").forEach(function (entry) {
       entry.addEventListener("click", function () {
@@ -279,5 +286,13 @@
     initV2Shell:          initV2Shell,
     openSettingsSubpage:  openSettingsSubpage,
     closeSettingsSubpage: closeSettingsSubpage,
+  };
+
+  // Compatibility bridge for legacy inline handlers. New code should call
+  // SPV2Shell.showPage or bind an event listener instead.
+  window.navigateToPage = function (pageName) {
+    if (window.SPV2Shell && typeof window.SPV2Shell.showPage === "function") {
+      window.SPV2Shell.showPage(pageName);
+    }
   };
 })();
