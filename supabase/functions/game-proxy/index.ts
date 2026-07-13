@@ -347,9 +347,16 @@ async function ensureMachineAccount(
         buildAccountArgs(accountTool, "binding"),
         credentials,
       );
+      const normalizedAccount = normalizeMcpResult(accountResult);
+      const directText = typeof normalizedAccount?.text === "string"
+        ? normalizedAccount.text.trim()
+        : "";
+      const accountWithToken = /^[A-Za-z0-9_-]{4,128}$/.test(directText)
+        ? { ...normalizedAccount, binding_token: directText }
+        : normalizedAccount;
       accountData = {
         registration: accountData,
-        account: normalizeMcpResult(accountResult),
+        account: accountWithToken,
       };
       identity = extractIdentity(accountData);
     }
@@ -598,7 +605,7 @@ function extractIdentity(value: unknown): {
         visit(JSON.parse(item), depth + 1);
       } catch {
         const match = item.match(
-          /(?:bind(?:ing)?[_\\s-]*(?:code|token)|pair(?:ing)?[_\\s-]*code|claim[_\\s-]*code|link[_\\s-]*code|verification[_\\s-]*code|绑定码|绑定代码)(?:\\s*(?:is|为|是))?[:：\\s=]*([A-Za-z0-9_-]{4,64})/i,
+          /(?:bind(?:ing)?[_\\s-]*(?:code|token)|pair(?:ing)?[_\\s-]*code|claim[_\\s-]*code|link[_\\s-]*code|verification[_\\s-]*code|绑定码|绑定代码|绑定令牌|绑定token)(?:\\s*(?:is|为|是))?[:：\\s=]*([A-Za-z0-9_-]{4,64})/i,
         );
         if (match) objects.push({ binding_code: match[1] });
       }
