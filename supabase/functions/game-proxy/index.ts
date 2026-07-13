@@ -356,8 +356,15 @@ async function ensureMachineAccount(
   }
 
   if (!identity.bindingCode && !identity.bound) {
+    const schemaPreview = JSON.stringify(registerTool.inputSchema || {}).slice(0, 180);
+    const responsePreview = JSON.stringify(safeMetadata(accountData)).slice(0, 180);
+    console.warn("[game-proxy] account response had no recognizable binding code", {
+      tool: registerTool.name,
+      schema: schemaPreview,
+      response: responsePreview,
+    });
     throw new Error(
-      "machine_registration_protocol_invalid: registration succeeded but no binding code was returned",
+      `machine_registration_protocol_invalid: no binding code; schema=${schemaPreview}; response=${responsePreview}`,
     );
   }
 
@@ -536,7 +543,16 @@ function buildAccountArgs(tool: McpTool): Record<string, unknown> {
   const args: Record<string, unknown> = {};
   if (properties.action) {
     args.action = properties.action.enum?.find((value) =>
-      /status|info|profile|whoami/i.test(String(value))
+      /bind|pair|link|claim|verification|code|register|create/i.test(String(value))
+    ) || properties.action.enum?.find((value) =>
+      /status|info|profile|whoami|get/i.test(String(value))
+    ) || "status";
+  }
+  if (properties.operation) {
+    args.operation = properties.operation.enum?.find((value) =>
+      /bind|pair|link|claim|verification|code|register|create/i.test(String(value))
+    ) || properties.operation.enum?.find((value) =>
+      /status|info|profile|whoami|get/i.test(String(value))
     ) || "status";
   }
   return args;
@@ -571,7 +587,9 @@ function extractIdentity(value: unknown): {
       try {
         visit(JSON.parse(item), depth + 1);
       } catch {
-        const match = item.match(/(?:bind(?:ing)?[_\s-]*code|绑定码)[:：\s]*([A-Za-z0-9_-]{4,32})/i);
+        const match = item.match(
+          /(?:bind(?:ing)?[_\\s-]*(?:code|token)|pair(?:ing)?[_\\s-]*code|claim[_\\s-]*code|link[_\\s-]*code|verification[_\\s-]*code|绑定码|绑定代码)(?:\\s*(?:is|为|是))?[:：\\s=]*([A-Za-z0-9_-]{4,64})/i,
+        );
         if (match) objects.push({ binding_code: match[1] });
       }
       return;
@@ -597,13 +615,33 @@ function extractIdentity(value: unknown): {
     }
     return null;
   };
+  const fuzzyGet = (pattern: RegExp): unknown => {
+    for (const object of objects) {
+      for (const [key, item] of Object.entries(object)) {
+        if (pattern.test(key) && item !== undefined && item !== null) return item;
+      }
+    }
+    return null;
+  };
   const bindingCode = get([
     "binding_code",
     "bindingCode",
     "bind_code",
     "bindCode",
+    "binding_token",
+    "bindingToken",
+    "bind_token",
+    "bindToken",
+    "pairing_code",
+    "pairingCode",
+    "claim_code",
+    "claimCode",
+    "verification_code",
+    "verificationCode",
     "code",
-  ]);
+  ]) || fuzzyGet(
+    /(?:bind|pair|claim|link|verification).*(?:code|token)|(?:code|token).*(?:bind|pair|claim|link)/i,
+  );
   const machineId = get([
     "machine_id",
     "machineId",
