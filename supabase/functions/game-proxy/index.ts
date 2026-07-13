@@ -309,7 +309,7 @@ async function ensureMachineAccount(
   }
 
   const credentials = await deriveCredentials(userId, machineSecret);
-  const tools = await discoverTools();
+  const tools = await discoverTools(credentials);
   const registerTool = findRegistrationTool(tools);
   if (!registerTool) {
     throw new Error(
@@ -385,12 +385,12 @@ async function refreshMachineAccount(
   const row = await getMachineRow(supabase, userId);
   if (!row) throw new Error("machine_registration_required");
 
-  const tools = await discoverTools();
+  const credentials = await deriveCredentials(userId, machineSecret);
+  const tools = await discoverTools(credentials);
   const accountTool = findAccountTool(tools);
   if (!accountTool) {
     throw new Error("machine_registration_protocol_missing: account tool not found");
   }
-  const credentials = await deriveCredentials(userId, machineSecret);
   const result = normalizeMcpResult(
     await callTool(accountTool.name, buildAccountArgs(accountTool), credentials),
   );
@@ -416,9 +416,19 @@ async function refreshMachineAccount(
   return data as MachineRow;
 }
 
-async function discoverTools(): Promise<McpTool[]> {
+async function discoverTools(
+  credentials?: MachineCredentials,
+): Promise<McpTool[]> {
   if (toolCache && toolCache.expiresAt > Date.now()) return toolCache.tools;
-  const result = await callRpc("tools/list", {}, undefined);
+
+  let result: any;
+  try {
+    result = await callRpc("tools/list", {}, undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!credentials || !/cedartoy_http_(401|403)/.test(message)) throw error;
+    result = await callRpc("tools/list", {}, credentials);
+  }
   const normalized = normalizeMcpResult(result) as { tools?: McpTool[] };
   const tools = Array.isArray(normalized?.tools)
     ? normalized.tools
@@ -591,8 +601,25 @@ function extractIdentity(value: unknown): {
 }
 
 function safeMetadata(value: unknown): Record<string, unknown> {
+  const redact = (item: unknown, depth = 0): unknown => {
+    if (depth > 8) return "[truncated]";
+    if (Array.isArray(item)) return item.slice(0, 100).map((child) => redact(child, depth + 1));
+    if (!item || typeof item !== "object") return item;
+
+    const result: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(item as Record<string, unknown>)) {
+      if (/password|passphrase|secret|token|authorization|credential|api[_-]?key/i.test(key)) {
+        result[key] = "[redacted]";
+      } else {
+        result[key] = redact(child, depth + 1);
+      }
+    }
+    return result;
+  };
+
   try {
-    const text = JSON.stringify(value);
+    const sanitized = redact(value);
+    const text = JSON.stringify(sanitized);
     if (text.length > 8_000) {
       return { truncated: true, preview: text.slice(0, 7_500) };
     }
