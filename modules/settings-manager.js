@@ -1091,7 +1091,7 @@ function _initSettingsApiSubpage(container) {
             conversation_id: typeof getActiveConversationId === 'function' ? getActiveConversationId() : 'model-test',
             provider_config: { endpoint: providerData.endpoint, api_key: providerData.apiKey, model: config.model },
             size: '1024x1024',
-            quality: 'standard',
+            quality: 'low',
             use_identity_reference: true,
             test_only: true
           } : {
