@@ -1624,8 +1624,8 @@ Deno.serve(async (request) => {
   };
 
   // Build system prompt
-  const supabaseUrl = Deno.env.get("DB_URL");
-  const serviceRoleKey = Deno.env.get("DB_SERVICE_ROLE_KEY");
+  const supabaseUrl = Deno.env.get("DB_URL") || Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("DB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
   // ── Time context + conversation state ────────────────────────────────────────
   const tc: TimeContext = (payload.timeContext && typeof payload.timeContext === "object")
