@@ -536,13 +536,29 @@
             <span>14:43</span>
           </div>
         </header>
+        <section class="cedartoy-binding-card" id="cedartoyBindingCard" aria-live="polite">
+          <div class="cedartoy-binding-copy">
+            <strong>Cha 的小机</strong>
+            <p id="cedartoyMachineStatusText">正在检查小机状态…</p>
+            <div id="cedartoyBindingCodeRow" class="cedartoy-binding-code-row" hidden>
+              <span>绑定码</span>
+              <code id="cedartoyBindingCode"></code>
+              <button id="cedartoyCopyCodeBtn" type="button" class="pill-btn">复制</button>
+            </div>
+            <small id="cedartoyBindingHint">你先在下方登录自己的人类账号；Cha 会通过 MCP 创建自己的小机，再由你输入绑定码完成绑定。</small>
+          </div>
+          <div class="cedartoy-binding-actions">
+            <button id="cedartoyCreateMachineBtn" type="button" class="pill-btn">为 Cha 创建小机</button>
+            <button id="cedartoyRefreshBindingBtn" type="button" class="pill-btn" hidden>我已绑定，刷新状态</button>
+          </div>
+        </section>
         <div class="game-center-content">
           <iframe
             id="gameCenterIframe"
             src="https://toy.cedarstar.org/"
             frameborder="0"
             allow="fullscreen"
-            style="width: 100%; height: calc(100vh - 180px); border: none; border-radius: 12px;"
+            style="width: 100%; height: calc(100vh - 300px); border: none; border-radius: 12px;"
           ></iframe>
         </div>
       </div>
