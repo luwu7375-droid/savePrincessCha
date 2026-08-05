@@ -451,17 +451,49 @@ async function refreshMachineAccount(
   if (!accountTool) {
     throw new Error("machine_registration_protocol_missing: account tool not found");
   }
-  const loginResult = normalizeMcpResult(
-    await callTool(accountTool.name, {
-      action: "login",
-      username: credentials.username,
-      password: credentials.password,
-    }, undefined),
-  );
-  const accountToken = extractAccountToken(loginResult);
+
+  let accountToken: string | null = null;
+  let loginResult: any;
+
+  // Try login first
+  try {
+    loginResult = normalizeMcpResult(
+      await callTool(accountTool.name, {
+        action: "login",
+        username: credentials.username,
+        password: credentials.password,
+      }, undefined),
+    );
+    accountToken = extractAccountToken(loginResult);
+  } catch (error) {
+    console.warn("[refresh_binding] login failed, will try login_or_register", {
+      error: error instanceof Error ? error.message.slice(0, 100) : String(error),
+    });
+  }
+
+  // If login failed or returned no token, try login_or_register
+  if (!accountToken) {
+    try {
+      loginResult = normalizeMcpResult(
+        await callTool(accountTool.name, {
+          action: "login_or_register",
+          username: credentials.username,
+          password: credentials.password,
+        }, undefined),
+      );
+      accountToken = extractAccountToken(loginResult);
+    } catch (error) {
+      console.error("[refresh_binding] login_or_register also failed", {
+        error: error instanceof Error ? error.message.slice(0, 100) : String(error),
+      });
+      throw new Error("machine_registration_protocol_invalid: login and login_or_register both failed");
+    }
+  }
+
   if (!accountToken) {
     throw new Error("machine_registration_protocol_invalid: login returned no account token");
   }
+
   // Use token in URL, not in arguments
   const result = normalizeMcpResult(
     await callTool(accountTool.name, {
@@ -473,11 +505,34 @@ async function refreshMachineAccount(
     ? "bound"
     : "pending_binding";
 
+  // If not bound and no binding_code, generate a new one
+  let bindingCode = identity.bindingCode || row.binding_code;
+  if (!identity.bound && !bindingCode) {
+    console.log("[refresh_binding] no binding code found, generating new one");
+    const bindingResult = await callTool(
+      accountTool.name,
+      { action: "generate_binding_token" },
+      undefined,
+      accountToken,
+    );
+    const normalizedBinding = normalizeMcpResult(bindingResult);
+    const directText = typeof normalizedBinding?.text === "string"
+      ? normalizedBinding.text.trim()
+      : "";
+    const accountWithToken = /^[A-Za-z0-9_-]{4,128}$/.test(directText)
+      ? { ...normalizedBinding, binding_token: directText }
+      : normalizedBinding;
+    const newIdentity = extractIdentity(accountWithToken);
+    if (newIdentity.bindingCode) {
+      bindingCode = newIdentity.bindingCode;
+    }
+  }
+
   const { data, error } = await supabase
     .from("cedartoy_machine_accounts")
     .update({
       machine_id: identity.machineId || row.machine_id,
-      binding_code: identity.bindingCode || row.binding_code,
+      binding_code: bindingCode,
       account_token: accountToken,
       status,
       account_metadata: safeMetadata(result),
