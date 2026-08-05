@@ -452,8 +452,67 @@ async function refreshMachineAccount(
     throw new Error("machine_registration_protocol_missing: account tool not found");
   }
 
-  let accountToken: string | null = null;
+  let accountToken: string | null = row.account_token || null;
   let loginResult: any;
+
+  // If we have an existing token, try to use it first
+  if (accountToken) {
+    try {
+      console.log("[refresh_binding] trying existing account_token");
+      const result = normalizeMcpResult(
+        await callTool(accountTool.name, {
+          action: "get_bindings",
+        }, undefined, accountToken),
+      );
+      const identity = extractIdentity(result);
+      const status: MachineRow["status"] = identity.bound ? "bound" : "pending_binding";
+
+      // If not bound and no binding_code, generate a new one
+      let bindingCode = identity.bindingCode || row.binding_code;
+      if (!identity.bound && !bindingCode) {
+        console.log("[refresh_binding] no binding code found, generating new one");
+        const bindingResult = await callTool(
+          accountTool.name,
+          { action: "generate_binding_token" },
+          undefined,
+          accountToken,
+        );
+        const normalizedBinding = normalizeMcpResult(bindingResult);
+        const directText = typeof normalizedBinding?.text === "string"
+          ? normalizedBinding.text.trim()
+          : "";
+        const accountWithToken = /^[A-Za-z0-9_-]{4,128}$/.test(directText)
+          ? { ...normalizedBinding, binding_token: directText }
+          : normalizedBinding;
+        const newIdentity = extractIdentity(accountWithToken);
+        if (newIdentity.bindingCode) {
+          bindingCode = newIdentity.bindingCode;
+        }
+      }
+
+      const { data, error } = await supabase
+        .from("cedartoy_machine_accounts")
+        .update({
+          machine_id: identity.machineId || row.machine_id,
+          binding_code: bindingCode,
+          account_token: accountToken,
+          status,
+          account_metadata: safeMetadata(result),
+          last_error: null,
+          last_checked_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId)
+        .select("*")
+        .single();
+      if (error) throw new Error(`machine_store_write_failed: ${error.message}`);
+      return data as MachineRow;
+    } catch (error) {
+      console.warn("[refresh_binding] existing token failed, will try to get new token", {
+        error: error instanceof Error ? error.message.slice(0, 100) : String(error),
+      });
+      // Token is invalid, continue to get a new one
+    }
+  }
 
   // Try login first
   try {
