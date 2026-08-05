@@ -7,7 +7,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { corsHeaders } from "../_shared/cors.ts";
 
 const CEDARTOY_BASE = "https://toy.cedarstar.org";
-const GAME_PROXY_VERSION = "2026-07-14-cedartoy-account-token-v1";
+const GAME_PROXY_VERSION = "2026-08-05-cedartoy-url-token-auth";
 const CEDARTOY_TIMEOUT_MS = 8_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_CALLS = 30;
@@ -36,6 +36,7 @@ type MachineRow = {
   machine_username: string;
   machine_id?: string | null;
   binding_code?: string | null;
+  account_token?: string | null;
   status: "unregistered" | "pending_binding" | "bound" | "error";
   registration_tool?: string | null;
   account_metadata?: Record<string, unknown> | null;
@@ -173,22 +174,20 @@ Deno.serve(async (req) => {
       }
 
       case "list_games": {
-        const credentials = await requireMachineCredentials(
-          supabase,
-          effectiveUserId,
-          machineSecret,
-        );
-        return json(await callTool("list_games", {}, credentials));
+        const row = await getMachineRow(supabase, effectiveUserId);
+        if (!row || !row.account_token) {
+          throw new Error("machine_registration_required");
+        }
+        return json(await callTool("list_games", {}, undefined, row.account_token));
       }
 
       case "get_guide": {
         if (!body.game) return json({ error: "game_required" }, 400);
-        const credentials = await requireMachineCredentials(
-          supabase,
-          effectiveUserId,
-          machineSecret,
-        );
-        return json(await callTool("get_guide", { game: body.game }, credentials));
+        const row = await getMachineRow(supabase, effectiveUserId);
+        if (!row || !row.account_token) {
+          throw new Error("machine_registration_required");
+        }
+        return json(await callTool("get_guide", { game: body.game }, undefined, row.account_token));
       }
 
       case "play": {
@@ -202,14 +201,16 @@ Deno.serve(async (req) => {
             machine: publicMachineState(row),
           }, 409);
         }
-        const credentials = await deriveCredentials(effectiveUserId, machineSecret);
+        if (!row.account_token) {
+          throw new Error("machine_registration_required");
+        }
         const playParams: Record<string, unknown> = {
           game: body.game,
           action: body.gameAction,
         };
         if (body.actionParams) playParams.params = body.actionParams;
         if (body.slotId !== undefined) playParams.slot_id = body.slotId;
-        return json(await callTool("play", playParams, credentials));
+        return json(await callTool("play", playParams, undefined, row.account_token));
       }
 
       default:
@@ -217,10 +218,13 @@ Deno.serve(async (req) => {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const sanitizedMessage = message.replace(/[A-Za-z0-9._-]{20,}/g, (match) =>
+      `[token:${match.length}chars]`
+    );
     console.error("[game-proxy] request failed", {
       action: body.action,
       userIdPrefix: effectiveUserId.slice(0, 6),
-      error: message.slice(0, 300),
+      error: sanitizedMessage.slice(0, 300),
     });
     const status = message.startsWith("machine_registration_protocol")
       ? 502
@@ -229,7 +233,7 @@ Deno.serve(async (req) => {
       : message === "machine_registration_required"
       ? 409
       : 502;
-    return json({ error: message.slice(0, 300) }, status);
+    return json({ error: sanitizedMessage.slice(0, 300) }, status);
   }
 });
 
@@ -348,20 +352,22 @@ async function ensureMachineAccount(
 
   let accountData = normalizeMcpResult(registrationResult);
   let identity = extractIdentity(accountData);
+  let accountToken = extractAccountToken(accountData);
 
   if (!identity.bindingCode) {
     const accountTool = findAccountTool(tools);
     if (accountTool) {
-      const accountToken = extractAccountToken(accountData);
       if (!accountToken) {
         throw new Error(
           "machine_registration_protocol_invalid: login_or_register returned no account token",
         );
       }
+      // Use token in URL, not in arguments
       const accountResult = await callTool(
         accountTool.name,
-        { action: "generate_binding_token", token: accountToken },
+        { action: "generate_binding_token" },
         undefined,
+        accountToken,
       );
       const normalizedAccount = normalizeMcpResult(accountResult);
       const directText = typeof normalizedAccount?.text === "string"
@@ -399,6 +405,7 @@ async function ensureMachineAccount(
     machine_username: credentials.username,
     machine_id: identity.machineId,
     binding_code: identity.bindingCode,
+    account_token: accountToken,
     status,
     registration_tool: registerTool.name,
     account_metadata: safeMetadata(accountData),
@@ -439,11 +446,11 @@ async function refreshMachineAccount(
   if (!accountToken) {
     throw new Error("machine_registration_protocol_invalid: login returned no account token");
   }
+  // Use token in URL, not in arguments
   const result = normalizeMcpResult(
     await callTool(accountTool.name, {
       action: "get_bindings",
-      token: accountToken,
-    }, undefined),
+    }, undefined, accountToken),
   );
   const identity = extractIdentity(result);
   const status: MachineRow["status"] = identity.bound
@@ -455,6 +462,7 @@ async function refreshMachineAccount(
     .update({
       machine_id: identity.machineId || row.machine_id,
       binding_code: identity.bindingCode || row.binding_code,
+      account_token: accountToken,
       status,
       account_metadata: safeMetadata(result),
       last_error: null,
@@ -469,16 +477,17 @@ async function refreshMachineAccount(
 
 async function discoverTools(
   credentials?: MachineCredentials,
+  accountToken?: string,
 ): Promise<McpTool[]> {
   if (toolCache && toolCache.expiresAt > Date.now()) return toolCache.tools;
 
   let result: any;
   try {
-    result = await callRpc("tools/list", {}, undefined);
+    result = await callRpc("tools/list", {}, undefined, accountToken);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!credentials || !/cedartoy_http_(401|403)/.test(message)) throw error;
-    result = await callRpc("tools/list", {}, credentials);
+    result = await callRpc("tools/list", {}, credentials, accountToken);
   }
   const normalized = normalizeMcpResult(result) as { tools?: McpTool[] };
   const tools = Array.isArray(normalized?.tools)
@@ -759,7 +768,9 @@ function safeMetadata(value: unknown): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(item as Record<string, unknown>)) {
       if (/password|passphrase|secret|token|authorization|credential|api[_-]?key/i.test(key)) {
-        result[key] = "[redacted]";
+        result[key] = typeof child === "string" && child.length > 0
+          ? `[redacted:${child.length}chars]`
+          : "[redacted]";
       } else {
         result[key] = redact(child, depth + 1);
       }
@@ -784,17 +795,19 @@ async function callTool(
   name: string,
   args: Record<string, unknown>,
   credentials?: MachineCredentials,
+  accountToken?: string,
 ): Promise<any> {
   return await callRpc("tools/call", {
     name,
     arguments: args,
-  }, credentials);
+  }, credentials, accountToken);
 }
 
 async function callRpc(
   method: string,
   params: Record<string, unknown>,
   credentials?: MachineCredentials,
+  accountToken?: string,
 ): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CEDARTOY_TIMEOUT_MS);
@@ -803,11 +816,21 @@ async function callRpc(
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
     };
-    if (credentials) {
+
+    // CedarToy authentication: if account_token exists, use token-based URL;
+    // otherwise use root URL (for unauthenticated calls like login_or_register)
+    let url = CEDARTOY_BASE;
+    if (accountToken) {
+      // Encode token safely for URL path
+      const encodedToken = encodeURIComponent(accountToken);
+      url = `${CEDARTOY_BASE}/${encodedToken}`;
+    } else if (credentials) {
+      // Legacy fallback: Basic Auth (may not be needed for CedarToy)
       headers.Authorization =
         `Basic ${btoa(`${credentials.username}:${credentials.password}`)}`;
     }
-    const response = await fetch(CEDARTOY_BASE, {
+
+    const response = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify({
