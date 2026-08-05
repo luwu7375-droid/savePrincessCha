@@ -17,6 +17,7 @@ type GameProxyAction =
   | "machine_status"
   | "ensure_machine"
   | "refresh_binding"
+  | "regenerate_binding"
   | "list_games"
   | "get_guide"
   | "play"
@@ -173,6 +174,15 @@ Deno.serve(async (req) => {
         return json({ ok: true, machine: publicMachineState(row) });
       }
 
+      case "regenerate_binding": {
+        const row = await regenerateBindingCode(
+          supabase,
+          effectiveUserId,
+          machineSecret,
+        );
+        return json({ ok: true, machine: publicMachineState(row) });
+      }
+
       case "list_games": {
         const row = await getMachineRow(supabase, effectiveUserId);
         if (!row || !row.account_token) {
@@ -313,8 +323,14 @@ async function ensureMachineAccount(
   machineSecret: string,
 ): Promise<MachineRow> {
   const existing = await getMachineRow(supabase, userId);
-  if (existing && ["pending_binding", "bound"].includes(existing.status)) {
-    return existing;
+
+  // If already registered with account_token, reuse it to generate new binding code
+  if (existing && existing.account_token) {
+    if (["pending_binding", "bound"].includes(existing.status)) {
+      return existing;
+    }
+    // Has account_token but in error state: regenerate binding code
+    return await regenerateBindingCode(supabase, userId, machineSecret);
   }
 
   const credentials = await deriveCredentials(userId, machineSecret);
@@ -465,6 +481,60 @@ async function refreshMachineAccount(
       account_token: accountToken,
       status,
       account_metadata: safeMetadata(result),
+      last_error: null,
+      last_checked_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+  if (error) throw new Error(`machine_store_write_failed: ${error.message}`);
+  return data as MachineRow;
+}
+
+async function regenerateBindingCode(
+  supabase: SupabaseClient,
+  userId: string,
+  machineSecret: string,
+): Promise<MachineRow> {
+  const row = await getMachineRow(supabase, userId);
+  if (!row || !row.account_token) {
+    throw new Error("machine_registration_required");
+  }
+
+  const credentials = await deriveCredentials(userId, machineSecret);
+  const tools = await discoverTools(credentials);
+  const accountTool = findAccountTool(tools);
+  if (!accountTool) {
+    throw new Error("machine_registration_protocol_missing: account tool not found");
+  }
+
+  // Use existing account_token to generate new binding code
+  const accountResult = await callTool(
+    accountTool.name,
+    { action: "generate_binding_token" },
+    undefined,
+    row.account_token,
+  );
+  const normalizedAccount = normalizeMcpResult(accountResult);
+  const directText = typeof normalizedAccount?.text === "string"
+    ? normalizedAccount.text.trim()
+    : "";
+  const accountWithToken = /^[A-Za-z0-9_-]{4,128}$/.test(directText)
+    ? { ...normalizedAccount, binding_token: directText }
+    : normalizedAccount;
+
+  const identity = extractIdentity(accountWithToken);
+
+  if (!identity.bindingCode) {
+    throw new Error("machine_registration_protocol_invalid: generate_binding_token returned no binding code");
+  }
+
+  const { data, error } = await supabase
+    .from("cedartoy_machine_accounts")
+    .update({
+      binding_code: identity.bindingCode,
+      status: "pending_binding",
+      account_metadata: safeMetadata(accountWithToken),
       last_error: null,
       last_checked_at: new Date().toISOString(),
     })
