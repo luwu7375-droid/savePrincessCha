@@ -175,6 +175,7 @@ export async function callModel(
   provider: ProviderConfig,
   messages: unknown[],
   timeoutOverrideMs?: number,
+  tools?: unknown[],
 ): Promise<{ res: Response; ms: number }> {
   const t = Date.now();
   const timeoutMs = typeof timeoutOverrideMs === "number"
@@ -183,16 +184,20 @@ export async function callModel(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const body: Record<string, unknown> = {
+      model: provider.model,
+      messages,
+      stream: true,
+      stream_options: { include_usage: true },
+      max_tokens: provider.maxTokens,
+    };
+    if (tools && tools.length > 0) {
+      body.tools = tools;
+    }
     const res = await fetch(provider.baseUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: provider.model,
-        messages,
-        stream: true,
-        stream_options: { include_usage: true },
-        max_tokens: provider.maxTokens
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
     return { res, ms: Date.now() - t };
@@ -218,6 +223,7 @@ export async function callModel(
 export async function callModelWithFallback(
   tierProviders: TierProviders,
   messages: unknown[],
+  tools?: unknown[],
 ): Promise<CallResult> {
   const { primary, fallback } = tierProviders;
   const startedAt = Date.now();
@@ -238,7 +244,7 @@ export async function callModelWithFallback(
   let primaryMs: number;
 
   try {
-    const result = await callModel(primary, messages, primaryBudgetMs);
+    const result = await callModel(primary, messages, primaryBudgetMs, tools);
     primaryRes = result.res;
     primaryMs = result.ms;
   } catch (err) {
@@ -253,7 +259,7 @@ export async function callModelWithFallback(
     if (!fallback) throw err;
     const fallbackReason = `primary_error: ${errMsg.slice(0, 120)}`;
     try {
-      const fb = await callModel(fallback, messages, fallbackBudgetMs());
+      const fb = await callModel(fallback, messages, fallbackBudgetMs(), tools);
       return {
         response: fb.res, usedModel: fallback.model, usedProvider: fallback.providerName,
         fallbackUsed: true, fallbackModel: fallback.model, fallbackProvider: fallback.providerName,
@@ -293,6 +299,7 @@ export async function callModelWithFallback(
     fallback,
     messages,
     fallbackBudgetMs(),
+    tools,
   );
   return {
     response: fallbackRes, usedModel: fallback.model, usedProvider: fallback.providerName,

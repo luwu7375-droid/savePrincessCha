@@ -2931,7 +2931,8 @@ ${candidateLines}`;
   }
 
   try {
-    const result = await callModelWithFallback(tierProviders, messages);
+    // Pass tools to the model so it can call them
+    const result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
 
     logRecord.model_call_ms = result.modelCallMs;
     logRecord.model = result.usedModel;
