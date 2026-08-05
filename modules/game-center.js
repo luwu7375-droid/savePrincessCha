@@ -3,6 +3,10 @@
 (function () {
   "use strict";
 
+  let cachedMachineStatus = null;
+  let lastFetchTime = 0;
+  const CACHE_DURATION_MS = 30_000; // 30 seconds cache
+
   function showGameCenter() {
     if (window.SPV2Shell && typeof window.SPV2Shell.showPage === "function") {
       window.SPV2Shell.showPage("game-center");
@@ -16,8 +20,13 @@
         target.classList.add("v2-active");
       }
     }
-    // Always load machine status when entering game center
-    loadMachineStatus(false);
+    // Use cached status if available and fresh
+    const now = Date.now();
+    if (cachedMachineStatus && (now - lastFetchTime < CACHE_DURATION_MS)) {
+      renderMachine(cachedMachineStatus);
+    } else {
+      loadMachineStatus(false);
+    }
   }
 
   function closeGameCenter() {
@@ -135,9 +144,13 @@
       setBusy(true);
       if (statusText) statusText.textContent = "正在检查小机状态…";
       const result = await callGameProxy(refresh ? "refresh_binding" : "machine_status");
+      cachedMachineStatus = result.machine;
+      lastFetchTime = Date.now();
       renderMachine(result.machine);
     } catch (error) {
       if (error.status === 409 && error.payload?.machine) {
+        cachedMachineStatus = error.payload.machine;
+        lastFetchTime = Date.now();
         renderMachine(error.payload.machine);
       } else {
         renderMachine({
