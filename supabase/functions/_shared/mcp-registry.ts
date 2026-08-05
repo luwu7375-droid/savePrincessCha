@@ -66,6 +66,25 @@ const definitions: McpToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "cedar_play",
+    description: "通过 CedarToy MCP 执行游戏操作（仅限已绑定的小机账号）。",
+    source: "mcp",
+    readOnly: false,
+    requiresConfirmation: true,
+    timeoutMs: 10_000,
+    inputSchema: {
+      type: "object",
+      properties: {
+        game: { type: "string", description: "游戏名称或游戏标��" },
+        gameAction: { type: "string", description: "游戏操作名称" },
+        actionParams: { type: "object", description: "操作参数（可选）" },
+        slotId: { type: "number", description: "存档位（可选）" },
+      },
+      required: ["game", "gameAction"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 const registry = new Map(definitions.map((tool) => [tool.name, tool]));
@@ -200,6 +219,36 @@ export async function executeMcpTool(
           body: JSON.stringify({
             action: "get_guide",
             game,
+            userId: context.userId || "anon",
+          }),
+        },
+        tool.timeoutMs,
+      );
+      return compactResult(data);
+    }
+
+    case "cedar_play": {
+      const game = stringArg(args, "game");
+      const gameAction = stringArg(args, "gameAction");
+      if (!game || !gameAction) throw new Error("game_and_gameAction_required");
+      const actionParams = args.actionParams && typeof args.actionParams === "object"
+        ? args.actionParams as Record<string, unknown>
+        : undefined;
+      const slotId = typeof args.slotId === "number" ? args.slotId : undefined;
+      const data = await fetchJson(
+        `${context.supabaseUrl}/functions/v1/game-proxy`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${context.serviceRoleKey}`,
+          },
+          body: JSON.stringify({
+            action: "play",
+            game,
+            gameAction,
+            actionParams,
+            slotId,
             userId: context.userId || "anon",
           }),
         },
