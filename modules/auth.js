@@ -134,9 +134,18 @@
   }
 
   // ── Auth State Change Listener ──────────────────────────────────────────────
-  function initAuthListener() {
+  function initAuthListener(retryCount = 0) {
+    const MAX_RETRIES = 50; // 5 seconds total (50 * 100ms)
+
     if (!window.supabaseClient) {
-      setTimeout(initAuthListener, 100);
+      if (retryCount >= MAX_RETRIES) {
+        console.error("❌ Supabase client initialization timeout after 5 seconds");
+        // Show login overlay with error message
+        loginOverlay.classList.remove("hidden");
+        loginMsg.textContent = "初始化失败，请刷新页面重试。";
+        return;
+      }
+      setTimeout(() => initAuthListener(retryCount + 1), 100);
       return;
     }
 
@@ -150,7 +159,15 @@
     window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         hideLoginAndInit(session);
+      } else {
+        // No session - show login overlay
+        loginOverlay.classList.remove("hidden");
       }
+    }).catch((error) => {
+      console.error("❌ Failed to get session:", error);
+      // Show login overlay even if getSession fails
+      loginOverlay.classList.remove("hidden");
+      loginMsg.textContent = "连接失败，请检查网络后重试。";
     });
   }
 
