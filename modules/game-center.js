@@ -112,7 +112,7 @@
 
     if (status === "pending_binding") {
       if (statusText) statusText.textContent = `小机已创建：${machine.machine_username || "Cha"}`;
-      if (hint) hint.textContent = "请先在下方登录你的人类账号，再进入"绑定 AI"输入上面的绑定码；完成后点"刷新状态"。";
+      if (hint) hint.textContent = "请先在下方登录你的人类账号，再进入「绑定 AI」输入上面的绑定码；完成后点「刷新状态」。";
       return;
     }
     if (status === "error") {
