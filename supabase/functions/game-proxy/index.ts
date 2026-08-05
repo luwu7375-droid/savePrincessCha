@@ -508,6 +508,12 @@ async function regenerateBindingCode(
     throw new Error("machine_registration_protocol_missing: account tool not found");
   }
 
+  console.log("[regenerate_binding] attempting to generate new binding code", {
+    userId: userId.slice(0, 8),
+    hasToken: !!row.account_token,
+    tokenLength: row.account_token?.length,
+  });
+
   // Use existing account_token to generate new binding code
   const accountResult = await callTool(
     accountTool.name,
@@ -525,7 +531,14 @@ async function regenerateBindingCode(
 
   const identity = extractIdentity(accountWithToken);
 
+  console.log("[regenerate_binding] extraction result", {
+    hasBindingCode: !!identity.bindingCode,
+    codeLength: identity.bindingCode?.length,
+  });
+
   if (!identity.bindingCode) {
+    const preview = JSON.stringify(safeMetadata(accountWithToken)).slice(0, 200);
+    console.error("[regenerate_binding] failed to extract binding code", { preview });
     throw new Error("machine_registration_protocol_invalid: generate_binding_token returned no binding code");
   }
 
@@ -542,6 +555,11 @@ async function regenerateBindingCode(
     .select("*")
     .single();
   if (error) throw new Error(`machine_store_write_failed: ${error.message}`);
+
+  console.log("[regenerate_binding] success", {
+    newCodeLength: identity.bindingCode.length,
+  });
+
   return data as MachineRow;
 }
 
