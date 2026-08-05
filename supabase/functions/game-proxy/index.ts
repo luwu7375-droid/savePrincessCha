@@ -552,7 +552,7 @@ async function regenerateBindingCode(
   machineSecret: string,
 ): Promise<MachineRow> {
   const row = await getMachineRow(supabase, userId);
-  if (!row || !row.account_token) {
+  if (!row) {
     throw new Error("machine_registration_required");
   }
 
@@ -563,19 +563,67 @@ async function regenerateBindingCode(
     throw new Error("machine_registration_protocol_missing: account tool not found");
   }
 
+  let accountToken = row.account_token;
+
+  // If no account_token or it might be invalid, try to get a fresh one
+  if (!accountToken) {
+    console.log("[regenerate_binding] no account_token found, attempting login_or_register");
+    const loginResult = normalizeMcpResult(
+      await callTool(accountTool.name, {
+        action: "login_or_register",
+        username: credentials.username,
+        password: credentials.password,
+      }, undefined),
+    );
+    accountToken = extractAccountToken(loginResult);
+    if (!accountToken) {
+      throw new Error("machine_registration_protocol_invalid: login_or_register returned no account token");
+    }
+  }
+
   console.log("[regenerate_binding] attempting to generate new binding code", {
     userId: userId.slice(0, 8),
-    hasToken: !!row.account_token,
-    tokenLength: row.account_token?.length,
+    hasToken: !!accountToken,
+    tokenLength: accountToken?.length,
   });
 
-  // Use existing account_token to generate new binding code
-  const accountResult = await callTool(
-    accountTool.name,
-    { action: "generate_binding_token" },
-    undefined,
-    row.account_token,
-  );
+  // Try to generate binding token
+  let accountResult: any;
+  try {
+    accountResult = await callTool(
+      accountTool.name,
+      { action: "generate_binding_token" },
+      undefined,
+      accountToken,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[regenerate_binding] generate_binding_token failed, trying login_or_register", {
+      error: message.slice(0, 100),
+    });
+
+    // Token might be invalid, try to get a fresh one
+    const loginResult = normalizeMcpResult(
+      await callTool(accountTool.name, {
+        action: "login_or_register",
+        username: credentials.username,
+        password: credentials.password,
+      }, undefined),
+    );
+    accountToken = extractAccountToken(loginResult);
+    if (!accountToken) {
+      throw new Error("machine_registration_protocol_invalid: login_or_register returned no account token");
+    }
+
+    // Retry with fresh token
+    accountResult = await callTool(
+      accountTool.name,
+      { action: "generate_binding_token" },
+      undefined,
+      accountToken,
+    );
+  }
+
   const normalizedAccount = normalizeMcpResult(accountResult);
   const directText = typeof normalizedAccount?.text === "string"
     ? normalizedAccount.text.trim()
@@ -601,6 +649,7 @@ async function regenerateBindingCode(
     .from("cedartoy_machine_accounts")
     .update({
       binding_code: identity.bindingCode,
+      account_token: accountToken,
       status: "pending_binding",
       account_metadata: safeMetadata(accountWithToken),
       last_error: null,
