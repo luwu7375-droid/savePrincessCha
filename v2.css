@@ -5272,6 +5272,14 @@ body {
 
 
 /* CedarToy machine binding */
+.cedartoy-binding-card[hidden] {
+  display: none !important;
+}
+
+.cedartoy-bound-status[hidden] {
+  display: none !important;
+}
+
 .cedartoy-binding-card {
   margin: 0 16px 12px;
   padding: 14px;

@@ -3,9 +3,42 @@
 (function () {
   "use strict";
 
-  let cachedMachineStatus = null;
-  let lastFetchTime = 0;
-  const CACHE_DURATION_MS = 30_000; // 30 seconds cache
+  const CACHE_KEY_PREFIX = "cedartoy_machine_status_";
+  const CACHE_DURATION_MS = 10 * 60 * 1000; // 10 minutes for bound status
+  const PENDING_CACHE_DURATION_MS = 30 * 1000; // 30 seconds for pending status
+
+  function getCacheKey() {
+    const userId = window.currentUserId || "default";
+    return CACHE_KEY_PREFIX + userId;
+  }
+
+  function getCachedStatus() {
+    try {
+      const cached = localStorage.getItem(getCacheKey());
+      if (!cached) return null;
+      const data = JSON.parse(cached);
+      const now = Date.now();
+      const maxAge = data.status === "bound" ? CACHE_DURATION_MS : PENDING_CACHE_DURATION_MS;
+      if (now - data.timestamp < maxAge) {
+        return data.machine;
+      }
+      localStorage.removeItem(getCacheKey());
+    } catch (e) {
+      console.warn("[game-center] cache read failed", e);
+    }
+    return null;
+  }
+
+  function setCachedStatus(machine) {
+    try {
+      localStorage.setItem(getCacheKey(), JSON.stringify({
+        machine,
+        timestamp: Date.now(),
+      }));
+    } catch (e) {
+      console.warn("[game-center] cache write failed", e);
+    }
+  }
 
   function showGameCenter() {
     if (window.SPV2Shell && typeof window.SPV2Shell.showPage === "function") {
@@ -20,13 +53,15 @@
         target.classList.add("v2-active");
       }
     }
-    // Use cached status if available and fresh
-    const now = Date.now();
-    if (cachedMachineStatus && (now - lastFetchTime < CACHE_DURATION_MS)) {
-      renderMachine(cachedMachineStatus);
-    } else {
-      loadMachineStatus(false);
+
+    // Render cached status immediately (no "checking..." flash)
+    const cached = getCachedStatus();
+    if (cached) {
+      renderMachine(cached);
     }
+
+    // Background refresh
+    loadMachineStatusBackground();
   }
 
   function closeGameCenter() {
@@ -138,19 +173,55 @@
     if (hint) hint.textContent = "你先在下方登录自己的人类账号；点击按钮后 Cha 才会通过 MCP 创建自己的小机。";
   }
 
+  async function loadMachineStatusBackground() {
+    try {
+      const result = await callGameProxy("machine_status");
+      const machine = result.machine;
+
+      // If status is pending_binding, auto-refresh to check CedarToy
+      if (machine.status === "pending_binding") {
+        try {
+          const refreshResult = await callGameProxy("refresh_binding");
+          const refreshedMachine = refreshResult.machine;
+          setCachedStatus(refreshedMachine);
+          renderMachine(refreshedMachine);
+        } catch (error) {
+          // If refresh fails, use the original machine status
+          setCachedStatus(machine);
+          renderMachine(machine);
+        }
+      } else {
+        setCachedStatus(machine);
+        renderMachine(machine);
+      }
+    } catch (error) {
+      if (error.status === 409 && error.payload?.machine) {
+        setCachedStatus(error.payload.machine);
+        renderMachine(error.payload.machine);
+      } else {
+        // Only show error if we have no cached status
+        const cached = getCachedStatus();
+        if (!cached) {
+          renderMachine({
+            status: "error",
+            last_error: error.message || String(error),
+          });
+        }
+      }
+    }
+  }
+
   async function loadMachineStatus(refresh) {
     const statusText = document.getElementById("cedartoyMachineStatusText");
     try {
       setBusy(true);
       if (statusText) statusText.textContent = "正在检查小机状态…";
       const result = await callGameProxy(refresh ? "refresh_binding" : "machine_status");
-      cachedMachineStatus = result.machine;
-      lastFetchTime = Date.now();
+      setCachedStatus(result.machine);
       renderMachine(result.machine);
     } catch (error) {
       if (error.status === 409 && error.payload?.machine) {
-        cachedMachineStatus = error.payload.machine;
-        lastFetchTime = Date.now();
+        setCachedStatus(error.payload.machine);
         renderMachine(error.payload.machine);
       } else {
         renderMachine({
@@ -169,6 +240,7 @@
       setBusy(true);
       if (statusText) statusText.textContent = "Cha 正在通过 MCP 创建小机…";
       const result = await callGameProxy("ensure_machine");
+      setCachedStatus(result.machine);
       renderMachine(result.machine);
     } catch (error) {
       renderMachine({
@@ -197,6 +269,7 @@
       setBusy(true);
       if (statusText) statusText.textContent = "正在重新生成绑定码…";
       const result = await callGameProxy("regenerate_binding");
+      setCachedStatus(result.machine);
       renderMachine(result.machine);
       if (typeof window.showToast === "function") window.showToast("绑定码已更新");
     } catch (error) {
