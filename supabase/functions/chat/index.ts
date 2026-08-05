@@ -22,7 +22,12 @@ import { makeCorsHeaders } from "../_shared/cors.ts";
 import {
   isToolRuntimeCandidate,
   prepareToolMessages,
+  CHAT_TOOLS,
 } from "../_shared/tool-runtime.ts";
+import {
+  executeMcpTool,
+  type McpToolContext,
+} from "../_shared/mcp-registry.ts";
 
 const corsHeaders = makeCorsHeaders({
   "Access-Control-Expose-Headers":
@@ -433,6 +438,88 @@ function safeUserIdPrefix(userId: string): string {
 
 function emitLog(log: RequestLog): void {
   console.log(JSON.stringify({ ...log, fn: "chat", v: FUNCTION_VERSION }));
+}
+
+/**
+ * Extract tool_calls from streaming SSE response
+ */
+async function extractToolCallsFromStream(response: Response): Promise<{
+  hasToolCalls: boolean;
+  toolCalls: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+  assistantContent: string | null;
+  finishReason: string | null;
+}> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return { hasToolCalls: false, toolCalls: [], assistantContent: null, finishReason: null };
+  }
+
+  const decoder = new TextDecoder();
+  const toolCallsMap = new Map<number, { id: string; type: string; function: { name: string; arguments: string } }>();
+  let assistantContent = "";
+  let finishReason: string | null = null;
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+
+          if (delta?.content) {
+            assistantContent += delta.content;
+          }
+
+          if (delta?.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const index = tc.index ?? 0;
+              if (!toolCallsMap.has(index)) {
+                toolCallsMap.set(index, {
+                  id: "",
+                  type: "function",
+                  function: { name: "", arguments: "" },
+                });
+              }
+              const existing = toolCallsMap.get(index)!;
+              if (tc.id) existing.id = tc.id;
+              if (tc.type) existing.type = tc.type;
+              if (tc.function?.name) existing.function.name += tc.function.name;
+              if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+            }
+          }
+
+          if (parsed.choices?.[0]?.finish_reason) {
+            finishReason = parsed.choices[0].finish_reason;
+          }
+        } catch {
+          // Skip invalid JSON
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const toolCalls = Array.from(toolCallsMap.values()).filter(tc => tc.id && tc.function.name);
+
+  return {
+    hasToolCalls: toolCalls.length > 0 && finishReason === "tool_calls",
+    toolCalls,
+    assistantContent: assistantContent || null,
+    finishReason,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2934,6 +3021,119 @@ ${candidateLines}`;
     // Pass tools to the model so it can call them
     const result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
 
+    // Check if model produced tool_calls
+    const toolInfo = await extractToolCallsFromStream(result.response.clone());
+
+    if (toolInfo.hasToolCalls && supabaseUrl && serviceRoleKey) {
+      console.log("[chat] tool_calls detected:", {
+        count: toolInfo.toolCalls.length,
+        tools: toolInfo.toolCalls.map(tc => tc.function.name),
+        finishReason: toolInfo.finishReason,
+      });
+
+      // Add assistant message with tool_calls
+      messages.push({
+        role: "assistant",
+        content: toolInfo.assistantContent,
+        tool_calls: toolInfo.toolCalls,
+      });
+
+      // Execute each tool call
+      const toolResults: Array<{ role: string; tool_call_id: string; content: string }> = [];
+      for (const call of toolInfo.toolCalls) {
+        console.log("[chat] executing tool:", {
+          id: call.id,
+          name: call.function.name,
+        });
+
+        try {
+          const args = JSON.parse(call.function.arguments || "{}");
+          const toolContext: McpToolContext = {
+            supabaseUrl,
+            serviceRoleKey,
+            authorization,
+            userId: typeof payload.userId === "string" ? payload.userId : undefined,
+            conversationId,
+            rawUserMessage: lastUserMessage,
+          };
+
+          const content = await executeMcpTool(call.function.name, args, toolContext);
+
+          toolResults.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content,
+          });
+
+          console.log("[chat] tool succeeded:", {
+            id: call.id,
+            name: call.function.name,
+            resultLength: content.length,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          toolResults.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify({ error: errorMessage }),
+          });
+
+          console.error("[chat] tool failed:", {
+            id: call.id,
+            name: call.function.name,
+            error: errorMessage.slice(0, 300),
+          });
+        }
+      }
+
+      // Add tool results to messages
+      messages.push(...toolResults);
+      toolNames = toolInfo.toolCalls.map(tc => tc.function.name);
+
+      // Call model again with tool results to generate final response
+      console.log("[chat] calling model with tool results");
+      const finalResult = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
+
+      logRecord.model_call_ms = result.modelCallMs + finalResult.modelCallMs;
+      logRecord.model = finalResult.usedModel;
+      logRecord.provider = finalResult.usedProvider;
+      logRecord.fallback_used = finalResult.fallbackUsed;
+      logRecord.fallback_model = finalResult.fallbackModel;
+      logRecord.fallback_provider = finalResult.fallbackProvider;
+      logRecord.fallback_reason = finalResult.fallbackReason;
+
+      if (!finalResult.response.ok) {
+        let errorBody: unknown = { error: "模型请求失败" };
+        const text = await finalResult.response.text();
+        try {
+          errorBody = JSON.parse(text);
+        } catch {
+          errorBody = { error: text };
+        }
+        logRecord.error_stage = finalResult.fallbackUsed
+          ? "fallback_upstream"
+          : "model_upstream";
+        logRecord.total_ms = Date.now() - t0;
+        emitLog(logRecord);
+        return jsonResponse(errorBody, finalResult.response.status);
+      }
+
+      logRecord.total_ms = Date.now() - t0;
+      emitLog(logRecord);
+
+      // Return final response with tool execution completed
+      return new Response(finalResult.response.body, {
+        status: finalResult.response.status,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/event-stream",
+          "x-save-princess-function-version": FUNCTION_VERSION,
+          "x-save-princess-tools-used": toolNames.join(",") || "",
+        },
+      });
+    }
+
+    // No tool calls, proceed with original response
     logRecord.model_call_ms = result.modelCallMs;
     logRecord.model = result.usedModel;
     logRecord.provider = result.usedProvider;
