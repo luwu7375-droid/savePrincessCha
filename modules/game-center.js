@@ -83,6 +83,8 @@
   }
 
   function renderMachine(machine) {
+    const bindingCard = document.getElementById("cedartoyBindingCard");
+    const boundStatusBar = document.getElementById("cedartoyBoundStatusBar");
     const statusText = document.getElementById("cedartoyMachineStatusText");
     const hint = document.getElementById("cedartoyBindingHint");
     const codeRow = document.getElementById("cedartoyBindingCodeRow");
@@ -91,19 +93,26 @@
     const refreshBtn = document.getElementById("cedartoyRefreshBindingBtn");
 
     const status = machine?.status || "unregistered";
+
+    // When bound: hide binding card, show compact status bar
+    if (status === "bound") {
+      if (bindingCard) bindingCard.hidden = true;
+      if (boundStatusBar) boundStatusBar.hidden = false;
+      return;
+    }
+
+    // For other states: show binding card, hide status bar
+    if (bindingCard) bindingCard.hidden = false;
+    if (boundStatusBar) boundStatusBar.hidden = true;
+
     if (createBtn) createBtn.hidden = status !== "unregistered" && status !== "error";
     if (refreshBtn) refreshBtn.hidden = status !== "pending_binding";
     if (codeRow) codeRow.hidden = status !== "pending_binding" || !machine?.binding_code;
     if (codeEl) codeEl.textContent = machine?.binding_code || "";
 
-    if (status === "bound") {
-      if (statusText) statusText.textContent = `已绑定：${machine.machine_username || "Cha"}`;
-      if (hint) hint.textContent = "Cha 已经拥有自己的 CedarToy 小机身份，可以使用游戏工具。";
-      return;
-    }
     if (status === "pending_binding") {
       if (statusText) statusText.textContent = `小机已创建：${machine.machine_username || "Cha"}`;
-      if (hint) hint.textContent = "请先在下方登录你的人类账号，再进入“绑定 AI”输入上面的绑定码；完成后点“刷新状态”。";
+      if (hint) hint.textContent = "请先在下方登录你的人类账号，再进入"绑定 AI"输入上面的绑定码；完成后点"刷新状态"。";
       return;
     }
     if (status === "error") {
@@ -164,6 +173,13 @@
     }
   }
 
+  function showBindingCard() {
+    const bindingCard = document.getElementById("cedartoyBindingCard");
+    const boundStatusBar = document.getElementById("cedartoyBoundStatusBar");
+    if (bindingCard) bindingCard.hidden = false;
+    if (boundStatusBar) boundStatusBar.hidden = true;
+  }
+
   function init() {
     document.getElementById("gameCenterEntry")
       ?.addEventListener("click", showGameCenter);
@@ -175,6 +191,8 @@
       ?.addEventListener("click", () => loadMachineStatus(true));
     document.getElementById("cedartoyCopyCodeBtn")
       ?.addEventListener("click", copyBindingCode);
+    document.getElementById("cedartoyManageBtn")
+      ?.addEventListener("click", showBindingCard);
   }
 
   if (document.readyState === "loading") {

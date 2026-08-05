@@ -5319,6 +5319,41 @@ body {
   letter-spacing: 0.08em;
   user-select: all;
 }
+.cedartoy-bound-status {
+  margin: 0 16px 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface-card, #fff);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cedartoy-bound-status[hidden] {
+  display: none;
+}
+.cedartoy-bound-status__text {
+  color: var(--text-primary);
+  font-size: 14px;
+  flex: 1;
+}
+.cedartoy-bound-status .text-btn {
+  color: var(--accent-primary, #007aff);
+  font-size: 13px;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+.cedartoy-bound-status .text-btn:hover {
+  background: rgba(0, 122, 255, 0.1);
+}
+.cedartoy-bound-status .text-btn:active {
+  background: rgba(0, 122, 255, 0.15);
+}
 @media (max-width: 640px) {
   .cedartoy-binding-card {
     flex-direction: column;
