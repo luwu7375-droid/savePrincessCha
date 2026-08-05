@@ -464,7 +464,19 @@ async function refreshMachineAccount(
           action: "get_bindings",
         }, undefined, accountToken),
       );
+
+      console.log("[refresh_binding] get_bindings result", {
+        preview: JSON.stringify(safeMetadata(result)).slice(0, 300),
+      });
+
       const identity = extractIdentity(result);
+
+      console.log("[refresh_binding] extracted identity", {
+        bound: identity.bound,
+        hasBindingCode: !!identity.bindingCode,
+        hasMachineId: !!identity.machineId,
+      });
+
       const status: MachineRow["status"] = identity.bound ? "bound" : "pending_binding";
 
       // If not bound and no binding_code, generate a new one
@@ -999,9 +1011,15 @@ function extractIdentity(value: unknown): {
     "id",
   ]);
   const status = String(get(["status", "binding_status", "bindingStatus"]) || "");
-  const boundValue = get(["bound", "is_bound", "isBound", "linked", "is_linked"]);
+  const boundValue = get(["bound", "is_bound", "isBound", "linked", "is_linked", "binded"]);
+
+  // Check for bindings array - if it exists and has items, consider it bound
+  const bindings = get(["bindings", "bound_machines", "linked_machines"]);
+  const hasBindings = Array.isArray(bindings) && bindings.length > 0;
+
   const bound = boundValue === true ||
-    ["bound", "linked", "active", "connected"].includes(status.toLowerCase());
+    hasBindings ||
+    ["bound", "linked", "active", "connected", "binded"].includes(status.toLowerCase());
 
   return {
     bindingCode: bindingCode ? String(bindingCode) : null,
