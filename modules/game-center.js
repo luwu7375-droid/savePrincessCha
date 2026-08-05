@@ -16,7 +16,8 @@
         target.classList.add("v2-active");
       }
     }
-    loadMachineStatus();
+    // Always load machine status when entering game center
+    loadMachineStatus(false);
   }
 
   function closeGameCenter() {
