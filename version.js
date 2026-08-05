@@ -1,6 +1,6 @@
 // Single source of truth for build version
 // Update this one constant when releasing a new version
-window.SAVE_PRINCESS_BUILD = "cloudflare-0805-cedartoy-bound-ui-v1";
+window.SAVE_PRINCESS_BUILD = "cedartoy-bound-ui-v3";
 
 // Note: CSS files in index.html <head> also use version strings.
 // Update manually when CSS changes:
