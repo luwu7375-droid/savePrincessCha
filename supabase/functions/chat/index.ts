@@ -148,7 +148,7 @@ function normalizeCustomEndpoint(raw: string): string {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "server-tools-v3";
+const FUNCTION_VERSION = "server-tools-v4-game-truth";
 
 // ── Legacy memory guard ────────────────────────────────────────────────────────
 //
@@ -2912,6 +2912,17 @@ ${candidateLines}`;
     console.log("[quote-candidates] No quoteCandidates to inject");
   }
 
+  systemContent += `
+
+【CedarToy 真实性约束】
+CedarToy 的实时工具结果是唯一事实来源。
+- 只能选择 cedar_list_games 本轮真实返回的游戏。不得根据记忆、常识或聊天历史补造游戏。
+- 只有本轮 cedar_play 成功返回了房间或游戏状态，才能说“已创建房间”“正在玩”“玩完了”，以及给出房间号、题目、回合、结果。
+- cedar_get_guide 只证明读过攻略，不证明创建房间或完成游戏。
+- 没有真实工具结果时，必须直说尚未完成或无法核实。不得生成看似真实的房间号、测试结果或游戏进度。
+- 用户要求“不调用工具”时，也不能把聊天历史中的计划、猜测或未验证内容说成真实游戏结果。
+`;
+
   if (payload.replyMode === "auto") {
     systemContent +=
       "\n\n【回复决策】如果用户明显还在连续补充、只是碎片化记录、或没有期待回复，可以不回复。若不回复，只输出：<NO_REPLY>。不要解释。";
@@ -3024,6 +3035,7 @@ ${candidateLines}`;
     const maxToolRounds = 4;
     let result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
     let totalModelCallMs = result.modelCallMs;
+    let toolRoundLimitReached = false;
 
     for (let toolRound = 0; toolRound < maxToolRounds; toolRound += 1) {
       const toolInfo = await extractToolCallsFromStream(result.response.clone());
@@ -3098,6 +3110,26 @@ ${candidateLines}`;
       // Let the model either call the next tool or generate the final reply.
       console.log("[chat] calling model with tool results");
       result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
+      totalModelCallMs += result.modelCallMs;
+    }
+
+    // The last model response may itself be another tool call. Never send that
+    // body to the UI as an empty assistant reply. Force a text-only, truthful
+    // handoff from the tool results already present in messages.
+    const finalToolInfo = await extractToolCallsFromStream(result.response.clone());
+    if (finalToolInfo.hasToolCalls) {
+      toolRoundLimitReached = true;
+      console.warn("[chat] tool_round_limit_reached", {
+        requestId,
+        maxToolRounds,
+        pendingTools: finalToolInfo.toolCalls.map((call) => call.function.name),
+      });
+      messages.push({
+        role: "system",
+        content:
+          "工具轮次已结束。不要执行或声称完成尚未执行的操作。只依据上方真实 tool 结果生成面向用户的最终回复；没有 cedar_play 成功结果时必须明确说尚未创建或完成游戏。禁止编造游戏、房间号、题目、进度或结果。",
+      });
+      result = await callModelWithFallback(tierProviders, messages);
       totalModelCallMs += result.modelCallMs;
     }
 
