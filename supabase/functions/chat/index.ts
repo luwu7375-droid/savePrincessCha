@@ -1979,6 +1979,13 @@ Deno.serve(async (request) => {
 
   const tier = normalizeTier(payload.modelTier);
   const tierProviders = resolveProviderForTier(tier);
+  // Keep the server-configured primary available as a safe one-shot fallback.
+  // A browser-supplied custom model must never turn an upstream auth failure
+  // into an empty chat turn.
+  const systemDefaultProvider: ProviderConfig = {
+    ...tierProviders.primary,
+    role: "fallback",
+  };
 
   // ── Custom model override ─────────────────────────────────────────────────
   let customModelApplied = false;
@@ -2009,7 +2016,7 @@ Deno.serve(async (request) => {
           apiKey: cm.apiKey.trim(),
           model: cm.model.trim(),
         };
-        tierProviders.fallback = null;
+        tierProviders.fallback = systemDefaultProvider;
         customModelApplied = true;
         console.log(
           "[custom-model] Applied custom provider and model:",
