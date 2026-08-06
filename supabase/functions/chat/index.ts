@@ -515,7 +515,11 @@ async function extractToolCallsFromStream(response: Response): Promise<{
   const toolCalls = Array.from(toolCallsMap.values()).filter(tc => tc.id && tc.function.name);
 
   return {
-    hasToolCalls: toolCalls.length > 0 && finishReason === "tool_calls",
+    // Some OpenAI-compatible providers (notably Claude gateways) emit valid
+    // tool_calls with finish_reason "stop" or null. The parsed calls are the
+    // source of truth; requiring a provider-specific finish reason makes the
+    // server return an empty tool-call response to the UI.
+    hasToolCalls: toolCalls.length > 0,
     toolCalls,
     assistantContent: assistantContent || null,
     finishReason,
