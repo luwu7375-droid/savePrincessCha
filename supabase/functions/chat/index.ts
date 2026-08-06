@@ -580,6 +580,32 @@ async function extractToolCallsFromStream(response: Response): Promise<{
   };
 }
 
+function hasMeaningfulAssistantContent(content: string | null): boolean {
+  if (!content?.trim()) return false;
+
+  // Treat punctuation-only handoffs (for example "..." or "……") as empty.
+  // Some OpenAI-compatible gateways return these when asked to produce a
+  // text-only reply after tool execution.
+  const withoutMarkupOrPunctuation = content
+    .replace(/<\/?(?:visible_thought|reply)>/gi, "")
+    .replace(/[\s\p{P}\p{S}]/gu, "");
+  return withoutMarkupOrPunctuation.length > 0;
+}
+
+function makeAssistantSseResponse(content: string): Response {
+  const chunk = {
+    choices: [{
+      index: 0,
+      delta: { role: "assistant", content },
+      finish_reason: "stop",
+    }],
+  };
+  return new Response(
+    `data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  );
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function jsonResponse(body: unknown, status = 200) {
@@ -3182,7 +3208,7 @@ CedarToy 的实时工具结果是唯一事实来源。
       result.response.clone(),
     );
     const emptyReplyAfterTools = toolNames.length > 0 &&
-      !finalToolInfo.assistantContent?.trim();
+      !hasMeaningfulAssistantContent(finalToolInfo.assistantContent);
     if (finalToolInfo.hasToolCalls || emptyReplyAfterTools) {
       toolRoundLimitReached = finalToolInfo.hasToolCalls;
       console.warn("[chat] forcing_text_handoff", {
@@ -3200,6 +3226,22 @@ CedarToy 的实时工具结果是唯一事实来源。
       });
       result = await callModelWithFallback(tierProviders, messages);
       totalModelCallMs += result.modelCallMs;
+
+      const handoffInfo = await extractToolCallsFromStream(
+        result.response.clone(),
+      );
+      if (!hasMeaningfulAssistantContent(handoffInfo.assistantContent)) {
+        console.error("[chat] invalid_text_handoff", {
+          requestId,
+          contentLength: handoffInfo.assistantContent?.length ?? 0,
+        });
+        result = {
+          ...result,
+          response: makeAssistantSseResponse(
+            "这次游戏工具执行后没有生成有效回复。我不能假装已经玩完。请再发一次“继续”，我会从已保存的进度接着处理。",
+          ),
+        };
+      }
     }
 
     // Return the first normal assistant response after all requested tools ran.
