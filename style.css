@@ -529,6 +529,7 @@ body {
 .msg-stack {
   display: flex;
   flex-direction: column;
+  position: relative;
   max-width: min(68%, 480px);
   min-width: 0;
   align-items: flex-start;
@@ -595,7 +596,12 @@ body {
 .msg-actions {
   display: flex;
   gap: 2px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 2;
   margin-top: 2px;
+  white-space: nowrap;
   opacity: 0;
   transition: opacity 0.18s ease;
 }
@@ -3833,12 +3839,16 @@ img.msg-image {
   cursor: pointer;
   border-radius: 6px;
   display: flex;
+  position: absolute;
+  left: calc(100% + 4px);
+  bottom: 0;
+  z-index: 2;
   align-items: center;
   justify-content: center;
   opacity: 0;
   transition: opacity 0.2s, background 0.2s;
   flex-shrink: 0;
-  margin-top: 4px;
+  margin: 0;
 }
 
 .msg-row:hover .speaker-btn {
