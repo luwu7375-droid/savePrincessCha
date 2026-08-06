@@ -21,3 +21,6 @@ verify_jwt = false
 
 [functions.chat-test]
 verify_jwt = false
+
+[functions.mcp-host]
+verify_jwt = false

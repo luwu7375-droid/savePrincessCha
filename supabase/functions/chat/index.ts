@@ -23,10 +23,10 @@ import { makeCorsHeaders } from "../_shared/cors.ts";
 import {
   isToolRuntimeCandidate,
   prepareToolMessages,
-  CHAT_TOOLS,
+  executeRuntimeTool,
+  getChatToolDefinitions,
 } from "../_shared/tool-runtime.ts";
 import {
-  executeMcpTool,
   type McpToolContext,
 } from "../_shared/mcp-registry.ts";
 
@@ -3170,12 +3170,28 @@ CedarToy 的实时工具结果是唯一事实来源。
     });
   }
 
+  const rawRuntimeToolMessage =
+    (typeof payload.rawUserMessage === "string" && payload.rawUserMessage)
+      ? payload.rawUserMessage
+      : lastUserMessage;
+  const runtimeContext: McpToolContext = {
+    supabaseUrl,
+    serviceRoleKey,
+    authorization,
+    userId: typeof payload.userId === "string" ? payload.userId : undefined,
+    conversationId,
+    rawUserMessage: rawRuntimeToolMessage,
+  };
+
   try {
     // Keep executing tool calls until the model produces a user-facing reply.
     // A CedarToy turn commonly needs list -> guide -> play, so a single tool
     // round leaves the final play call unexecuted and the UI with no reply.
     const maxToolRounds = 4;
-    let result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
+    let chatTools = supabaseUrl && serviceRoleKey
+      ? await getChatToolDefinitions(runtimeContext)
+      : [];
+    let result = await callModelWithFallback(tierProviders, messages, chatTools);
     let totalModelCallMs = result.modelCallMs;
     let toolRoundLimitReached = false;
 
@@ -3216,7 +3232,7 @@ CedarToy 的实时工具结果是唯一事实来源。
             rawUserMessage: lastUserMessage,
           };
 
-          const content = await executeMcpTool(call.function.name, args, toolContext);
+          const content = await executeRuntimeTool(call.function.name, args, toolContext);
 
           toolResults.push({
             role: "tool",
@@ -3254,7 +3270,7 @@ CedarToy 的实时工具结果是唯一事实来源。
 
       // Let the model either call the next tool or generate the final reply.
       console.log("[chat] calling model with tool results");
-      result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
+      result = await callModelWithFallback(tierProviders, messages, chatTools);
       totalModelCallMs += result.modelCallMs;
     }
 

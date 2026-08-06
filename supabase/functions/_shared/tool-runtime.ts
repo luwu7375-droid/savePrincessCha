@@ -5,6 +5,11 @@ import {
   type McpToolContext,
 } from "./mcp-registry.ts";
 import { getActiveSession } from "./game-session-manager.ts";
+import {
+  executeRemoteMcpTool,
+  getRemoteMcpToolDefinitions,
+  isRemoteMcpAlias,
+} from "./remote-mcp-runtime.ts";
 
 type ToolCall = {
   id: string;
@@ -24,6 +29,28 @@ type ToolPlanResult = {
 const MAX_TOOL_CALLS_PER_TURN = 2;
 
 export const CHAT_TOOLS = getOpenAiToolDefinitions();
+
+export async function getChatToolDefinitions(context: McpToolContext) {
+  try {
+    const remote = await getRemoteMcpToolDefinitions(context);
+    return [...CHAT_TOOLS, ...remote];
+  } catch (error) {
+    console.warn("[tool-runtime] remote MCP discovery failed safely", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return CHAT_TOOLS;
+  }
+}
+
+export async function executeRuntimeTool(
+  name: string,
+  args: Record<string, unknown>,
+  context: McpToolContext,
+) {
+  return isRemoteMcpAlias(name)
+    ? await executeRemoteMcpTool(name, args, context)
+    : await executeMcpTool(name, args, context);
+}
 
 export function isToolRuntimeCandidate(message: string): boolean {
   const text = String(message || "").trim();
