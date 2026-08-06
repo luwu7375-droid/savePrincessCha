@@ -1,5 +1,6 @@
 name: Deploy Supabase Edge Functions
 
+# Touching this workflow intentionally retriggers the full deployment chain.
 on:
   workflow_dispatch:
   push:
