@@ -245,6 +245,9 @@ function generateEpisode(
     consolidation_run_id: consolidationRunId,
     consolidation_batch: new Date().toISOString().split("T")[0], // YYYY-MM-DD
     consolidation_model: "simple-clustering-v1",
+    reality_layer: "shared_reality",
+    reliability: "verified",
+    source_event_ids: [],
   };
 }
 

@@ -9,6 +9,7 @@
 
 import { runAutoMemoryVault, promoteAutoMemoryCandidates } from "./auto_memory_vault.ts";
 import { calculateCostCny } from "../_shared/cost-calculator.ts";
+import { recordSharedConversationEvent } from "../_shared/companion-world.ts";
 
 // ── drainSSEStream ────────────────────────────────────────────────────────────
 // Reads an OpenAI-compatible SSE stream, concatenates delta.content tokens,
@@ -235,6 +236,19 @@ export async function runAfterChatVault(params: AfterChatVaultParams): Promise<v
       }));
       return;
     }
+
+    // The contact itself is verified shared reality. Store only a compact
+    // source-backed summary; do not canonize model-authored scene details here.
+    recordSharedConversationEvent({
+      supabaseUrl,
+      serviceRoleKey,
+      userId,
+      conversationId,
+      userMessageId,
+      summary: `kk 与小 Cha 进行了对话：${userMessage.replace(/\s+/g, " ").slice(0, 180)}`,
+    }).catch((error) => console.warn("[companion-world] event write skipped", {
+      error: error instanceof Error ? error.message : String(error),
+    }));
 
     const vaultEnabled = Deno.env.get("AUTO_MEMORY_VAULT_ENABLED") === "true";
     console.log(JSON.stringify({

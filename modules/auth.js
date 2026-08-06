@@ -124,6 +124,10 @@
       ).catch(err => console.error('Failed to update diary card:', err));
     }
 
+    if (window.SPCompanionWorld) {
+      window.SPCompanionWorld.refresh();
+    }
+
     // Desktop only: auto-focus on init. Mobile must not trigger soft keyboard.
     if (typeof window.isMobileLayout === "function" && !window.isMobileLayout()) {
       const messageInput = document.getElementById("messageInput");

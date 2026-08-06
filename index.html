@@ -89,6 +89,12 @@
           </div>
         </section>
         <section class="home-card-grid">
+          <article class="soft-card home-mini-card companion-world-now" id="companionWorldNow" data-presence="away">
+            <div class="card-kicker">此刻的他 <span class="world-presence-dot" aria-hidden="true"></span></div>
+            <strong data-world-location>北京 · 高层公寓的起居室</strong>
+            <p data-world-activity>安静地待着</p>
+            <p class="muted" data-world-detail>留着一盏暖色的灯</p>
+          </article>
           <button type="button" class="soft-card home-mini-card" data-placeholder-route="/home/mastodon"><div class="card-kicker">Cha 的毛象动态 <span>2h</span></div><p class="muted">@cha@mastodon.social</p><p>咖啡 + 雨天 + 一本书 = 完美的下午</p><div class="mastodon-thumb"></div><div class="card-actions"><span>♡ 36</span><span>↻ 4</span><span>…</span></div></button>
           <button type="button" class="soft-card home-mini-card diary-card" data-placeholder-route="/home/diary"><div class="card-kicker">Cha 的日记 <span>最近更新</span></div><p>今天去了九溪，蚊虫好多，但风景很美，和你聊天很开心。</p><div class="diary-note"><span class="diary-note-action">翻开日记 →</span></div></button>
         </section>
@@ -1080,6 +1086,7 @@
       document.write('<script src="modules/voice-message.js?v=' + v + '" charset="utf-8"><\/script>');
       // Phase 1 refactored modules
       document.write('<script src="modules/user-preferences.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/companion-world.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/auth.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/worldbook.js?v=' + v + '" charset="utf-8"><\/script>');
       document.write('<script src="modules/settings-manager.js?v=' + v + '" charset="utf-8"><\/script>');

@@ -5,6 +5,7 @@
 
 import type { CompanionState, CompanionStateAction } from "./companion-state-types.ts";
 import { advanceCompanionState, isInDndTime } from "./companion-state-engine.ts";
+import { ensureCompanionWorld, recordCompanionWorldActivity } from "./companion-world.ts";
 
 interface TickResult {
   userId: string;
@@ -151,6 +152,15 @@ async function startActivity(
     activity_label: "随便翻翻网页",
     activity_started_at: new Date().toISOString(),
     immersion: 0,
+  });
+
+  await ensureCompanionWorld({ supabaseUrl, serviceRoleKey, userId });
+  await recordCompanionWorldActivity({
+    supabaseUrl,
+    serviceRoleKey,
+    userId,
+    activity: "在自己的北京随手读点东西",
+    sceneLocation: "高层公寓的书桌边",
   });
 }
 

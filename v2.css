@@ -5371,3 +5371,32 @@ body {
     justify-content: flex-start;
   }
 }
+.companion-world-now {
+  text-align: left;
+  min-height: 168px;
+}
+
+.companion-world-now strong {
+  display: block;
+  margin: 18px 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.companion-world-now p {
+  margin: 6px 0;
+}
+
+.world-presence-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: #98a09a;
+}
+
+.companion-world-now[data-presence="present"] .world-presence-dot {
+  background: #77a886;
+  box-shadow: 0 0 0 3px rgba(119, 168, 134, 0.14);
+}

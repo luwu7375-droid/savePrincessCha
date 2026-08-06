@@ -46,6 +46,9 @@ export interface NarrativeEpisode {
   consolidation_model: string | null;
   created_at: string;
   updated_at: string;
+  reality_layer: "digital_reality" | "companion_world" | "shared_reality";
+  reliability: "verified" | "narrative_canon" | "imagined";
+  source_event_ids: string[];
 }
 
 export interface ConsolidationInput {
