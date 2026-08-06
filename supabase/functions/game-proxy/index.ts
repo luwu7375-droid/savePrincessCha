@@ -7,7 +7,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { corsHeaders } from "../_shared/cors.ts";
 
 const CEDARTOY_BASE = "https://toy.cedarstar.org";
-const GAME_PROXY_VERSION = "2026-08-05-cedartoy-url-token-auth";
+const GAME_PROXY_VERSION = "2026-08-06-validate-real-games";
 const CEDARTOY_TIMEOUT_MS = 8_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_CALLS = 30;
@@ -87,6 +87,48 @@ function json(body: unknown, status = 200): Response {
 function bearerToken(req: Request): string {
   const auth = req.headers.get("Authorization") || "";
   return auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+}
+
+function normalizeGameIdentity(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+function cedarGameExists(listResult: unknown, requestedGame: string): boolean {
+  const wanted = normalizeGameIdentity(requestedGame);
+  if (!wanted) return false;
+
+  const strings: string[] = [];
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      strings.push(value);
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed !== value) visit(parsed);
+      } catch {
+        // CedarToy may return human-readable text; keep it for token matching.
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (value && typeof value === "object") {
+      Object.values(value as Record<string, unknown>).forEach(visit);
+    }
+  };
+  visit(listResult);
+
+  return strings.some((value) => {
+    const normalized = normalizeGameIdentity(value);
+    if (normalized === wanted) return true;
+
+    const tokens = value
+      .split(/[^\p{L}\p{N}_-]+/u)
+      .map(normalizeGameIdentity)
+      .filter(Boolean);
+    return tokens.includes(wanted);
+  });
 }
 
 async function authenticate(
@@ -214,6 +256,26 @@ Deno.serve(async (req) => {
         if (!row.account_token) {
           throw new Error("machine_registration_required");
         }
+        // Never let a model invent a game identifier. CedarToy's live list is
+        // the source of truth and is checked immediately before every play call.
+        const liveGames = await callTool(
+          "list_games",
+          {},
+          undefined,
+          row.account_token,
+        );
+        if (!cedarGameExists(liveGames, body.game)) {
+          console.warn("[game-proxy] rejected unsupported game", {
+            userIdPrefix: effectiveUserId.slice(0, 6),
+            requestedGame: body.game.slice(0, 80),
+          });
+          return json({
+            error: "cedartoy_game_not_supported",
+            requested_game: body.game,
+            message: "该游戏不在 CedarToy 当前游戏列表中，请先重新读取游戏列表。",
+          }, 400);
+        }
+
         const playParams: Record<string, unknown> = {
           game: body.game,
           action: body.gameAction,
