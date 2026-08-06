@@ -28,11 +28,10 @@ window.currentUserId = window.currentUserId || "";
 // Expose getConfigValue for modules
 window.getConfigValue = getConfigValue;
 
-const _VALID_TIERS_INIT = ["instant", "general", "advanced"];
-const _storedTier = localStorage.getItem("modelTier");
-let currentModelTier = _VALID_TIERS_INIT.includes(_storedTier) ? _storedTier : "general";
-// Sanitise: if stored value was invalid, overwrite it so localStorage stays clean.
-if (!_VALID_TIERS_INIT.includes(_storedTier)) localStorage.setItem("modelTier", "general");
+// Chat now has one canonical mode. Keep the legacy request field set to
+// "general" until the backend API can remove tier compatibility entirely.
+const currentModelTier = "general";
+localStorage.removeItem("modelTier");
 
 // ── Provider Groups & Model Role Mapping ──────────────────────────────────────
 
@@ -2717,16 +2716,9 @@ function syncChaUnreadCount() {
 }
 
 async function copyMessage(row, btn) {
-  // 多气泡时用原始完整内容（去掉 ||| 分隔符），单气泡降级取 textContent
-  let text = "";
-  const msgId = row.dataset.msgId || row.dataset.bubbleSibling;
-  if (msgId) {
-    const entry = chatMessages.find(m => m.id === msgId);
-    if (entry && typeof entry.content === "string") {
-      text = entry.content.replace(/\|\|\|/g, " ").trim();
-    }
-  }
-  if (!text) text = row.querySelector(".message")?.textContent || "";
+  // A split reply is rendered as separate rows. Copy only the bubble whose
+  // action button was pressed; copying the whole stored response is surprising.
+  const text = row.querySelector(".message")?.textContent?.trim() || "";
   const feedback = (label) => {
     if (!btn) return;
     const prev = btn.textContent;
@@ -7302,66 +7294,6 @@ function initInputKeyboardHints(root = document) {
   });
 }
 
-// ── Model tier selector ────────────────────────────────────────────────────────
-
-const VALID_TIERS = ["instant", "general", "advanced"];
-const TIER_LABELS = { instant: "Instant", general: "General", advanced: "Advanced" };
-
-function updateTierDropdownLabel() {
-  const el = document.getElementById("tierDropdownLabel");
-  if (el) el.textContent = TIER_LABELS[currentModelTier] || currentModelTier;
-}
-
-function initTierBar() {
-  const buttons = document.querySelectorAll("#tierBar .tier-btn");
-  buttons.forEach((btn) => {
-    if (btn.dataset.tier === currentModelTier) btn.classList.add("active");
-    btn.addEventListener("click", () => {
-      const tier = btn.dataset.tier;
-      if (!VALID_TIERS.includes(tier)) return;
-      currentModelTier = tier;
-      localStorage.setItem("modelTier", tier);
-      buttons.forEach((b) => b.classList.toggle("active", b.dataset.tier === tier));
-      updateTierDropdownLabel();
-    });
-  });
-
-  // Mobile tier dropdown
-  const dropdownBtn = document.getElementById("tierDropdownBtn");
-  if (dropdownBtn) {
-    updateTierDropdownLabel();
-    dropdownBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      // Build menu
-      const existing = document.querySelector(".tier-dropdown-menu");
-      if (existing) { existing.remove(); return; }
-      const menu = document.createElement("div");
-      menu.className = "composer-menu tier-dropdown-menu";
-      for (const tier of VALID_TIERS) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        if (tier === currentModelTier) btn.classList.add("active-item");
-        const label = document.createElement("span");
-        label.textContent = TIER_LABELS[tier];
-        btn.appendChild(label);
-        btn.addEventListener("click", () => {
-          menu.remove();
-          currentModelTier = tier;
-          localStorage.setItem("modelTier", tier);
-          buttons.forEach((b) => b.classList.toggle("active", b.dataset.tier === tier));
-          updateTierDropdownLabel();
-        });
-        menu.appendChild(btn);
-      }
-      document.body.appendChild(menu);
-      const rect = dropdownBtn.getBoundingClientRect();
-      menu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
-      menu.style.left = `${rect.left}px`;
-      setTimeout(() => document.addEventListener("click", () => menu.remove(), { once: true }), 0);
-    });
-  }
-}
-
 if (autoReplyToggle) {
   autoReplyToggle.addEventListener("click", () => {
     autoReplyEnabled = !autoReplyEnabled;
@@ -8898,7 +8830,6 @@ function _syncChatMoreSubsheet(id) {
 // (Auth state management moved to modules/auth.js)
 
 
-initTierBar();
 
 // ── V2 primary shell / navigation ─────────────────────────────────────────────
 // ── Shell navigation — delegated to modules/v2-shell.js ─────────────────────

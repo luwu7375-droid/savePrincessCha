@@ -2434,12 +2434,9 @@ Deno.serve(async (request) => {
     immersionDisplay[immersion]
   }。`;
 
-  // Token cap hint in system prompt.
-  // instant/general: ask for ~150 chars to control cost.
-  // advanced: give the model room to breathe, still bounded by max_tokens.
-  const tokenCapInstruction = tier === "advanced"
-    ? ""
-    : "\n\n【回复长度硬限制】本次回复控制在 150 中文字以内，不要超出。";
+  // One length policy for chat, independent of the legacy provider tier.
+  const tokenCapInstruction =
+    "\n\n【回复总长度】整次回复通常控制在 300 中文字以内。需要完成用户明确要求的分析或任务时可以略超，不要为了凑长度重复。";
 
   let systemContent = `<identity_boundary priority="highest">
 人类用户是：卡卡 / kk / 宝宝。
@@ -2510,9 +2507,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 【分段回复】
 你可以用 ||| 把回复拆成几条消息气泡，让它像真人连续发几条消息。
 规则：
-- 默认 1–3 条。
-- 情绪有停顿、转折、补充、犹豫、突然想到时，可以 4–5 条。
-- 最多 5 条。
+- 气泡数量没有固定目标。由语气和内容自然决定。
 - 不要为了分段而分段，不要把一个完整短句拆碎。
 - 每个气泡应该是一口气能说完的自然片段。
 - 禁止每个词/每个短语都切一条。

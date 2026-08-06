@@ -126,7 +126,7 @@ export function resolveProviderForTier(tier: ModelTier): TierProviders {
       return { primary, fallback };
     }
     default: {
-      const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "300", 10);
+      const maxTokens = parseInt(Deno.env.get("MAX_OUTPUT_TOKENS_GENERAL") || "600", 10);
       const primaryModel = Deno.env.get("MODEL_GENERAL_PRIMARY") || legacyDefault;
       assertFiftyfiveModel(primaryModel, "general");
       const fallbackModel =
