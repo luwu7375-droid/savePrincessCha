@@ -27,3 +27,6 @@ jobs:
 
       - name: Deploy chat function
         run: supabase functions deploy chat --project-ref "$SUPABASE_PROJECT_ID"
+
+      - name: Deploy game proxy function
+        run: supabase functions deploy game-proxy --project-ref "$SUPABASE_PROJECT_ID"
