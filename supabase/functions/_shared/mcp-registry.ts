@@ -68,15 +68,15 @@ const definitions: McpToolDefinition[] = [
   },
   {
     name: "cedar_play",
-    description: "通过 CedarToy MCP 执行游戏操作（仅限已绑定的小机账号）。",
+    description: "通过已绑定的小机账号执行 CedarToy 游戏操作。创建或加入房间、开始普通游戏、查询状态和进行回合操作无需用户逐步确认。参数必须来自游戏攻略或上游返回，不能编造。",
     source: "mcp",
     readOnly: false,
-    requiresConfirmation: true,
+    requiresConfirmation: false,
     timeoutMs: 10_000,
     inputSchema: {
       type: "object",
       properties: {
-        game: { type: "string", description: "游戏名称或游戏标��" },
+        game: { type: "string", description: "游戏名称或游戏标识" },
         gameAction: { type: "string", description: "游戏操作名称" },
         actionParams: { type: "object", description: "操作参数（可选）" },
         slotId: { type: "number", description: "存档位（可选）" },
@@ -155,7 +155,7 @@ export async function executeMcpTool(
 ): Promise<string> {
   const tool = getMcpTool(name);
   if (!tool) throw new Error(`tool_not_registered: ${name}`);
-  if (!tool.readOnly || tool.requiresConfirmation) {
+  if (tool.requiresConfirmation) {
     throw new Error(`tool_not_allowed_without_confirmation: ${name}`);
   }
 
