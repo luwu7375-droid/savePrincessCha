@@ -202,6 +202,21 @@
     const sc = token.replace(/^:|:$/g, "");
     const matches = emojiCatalog.byShortcode[sc];
     if (matches && matches.length === 1) return matches[0];
+    // Model prompts use stable lexicon ids such as `stelpolva:blobcat_peek`,
+    // while models naturally shorten them to `:blobcat_peek:`. When several
+    // packs expose the same shortcode, prefer the lexicon's canonical pack
+    // instead of leaking the raw token into chat.
+    if (matches && matches.length > 1) {
+      const lexiconEntry = (window.SPEmoji.EMOJI_LEXICON || []).find(
+        (entry) => entry.emojiId === `stelpolva:${sc}` || entry.emojiId.endsWith(`:${sc}`)
+      );
+      if (lexiconEntry) {
+        const preferred = matches.find((emoji) =>
+          emoji.id === lexiconEntry.emojiId || emoji.canonicalToken === `:${lexiconEntry.emojiId}:`
+        );
+        if (preferred) return preferred;
+      }
+    }
     return null;
   }
 

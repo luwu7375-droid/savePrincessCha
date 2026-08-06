@@ -162,19 +162,17 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
  * fallback 自动切分最多 3 条，保守兜底。
  */
 function splitBubbles(rawText) {
-  const MAX_EXPLICIT = 5;
+  const MAX_EXPLICIT = 3;
   const MAX_FALLBACK = 3;
-  const MIN_BUBBLE_CHARS = 6;
+  const MIN_BUBBLE_CHARS = 10;
 
   // ── Primary split: explicit ||| separator ────────────────────────────────
   if (rawText.includes("|||")) {
     const parts = rawText.split("|||").map(s => s.trim()).filter(s => s.length > 0);
     if (parts.length <= 1) return [rawText.trim()];
-    if (parts.length <= MAX_EXPLICIT) return parts;
-    // more than 5: merge tail into the 5th bubble
-    const result = parts.slice(0, MAX_EXPLICIT - 1);
-    result.push(parts.slice(MAX_EXPLICIT - 1).join(""));
-    return result;
+    // The model sometimes over-separates one thought into several tiny bubbles.
+    // Merge those fragments before applying the cap so the rhythm stays human.
+    return mergeFallbackSegments(parts, MAX_EXPLICIT, MIN_BUBBLE_CHARS);
   }
 
   // ── Fallback split: conservative auto-split ──────────────────────────────
