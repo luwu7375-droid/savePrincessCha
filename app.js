@@ -11355,34 +11355,7 @@ function initV2Composer() {
     });
     panel.appendChild(actions);
 
-    const gamesTitle = document.createElement("div");
-    gamesTitle.className = "plus-panel-title";
-    gamesTitle.textContent = "游戏模式";
-    panel.appendChild(gamesTitle);
-
-    const games = document.createElement("div");
-    games.className = "plus-panel-games";
-    [
-      ["truth-dare.jpg", "真心话大冒险", "/chat/games/truth-dare"],
-      ["turtle-soup.jpg", "海龟汤", "/chat/games/turtle-soup"],
-      ["trpg.jpg", "跑团", "/chat/games/trpg"],
-      ["wicked.jpg", "女巫的毒药", "/chat/games/wicked"],
-    ].forEach(([asset, label, route]) => {
-      const game = document.createElement("button");
-      game.type = "button";
-      game.className = "plus-panel-game";
-      game.innerHTML = `<img src="assets/icons/games/${asset}" alt=""><span>${label}</span>`;
-      game.addEventListener("click", () => {
-        closePanel();
-        showDialog({
-          title: "游戏入口已预留",
-          body: `${route} 将接入 sandbox 游戏模式，本轮先保留入口。`,
-          confirmLabel: "知道了",
-        });
-      });
-      games.appendChild(game);
-    });
-    panel.appendChild(games);
+    // Game shortcuts intentionally live in Game Center, not the chat “+” panel.
 
     // 浮模式：append 到 chat-shell，加 plus-panel-open class（和 emoji 一致）
     const chatShell = document.querySelector(".chat-shell");
