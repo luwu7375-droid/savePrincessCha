@@ -148,7 +148,7 @@ function normalizeCustomEndpoint(raw: string): string {
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
-const FUNCTION_VERSION = "server-tools-v4-game-truth";
+const FUNCTION_VERSION = "server-tools-v5-game-resume";
 
 type CedarPlayLog = {
   success: boolean | null;

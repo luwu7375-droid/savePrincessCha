@@ -1,3 +1,11 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import {
+  createGameSession,
+  getActiveSession,
+  recordAction,
+  updateGameState,
+} from "./game-session-manager.ts";
+
 export type McpToolContext = {
   supabaseUrl: string;
   serviceRoleKey: string;
@@ -148,6 +156,145 @@ function stringArg(args: Record<string, unknown>, key: string): string {
   return typeof args[key] === "string" ? String(args[key]).trim() : "";
 }
 
+type CedarSessionState = {
+  success: boolean | null;
+  room_id: string | null;
+  session_id: string | null;
+  game_id: string | null;
+  status: string;
+};
+
+function extractCedarSessionState(value: unknown): CedarSessionState {
+  const state: CedarSessionState = {
+    success: null,
+    room_id: null,
+    session_id: null,
+    game_id: null,
+    status: "active",
+  };
+  const seen = new Set<unknown>();
+  const aliases: Record<"room_id" | "session_id" | "game_id", string[]> = {
+    room_id: ["room_id", "roomId", "room"],
+    session_id: ["session_id", "sessionId"],
+    game_id: ["game_id", "gameId"],
+  };
+
+  const visit = (item: unknown, depth = 0): void => {
+    if (depth > 8 || item === null || item === undefined || seen.has(item)) return;
+    if (typeof item === "string") {
+      try {
+        visit(JSON.parse(item), depth + 1);
+      } catch {
+        // CedarToy also returns human-readable content; it is not session state.
+      }
+      return;
+    }
+    if (typeof item !== "object") return;
+    seen.add(item);
+    if (Array.isArray(item)) {
+      item.forEach((child) => visit(child, depth + 1));
+      return;
+    }
+    const record = item as Record<string, unknown>;
+    if (state.success === null) {
+      if (typeof record.success === "boolean") state.success = record.success;
+      else if (typeof record.ok === "boolean") state.success = record.ok;
+      else if (record.isError === true) state.success = false;
+    }
+    for (const [target, keys] of Object.entries(aliases) as Array<[
+      keyof typeof aliases,
+      string[],
+    ]>) {
+      if (state[target]) continue;
+      const found = keys.map((key) => record[key]).find((candidate) =>
+        typeof candidate === "string" || typeof candidate === "number"
+      );
+      if (found !== undefined) state[target] = String(found);
+    }
+    const rawStatus = record.status ?? record.state ?? record.game_status;
+    if (typeof rawStatus === "string" && rawStatus.trim()) {
+      state.status = rawStatus.trim().toLowerCase();
+    }
+    Object.values(record).forEach((child) => visit(child, depth + 1));
+  };
+  visit(value);
+  return state;
+}
+
+function localSessionStatus(status: string): "active" | "paused" | "completed" | "abandoned" {
+  if (/completed|complete|finished|ended|success|won|lost/.test(status)) return "completed";
+  if (/paused/.test(status)) return "paused";
+  if (/abandoned|cancelled|canceled|closed|expired/.test(status)) return "abandoned";
+  return "active";
+}
+
+async function persistCedarPlaySession(
+  context: McpToolContext,
+  game: string,
+  gameAction: string,
+  actionParams: Record<string, unknown> | undefined,
+  result: unknown,
+): Promise<void> {
+  if (!context.userId) return;
+  const cedarState = extractCedarSessionState(result);
+  if (cedarState.success === false) return;
+  const status = localSessionStatus(cedarState.status);
+  let session = await getActiveSession(
+    context.userId,
+    context.supabaseUrl,
+    context.serviceRoleKey,
+  );
+
+  if (session && session.game_name !== game) {
+    const supabase = createClient(context.supabaseUrl, context.serviceRoleKey);
+    await supabase.from("game_sessions").update({
+      status: "abandoned",
+      ended_at: new Date().toISOString(),
+    }).eq("id", session.id);
+    session = null;
+  }
+  if (!session) {
+    session = await createGameSession(
+      context.userId,
+      game,
+      game,
+      context.supabaseUrl,
+      context.serviceRoleKey,
+    );
+  }
+
+  const previous = session.current_state || {};
+  await updateGameState(session.id, {
+    ...previous,
+    room_id: cedarState.room_id ?? previous.room_id ?? null,
+    session_id: cedarState.session_id ?? previous.session_id ?? null,
+    game_id: cedarState.game_id ?? previous.game_id ?? game,
+    status: cedarState.status,
+    conversation_id: context.conversationId || previous.conversation_id || null,
+    last_action: gameAction,
+    last_action_params: actionParams || {},
+    last_response: result,
+  }, context.supabaseUrl, context.serviceRoleKey);
+  await recordAction(
+    session.id,
+    gameAction,
+    result,
+    { background: false },
+    context.supabaseUrl,
+    context.serviceRoleKey,
+  );
+
+  if (status !== "active") {
+    const supabase = createClient(context.supabaseUrl, context.serviceRoleKey);
+    await supabase.from("game_sessions").update({
+      status,
+      ended_at: status === "completed" || status === "abandoned"
+        ? new Date().toISOString()
+        : null,
+    }).eq("id", session.id);
+  }
+}
+
 export async function executeMcpTool(
   name: string,
   args: Record<string, unknown>,
@@ -228,12 +375,31 @@ export async function executeMcpTool(
     }
 
     case "cedar_play": {
-      const game = stringArg(args, "game");
+      let game = stringArg(args, "game");
       const gameAction = stringArg(args, "gameAction");
-      if (!game || !gameAction) throw new Error("game_and_gameAction_required");
-      const actionParams = args.actionParams && typeof args.actionParams === "object"
+      let actionParams = args.actionParams && typeof args.actionParams === "object"
         ? args.actionParams as Record<string, unknown>
         : undefined;
+      const continuing = /^(继续|接着|下一回合|continue|next)$/i.test(
+        context.rawUserMessage.trim(),
+      );
+      if (continuing && context.userId) {
+        const active = await getActiveSession(
+          context.userId,
+          context.supabaseUrl,
+          context.serviceRoleKey,
+        );
+        if (!active) throw new Error("cedar_active_session_not_found");
+        game = active.game_name;
+        const saved = active.current_state || {};
+        actionParams = {
+          room_id: saved.room_id,
+          session_id: saved.session_id,
+          game_id: saved.game_id,
+          ...actionParams,
+        };
+      }
+      if (!game || !gameAction) throw new Error("game_and_gameAction_required");
       const slotId = typeof args.slotId === "number" ? args.slotId : undefined;
       const data = await fetchJson(
         `${context.supabaseUrl}/functions/v1/game-proxy`,
@@ -254,6 +420,7 @@ export async function executeMcpTool(
         },
         tool.timeoutMs,
       );
+      await persistCedarPlaySession(context, game, gameAction, actionParams, data);
       return compactResult(data);
     }
 

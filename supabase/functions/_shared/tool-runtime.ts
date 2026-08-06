@@ -4,6 +4,7 @@ import {
   getOpenAiToolDefinitions,
   type McpToolContext,
 } from "./mcp-registry.ts";
+import { getActiveSession } from "./game-session-manager.ts";
 
 type ToolCall = {
   id: string;
@@ -29,7 +30,7 @@ export function isToolRuntimeCandidate(message: string): boolean {
   if (!text) return false;
   const hasUrl = /https?:\/\/[^\s<>"']+/i.test(text);
   const asksAboutGames =
-    /(cedar\s*toy|cedartoy|海龟汤|你画我猜|五子棋|狼人杀|有什么游戏|游戏列表|游戏规则|怎么玩|想玩游戏|玩个游戏)/i
+    /(cedar\s*toy|cedartoy|海龟汤|你画我猜|五子棋|狼人杀|有什么游戏|游戏列表|游戏规则|怎么玩|想玩游戏|玩个游戏|^(继续|接着|下一回合|continue|next)$)/i
       .test(text);
   return hasUrl || asksAboutGames;
 }
@@ -111,6 +112,51 @@ export async function prepareToolMessages(params: {
 
   if (!candidateMatched) {
     return { messages, used: false, names: [] };
+  }
+
+  const continueRequested = /^(继续|接着|下一回合|continue|next)$/i.test(
+    context.rawUserMessage.trim(),
+  );
+  if (continueRequested && context.userId) {
+    const active = await getActiveSession(
+      context.userId,
+      context.supabaseUrl,
+      context.serviceRoleKey,
+    );
+    if (!active) {
+      return {
+        used: true,
+        names: ["cedar_restore_session"],
+        messages: [...messages, {
+          role: "system",
+          content:
+            '<tool_results source="save_princess_game_session" trust="internal">' +
+            JSON.stringify({ ok: false, error: "cedar_active_session_not_found" }) +
+            "</tool_results>\n没有可续接的游戏。请直接如实告诉用户，不要创建新房间或编造进度。",
+        }],
+      };
+    }
+    const state = active.current_state || {};
+    return {
+      used: true,
+      names: ["cedar_restore_session"],
+      messages: [...messages, {
+        role: "system",
+        content:
+          '<tool_results source="save_princess_game_session" trust="internal">' +
+          JSON.stringify({
+            ok: true,
+            game: active.game_name,
+            room_id: state.room_id || null,
+            session_id: state.session_id || null,
+            game_id: state.game_id || active.game_name,
+            status: state.status || active.status,
+            last_action: state.last_action || null,
+            last_response: state.last_response || null,
+          }) +
+          "</tool_results>\n用户要求继续当前游戏。必须先依据以上 active session 调用 cedar_play 提交下一回合；不要重新列游戏、重新创建房间或只口头续写。",
+      }],
+    };
   }
 
   // Registered P0 tools use deterministic routing. This avoids a second model
