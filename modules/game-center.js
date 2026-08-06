@@ -332,6 +332,12 @@
     }
 
     function showAuthReminder() {
+      // Only show reminder if user is in unregistered state
+      const cached = getCachedStatus();
+      if (cached && cached.status !== "unregistered") {
+        return; // Don't show reminder if already in progress or bound
+      }
+
       const hint = document.getElementById("cedartoyBindingHint");
       if (!hint) return;
 
@@ -342,9 +348,13 @@
         ${originalHint}
       `;
 
-      // Show a toast notification as well
-      if (typeof window.showToast === "function") {
-        window.showToast("请先在游戏中心登录 CedarToy 账号", 5000);
+      // Show toast only once per session to avoid annoyance
+      const toastShownKey = "cedartoy_auth_toast_shown";
+      if (!sessionStorage.getItem(toastShownKey)) {
+        if (typeof window.showToast === "function") {
+          window.showToast("请先在游戏中心登录 CedarToy 账号", 3000);
+        }
+        sessionStorage.setItem(toastShownKey, "true");
       }
     }
   }
