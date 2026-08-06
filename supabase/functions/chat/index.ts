@@ -3018,14 +3018,19 @@ ${candidateLines}`;
   }
 
   try {
-    // Pass tools to the model so it can call them
-    const result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
+    // Keep executing tool calls until the model produces a user-facing reply.
+    // A CedarToy turn commonly needs list -> guide -> play, so a single tool
+    // round leaves the final play call unexecuted and the UI with no reply.
+    const maxToolRounds = 4;
+    let result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
+    let totalModelCallMs = result.modelCallMs;
 
-    // Check if model produced tool_calls
-    const toolInfo = await extractToolCallsFromStream(result.response.clone());
+    for (let toolRound = 0; toolRound < maxToolRounds; toolRound += 1) {
+      const toolInfo = await extractToolCallsFromStream(result.response.clone());
+      if (!toolInfo.hasToolCalls || !supabaseUrl || !serviceRoleKey) break;
 
-    if (toolInfo.hasToolCalls && supabaseUrl && serviceRoleKey) {
       console.log("[chat] tool_calls detected:", {
+        round: toolRound + 1,
         count: toolInfo.toolCalls.length,
         tools: toolInfo.toolCalls.map(tc => tc.function.name),
         finishReason: toolInfo.finishReason,
@@ -3088,53 +3093,16 @@ ${candidateLines}`;
 
       // Add tool results to messages
       messages.push(...toolResults);
-      toolNames = toolInfo.toolCalls.map(tc => tc.function.name);
+      toolNames.push(...toolInfo.toolCalls.map(tc => tc.function.name));
 
-      // Call model again with tool results to generate final response
+      // Let the model either call the next tool or generate the final reply.
       console.log("[chat] calling model with tool results");
-      const finalResult = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
-
-      logRecord.model_call_ms = result.modelCallMs + finalResult.modelCallMs;
-      logRecord.model = finalResult.usedModel;
-      logRecord.provider = finalResult.usedProvider;
-      logRecord.fallback_used = finalResult.fallbackUsed;
-      logRecord.fallback_model = finalResult.fallbackModel;
-      logRecord.fallback_provider = finalResult.fallbackProvider;
-      logRecord.fallback_reason = finalResult.fallbackReason;
-
-      if (!finalResult.response.ok) {
-        let errorBody: unknown = { error: "模型请求失败" };
-        const text = await finalResult.response.text();
-        try {
-          errorBody = JSON.parse(text);
-        } catch {
-          errorBody = { error: text };
-        }
-        logRecord.error_stage = finalResult.fallbackUsed
-          ? "fallback_upstream"
-          : "model_upstream";
-        logRecord.total_ms = Date.now() - t0;
-        emitLog(logRecord);
-        return jsonResponse(errorBody, finalResult.response.status);
-      }
-
-      logRecord.total_ms = Date.now() - t0;
-      emitLog(logRecord);
-
-      // Return final response with tool execution completed
-      return new Response(finalResult.response.body, {
-        status: finalResult.response.status,
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "text/event-stream",
-          "x-save-princess-function-version": FUNCTION_VERSION,
-          "x-save-princess-tools-used": toolNames.join(",") || "",
-        },
-      });
+      result = await callModelWithFallback(tierProviders, messages, CHAT_TOOLS);
+      totalModelCallMs += result.modelCallMs;
     }
 
-    // No tool calls, proceed with original response
-    logRecord.model_call_ms = result.modelCallMs;
+    // Return the first normal assistant response after all requested tools ran.
+    logRecord.model_call_ms = totalModelCallMs;
     logRecord.model = result.usedModel;
     logRecord.provider = result.usedProvider;
     logRecord.fallback_used = result.fallbackUsed;
