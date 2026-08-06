@@ -163,7 +163,6 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
  */
 function splitBubbles(rawText) {
   const MAX_EXPLICIT = 3;
-  const MAX_FALLBACK = 3;
   const MIN_BUBBLE_CHARS = 10;
 
   // ── Primary split: explicit ||| separator ────────────────────────────────
@@ -175,26 +174,9 @@ function splitBubbles(rawText) {
     return mergeFallbackSegments(parts, MAX_EXPLICIT, MIN_BUBBLE_CHARS);
   }
 
-  // ── Fallback split: conservative auto-split ──────────────────────────────
-  const text = rawText.trim();
-  // Short replies stay as one bubble
-  if (text.length < 45) return [text];
-
-  // Split on newlines first, then on sentence-ending punctuation with a
-  // following clause start (转折词、语气转换). Keep delimiter attached.
-  const segments = text
-    .split(/(?<=[\n])|(?<=[。！？；])(?=\s*(?:但|不过|然后|而且|可是|所以|就是|其实|话说|对了|哦对|嗯|啊|哈|诶))/)
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
-
-  if (segments.length <= 1) {
-    // Try plain sentence-ending split for longer texts
-    const plainSegs = text.split(/(?<=[。！？\n])/).map(s => s.trim()).filter(s => s.length > 0);
-    if (plainSegs.length <= 1) return [text];
-    return mergeFallbackSegments(plainSegs, MAX_FALLBACK, MIN_BUBBLE_CHARS);
-  }
-
-  return mergeFallbackSegments(segments, MAX_FALLBACK, MIN_BUBBLE_CHARS);
+  // No explicit semantic boundary means one bubble. Length, punctuation and
+  // line breaks are presentation details, not reliable conversational turns.
+  return [rawText.trim()];
 }
 
 /** Merge short segments and cap total count for fallback splitting */

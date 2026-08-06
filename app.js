@@ -1384,23 +1384,37 @@ async function callImageGenerationDirect(prompt, params, options = {}) {
     let lastError = '生成失败';
     for (let i = 0; i < candidates.length; i++) {
       const model = candidates[i];
-      const response = await fetch(`${supabaseUrl}/functions/v1/image-generation`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          conversation_id: conversationId,
-          provider_config: { endpoint: provider.endpoint, api_key: provider.apiKey, model },
-          size: params.size,
-          quality: params.quality,
-          style: params.style,
-          generation_source: options.source === "proactive" ? "proactive" : "explicit",
-          use_identity_reference: params.useIdentityReference !== false,
-        }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45_000);
+      let response;
+      try {
+        response = await fetch(`${supabaseUrl}/functions/v1/image-generation`, {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            prompt,
+            conversation_id: conversationId,
+            provider_config: { endpoint: provider.endpoint, api_key: provider.apiKey, model },
+            size: params.size,
+            quality: params.quality,
+            style: params.style,
+            generation_source: options.source === "proactive" ? "proactive" : "explicit",
+            use_identity_reference: params.useIdentityReference !== false,
+          }),
+        });
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          lastError = "生成超时";
+          continue;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (response.ok) {
         const result = await response.json();
@@ -2261,7 +2275,11 @@ async function requestStreamingReply(replyMode = "auto") {
       const parsed = JSON.parse(match[1]);
       const validRoutes = new Set(["portrait", "slice_of_life", "together", "mood"]);
       if (validRoutes.has(parsed?.route) && typeof parsed?.description === "string" && parsed.description.trim()) {
-        action = { route: parsed.route, description: parsed.description.trim().slice(0, 1200) };
+        action = {
+          route: parsed.route,
+          description: parsed.description.trim().slice(0, 1200),
+          source: parsed.source === "explicit" ? "explicit" : "proactive",
+        };
       }
     } catch (error) {
       console.warn("[image-action] Invalid model action:", error);
@@ -2426,29 +2444,38 @@ async function requestStreamingReply(replyMode = "auto") {
   maintainBottomAnchor("assistant-done");
   if (window.SavePrincessImagePolicy) {
     const proactiveGate = canShareProactiveImage();
-    const proactiveAction = proactiveGate.allowed
-      ? (assistantImageAction || buildFallbackProactiveImageAction(finalReply))
-      : null;
+    const selectedImageAction = assistantImageAction?.source === "explicit"
+      ? assistantImageAction
+      : (proactiveGate.allowed ? assistantImageAction : null);
     console.info("[image-action] proactive decision:", {
       modelProposed: !!assistantImageAction,
+      source: assistantImageAction?.source || null,
       allowed: proactiveGate.allowed,
       reason: proactiveGate.reason,
-      selected: !!proactiveAction,
+      selected: !!selectedImageAction,
     });
-    if (proactiveAction) {
+    if (selectedImageAction) {
       const imagePrompt = window.SavePrincessImagePolicy.buildImagePrompt(
-        proactiveAction.route,
-        proactiveAction.description,
+        selectedImageAction.route,
+        selectedImageAction.description,
       );
-      const imageParams = window.SavePrincessImagePolicy.getDefaultImageParams(proactiveAction.route);
-      callImageGenerationDirect(imagePrompt, imageParams, { source: "proactive" }).then(async (result) => {
+      const imageParams = window.SavePrincessImagePolicy.getDefaultImageParams(selectedImageAction.route);
+      callImageGenerationDirect(imagePrompt, imageParams, { source: selectedImageAction.source }).then(async (result) => {
         if (result.success) {
-          recordProactiveImageSuccess();
+          if (selectedImageAction.source === "proactive") recordProactiveImageSuccess();
           await reloadHistory();
         } else {
           console.warn("[image-action] Proactive generation failed:", result.error);
+          if (selectedImageAction.source === "explicit") {
+            showToast(`图片没生成出来：${result.error || "未知错误"}。消息已正常回复。`);
+          }
         }
-      }).catch(error => console.warn("[image-action] Unexpected proactive failure:", error));
+      }).catch(error => {
+        console.warn("[image-action] Unexpected generation failure:", error);
+        if (selectedImageAction.source === "explicit") {
+          showToast("图片没生成出来。消息已正常回复。");
+        }
+      });
     }
   }
   // After stream ends, start short-polling for memory promotion results
@@ -8149,43 +8176,6 @@ async function handleSubmit() {
     setChatStatus("Cha 正在回复，等他说完再发～");
     setTimeout(() => setChatStatus(""), 2000);
     return;
-  }
-
-  // ── Image Intent Detection ──────────────────────────────────────────────
-  // Check if user wants to generate an image (only for text-only messages)
-  console.log('[image-policy] Module loaded:', !!window.SavePrincessImagePolicy);
-  console.log('[image-policy] User text:', text);
-
-  if (text && !hasValidImages && window.SavePrincessImagePolicy) {
-    const imageIntent = window.SavePrincessImagePolicy.detectImageIntent(text);
-    console.log('[image-policy] Detection result:', imageIntent);
-
-    if (imageIntent.should_generate) {
-      console.log('[image-generation] Intent detected! Intercepting normal chat flow');
-      console.log('[image-generation] Route:', imageIntent.route, 'Face policy:', imageIntent.face_policy);
-
-      // Clear input and handle image generation directly
-      messageInput.value = "";
-      autoResizeTextarea(messageInput);
-
-      // Reset composer state
-      if (window.updateComposerState) {
-        window.updateComposerState({
-          hasText: false,
-          hasImage: false,
-          hasQuote: false,
-          hasAttachment: false
-        });
-      }
-
-      // Generate image and skip normal chat flow
-      await handleImageGeneration(imageIntent, text);
-      return;
-    } else {
-      console.log('[image-policy] No image intent detected, proceeding with normal chat');
-    }
-  } else if (!window.SavePrincessImagePolicy) {
-    console.warn('[image-policy] SavePrincessImagePolicy module not loaded!');
   }
 
   // ── URL detection: confirm before send ──────────────────────────────────
