@@ -48,3 +48,6 @@ jobs:
 
       - name: Deploy game proxy function
         run: supabase functions deploy game-proxy --project-ref "$SUPABASE_PROJECT_ID"
+
+      - name: Deploy MCP host function
+        run: supabase functions deploy mcp-host --project-ref "$SUPABASE_PROJECT_ID"
