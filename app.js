@@ -11268,16 +11268,6 @@ function initV2Composer() {
       },
     });
     addPanelItem(actions, {
-      label: "接话",
-      desc: autoReplyEnabled ? "已开启" : "已关闭",
-      icon: '<img src="assets/icons/chat/regenerate.svg" alt="">',
-      onClick: () => {
-        autoReplyEnabled = !autoReplyEnabled;
-        updateAutoReplyToggle();
-        if (!autoReplyEnabled) cancelAutoReplyTimer();
-      },
-    });
-    addPanelItem(actions, {
       label: "戳一下",
       desc: "让 Cha 接话",
       icon: '<img src="assets/icons/chat/poke.svg" alt="">',
