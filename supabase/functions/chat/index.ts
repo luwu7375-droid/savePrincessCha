@@ -150,6 +150,60 @@ function normalizeCustomEndpoint(raw: string): string {
 
 const FUNCTION_VERSION = "server-tools-v4-game-truth";
 
+type CedarPlayLog = {
+  success: boolean | null;
+  room_id: string | null;
+  session_id: string | null;
+  game_id: string | null;
+  status: string | null;
+};
+
+function extractCedarPlayLog(content: string): CedarPlayLog {
+  const fields: CedarPlayLog = {
+    success: null,
+    room_id: null,
+    session_id: null,
+    game_id: null,
+    status: null,
+  };
+  const seen = new Set<unknown>();
+
+  const visit = (value: unknown, depth = 0): void => {
+    if (depth > 8 || value === null || value === undefined || seen.has(value)) return;
+    if (typeof value === "string") {
+      try {
+        visit(JSON.parse(value), depth + 1);
+      } catch {
+        // Ignore plain text so no game content leaks into logs.
+      }
+      return;
+    }
+    if (typeof value !== "object") return;
+
+    seen.add(value);
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+
+    const record = value as Record<string, unknown>;
+    if (fields.success === null) {
+      if (typeof record.success === "boolean") fields.success = record.success;
+      else if (typeof record.ok === "boolean") fields.success = record.ok;
+    }
+    for (const key of ["room_id", "session_id", "game_id", "status"] as const) {
+      const value = record[key];
+      if (fields[key] === null && (typeof value === "string" || typeof value === "number")) {
+        fields[key] = String(value);
+      }
+    }
+    Object.values(record).forEach((item) => visit(item, depth + 1));
+  };
+
+  visit(content);
+  return fields;
+}
+
 // ── Legacy memory guard ────────────────────────────────────────────────────────
 //
 // Set LEGACY_MEMORY_ENABLED=true in Supabase secrets to re-enable the old
@@ -3091,6 +3145,9 @@ CedarToy 的实时工具结果是唯一事实来源。
             name: call.function.name,
             resultLength: content.length,
           });
+          if (call.function.name === "cedar_play") {
+            console.log("[chat] cedar_play result:", extractCedarPlayLog(content));
+          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           toolResults.push({
