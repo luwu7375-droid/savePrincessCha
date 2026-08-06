@@ -1087,12 +1087,12 @@ function _initSettingsApiSubpage(container) {
             ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
           },
           body: JSON.stringify(roleId === 'imageGeneration' ? {
-            prompt: 'Using the attached approved B identity turnaround, generate a neutral photorealistic close-up of the exact same fictional adult man. Preserve face identity, hair and muted amber-gold eye.',
+            prompt: 'Generate a neutral image-provider connectivity test without a person or identifiable face.',
             conversation_id: typeof getActiveConversationId === 'function' ? getActiveConversationId() : 'model-test',
             provider_config: { endpoint: providerData.endpoint, api_key: providerData.apiKey, model: config.model },
             size: '1024x1024',
             quality: 'low',
-            use_identity_reference: true,
+            use_identity_reference: false,
             test_only: true
           } : {
             endpoint: providerData.endpoint, apiKey: providerData.apiKey, model: config.model

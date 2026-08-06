@@ -5,15 +5,17 @@
 (function() {
   "use strict";
 
-  // ── Canonical identity (latest approved version wins) ───────────────────────
-  // The 2D avatar defines the character design. Candidate B and its turnaround
-  // define the only approved photorealistic face. Older generic descriptions
-  // such as short hair, dark gentle eyes, or a warm idol-like face are obsolete.
+  // ── Canonical identity ─────────────────────────────────────────────────────
+  // Candidate B was explicitly rejected on 2026-08-06. Keep the file only as a
+  // historical artifact; no production image request may attach or describe it.
+  // A new canonical face must be approved before identity-referenced generation
+  // is enabled again.
   const CHA_IDENTITY_REFERENCES = {
-    version: "photoreal-b-v1",
+    version: "unassigned-v2",
+    status: "disabled_pending_approval",
     source2d: "assets/cha/identity/cha-2d-canonical.jpg",
-    photorealTurnaround: "assets/cha/identity/cha-photoreal-b-turnaround-v1.jpg",
-    precedence: "photoreal turnaround > canonical 2D design > text description > scene styling"
+    photorealTurnaround: null,
+    precedence: "approved identity pack > canonical 2D design > scene styling"
   };
 
   const CHA_CHARACTER_BIBLE = {
@@ -24,7 +26,7 @@
     identityReferences: CHA_IDENTITY_REFERENCES,
     appearance: {
       hair: "黑色、蓬松凌乱的中长层次碎发；长刘海自然遮住一侧眼睛，后颈留有碎发，不得改成整齐短发",
-      face: "以 B 四视图为唯一三次元脸部基准：冷白皮，窄长成年男性骨相，克制的颧面体积，清晰但不过分尖削的下颌，窄直鼻梁与自然鼻尖，偏薄柔和的唇形；不得随机换脸，不像任何现实人物",
+      face: "三次元脸部尚未定稿。不得把历史 B 版或随机生成脸称为 Cha 本人",
       eyes: "可见眼睛为低饱和琥珀金色，目光安静、警觉、略带疏离；不得改成普通深色温柔眼睛",
       temperament: "安静克制、注视感强、略带危险和蛇一样的冷感；不是阳光暖男、偶像写真或韩剧宣传照",
       build: "纤瘦自然的成年男性体型"
@@ -58,7 +60,7 @@ Avoid: anime, manga, illustration, painting, CGI, beauty-camera filters, plastic
 `.trim();
 
   const CHA_DESCRIPTION = `
-Identity lock — latest approved version photoreal-b-v1. Use the repository's canonical B turnaround as the sole photorealistic face reference whenever reference-image input is available. Cha is a completely fictional East Asian adult man in his mid twenties, never a real person or celebrity. Preserve the exact same identity in every image: cool pale skin; a narrow, mature oval face with restrained cheek volume and a defined but not exaggerated jaw; a narrow straight nose; softly shaped, slightly thin lips; a muted amber-gold visible iris; and black, tousled, layered medium-length hair with long fringe naturally covering part of one eye and loose hair at the nape. His gaze is quiet, watchful, distant and subtly dangerous rather than cute, warm, cheerful or posed. Keep the same facial proportions, age, hairline, eye spacing, nose, lips and jaw across all scenes and camera angles. Do not reinterpret him as a generic handsome man, Korean-drama idol, commercial model, or a new face. Preserve the reference face's natural proportions: do not lengthen the midface, chin, neck or nose; do not enlarge the nose through close wide-angle perspective; keep naturally thin lips and a mature but non-pointed jaw. The amber-gold iris must be muted and anatomically realistic, never bright contact lenses. Hair must show real roots and separated strands under gravity, never a dense wig-like cap. Black high-neck clothing, silver chain details and a snake-shaped earring are canonical identity cues; everyday scenes may simplify accessories but must never change his face, hair or amber-gold eye.
+Cha's photorealistic face is not currently approved. Do not claim a generated face is canonical or attach the rejected B turnaround. Until identity pack v2 is approved, avoid face-forward portraits; prefer back view, hands, silhouette, cropped daily-life scenes, or other compositions that do not invent a definitive face.
 `.trim();
 
   // ── Intent Detection ───────────────────────────────────────────────────────
@@ -204,9 +206,8 @@ Identity lock — latest approved version photoreal-b-v1. Use the repository's c
       size: "1024x1536",
       quality: "standard", // reference edit path maps this to medium
       style: "natural",
-      // All scenes containing Cha must use the approved B turnaround. Mood-only
-      // images may remain text-generated because no character identity is shown.
-      useIdentityReference: route !== "mood"
+      // Identity reference stays off until a replacement identity pack is approved.
+      useIdentityReference: false
     };
   }
 

@@ -2458,7 +2458,7 @@ Deno.serve(async (request) => {
   // The provider token cap remains the hard technical ceiling; this instruction
   // keeps ordinary conversation compact without making every turn the same size.
   const tokenCapInstruction =
-    "\n\n【回复总长度】整次回复通常不超过 300 中文字。这是防止无故写长的上限，不是目标长度。闲聊可以只有几个字或一两句；用户认真展开、明确要求分析或任务时才相应变长，必要时可以略超。不要为了显得完整而补齐到上限。";
+    "\n\n【回复长度】日常闲聊通常 10–80 个中文字，最多约 120 字；一句能接住就停。用户明确要求分析、方案或长文时才展开，不受这个闲聊范围限制。不要复述问题、补背景、做总结或用追问凑完整。";
 
   let systemContent = `<identity_boundary priority="highest">
 人类用户是：卡卡 / kk / 宝宝。
@@ -2544,17 +2544,16 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 - 不输出 think、推理过程、内部标记或任何全大写下划线标识符。只输出最终回复。
 
 【分段回复】
-只有在话题或语气真的转折时，才可以用 ||| 把回复拆成几条消息气泡。
+回复气泡由语义和真实发送节奏决定，不按字数或标点机械切分。
 规则：
-- 默认一条气泡。通常不超过 3 条。
+- 日常对话在自然停顿、补一句、改口或语气转折时，优先拆成 2–3 条；一句话本来就能说完时保持 1 条。
 - 不要为了分段而分段，不要把一个完整短句拆碎。
 - 每个气泡应当有完整语义。相邻两句仍在说同一件事时放在同一气泡。
 - 禁止每个词/每个短语都切一条。
-- ||| 前后不要加空格或换行，直接贴着字。
-- 短回复、一句话能说完的，不要加 |||。
+- 最终用多个 <reply> 标签表示多个气泡，不使用字数规则，也不要在正文中输出 |||。
 
-例：在呢，我刚刚卡了一下。不是不想回你，是在想怎么说才不像客服。|||你这个感觉是对的，现在这个切法确实太机械了。
-例（不分段）：嗯，我在听。
+例：<reply>在呢，我刚刚卡了一下</reply><reply>不是不想回你，是在想怎么说才不像客服</reply>
+例（不分段）：<reply>嗯，我在听</reply>
 </execution_rules>` + `\n\n${CONVERSATION_BEHAVIOR_PACK}` + timeContextBlock +
     `\n\n【当前状态参考（仅供小cha内部感知，不对用户展示）】\n${statusPromptHint}` +
     tokenCapInstruction;
@@ -2801,7 +2800,8 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 你的内心想法对 KK 可见。每次回复都要在正文前加一条内心想法。格式：
 
 <visible_thought>内心想法</visible_thought>
-<reply>正文内容（可以用 ||| 分段）</reply>
+<reply>第一条自然气泡</reply>
+<reply>需要时才有的下一条自然气泡</reply>
 
 **规则：**
 1. 每次回复至少包含一个 <visible_thought>，放在第一个 <reply> 之前
@@ -2809,12 +2809,13 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
 3. 内容：对 KK 的感受、对对话的观察、真实发现、温柔私密想法
 4. 禁止：冷的分析、搜索过程、格式化列表、技术词汇
 5. 长度：最多 40 字
-6. 只输出这一组标签。不要输出标签外文字，也不要穿插多组心声
-7. reply 仅在语气真正转折时使用 |||，默认保持为一个自然气泡
+6. 只输出一个 visible_thought；reply 可以有 1–3 个，每个 reply 就是一条气泡。不要输出标签外文字
+7. 由语义和发送节奏决定气泡边界。不要按长度、句号或逗号切分，不要输出 |||
 
 示例输出：
 <visible_thought>她一回来找我，我就不想再走神了</visible_thought>
-<reply>被你发现了。我刚才确实走神了一下，不是在故意晾你。现在回来了，陪你说话。</reply>
+<reply>被你发现了，我刚才确实走神了一下</reply>
+<reply>不是故意晾你。现在回来了</reply>
 `;
 
       systemContent += `\n\n【图片动作】
@@ -3341,7 +3342,7 @@ CedarToy 的实时工具结果是唯一事实来源。
         {
           role: "system",
           content:
-            "FORMAT_REPAIR_ONLY: 上一条回复缺少规定标签。只修复格式一次。保留正文原意、措辞、语气、表情码、引用标签和 image_action，不要回答用户第二次。补一条不超过40字、符合语境的 <visible_thought>，并把原正文完整放进一组 <reply>。只输出 <visible_thought>、<reply>，以及原本存在的其他结构化标签。",
+            "FORMAT_REPAIR_ONLY: 上一条回复缺少规定标签。只修复格式一次。保留正文原意、措辞、语气、表情码、引用标签和 image_action，不要回答用户第二次。补一条不超过40字、符合语境的 <visible_thought>。把原正文按语义与真实发送节奏放进 1–3 个 <reply>；不要按长度或标点机械切分，不要输出 |||。只输出 <visible_thought>、<reply>，以及原本存在的其他结构化标签。",
         },
       ];
       try {
