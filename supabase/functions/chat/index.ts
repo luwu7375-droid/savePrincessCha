@@ -3174,15 +3174,23 @@ CedarToy 的实时工具结果是唯一事实来源。
       totalModelCallMs += result.modelCallMs;
     }
 
-    // The last model response may itself be another tool call. Never send that
-    // body to the UI as an empty assistant reply. Force a text-only, truthful
-    // handoff from the tool results already present in messages.
-    const finalToolInfo = await extractToolCallsFromStream(result.response.clone());
-    if (finalToolInfo.hasToolCalls) {
-      toolRoundLimitReached = true;
-      console.warn("[chat] tool_round_limit_reached", {
+    // The last model response may itself be another tool call or may contain no
+    // user-facing text at all. Never send either body to the UI as an empty
+    // assistant reply. Force a text-only, truthful handoff from the tool results
+    // already present in messages.
+    const finalToolInfo = await extractToolCallsFromStream(
+      result.response.clone(),
+    );
+    const emptyReplyAfterTools = toolNames.length > 0 &&
+      !finalToolInfo.assistantContent?.trim();
+    if (finalToolInfo.hasToolCalls || emptyReplyAfterTools) {
+      toolRoundLimitReached = finalToolInfo.hasToolCalls;
+      console.warn("[chat] forcing_text_handoff", {
         requestId,
         maxToolRounds,
+        reason: finalToolInfo.hasToolCalls
+          ? "pending_tool_calls"
+          : "empty_reply_after_tools",
         pendingTools: finalToolInfo.toolCalls.map((call) => call.function.name),
       });
       messages.push({
