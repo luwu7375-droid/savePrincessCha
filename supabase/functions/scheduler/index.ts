@@ -27,8 +27,8 @@ type JobResult = {
   metadata?: Record<string, unknown>;
 };
 
-const SCHEDULER_VERSION = "pg5-v1"; // Updated for consolidation
-const JOBS: SchedulerJobName[] = ["companion_tick", "web_explore", "dream_nightly"];
+const SCHEDULER_VERSION = "pg6-v1"; // Updated for game_runner
+const JOBS: SchedulerJobName[] = ["companion_tick", "web_explore", "dream_nightly", "game_runner"];
 
 function dbHeaders(serviceRoleKey: string) {
   return {
@@ -263,6 +263,46 @@ async function runCompanionTickJob(
   }
 }
 
+async function runGameRunner(
+  settings: AppSettingsForScheduler,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<JobResult> {
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/game-runner`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`game-runner HTTP ${res.status}`);
+    }
+
+    const result = await res.json();
+
+    return {
+      job_name: "game_runner",
+      status: result.ok ? "succeeded" : "failed",
+      reason: result.reason || "no reason",
+      metadata: {
+        task_id: result.task_id,
+        runner_status: result.status,
+        turns_executed: result.turns_executed,
+      },
+    };
+  } catch (err) {
+    console.error("game_runner job error:", err);
+    return {
+      job_name: "game_runner",
+      status: "failed",
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 async function runJob(
   jobName: SchedulerJobName,
   settings: AppSettingsForScheduler,
@@ -272,6 +312,7 @@ async function runJob(
   if (jobName === "companion_tick") return runCompanionTickJob(settings, supabaseUrl, serviceRoleKey);
   if (jobName === "web_explore") return runWebExplore(settings, supabaseUrl, serviceRoleKey);
   if (jobName === "dream_nightly") return runDreamNightly(settings, supabaseUrl, serviceRoleKey);
+  if (jobName === "game_runner") return runGameRunner(settings, supabaseUrl, serviceRoleKey);
   return { job_name: jobName, status: "skipped", reason: "reserved hook" };
 }
 

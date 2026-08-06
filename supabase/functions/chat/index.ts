@@ -30,6 +30,8 @@ import {
 import {
   type McpToolContext,
 } from "../_shared/mcp-registry.ts";
+import { detectGameIntent } from "../_shared/game-intent-detector.ts";
+import { createGameTask, getActiveGameTask } from "../_shared/game-task-manager.ts";
 
 const corsHeaders = makeCorsHeaders({
   "Access-Control-Expose-Headers":
@@ -2634,10 +2636,46 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
         try {
           const gameProxyUrl = `${supabaseUrl}/functions/v1/game-proxy`;
 
-          // Check if user wants to play turtle soup specifically
-          const wantsTurtleSoup = /海龟汤|turtle.*soup/i.test(memUserMessage);
+          // Detect autonomous intent (user wants Cha to play independently)
+          const intent = detectGameIntent(memUserMessage);
 
-          if (wantsTurtleSoup) {
+          if (intent.autonomous && intent.gameId && intent.gameName) {
+            // User wants Cha to play autonomously and report back later
+            console.log("[game_invitation] Autonomous intent detected:", intent);
+
+            // Check if there's already an active task
+            const existingTask = await getActiveGameTask(
+              supabaseUrl,
+              serviceRoleKey,
+              memUserId,
+            );
+
+            if (existingTask) {
+              systemContent +=
+                `\n\n<game_context source="async_game_runner" priority="high">\n你已经有一个正在进行的游戏任务：「${existingTask.game_name}」\n\n状态：${existingTask.status}\n回合数：${existingTask.turn_count}/${existingTask.max_turns}\n\n自然地告诉用户你正在玩那个游戏，不能同时玩两个。如果用户想取消旧任务，可以说"取消那个游戏"。\n</game_context>`;
+            } else {
+              // Create async task
+              const task = await createGameTask(supabaseUrl, serviceRoleKey, {
+                userId: memUserId,
+                conversationId: conversationId || "default",
+                gameId: intent.gameId,
+                gameName: intent.gameName,
+                maxTurns: 30,
+                maxRetries: 5,
+                deadlineHours: 2,
+              });
+
+              console.log("[game_invitation] Created autonomous task:", task.id);
+
+              systemContent +=
+                `\n\n<game_context source="async_game_runner" priority="high">\n你刚刚创建了一个独立游戏任务！\n\n游戏：${intent.gameName}\n任务 ID：${task.id}\n\n现在你可以：\n1. 自然地告诉用户"好，我去玩${intent.gameName}，玩完告诉你"\n2. 说明你会在后台独立玩，不需要等待\n3. 玩完后会主动告诉用户结果\n\n注意：\n- 不要说"我不能真的玩"，你确实会独立玩游戏\n- 不要描述技术细节（任务、后台、worker 等）\n- 用自然口吻，就像真的要去玩一样\n</game_context>`;
+            }
+          } else {
+            // Synchronous game play in chat (existing logic)
+            // Check if user wants to play turtle soup specifically
+            const wantsTurtleSoup = /海龟汤|turtle.*soup/i.test(memUserMessage);
+
+            if (wantsTurtleSoup) {
             // Auto-start turtle soup game
             console.log("[game_invitation] Auto-starting turtle_soup game");
 
@@ -2716,6 +2754,7 @@ assistant 绝不能说"我是用户""我是卡卡""我是宝宝"。
                 `\n\n<game_context source="cedartoy_mcp" priority="high">\n用户想玩游戏。以下是可用的游戏列表：\n\n${games}\n\n你可以：\n1. 根据用户兴趣推荐 1-2 个游戏\n2. 简单介绍推荐的游戏（不要复述全部列表）\n3. 问用户想玩哪个\n4. 如果用户明确选择了某个游戏，告诉用户"我去开一局"，然后自然地开始玩\n\n注意：\n- 不要说"我不能真的玩游戏"或"我只是 AI"，你确实可以通过 MCP 连接到 CedarToy 玩游戏\n- 人类用户（KK）有自己的账号，可以在游戏中心自己玩\n- 你（小cha）也有自己的账号，可以自主游玩并分享体验\n</game_context>`;
             }
           }
+          }  // Close else block for synchronous game logic
         } catch (error) {
           console.error("Failed to handle game invitation:", error);
           // Silently fail, don't break the conversation
