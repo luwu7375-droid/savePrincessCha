@@ -152,7 +152,6 @@ function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo, thought) {
     const thoughtEl = document.createElement("div");
     thoughtEl.className = "message assistant cha-message message-thought";
     thoughtEl.textContent = thought;
-    thoughtEl.style.cssText = "opacity: 0.7; font-style: italic; font-size: 0.9em; margin-bottom: 4px;";
     el.prepend(thoughtEl);
   }
 

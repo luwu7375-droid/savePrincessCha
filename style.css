@@ -592,6 +592,19 @@ body {
   border: 1px solid var(--border);
 }
 
+/* Visible thoughts are an aside, not a normal assistant reply bubble. */
+.message-thought {
+  padding: 2px 4px;
+  margin-bottom: 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: 0.9em;
+  font-style: italic;
+  opacity: 0.72;
+}
+
 /* ── Message actions ── */
 .msg-actions {
   display: flex;
@@ -4363,5 +4376,4 @@ img.msg-image {
     min-height: 40px;
   }
 }
-
 
