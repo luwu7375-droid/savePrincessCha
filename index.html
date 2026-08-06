@@ -218,3 +218,901 @@
       <!-- 聊天更多 bottom sheet -->
       <div id="chatMoreSheet" class="chat-more-sheet hidden" aria-hidden="true" role="dialog" aria-modal="true" aria-label="更多选项">
         <button id="chatMoreOverlay" type="button" class="chat-more-overlay" aria-label="关闭"></button>
+        <div class="chat-more-content">
+          <div class="chat-more-handle" aria-hidden="true"></div>
+          <!-- 主列表 -->
+          <div id="chatMoreMain" class="chat-more-main">
+            <ul class="chat-more-list" role="list">
+              <li><button type="button" class="chat-more-item" id="cmsSearchBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="7.5" cy="7.5" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11.5 11.5L15 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>搜索聊天记录</span></button></li>
+              <li><button type="button" class="chat-more-item" id="cmsMultiSelectBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="3" y="3" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="3" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/></svg><span>多选</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsAppearanceBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="2" y="2" width="13" height="13" rx="3" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 6L13 8.5L9.5 11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>聊天外观</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsReplyStyleBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M3 5h11M3 8.5h7M3 12h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>回复风格</span><span id="cmsReplyStyleVal" class="chat-more-item-value">均衡</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsVoiceBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.5 3L6 5.5H3.5v3H6l2.5 2.5V3z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 6c.5.5 1 1.2 1 2.5s-.5 2-1 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>声音</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsAutoFreqBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="8.5" cy="8.5" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 5.5v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>主动回复频率</span><span id="cmsAutoFreqVal" class="chat-more-item-value">关</span><span class="chat-more-item-arrow">›</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--sub" id="cmsKeepAliveBtn"><svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M8.5 2.5C5.19 2.5 2.5 5.19 2.5 8.5s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6z" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5l2 2 3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>后台与通知</span><span class="chat-more-item-arrow">›</span></button></li>
+            </ul>
+          </div>
+          <!-- 聊天外观子面板 -->
+          <div id="cmsAppearanceSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsAppearanceBack">← 返回</button><span>聊天外观</span></div>
+            <ul class="chat-more-list" role="list">
+              <li><button type="button" class="chat-more-item" id="cmsChatBgBtn"><span>聊天背景</span><span id="cmsChatBgVal" class="chat-more-item-value">默认</span></button></li>
+              <li><button type="button" class="chat-more-item" id="cmsBubbleThemeBtn"><span>气泡主题</span><span id="cmsBubbleThemeVal" class="chat-more-item-value">默认</span></button></li>
+              <li><button type="button" class="chat-more-item chat-more-item--muted" id="cmsChatBgResetBtn"><span>恢复默认</span></button></li>
+            </ul>
+          </div>
+          <!-- 回复风格子面板 -->
+          <div id="cmsReplyStyleSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsReplyStyleBack">← 返回</button><span>回复风格</span></div>
+            <p class="cms-section-hint">影响 Cha 回复的稳定性与创意度</p>
+            <ul class="chat-more-list" role="radiogroup" aria-label="回复风格">
+              <li><button type="button" class="chat-more-item cms-radio-item" data-style="stable" role="radio"><span class="cms-radio-dot"></span><span>稳定</span><span class="chat-more-item-value cms-radio-hint">更可预测、少跑偏</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-style="balanced" role="radio"><span class="cms-radio-dot"></span><span>均衡</span><span class="chat-more-item-value cms-radio-hint">默认，平衡发挥</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-style="creative" role="radio"><span class="cms-radio-dot"></span><span>发散</span><span class="chat-more-item-value cms-radio-hint">更天马行空、有惊喜</span></button></li>
+            </ul>
+          </div>
+          <!-- 主动回复频率子面板 -->
+          <div id="cmsAutoReplyFreqSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsAutoFreqBack">← 返回</button><span>主动回复频率</span></div>
+            <p class="cms-section-hint">设置 Cha 自动接话的频率；选择“关闭”即可停用</p>
+            <ul class="chat-more-list" role="radiogroup" aria-label="主动回复频率">
+              <li><button type="button" class="chat-more-item cms-radio-item" data-freq="off" role="radio"><span class="cms-radio-dot"></span><span>关闭</span><span class="chat-more-item-value cms-radio-hint">只在你发送时回复</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-freq="low" role="radio"><span class="cms-radio-dot"></span><span>偶尔</span><span class="chat-more-item-value cms-radio-hint">较少主动开口</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-freq="normal" role="radio"><span class="cms-radio-dot"></span><span>正常</span><span class="chat-more-item-value cms-radio-hint">默认频率</span></button></li>
+              <li><button type="button" class="chat-more-item cms-radio-item" data-freq="high" role="radio"><span class="cms-radio-dot"></span><span>积极</span><span class="chat-more-item-value cms-radio-hint">更频繁主动接话</span></button></li>
+            </ul>
+          </div>
+          <!-- 后台与通知子面板 -->
+          <div id="cmsKeepAliveSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsKeepAliveBack">← 返回</button><span>后台与通知</span></div>
+            <ul class="chat-more-list" role="list">
+              <li>
+                <div class="chat-more-item chat-more-item--toggle">
+                  <span>保持连接</span>
+                  <span id="cmsKeepAliveStatus" class="cms-status-badge">检测中…</span>
+                  <button type="button" class="cms-toggle" id="cmsKeepAliveToggle" role="switch" aria-checked="false" aria-label="保持连接"></button>
+                </div>
+              </li>
+              <li><div class="chat-more-item chat-more-item--status"><span>通知</span><span class="cms-badge cms-badge--info">系统通知，无法保证实时</span></div></li>
+            </ul>
+          </div>
+          <!-- 声音子面板 -->
+          <div id="cmsVoiceSheet" class="chat-more-subsheet hidden">
+            <div class="cms-subsheet-header"><button type="button" class="cms-subsheet-back" id="cmsVoiceBack">← 返回</button><span>声音</span></div>
+            <p class="cms-section-hint">小cha 朗读消息时的声音设置</p>
+            <ul class="chat-more-list" role="list">
+              <li>
+                <div class="chat-more-item">
+                  <span>朗读引擎</span>
+                  <select id="cmsVoiceEngine" class="cms-select">
+                    <option value="system">系统语音</option>
+                    <option value="elevenlabs">ElevenLabs</option>
+                    <option value="minimax">MiniMax</option>
+                    <option value="local_http">本地 HTTP</option>
+                  </select>
+                </div>
+              </li>
+              <li>
+                <div class="chat-more-item">
+                  <span>语速</span>
+                  <input type="range" id="cmsVoiceRate" min="0.5" max="2.0" step="0.1" value="1.0">
+                  <span id="cmsVoiceRateVal" class="cms-slider-value">1.0</span>
+                </div>
+              </li>
+              <li>
+                <div class="chat-more-item">
+                  <span>音量</span>
+                  <input type="range" id="cmsVoiceVolume" min="0" max="1" step="0.1" value="1.0">
+                  <span id="cmsVoiceVolumeVal" class="cms-slider-value">1.0</span>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div id="princessStatusBar" class="princess-status-bar hidden" aria-label="G 当前状态"></div>
+
+      <section class="message-list" id="messageList" aria-label="消息列表"></section>
+
+      <section class="bubble-system-examples" hidden aria-label="Bubble system examples">
+        <div class="message user-message message-text">
+          <div class="bubble">
+            这是一条文本消息，可以包含 <a href="#">链接</a>
+          </div>
+          <div class="message-meta">
+            <span>14:42</span>
+            <span class="read-indicator"></span>
+          </div>
+        </div>
+
+        <div class="message cha-message message-image">
+          <div class="bubble">
+            <img src="assets/illustrations/couple-space/memory-hall.jpg" alt="Cha 分享的图片" loading="lazy">
+          </div>
+          <div class="message-meta">
+            <span>14:44</span>
+          </div>
+        </div>
+
+        <div class="message user-message message-voice">
+          <div class="bubble">
+            <button class="voice-play-btn" type="button" aria-label="播放语音">▶</button>
+            <div class="voice-waveform">
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+              <div class="voice-waveform-bar"></div>
+            </div>
+            <span class="voice-duration">2:30</span>
+          </div>
+          <div class="message-meta">
+            <span>14:45</span>
+          </div>
+        </div>
+
+        <div class="message cha-message message-reply">
+          <div class="bubble">
+            <div class="quoted-section">
+              <div class="quoted-author">你</div>
+              <div class="quoted-text">刚才说的那句话</div>
+            </div>
+            <div class="reply-text">对，我同意你的想法。</div>
+          </div>
+          <div class="message-meta">
+            <span>14:46</span>
+          </div>
+        </div>
+
+        <div class="message system-message message-system">
+          <div class="bubble">邀请你一起玩《真心话大冒险》。</div>
+        </div>
+
+        <div class="message cha-message message-card">
+          <div class="bubble">
+            <div class="card-content">
+              <div class="card-title">来玩游戏吧！</div>
+              <div class="card-description">真心话大冒险</div>
+            </div>
+            <div class="card-buttons">
+              <button class="card-button primary" type="button">接受</button>
+              <button class="card-button" type="button">拒绝</button>
+            </div>
+          </div>
+          <div class="message-meta">
+            <span>14:47</span>
+          </div>
+        </div>
+      </section>
+
+          <div id="imagePreviewBar" class="image-preview-bar hidden">
+            <div class="img-preview-list" id="imgPreviewList">
+              <!-- 动态插入多个缩略图 -->
+            </div>
+            <div class="img-preview-counter">
+              <span id="imgPreviewCount">0</span> 张
+            </div>
+          </div>
+
+          <!-- URL 检测提示 / web context 提示 -->
+          <div id="webUrlHint" class="web-url-hint" hidden></div>
+          <div id="webContextHint" class="web-context-hint" hidden></div>
+
+          <!-- Quote/reply preview bar -->
+          <div id="replyPreviewBar" class="reply-preview-bar hidden"></div>
+
+          <form class="input-bar" id="chatForm">
+            <input type="file" id="imageInput" accept="image/*" multiple style="display:none">
+            <button id="composerMenuBtn" type="button" class="ghost-icon-btn" title="更多操作" aria-label="更多操作">✦</button>
+            <div class="input-wrapper">
+              <textarea id="messageInput" rows="1" placeholder="说点什么…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send"></textarea>
+              <button id="emojiButton" type="button" class="ghost-icon-btn input-suffix-btn" title="表情" aria-label="表情">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.5"/>
+                  <circle cx="6.5" cy="7.5" r="1" fill="currentColor"/>
+                  <circle cx="11.5" cy="7.5" r="1" fill="currentColor"/>
+                  <path d="M6 11c.5 1 1.5 1.5 3 1.5s2.5-.5 3-1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <button id="voiceInputBtn" type="button" class="ghost-icon-btn" title="语音输入" aria-label="语音输入">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="6" y="2" width="6" height="10" rx="3" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M4 10c0 2.5 2 4.5 5 4.5s5-2 5-4.5M9 14.5v2.5M6 17h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button id="sendButton" type="submit" class="composer-send-btn hidden" aria-label="发送">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 15V3M9 3L4 8M9 3L14 8" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Contact Profile Page (NEW) -->
+      <div id="page-contact-profile" class="chat-subpage" hidden>
+        <header class="contact-profile-header">
+          <button id="contactProfileBackBtn" type="button" class="icon-btn" title="返回" aria-label="返回聊天">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M11 4L6 9L11 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <h1>详细资料</h1>
+          <span class="invisible"><!-- spacer --></span>
+        </header>
+
+        <div class="contact-profile-scroll">
+          <!-- Avatar -->
+          <div class="profile-avatar-section">
+            <button type="button" class="profile-avatar-large" id="profileAvatarBtn" title="更换头像" aria-label="更换头像"></button>
+          </div>
+
+          <!-- Info fields -->
+          <div class="profile-info-list">
+            <div class="profile-info-row" data-field="nickname">
+              <span class="profile-label">昵称</span>
+              <span class="profile-value" id="profileNickname">Cha</span>
+              <button type="button" class="profile-edit-btn" aria-label="编辑昵称">›</button>
+            </div>
+
+            <div class="profile-info-row" data-field="nicknameCalled">
+              <span class="profile-label">Ta 叫我</span>
+              <span class="profile-value" id="profileNicknameCalled">kk</span>
+              <button type="button" class="profile-edit-btn" aria-label="编辑称呼">›</button>
+            </div>
+
+            <div class="profile-info-row" data-field="intro">
+              <span class="profile-label">一句话介绍</span>
+              <span class="profile-value" id="profileIntro">幸福是两双眼睛望向同一个明天</span>
+              <button type="button" class="profile-edit-btn" aria-label="编辑介绍">›</button>
+            </div>
+
+            <div class="profile-info-row profile-info-row--readonly" data-field="status">
+              <span class="profile-label">状态</span>
+              <span class="profile-value profile-status">
+                <span class="online-dot"></span>
+                <span id="profileStatus">在线</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Additional actions (optional for MVP) -->
+          <div class="profile-actions-list">
+            <button type="button" class="profile-action-row" id="profileNotesBtn">
+              <span class="profile-label">备注</span>
+              <span class="profile-value-hint" id="profileNotesHint">未设置</span>
+              <span>›</span>
+            </button>
+
+            <button type="button" class="profile-action-row" id="profileChatBgBtn">
+              <span class="profile-label">聊天背景</span>
+              <span class="profile-value-hint" id="profileChatBgHint">默认</span>
+              <span>›</span>
+            </button>
+          </div>
+
+          <!-- Danger zone -->
+          <div class="profile-actions-list">
+            <button type="button" class="profile-action-row profile-danger" id="profileClearHistoryBtn">
+              <span class="profile-label">清空聊天记录</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Game Center Page -->
+    <section class="v2-page v2-page--game-center" data-page="game-center" aria-label="Game Center">
+      <div class="v2-scroll">
+        <header class="page-header">
+          <button type="button" class="page-back-btn" id="gameCenterBackBtn" aria-label="返回">←</button>
+          <div>
+            <h1>游戏中心 🎮</h1>
+            <p>CedarToy 游戏平台</p>
+          </div>
+          <div class="v2-top-status v2-top-status--inline">
+            <span class="v2-weather">☁</span>
+            <span>冰岛 · -2°C</span>
+            <span>14:43</span>
+          </div>
+        </header>
+        <!-- Compact status bar for bound state -->
+        <div id="cedartoyBoundStatusBar" class="cedartoy-bound-status" hidden>
+          <span class="cedartoy-bound-status__text">🎮 小 Cha 已加入 CedarToy · 已绑定</span>
+          <button type="button" id="cedartoyManageBtn" class="text-btn">管理</button>
+        </div>
+        <section class="cedartoy-binding-card" id="cedartoyBindingCard" aria-live="polite">
+          <div class="cedartoy-binding-copy">
+            <strong>Cha 的小机</strong>
+            <p id="cedartoyMachineStatusText">正在检查小机状态…</p>
+            <div id="cedartoyBindingCodeRow" class="cedartoy-binding-code-row" hidden>
+              <span>绑定码</span>
+              <code id="cedartoyBindingCode"></code>
+              <button id="cedartoyCopyCodeBtn" type="button" class="pill-btn">复制</button>
+            </div>
+            <small id="cedartoyBindingHint">你先在下方登录自己的人类账号；Cha 会通过 MCP 创建自己的小机，再由你输入绑定码完成绑定。</small>
+          </div>
+          <div class="cedartoy-binding-actions">
+            <button id="cedartoyCreateMachineBtn" type="button" class="pill-btn">为 Cha 创建小机</button>
+            <button id="cedartoyRefreshBindingBtn" type="button" class="pill-btn" hidden>我已绑定，刷新状态</button>
+            <button id="cedartoyRegenerateBtn" type="button" class="pill-btn" hidden>重新生成绑定码</button>
+          </div>
+        </section>
+        <div class="game-center-content">
+          <iframe
+            id="gameCenterIframe"
+            src="https://toy.cedarstar.org/"
+            frameborder="0"
+            allow="fullscreen"
+            style="width: 100%; height: calc(100vh - 300px); border: none; border-radius: 12px;"
+          ></iframe>
+        </div>
+      </div>
+    </section>
+
+    <nav class="bottom-tab-bar" aria-label="一级导航">
+      <button type="button" class="bottom-tab active" data-tab="home" aria-label="Home"><img src="assets/icons/nav/home.svg" alt=""></button>
+      <button type="button" class="bottom-tab" data-tab="couple" aria-label="Couple Space"><img src="assets/icons/nav/heart.svg" alt=""></button>
+      <button type="button" class="bottom-tab bottom-tab--cha" data-tab="chat" aria-label="Chat"><img src="assets/icons/nav/cha.svg" alt=""><span class="chat-unread-badge" id="chatUnreadBadge" aria-hidden="true" hidden></span></button>
+      <button type="button" class="bottom-tab" data-tab="playground" aria-label="Playground"><img src="assets/icons/nav/star.svg" alt=""></button>
+      <button type="button" class="bottom-tab" data-tab="setting" aria-label="Setting"><img src="assets/icons/nav/user.svg" alt=""></button>
+    </nav>
+  </div>
+
+  <!-- 记忆管理弹窗（legacy，入口已迁移至记忆中心页面） -->
+  <div id="memoryOverlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span>记忆管理</span>
+        <button id="closeMemoryButton" type="button">✕</button>
+      </div>
+      <div id="memoryList"></div>
+      <!-- 添加记忆 UI 已移除 -->
+      <!-- keep these hidden elements so JS refs don't throw -->
+      <select id="memoryDomainSelect" hidden aria-hidden="true"></select>
+      <textarea id="memoryInput" hidden aria-hidden="true"></textarea>
+      <button id="addMemoryButton" hidden type="button"></button>
+    </div>
+  </div>
+
+  <!-- 系统设置弹窗 -->
+  <div id="systemOverlay" class="overlay hidden">
+    <div class="modal" style="max-width:320px">
+      <div class="modal-header">
+        <span>系统设置</span>
+        <button id="closeSystemButton" type="button">✕</button>
+      </div>
+      <div style="padding:12px 18px 18px">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">主题</div>
+        <div id="themeOptions" style="display:flex;flex-direction:column;gap:6px;">
+          <button type="button" class="theme-option-btn" data-theme-mode="system">跟随系统</button>
+          <button type="button" class="theme-option-btn" data-theme-mode="light">浅色</button>
+          <button type="button" class="theme-option-btn" data-theme-mode="dark">深色</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 记忆中枢 -->
+  <div id="memoryCenterOverlay" class="overlay hidden">
+    <div class="modal memory-center-modal" role="dialog" aria-modal="true" aria-labelledby="mcViewTitle">
+      <!-- 移动端顶部 header（≤820px） -->
+      <div class="mc-shell-header">
+        <button id="mcBackButton" type="button" class="mc-back-btn hidden" aria-label="返回">←</button>
+        <div class="mc-title-block">
+          <div id="mcViewTitle" class="mc-header-title">cha 的房间</div>
+          <div id="mcViewSubtitle" class="mc-header-subtitle">我们一起经历的，都好好收着</div>
+        </div>
+        <button id="closeMemoryCenterButton" type="button" class="mc-close-btn" aria-label="关闭">×</button>
+      </div>
+      <!-- 桌面端两栏工作台（>820px，mc-shell-header 在此断点隐藏） -->
+      <div class="mc-workspace">
+        <nav class="mc-nav" aria-label="记忆中心导航">
+          <div class="mc-nav-brand">
+            <span class="mc-nav-brand-icon">⌂</span>
+            <span class="mc-nav-brand-name">记忆中心</span>
+          </div>
+          <ul class="mc-nav-list" role="list">
+            <li><button type="button" class="mc-nav-item mc-nav-item--active" data-mc-view="room">房间</button></li>
+            <li><button type="button" class="mc-nav-item" data-mc-view="archive">档案馆</button></li>
+            <li><button type="button" class="mc-nav-item" data-mc-view="candidates">候选池</button></li>
+            <li><button type="button" class="mc-nav-item" data-mc-view="timeline">时间线</button></li>
+            <li><button type="button" class="mc-nav-item" data-mc-view="lab">实验室</button></li>
+          </ul>
+          <div class="mc-nav-footer">
+            <button id="mcNavCloseBtn" type="button" class="mc-nav-close-btn">← 返回聊天</button>
+          </div>
+        </nav>
+        <div class="mc-workspace-body">
+          <div id="mcViewRoot" class="mc-view-root"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 记忆调试中心弹窗 -->
+  <div id="memoryDebugOverlay" class="overlay hidden">
+    <div class="modal memory-center-modal memory-debug-modal">
+      <div class="mc-header">
+        <button id="memoryDebugBackBtn" type="button" class="mc-back-btn">← 记忆</button>
+        <span class="mc-header-title">调试中心</span>
+        <button id="closeMemoryDebugButton" type="button" class="mc-close-btn" aria-label="关闭">✕</button>
+      </div>
+
+      <div class="mc-pane memory-debug-pane">
+        <!-- 高级：记忆来源（折叠） -->
+        <details class="mc-advanced">
+          <summary class="mc-advanced-summary">记忆来源</summary>
+          <div class="mc-providers">
+
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">长期记忆<span class="mc-card-subtitle">每轮注入</span></div>
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+              </div>
+              <div class="mc-card-meta"><span id="mcPersonaMemoriesCount" class="mc-meta-val">—</span></div>
+              <div class="mc-card-desc">人格、生活、关系等背景，每轮参考。</div>
+            </div>
+
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">用户画像<span class="mc-card-subtitle">常驻</span></div>
+                <span id="mcProfileEnabledBadge" class="mc-badge mc-badge--enabled">已启用</span>
+              </div>
+              <div class="mc-card-meta"><span id="mcProfileChars" class="mc-meta-val">—</span></div>
+              <div id="mcProfileStatus" class="mc-card-status"></div>
+            </div>
+
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">项目记忆<span class="mc-card-subtitle">话题触发</span></div>
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+              </div>
+            </div>
+
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">时间线档案<span class="mc-card-subtitle">按需召回</span></div>
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+              </div>
+              <div id="mcTimelineStatus" class="mc-card-status"></div>
+            </div>
+
+            <div class="mc-card mc-card--reserved">
+              <div class="mc-card-top">
+                <div class="mc-card-title">历史档案<span class="mc-card-subtitle">已退役</span></div>
+                <span class="mc-badge mc-badge--reserved">未注入</span>
+              </div>
+              <div id="mcArchiveStatus" class="mc-card-status"></div>
+            </div>
+
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">历史对话<span class="mc-card-subtitle">按需召回</span></div>
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+              </div>
+            </div>
+
+            <div class="mc-card mc-card--enabled">
+              <div class="mc-card-top">
+                <div class="mc-card-title">自动记忆<span class="mc-card-subtitle">对话后提取</span></div>
+                <span class="mc-badge mc-badge--enabled">已启用</span>
+              </div>
+            </div>
+
+          </div>
+        </details>
+
+        <!-- 高级：本轮状态（折叠） -->
+        <details class="mc-advanced">
+          <summary class="mc-advanced-summary">本轮记忆状态</summary>
+          <div id="mcDebugPanel" class="mc-debug">
+            <div class="mc-debug-placeholder">发送一条消息后显示。</div>
+          </div>
+        </details>
+
+        <details class="mc-advanced">
+          <summary class="mc-advanced-summary">最近记忆元数据</summary>
+          <div id="mcRecentDebugPanel" class="mc-debug">
+            <div class="mc-debug-placeholder">打开调试中心后加载。</div>
+          </div>
+        </details>
+
+        <details class="mc-advanced">
+          <summary class="mc-advanced-summary">审计与旧系统</summary>
+          <div id="mcAuditPanel" class="mc-debug">
+            <div class="mc-debug-placeholder">打开调试中心后加载。</div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <!-- G 状态血条面板 -->
+  <div id="statusPanel" class="status-panel hidden" aria-label="G 的状态">
+    <div class="status-panel-header">
+      <span class="status-panel-title">G 的状态</span>
+      <button id="closeStatusPanelBtn" class="status-panel-close" type="button" aria-label="关闭">✕</button>
+    </div>
+    <div id="statusPanelRows"></div>
+  </div>
+
+  <!-- 世界书管理内容（由 JS 注入到 settings-subpage-body，此处仅作 DOM 仓库） -->
+  <div id="wbContentStore" hidden>
+    <!-- 上传区 -->
+    <div class="wb-upload-row">
+      <input type="file" id="wbFileInput" accept=".md,.txt,text/plain,text/markdown" style="display:none" aria-label="选择世界书文件">
+      <button id="wbUploadBtn" type="button" class="wb-upload-btn">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M7.5 2v8M7.5 2L4.5 5M7.5 2l3 3M2 11.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        上传新的世界书
+      </button>
+      <span id="wbTokenHint" class="wb-token-hint" aria-live="polite"></span>
+    </div>
+
+    <!-- 上传表单（inline，上传时出现） -->
+    <div id="wbUploadForm" class="wb-upload-form hidden">
+      <div class="wb-upload-form-inner">
+        <div class="wb-form-row">
+          <label for="wbNameInput">名称</label>
+          <input id="wbNameInput" type="text" maxlength="80" placeholder="世界书名称" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="wb-form-row">
+          <label for="wbAuthorInput">作者<span class="wb-optional">（可选）</span></label>
+          <input id="wbAuthorInput" type="text" maxlength="60" placeholder="作者名" autocomplete="off" spellcheck="false">
+        </div>
+        <div id="wbUploadPreview" class="wb-upload-preview"></div>
+        <div id="wbUploadError" class="wb-upload-error" aria-live="assertive"></div>
+        <div class="wb-form-actions">
+          <button id="wbCancelUpload" type="button" class="wb-btn wb-btn--ghost">取消</button>
+          <button id="wbConfirmUpload" type="button" class="wb-btn wb-btn--primary">确认上传</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 世界书列表 -->
+    <div id="wbList" class="wb-list" role="list" aria-label="世界书列表">
+      <div class="wb-loading" id="wbLoadingState" aria-live="polite">加载中…</div>
+    </div>
+  </div>
+
+  <!-- 查手机: 14-Screen Phone System Simulator -->
+  <div id="phoneOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="查手机">
+    <button id="phoneOverlayBackdrop" type="button" class="overlay-backdrop" aria-label="关闭"></button>
+    <button id="phoneOverlayClose" type="button" class="phone-overlay-close-btn" aria-label="关闭">×</button>
+    <div class="phone-shell">
+      <!-- Status bar (persistent across all screens) -->
+      <div class="phone-status-bar">
+        <span class="phone-time">9:41</span>
+        <div class="phone-status-icons">
+          <span class="phone-signal">📶</span>
+          <span class="phone-wifi">📡</span>
+          <span class="phone-battery">🔋 85%</span>
+        </div>
+      </div>
+
+      <!-- Screen: Lock (swipe up to unlock) -->
+      <div id="phoneLockScreen" class="phone-screen" data-screen="lock">
+        <div class="phone-lock-content">
+          <div class="phone-lock-time">9:41</div>
+          <div class="phone-lock-date">6月25日 星期三</div>
+          <div class="phone-lock-hint">↑ 向上滑动解锁</div>
+        </div>
+      </div>
+
+      <!-- Screen: Home (app grid) -->
+      <div id="phoneHomeScreen" class="phone-screen hidden" data-screen="home">
+        <div class="phone-app-grid">
+          <button type="button" class="phone-app-icon" data-app="browser">
+            <span class="app-icon">🌐</span>
+            <span class="app-label">浏览器</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="contacts">
+            <span class="app-icon">👤</span>
+            <span class="app-label">通讯录</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="messages">
+            <span class="app-icon">💬</span>
+            <span class="app-label">信息</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="photos">
+            <span class="app-icon">📷</span>
+            <span class="app-label">照片</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="music">
+            <span class="app-icon">🎵</span>
+            <span class="app-label">音乐</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="settings">
+            <span class="app-icon">⚙️</span>
+            <span class="app-label">设置</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="phone">
+            <span class="app-icon">📞</span>
+            <span class="app-label">电话</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="video">
+            <span class="app-icon">📹</span>
+            <span class="app-label">视频通话</span>
+          </button>
+          <button type="button" class="phone-app-icon" data-app="games">
+            <span class="app-icon">🎮</span>
+            <span class="app-label">游戏中心</span>
+          </button>
+        </div>
+        <div class="phone-dock">
+          <button type="button" class="phone-dock-icon" data-action="search">
+            <span class="app-icon">🔍</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Screen: Browser -->
+      <div id="phoneBrowserScreen" class="phone-screen hidden" data-screen="browser">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">浏览器</span>
+        </div>
+        <div class="phone-browser-bar">
+          <input type="url" class="phone-url-input" placeholder="搜索或输入网址" autocomplete="off">
+          <button type="button" class="phone-browser-go">前往</button>
+        </div>
+        <div class="phone-browser-content">
+          <div class="phone-browser-history">
+            <h4>今天的浏览记录</h4>
+            <div id="phoneBrowserHistory"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Contacts -->
+      <div id="phoneContactsScreen" class="phone-screen hidden" data-screen="contacts">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">通讯录</span>
+        </div>
+        <div class="phone-search-bar">
+          <input type="text" class="phone-search-input" placeholder="搜索联系人">
+        </div>
+        <div class="phone-contact-list">
+          <div class="phone-contact-item">
+            <span class="contact-avatar">KK</span>
+            <span class="contact-name">KK</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Messages -->
+      <div id="phoneMessagesScreen" class="phone-screen hidden" data-screen="messages">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">信息</span>
+        </div>
+        <div class="phone-message-list">
+          <div class="phone-message-thread">
+            <span class="message-avatar">KK</span>
+            <div class="message-preview">
+              <div class="message-name">KK</div>
+              <div class="message-text">今天过得怎么样？</div>
+            </div>
+            <span class="message-time">9:30</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Photos -->
+      <div id="phonePhotosScreen" class="phone-screen hidden" data-screen="photos">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">照片</span>
+        </div>
+        <div class="phone-photo-grid">
+          <div class="phone-photo-placeholder">📷 暂无照片</div>
+        </div>
+      </div>
+
+      <!-- Screen: Music -->
+      <div id="phoneMusicScreen" class="phone-screen hidden" data-screen="music">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">音乐</span>
+        </div>
+        <div class="phone-music-player">
+          <div class="music-album-art">🎵</div>
+          <div class="music-info">
+            <div class="music-title">暂无播放</div>
+            <div class="music-artist">—</div>
+          </div>
+          <div class="music-controls">
+            <button type="button" class="music-btn">⏮</button>
+            <button type="button" class="music-btn music-play">▶️</button>
+            <button type="button" class="music-btn">⏭</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Settings -->
+      <div id="phoneSettingsScreen" class="phone-screen hidden" data-screen="settings">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">设置</span>
+        </div>
+        <div class="phone-settings-list">
+          <div class="phone-setting-item">
+            <span class="setting-icon">👤</span>
+            <span class="setting-label">账号</span>
+          </div>
+          <div class="phone-setting-item">
+            <span class="setting-icon">🔔</span>
+            <span class="setting-label">通知</span>
+          </div>
+          <div class="phone-setting-item">
+            <span class="setting-icon">🔒</span>
+            <span class="setting-label">隐私</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Phone Call -->
+      <div id="phoneCallScreen" class="phone-screen hidden" data-screen="phone">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">电话</span>
+        </div>
+        <div class="phone-call-interface">
+          <div class="call-avatar">KK</div>
+          <div class="call-name">KK</div>
+          <div class="call-status">准备通话</div>
+          <div class="call-actions">
+            <button type="button" class="call-btn call-accept">📞 接听</button>
+            <button type="button" class="call-btn call-decline">❌ 挂断</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Video Call -->
+      <div id="phoneVideoScreen" class="phone-screen hidden" data-screen="video">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">视频通话</span>
+        </div>
+        <div class="phone-video-interface">
+          <div class="video-preview">📹 视频预览</div>
+          <div class="gs-eyes-status-bar">
+            <span class="gs-eyes-status">G's Eyes 已关闭</span>
+          </div>
+          <div class="video-controls">
+            <button type="button" class="video-btn video-call" id="gsEyesToggleBtn" data-gs-eyes-active="false">
+              <span class="video-call-icon">📹</span>
+              <span class="video-call-label">开始</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen: Game Center -->
+      <div id="phoneGamesScreen" class="phone-screen hidden" data-screen="games">
+        <div class="phone-app-header">
+          <button type="button" class="phone-back-btn" data-action="back">←</button>
+          <span class="phone-app-title">游戏中心</span>
+        </div>
+        <div class="phone-game-center-content">
+          <div id="phoneGameCenterLoading" class="phone-game-center-loading">加载中…</div>
+          <div id="phoneGameCenterEmpty" class="phone-game-center-empty hidden">
+            <div class="game-center-empty-icon">🎮</div>
+            <div class="game-center-empty-text">没有正在进行的游戏</div>
+          </div>
+          <div id="phoneGameCenterActive" class="phone-game-center-active hidden">
+            <div class="game-center-header">
+              <h3 id="phoneGameName">游戏名称</h3>
+              <span id="phoneGameStatus" class="game-status-badge">进行中</span>
+            </div>
+            <div class="game-center-stats">
+              <div class="game-stat">
+                <span class="game-stat-label">开始时间</span>
+                <span id="phoneGameStarted" class="game-stat-value">--</span>
+              </div>
+              <div class="game-stat">
+                <span class="game-stat-label">进行步数</span>
+                <span id="phoneGameActions" class="game-stat-value">0</span>
+              </div>
+            </div>
+            <div class="game-center-state">
+              <h4>当前状态</h4>
+              <div id="phoneGameStateText" class="game-state-text">--</div>
+            </div>
+            <div class="game-center-history">
+              <h4>最近动作</h4>
+              <div id="phoneGameHistory" class="game-history-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overlay: Search -->
+      <div id="phoneSearchOverlay" class="phone-overlay hidden" data-overlay="search">
+        <div class="phone-search-header">
+          <button type="button" class="phone-search-close" data-action="close-overlay">×</button>
+          <input type="text" class="phone-search-input-large" placeholder="搜索应用、联系人…" autocomplete="off">
+        </div>
+        <div class="phone-search-results">
+          <div class="phone-search-empty">输入以搜索</div>
+        </div>
+      </div>
+
+      <!-- Overlay: Notifications (pull down from top) -->
+      <div id="phoneNotificationPanel" class="phone-overlay phone-notification-panel hidden" data-overlay="notifications">
+        <div class="phone-notification-header">
+          <span>通知</span>
+          <button type="button" class="phone-notification-close" data-action="close-overlay">×</button>
+        </div>
+        <div class="phone-notification-list">
+          <div class="phone-notification-empty">暂无通知</div>
+        </div>
+      </div>
+
+      <!-- Home indicator (persistent) -->
+      <div class="phone-home-indicator"></div>
+    </div>
+  </div>
+
+  <script src="version.js" charset="utf-8"></script>
+  <script>
+    // Apply version to cacheable resources
+    (function() {
+      var v = window.SAVE_PRINCESS_BUILD || 'cedartoy-bound-ui-v4';
+      document.write('<script src="public-config.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\/script>');
+      document.write('<script src="modules/emoji-lexicon.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/emoji-catalog.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/emoji-render.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/emoji-panel.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/emoji-suggestions.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/keyboard-viewport.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/v2-shell.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/diary.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/diary-generation.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/phone.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/game-center.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/voice.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/voice-message.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Phase 1 refactored modules
+      document.write('<script src="modules/user-preferences.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/auth.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/worldbook.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/settings-manager.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/mcp-manager.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Cost dashboard
+      document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>');
+      document.write('<script src="modules/cost-config.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/cost-dashboard.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Phase 2 refactored modules
+      document.write('<script src="modules/conversation-manager.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/quote-reply.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Chat transformation modules
+      document.write('<script src="modules/contact-manager.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/chat-navigation.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Phase 3 refactored modules (high-risk core)
+      document.write('<script src="modules/message-renderer.js?v=' + v + '" charset="utf-8"><\/script>');
+      // PhotoStack Integration (must load after message-renderer.js)
+      document.write('<script src="modules/photo-stack-integration.js?v=' + v + '" charset="utf-8"><\/script>');
+      // G's Eyes must load before chat-api.js (chat-api calls window.getGsEyesVisualContext)
+      document.write('<script src="modules/gs-eyes.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/chat-api.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Video Call must load after gs-eyes.js and chat-api.js
+      document.write('<script src="modules/video-call.js?v=' + v + '" charset="utf-8"><\/script>');
+      document.write('<script src="modules/message-actions.js?v=' + v + '" charset="utf-8"><\/script>');
+      // Image policy module for auto image generation
+      document.write('<script src="modules/image-policy.js?v=' + v + '" charset="utf-8"><\/script>');
+      // debug-overlay: only load in dev builds or when ?debug is in URL
+      if (window.location.search.indexOf('debug') !== -1 || (window.SAVE_PRINCESS_BUILD || '').indexOf('dev') !== -1) {
+        document.write('<script src="modules/debug-overlay.js?v=' + v + '" charset="utf-8"><\/script>');
+      }
+      document.write('<script src="app.js?v=' + v + '" charset="utf-8"><\/script>');
+    })();
+  </script>
+</body>
+</html>
