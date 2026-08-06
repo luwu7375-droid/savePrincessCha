@@ -144,7 +144,13 @@ export function resolveProviderForTier(tier: ModelTier): TierProviders {
 }
 
 export function isFallbackableStatus(status: number, bodyText: string): boolean {
-  if (status === 408 || status === 429 || status >= 500) return true;
+  // 401/403 commonly mean a user-supplied provider key, endpoint, or model
+  // permission is no longer valid. Falling back keeps the chat responsive;
+  // the response headers still expose the reason to the UI/debug panel.
+  if (
+    status === 401 || status === 403 || status === 408 || status === 429 ||
+    status >= 500
+  ) return true;
   const lower = bodyText.toLocaleLowerCase();
   return (
     lower.includes("insufficient credits") ||
