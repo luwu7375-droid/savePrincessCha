@@ -62,6 +62,9 @@
 
     // Background refresh
     loadMachineStatusBackground();
+
+    // Setup iframe auth reminder
+    setupIframeAuthReminder();
   }
 
   function closeGameCenter() {
@@ -287,6 +290,63 @@
     const boundStatusBar = document.getElementById("cedartoyBoundStatusBar");
     if (bindingCard) bindingCard.hidden = false;
     if (boundStatusBar) boundStatusBar.hidden = true;
+  }
+
+  function setupIframeAuthReminder() {
+    const iframe = document.getElementById("gameCenterIframe");
+    if (!iframe) return;
+
+    let authReminderShown = false;
+
+    // Listen for iframe load events
+    iframe.addEventListener("load", () => {
+      // Check if we should show auth reminder after a short delay
+      // (give iframe time to settle)
+      setTimeout(() => {
+        if (!authReminderShown) {
+          checkIframeAuthStatus();
+        }
+      }, 2000);
+    });
+
+    // Also check on first setup
+    setTimeout(() => {
+      if (!authReminderShown) {
+        checkIframeAuthStatus();
+      }
+    }, 2000);
+
+    function checkIframeAuthStatus() {
+      // Check if user has already bound their account
+      const cached = getCachedStatus();
+      if (cached?.status === "bound") {
+        // User is bound, no need to remind
+        return;
+      }
+
+      // Show reminder for first-time users
+      if (!authReminderShown) {
+        authReminderShown = true;
+        showAuthReminder();
+      }
+    }
+
+    function showAuthReminder() {
+      const hint = document.getElementById("cedartoyBindingHint");
+      if (!hint) return;
+
+      // Enhance the hint with auth reminder
+      const originalHint = hint.textContent;
+      hint.innerHTML = `
+        <strong style="color: #ff6b6b;">⚠️ 请先在下方游戏中心登录你的 CedarToy 账号</strong><br>
+        ${originalHint}
+      `;
+
+      // Show a toast notification as well
+      if (typeof window.showToast === "function") {
+        window.showToast("请先在游戏中心登录 CedarToy 账号", 5000);
+      }
+    }
   }
 
   function init() {
