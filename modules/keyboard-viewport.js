@@ -63,6 +63,16 @@
     }
   }
 
+  function clearStaleKeyboardState() {
+    const active = document.activeElement;
+    if (isChatInput(active)) return;
+    const shell = document.querySelector(".layout");
+    if (shell) shell.classList.remove("keyboard-open");
+    root.style.setProperty("--kb", "0px");
+    root.style.setProperty("--keyboard-inset", "0px");
+    schedule();
+  }
+
   // ── Horizontal viewport drift reset ────────────────────────────────────────
   // iOS Safari zooms the page when focusing input fields (even with maximum-scale=1.0).
   // This causes visualViewport width to shrink, clipping content on the right edge.
@@ -216,6 +226,7 @@
         }
         if (_opts.onKeyboardClose) _opts.onKeyboardClose();
         reset();
+        clearStaleKeyboardState();
       });
     }
     if (_opts.chatSearchInput) {
@@ -223,8 +234,25 @@
         resetHorizontalDuringFocus("chatSearchInput-focus");
         schedule();
       });
-      _opts.chatSearchInput.addEventListener("blur", reset);
+      _opts.chatSearchInput.addEventListener("blur", () => {
+        reset();
+        clearStaleKeyboardState();
+      });
     }
+
+    // Never depend on keyup to restore navigation. Injected browser extensions
+    // can fail in their own keyboard handlers, and mobile browsers sometimes
+    // omit the final visualViewport resize when dismissing the keyboard.
+    document.addEventListener("focusout", () => {
+      setTimeout(clearStaleKeyboardState, 0);
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (event.target?.closest?.(".bottom-tab-bar")) {
+        _opts.messageInput?.blur();
+        _opts.chatSearchInput?.blur();
+        clearStaleKeyboardState();
+      }
+    }, true);
 
     // Safety net: any time the window regains focus or page is shown, re-pin.
     window.addEventListener("focus", () => resetHorizontalSoon("window-focus"));
@@ -248,5 +276,6 @@
     resetHorizontalViewportDrift,
     resetHorizontalSoon,
     resetHorizontalDuringFocus,
+    clearStaleKeyboardState,
   };
 })();

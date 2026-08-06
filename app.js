@@ -2228,8 +2228,6 @@ async function requestStreamingReply(replyMode = "auto") {
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "", fullReply = "", streamDone = false;
-  let assistantEl = null;
-  let firstSepSeen = false; // 流式中遇到第一个 ||| 后停止更新 DOM
 
   while (!streamDone) {
     const { done, value } = await reader.read();
@@ -2244,23 +2242,7 @@ async function requestStreamingReply(replyMode = "auto") {
       if (data === "[DONE]") { streamDone = true; break; }
       const delta = readDelta(JSON.parse(data));
       if (delta) {
-        if (!assistantEl) {
-          removeTypingIndicator();
-          assistantEl = addMessage("", "assistant");
-        }
         fullReply += delta;
-        if (!firstSepSeen) {
-          const sepIdx = fullReply.indexOf("|||");
-          if (sepIdx !== -1) {
-            // 定住第一段，后续 delta 只进 fullReply 不渲染
-            assistantEl.textContent = stripReplyToTag(stripThinking(fullReply.slice(0, sepIdx)));
-            firstSepSeen = true;
-          } else {
-            assistantEl.textContent = stripReplyToTag(stripThinking(fullReply));
-            messageList.scrollTop = messageList.scrollHeight;
-          }
-        }
-        // firstSepSeen 后：数据继续累积进 fullReply，DOM 不再更新
       }
     }
   }
@@ -2367,71 +2349,25 @@ async function requestStreamingReply(replyMode = "auto") {
     }
   }
 
-  // ── Multi-bubble visible thought rendering ──────────────────────────────────
-  const hasThoughts = thoughtBubbles.some(b => b.type === "thought");
-  if (hasThoughts) {
-    // 有思考气泡：移除流式占位，按顺序渲染所有气泡
-    if (assistantEl) {
-      const placeholderRow = assistantEl.closest(".msg-row");
-      if (placeholderRow) placeholderRow.remove();
-      assistantEl = null;
+  // Live replies and loaded history now share the same bubble structure.
+  // Each bubble waits for the previous one and types character by character.
+  removeTypingIndicator();
+  let isFirstReply = true;
+  for (const part of thoughtBubbles) {
+    if (part.type === "thought") {
+      await insertThoughtTypewriter(part.content, replyTime);
+      continue;
     }
-    let isFirstReply = true;
-    for (const bubble of thoughtBubbles) {
-      if (bubble.type === "thought") {
-        const thinkAvatar = document.createElement("div");
-        thinkAvatar.className = "avatar";
-        thinkAvatar.title = "Cha";
-        const thinkBubble = document.createElement("div");
-        thinkBubble.className = "message assistant cha-message message-thought";
-        thinkBubble.textContent = "\u{1F4AD} " + bubble.content;
-        const thinkStack = document.createElement("div");
-        thinkStack.className = "msg-stack";
-        thinkStack.appendChild(thinkBubble);
-        const thinkRow = document.createElement("div");
-        thinkRow.className = "msg-row assistant";
-        thinkRow.appendChild(thinkAvatar);
-        thinkRow.appendChild(thinkStack);
-        messageList.appendChild(thinkRow);
-      } else {
-        // reply 气泡：用 splitBubbles 支持 ||| 分割
-        const subBubbles = splitBubbles(bubble.content);
-        console.log("[VT-debug] rendering reply, subBubbles:", subBubbles.length, "replyIdStr:", replyIdStr, "isFirstReply:", isFirstReply);
-        for (let si = 0; si < subBubbles.length; si++) {
-          const isFirstSubBubble = (isFirstReply && si === 0);
-          const msgId = isFirstSubBubble ? replyIdStr : null;
-          const sibling = isFirstSubBubble ? null : String(replyIdStr);
-          console.log("[VT-debug] insertBubbleSync si:", si, "isFirstSubBubble:", isFirstSubBubble, "msgId:", msgId, "sibling:", sibling, "text:", subBubbles[si].slice(0, 30));
-          insertBubbleSync(subBubbles[si], replyTime, msgId, sibling, isFirstSubBubble ? assistantReplyTo : undefined);
-        }
-        if (isFirstReply && subBubbles.length > 0) isFirstReply = false;
-      }
-    }
-  } else {
-    // 无思考气泡：走原来的 splitBubbles 路径
-    const bubbles = splitBubbles(finalReply);
-    if (bubbles.length === 1 || !firstSepSeen) {
-      if (assistantEl) {
-        // Prepend quote block to the streaming placeholder if needed
-        if (assistantReplyTo) {
-          assistantEl.prepend(makeQuoteBlock(assistantReplyTo));
-        }
-        setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
-        const row = assistantEl.closest(".msg-row");
-        if (row && replyIdStr) row.dataset.msgId = replyIdStr;
-      } else {
-        insertBubbleSync(bubbles[0], replyTime, replyIdStr, null, assistantReplyTo);
-      }
-    } else {
-      if (assistantEl) {
-        if (assistantReplyTo) {
-          assistantEl.prepend(makeQuoteBlock(assistantReplyTo));
-        }
-        setMessageContent(assistantEl, bubbles[0], { messageId: replyIdStr || undefined });
-        const row = assistantEl.closest(".msg-row");
-        if (row && replyIdStr) row.dataset.msgId = replyIdStr;
-      }
-      await insertBubblesAnimated(bubbles.slice(1), replyTime, replyIdStr, true);
+    for (const text of splitBubbles(part.content)) {
+      const first = isFirstReply;
+      await insertBubbleTypewriter(
+        text,
+        replyTime,
+        first ? replyIdStr : null,
+        first ? null : String(replyIdStr),
+        first ? assistantReplyTo : null
+      );
+      isFirstReply = false;
     }
   }
 
@@ -7197,12 +7133,9 @@ function updateAutoReplyToggle() {
 }
 
 function getAutoReplyDelay(lastUserMessage = "") {
-  const text = typeof lastUserMessage === "string" ? lastUserMessage.trim() : "";
-  const isQuestion = /[？?吗呢么]$/.test(text) || /怎么|为什么|要不要|可以吗|怎么办|你觉得/.test(text);
-  const isShort = text.length <= 8;
-  if (isQuestion) return 0;
-  if (isShort) return 10000 + Math.floor(Math.random() * 4000); // 10–14s
-  return 6000 + Math.floor(Math.random() * 3000); // 6–9s
+  // Start replying as soon as the user's message is saved. The previous
+  // artificial 6–14 second pause made the chat appear unresponsive.
+  return 0;
 }
 
 function cancelAutoReplyTimer() {
@@ -8205,6 +8138,11 @@ async function handleSubmit() {
 
   messageInput.value = "";
   autoResizeTextarea(messageInput);
+
+  if (isMobileLayout()) {
+    messageInput.blur();
+    window.SPKeyboardViewport?.clearStaleKeyboardState?.();
+  }
 
   // Snapshot all valid images
   const imageSnapshots = validImages.map(img => ({ dataUrl: img.dataUrl }));

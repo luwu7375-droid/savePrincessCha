@@ -147,14 +147,6 @@ function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo, thought) {
     el.prepend(makeQuoteBlock(replyTo));
   }
 
-  // Add thought bubble before the main bubble (only for first bubble, not siblings)
-  if (thought && !isSibling) {
-    const thoughtEl = document.createElement("div");
-    thoughtEl.className = "message assistant cha-message message-thought";
-    thoughtEl.textContent = thought;
-    el.prepend(thoughtEl);
-  }
-
   const stack = document.createElement("div");
   stack.className = "msg-stack";
   stack.appendChild(el);
@@ -185,6 +177,61 @@ function insertBubbleSync(text, createdAt, msgId, isSibling, replyTo, thought) {
   return row;
 }
 
+function insertThoughtSync(text, createdAt) {
+  const bubble = document.createElement("div");
+  bubble.className = "message assistant cha-message message-thought";
+  bubble.textContent = "💭 " + String(text || "");
+  const stack = document.createElement("div");
+  stack.className = "msg-stack";
+  stack.appendChild(bubble);
+  const row = document.createElement("div");
+  row.className = "msg-row assistant msg-row-thought";
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.title = "Cha";
+  row.appendChild(avatar);
+  row.appendChild(stack);
+  maybeAddTimeSeparator(createdAt);
+  messageList.appendChild(row);
+  if (isNearBottom()) messageList.scrollTop = messageList.scrollHeight;
+  return { row, bubble };
+}
+
+function typeText(node, text, speed = 24) {
+  const chars = Array.from(String(text || ""));
+  node.textContent = "";
+  return new Promise(resolve => {
+    let index = 0;
+    function tick() {
+      node.textContent += chars[index] || "";
+      index += 1;
+      if (isNearBottom()) messageList.scrollTop = messageList.scrollHeight;
+      if (index >= chars.length) { resolve(); return; }
+      setTimeout(tick, speed);
+    }
+    tick();
+  });
+}
+
+async function insertBubbleTypewriter(text, createdAt, msgId, isSibling, replyTo) {
+  const row = insertBubbleSync("", createdAt, msgId, isSibling, null);
+  const bubble = row.querySelector(".message");
+  if (replyTo && !isSibling) bubble.prepend(makeQuoteBlock(replyTo));
+  const textNode = document.createElement("span");
+  textNode.className = "typewriter-text";
+  bubble.appendChild(textNode);
+  await typeText(textNode, text);
+  setMessageContent(bubble, text, { messageId: msgId != null ? String(msgId) : undefined });
+  if (replyTo && !isSibling) bubble.prepend(makeQuoteBlock(replyTo));
+  return row;
+}
+
+async function insertThoughtTypewriter(text, createdAt) {
+  const rendered = insertThoughtSync("", createdAt);
+  await typeText(rendered.bubble, "💭 " + String(text || ""));
+  return rendered.row;
+}
+
 function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false, replyTo = null, thought = null) {
   // If rawContent is an array (vision content with images), use addMessage directly
   if (Array.isArray(rawContent)) {
@@ -202,7 +249,8 @@ function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false
 
   const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
   if (bubbles.length === 0) return;
-  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo, thought);
+  if (thought) insertThoughtSync(thought, createdAt);
+  const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo);
   if (isAlreadyRead && firstRow) delete firstRow.dataset.unreadCha;
   for (let i = 1; i < bubbles.length; i++) {
     insertBubbleSync(bubbles[i], createdAt, null, String(msgId));
@@ -297,7 +345,9 @@ function parseVisibleThought(raw) {
 
   // 兼容旧接口：提取 cleanReply 用于存储
   const replyParts = bubbles.filter(b => b.type === "reply").map(b => b.content);
-  const cleanReply = replyParts.length > 0 ? replyParts.join("\n\n") : stripThinking(raw);
+  // Preserve explicit reply boundaries in storage so a refresh renders the
+  // same separate bubbles that were shown live.
+  const cleanReply = replyParts.length > 0 ? replyParts.join(" ||| ") : stripThinking(raw);
 
   const firstThought = bubbles.find(b => b.type === "thought");
   console.log("[parseVisibleThought] Returning:", { bubbles: bubbles.length, hasThought: !!firstThought, replyLength: cleanReply.length });
@@ -365,6 +415,9 @@ function showLegacyDataNotice() {
     setLoading,
     addAssistantBubbles,
     insertBubbleSync,
+    insertThoughtSync,
+    insertBubbleTypewriter,
+    insertThoughtTypewriter,
     insertBubblesAnimated,
     renderWelcomeMessage,
     readDelta,
@@ -383,6 +436,9 @@ function showLegacyDataNotice() {
   window.setLoading = setLoading;
   window.addAssistantBubbles = addAssistantBubbles;
   window.insertBubbleSync = insertBubbleSync;
+  window.insertThoughtSync = insertThoughtSync;
+  window.insertBubbleTypewriter = insertBubbleTypewriter;
+  window.insertThoughtTypewriter = insertThoughtTypewriter;
   window.insertBubblesAnimated = insertBubblesAnimated;
   window.renderWelcomeMessage = renderWelcomeMessage;
   window.renderReplyPreview = renderReplyPreview;
