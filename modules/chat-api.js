@@ -376,49 +376,69 @@ async function callChatAPI(messages, replyMode = "auto") {
     console.warn("[chat-tools] could not read auth session; ordinary chat will continue", error);
   }
 
-  const response = await fetch(endpoint, {
+  const requestBody = JSON.stringify({
+    model: modelName,
+    messages: compiledMessages,
+    stream: true,
+    replyMode,
+    userId: currentUserId,
+    conversationId: getActiveConversationId(),
+    modelTier: modelTierToSend,
+    customModel: customModelParams,
+    temperature: typeof getChatReplyTemperature === "function" ? getChatReplyTemperature() : 0.7,
+    timeContext,
+    conversation_state,
+    // storySeedsEnabled intentionally omitted — legacy memory system retired
+    userMessageId: (() => {
+      // Skip synthetic forced-reply messages (no id field) — find the last real user message.
+      const lastUser = [...messages].reverse().find(
+        m => m.role === "user" && m.id != null && m.id !== "null"
+      );
+      const id = lastUser?.id;
+      return id != null && id !== "null" ? Number(id) : null;
+    })(),
+    rawUserMessage: (() => {
+      // Always use chatMessages (pre-wrap) to get the real user input for keyword detection.
+      // extractTextFromMessageContent handles both plain string and vision content arrays.
+      const lastReal = [...chatMessages].reverse().find(m => m.role === "user");
+      const text = extractTextFromMessageContent(lastReal?.content).trim();
+      return text || null;
+    })(),
+    webContext: (() => {
+      const ctx = _pendingWebContext;
+      _pendingWebContext = null;
+      const hint = document.getElementById("webContextHint");
+      if (hint) hint.setAttribute("hidden", "");
+      return ctx || null;
+    })(),
+    visualContext,
+    emojiGuide: buildEmojiGuide() || undefined,
+    quoteCandidates: quoteCandidates.length > 0 ? quoteCandidates : null,
+  });
+
+  let response = await fetch(endpoint, {
     method: "POST",
     headers: requestHeaders,
-    body: JSON.stringify({
-      model: modelName,
-      messages: compiledMessages,
-      stream: true,
-      replyMode,
-      userId: currentUserId,
-      conversationId: getActiveConversationId(),
-      modelTier: modelTierToSend,
-      customModel: customModelParams,
-      temperature: typeof getChatReplyTemperature === "function" ? getChatReplyTemperature() : 0.7,
-      timeContext,
-      conversation_state,
-      // storySeedsEnabled intentionally omitted — legacy memory system retired
-      userMessageId: (() => {
-        // Skip synthetic forced-reply messages (no id field) — find the last real user message.
-        const lastUser = [...messages].reverse().find(
-          m => m.role === "user" && m.id != null && m.id !== "null"
-        );
-        const id = lastUser?.id;
-        return id != null && id !== "null" ? Number(id) : null;
-      })(),
-      rawUserMessage: (() => {
-        // Always use chatMessages (pre-wrap) to get the real user input for keyword detection.
-        // extractTextFromMessageContent handles both plain string and vision content arrays.
-        const lastReal = [...chatMessages].reverse().find(m => m.role === "user");
-        const text = extractTextFromMessageContent(lastReal?.content).trim();
-        return text || null;
-      })(),
-      webContext: (() => {
-        const ctx = _pendingWebContext;
-        _pendingWebContext = null;
-        const hint = document.getElementById("webContextHint");
-        if (hint) hint.setAttribute("hidden", "");
-        return ctx || null;
-      })(),
-      visualContext,
-      emojiGuide: buildEmojiGuide() || undefined,
-      quoteCandidates: quoteCandidates.length > 0 ? quoteCandidates : null,
-    }),
+    body: requestBody,
   });
+
+  // Supabase sessions can expire while the PWA remains open. Refresh once and
+  // replay the exact same request instead of surfacing a transient 401/403.
+  if ((response.status === 401 || response.status === 403) && window.supabaseClient?.auth) {
+    try {
+      const { data, error } = await window.supabaseClient.auth.refreshSession();
+      if (!error && data?.session?.access_token) {
+        requestHeaders.Authorization = `Bearer ${data.session.access_token}`;
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: requestHeaders,
+          body: requestBody,
+        });
+      }
+    } catch (error) {
+      console.warn("[chat-tools] session refresh failed", error);
+    }
+  }
 
   const toolsUsed = response.headers.get("x-save-princess-tools-used") || "none";
   const functionVersion = response.headers.get("x-save-princess-function-version") || "unknown";
