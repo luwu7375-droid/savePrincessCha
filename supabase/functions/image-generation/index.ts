@@ -3,6 +3,15 @@ import { makeCorsHeaders } from "../_shared/cors.ts";
 
 const corsHeaders = makeCorsHeaders();
 
+// Identity locking fails closed. Promotion requires all three deployment
+// secrets to be set together after kk approves a canonical pack.
+const identityReferenceUrl = Deno.env.get("CHA_IDENTITY_REFERENCE_URL")?.trim() || "";
+const identityReferenceVersion = Deno.env.get("CHA_IDENTITY_REFERENCE_VERSION")?.trim() || "";
+const identityReferenceApproved = Deno.env.get("CHA_IDENTITY_REFERENCE_APPROVED") === "true";
+const identityReferenceAvailable = Boolean(
+  identityReferenceApproved && identityReferenceUrl && identityReferenceVersion
+);
+
 interface ImageGenerationRequest {
   // Legacy field (P0 uses this)
   prompt?: string;
@@ -71,6 +80,16 @@ Deno.serve(async (req: Request) => {
       generation_source = "explicit",
       use_identity_reference = false
     } = body;
+
+    if (use_identity_reference && !identityReferenceAvailable) {
+      return new Response(JSON.stringify({
+        error: "Cha identity reference is awaiting approval",
+        code: "identity_reference_not_approved",
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Determine final prompt
     let finalPrompt: string;
@@ -168,9 +187,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Build an OpenAI-compatible Image API endpoint. Face-bearing Cha images
-    // use the approved B turnaround through /images/edits; text-only generation
-    // is allowed only when the caller explicitly says no identity reference.
+    // Build an OpenAI-compatible Image API endpoint. Identity edits are only
+    // reachable after a canonical pack is explicitly promoted above.
     const endpointRoot = provider_config.endpoint
       .replace(/\/+$/, "")
       .replace(/\/images\/(generations|edits)$/, "")
@@ -189,10 +207,6 @@ Deno.serve(async (req: Request) => {
 
     let response: Response;
     if (use_identity_reference) {
-      // Pin the approved B identity asset to its immutable approval commit.
-      // A moving dev/raw URL could silently change Cha's face.
-      const identityReferenceUrl =
-        "https://raw.githubusercontent.com/luwu7375-droid/savePrincessCha/71562ba6b74e38b203f7dc5af8c89632c01d416c/assets/cha/identity/cha-photoreal-b-turnaround-v1.jpg";
       const referenceResponse = await fetch(identityReferenceUrl, {
         headers: { "User-Agent": "savePrincessCha-image-generation" },
       });
@@ -207,7 +221,7 @@ Deno.serve(async (req: Request) => {
       const form = new FormData();
       form.append("model", provider_config.model);
       form.append("prompt", finalPrompt);
-      form.append("image[]", new Blob([referenceBytes], { type: "image/jpeg" }), "cha-photoreal-b-turnaround-v1.jpg");
+      form.append("image[]", new Blob([referenceBytes], { type: "image/jpeg" }), `cha-${identityReferenceVersion}.jpg`);
       if (size) form.append("size", size);
       if (quality) form.append("quality", quality === "standard" ? "medium" : quality);
       // gpt-image-2 always processes image inputs at high fidelity and rejects
@@ -396,7 +410,7 @@ Deno.serve(async (req: Request) => {
       quality: quality || "standard",
       style: style || "natural",
       generation_source,
-      identity_reference_version: use_identity_reference ? "photoreal-b-v1" : null,
+      identity_reference_version: use_identity_reference ? identityReferenceVersion : null,
       identity_reference_used: use_identity_reference,
     };
 
