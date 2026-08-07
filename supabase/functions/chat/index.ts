@@ -3063,6 +3063,12 @@ CedarToy 的实时工具结果是唯一事实来源。
 - cedar_get_guide 只证明读过攻略，不证明创建房间或完成游戏。
 - 没有真实工具结果时，必须直说尚未完成或无法核实。不得生成看似真实的房间号、测试结果或游戏进度。
 - 用户要求“不调用工具”时，也不能把聊天历史中的计划、猜测或未验证内容说成真实游戏结果。
+
+【外部 MCP 工具使用】
+- 你会收到用户在设置中启用并标记为“只读”的外部 MCP 工具。把它们视为可用能力，根据工具名称、描述和参数语义判断是否需要调用，不要依赖用户说出工具原名。
+- 用户询问实时信息、外部服务中的数据，或明确让你查询/检索/核实时，优先使用匹配的外部工具。普通闲聊或已有上下文足够时不要为了展示能力而调用。
+- 只能声称使用过本轮实际成功返回结果的工具。调用失败或没有匹配工具时如实说明，不得假装查询成功。
+- 写入和高风险外部工具不会进入自动调用列表。不要声称已经替用户执行任何未实际执行的外部操作。
 `;
 
   if (payload.replyMode === "auto") {
@@ -3111,9 +3117,10 @@ CedarToy 的实时工具结果是唯一事实来源。
   ];
   let toolNames: string[] = [];
 
-  // Tool execution stays server-side. Only a small read-only whitelist is
-  // offered on turns that explicitly contain a URL or a CedarToy/game intent.
-  // Unsupported provider tool-calling falls back to the existing chat request.
+  // Tool execution stays server-side. URL and CedarToy intents get a
+  // deterministic prefetch for compatibility with providers that do not emit
+  // tool_calls. User-configured external MCP tools are selected by the chat
+  // model from the safe read-only definitions assembled below.
   console.log("[chat] tool-runtime check:", {
     supabaseUrlPresent: !!supabaseUrl,
     serviceRoleKeyPresent: !!serviceRoleKey,
