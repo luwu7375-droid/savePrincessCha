@@ -23,8 +23,9 @@ import { makeCorsHeaders } from "../_shared/cors.ts";
 import {
   isToolRuntimeCandidate,
   prepareToolMessages,
+  prepareRemoteMcpMessages,
   executeRuntimeTool,
-  getChatToolDefinitions,
+  CHAT_TOOLS,
 } from "../_shared/tool-runtime.ts";
 import {
   type McpToolContext,
@@ -3190,14 +3191,33 @@ CedarToy 的实时工具结果是唯一事实来源。
     rawUserMessage: rawRuntimeToolMessage,
   };
 
+  // External MCP visibility and execution are decided by an independent
+  // server-side planning pass, not by the final conversational model.
+  if (supabaseUrl && serviceRoleKey && runtimeContext.userId) {
+    try {
+      const remotePrepared = await prepareRemoteMcpMessages({
+        providers: tierProviders,
+        messages,
+        context: runtimeContext,
+      });
+      messages = remotePrepared.messages;
+      toolNames.push(...remotePrepared.names);
+    } catch (error) {
+      console.warn("[external-mcp-planner] safe fallback", {
+        requestId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   try {
     // Keep executing tool calls until the model produces a user-facing reply.
     // A CedarToy turn commonly needs list -> guide -> play, so a single tool
     // round leaves the final play call unexecuted and the UI with no reply.
     const maxToolRounds = 4;
-    let chatTools = supabaseUrl && serviceRoleKey
-      ? await getChatToolDefinitions(runtimeContext)
-      : [];
+    // External tools have already been planned and executed above. Exposing
+    // them again here could duplicate or bypass that server-side decision.
+    let chatTools = supabaseUrl && serviceRoleKey ? CHAT_TOOLS : [];
     let result = await callModelWithFallback(tierProviders, messages, chatTools);
     let totalModelCallMs = result.modelCallMs;
     let toolRoundLimitReached = false;

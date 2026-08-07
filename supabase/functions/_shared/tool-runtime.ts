@@ -1,4 +1,7 @@
-import type { TierProviders } from "./model-client.ts";
+import {
+  callModelTextWithFallback,
+  type TierProviders,
+} from "./model-client.ts";
 import {
   executeMcpTool,
   getOpenAiToolDefinitions,
@@ -7,9 +10,14 @@ import {
 import { getActiveSession } from "./game-session-manager.ts";
 import {
   executeRemoteMcpTool,
+  getRemoteMcpTools,
   getRemoteMcpToolDefinitions,
   isRemoteMcpAlias,
 } from "./remote-mcp-runtime.ts";
+import {
+  asksAboutMcpCapabilities,
+  extractPlannerJson,
+} from "./remote-mcp-planner-utils.ts";
 
 type ToolCall = {
   id: string;
@@ -27,6 +35,107 @@ type ToolPlanResult = {
 };
 
 const MAX_TOOL_CALLS_PER_TURN = 2;
+
+export async function prepareRemoteMcpMessages(params: {
+  providers: TierProviders;
+  messages: unknown[];
+  context: McpToolContext;
+}): Promise<ToolPlanResult & { matched: boolean; capabilitySummary: boolean }> {
+  const { providers, messages, context } = params;
+  const tools = await getRemoteMcpTools(context);
+
+  if (asksAboutMcpCapabilities(context.rawUserMessage)) {
+    const summary = tools.map((tool) => ({
+      name: tool.remoteName,
+      description: tool.description,
+    }));
+    return {
+      used: true,
+      names: ["external_mcp_capability_summary"],
+      matched: true,
+      capabilitySummary: true,
+      messages: [...messages, {
+        role: "system",
+        content:
+          '<external_mcp_capabilities source="server" trust="internal">\n' +
+          JSON.stringify(summary) +
+          "\n</external_mcp_capabilities>\n这是本轮服务端实际加载的外部 MCP 工具。列表为空就明确说当前没有已启用且允许自动调用的只读外部工具；否则按名称和说明概括。禁止说看不到用户配置，也不要调用联网搜索来解释 MCP。",
+      }],
+    };
+  }
+
+  if (!tools.length) {
+    return { messages, used: false, names: [], matched: false, capabilitySummary: false };
+  }
+
+  const catalog = tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  }));
+  const plan = await callModelTextWithFallback(providers, [{
+    role: "system",
+    content:
+      "你是只负责外部 MCP 路由的服务端规划器。判断用户请求是否需要下列工具中的真实外部数据。" +
+      "需要则选择最多两个工具并严格按 inputSchema 生成参数；不需要则返回空 calls。" +
+      '只能输出 JSON：{"calls":[{"name":"工具名","arguments":{}}]}。禁止输出解释。\n' +
+      JSON.stringify(catalog),
+  }, {
+    role: "user",
+    content: context.rawUserMessage,
+  }], { maxTokens: 500, temperature: 0, purpose: "external_mcp_planner" });
+
+  const parsed = extractPlannerJson(plan.text);
+  const rawCalls = Array.isArray(parsed?.calls) ? parsed.calls : [];
+  const available = new Set(tools.map((tool) => tool.name));
+  const calls = rawCalls.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    if (typeof record.name !== "string" || !available.has(record.name)) return [];
+    const args = record.arguments && typeof record.arguments === "object" &&
+        !Array.isArray(record.arguments)
+      ? record.arguments as Record<string, unknown>
+      : {};
+    return [{ name: record.name, args }];
+  }).slice(0, MAX_TOOL_CALLS_PER_TURN);
+
+  if (!calls.length) {
+    return { messages, used: false, names: [], matched: false, capabilitySummary: false };
+  }
+
+  const results = [];
+  for (const call of calls) {
+    try {
+      results.push({
+        name: call.name,
+        ok: true,
+        content: await executeRemoteMcpTool(call.name, call.args, context),
+      });
+    } catch (error) {
+      results.push({
+        name: call.name,
+        ok: false,
+        content: JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      });
+    }
+  }
+
+  return {
+    used: true,
+    names: calls.map((call) => call.name),
+    matched: true,
+    capabilitySummary: false,
+    messages: [...messages, {
+      role: "system",
+      content:
+        '<tool_results source="user_external_mcp" trust="external">\n' +
+        JSON.stringify(results) +
+        "\n</tool_results>\n外部 MCP 已由服务端匹配并执行。只能依据以上真实结果回答。禁止改用联网搜索替代，也禁止声称看不到用户配置。调用失败时如实说明。",
+    }],
+  };
+}
 
 // Built-in tools are product capabilities, not user-managed MCP connections.
 // CedarToy therefore stays available even when the user has configured no

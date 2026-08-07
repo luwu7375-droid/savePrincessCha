@@ -45,19 +45,26 @@ async function enabledRows(context: McpToolContext): Promise<ToolRow[]> {
   return (data || []) as unknown as ToolRow[];
 }
 
-export async function getRemoteMcpToolDefinitions(context: McpToolContext) {
-  const rows = selectRemoteMcpRows(
+export async function getRemoteMcpTools(context: McpToolContext) {
+  return selectRemoteMcpRows(
     await enabledRows(context),
     context.rawUserMessage,
-  );
-  return rows.map((row) => ({
+  ).map((row) => ({
+    name: alias(row.connection.id, row.remote_name),
+    remoteName: row.remote_name,
+    description: row.description || row.remote_name,
+    inputSchema: row.input_schema || { type: "object", properties: {} },
+  }));
+}
+
+export async function getRemoteMcpToolDefinitions(context: McpToolContext) {
+  const tools = await getRemoteMcpTools(context);
+  return tools.map((tool) => ({
     type: "function",
     function: {
-      name: alias(row.connection.id, row.remote_name),
-      description: `[用户启用的外部 MCP，只读且可自动调用] ${
-        row.description || row.remote_name
-      }`,
-      parameters: row.input_schema || { type: "object", properties: {} },
+      name: tool.name,
+      description: `[用户启用的外部 MCP，只读且可自动调用] ${tool.description}`,
+      parameters: tool.inputSchema,
     },
   }));
 }
