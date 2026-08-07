@@ -167,7 +167,9 @@
       } else {
         // emoji token
         const fullMatch = match[0];
-        const emoji = window.SPEmoji.resolveEmojiToken(fullMatch);
+        const emoji = typeof window.SPEmoji?.resolveEmojiToken === "function"
+          ? window.SPEmoji.resolveEmojiToken(fullMatch)
+          : null;
         if (emoji) {
           tokens.push({
             type: "emoji",
@@ -217,19 +219,14 @@
   }
 
   function renderTextWithEmoji(text) {
-    const frag = document.createDocumentFragment();
-    const emojiCatalog = window.SPEmoji.emojiCatalog;
-    if (!emojiCatalog.loaded || !text) {
-      frag.appendChild(document.createTextNode(text || ""));
-      return frag;
-    }
+    if (!text) return document.createDocumentFragment();
     const tokens = parseEmojiTokens(text);
     return buildFragmentFromTokens(tokens);
   }
 
   function setMessageContent(el, text, opts) {
     opts = opts || {};
-    const emojiCatalog = window.SPEmoji.emojiCatalog;
+    const emojiCatalog = window.SPEmoji?.emojiCatalog;
     const rawText = text || "";
     const contentHash = hashString(rawText);
     const cacheId = String(opts.messageId || opts.tempId || "");
@@ -255,23 +252,18 @@
       return;
     }
 
-    if (!emojiCatalog.loaded) {
-      el.textContent = rawText;
-      // Restore quote blocks at the beginning
-      existingQuoteBlocks.reverse().forEach(block => el.insertBefore(block, el.firstChild));
-      el.dataset.emojiRendered = "0";
-      el.dataset.contentHash = contentHash;
-      if (cacheId) el.dataset.pendingEmojiId = cacheId;
-      return;
-    }
-
     const tokens = parseEmojiTokens(rawText);
     el.textContent = "";
     // Restore quote blocks first
     existingQuoteBlocks.forEach(block => el.appendChild(block));
     el.appendChild(buildFragmentFromTokens(tokens));
-    el.dataset.emojiRendered = "1";
+    // Links are rendered immediately. Unknown emoji shortcodes are hydrated
+    // again after the optional catalog finishes loading.
+    const needsEmojiHydration = !emojiCatalog?.loaded &&
+      tokens.some(t => t.type === "unknown");
+    el.dataset.emojiRendered = needsEmojiHydration ? "0" : "1";
     el.dataset.contentHash = contentHash;
+    if (needsEmojiHydration && cacheId) el.dataset.pendingEmojiId = cacheId;
 
     if (cacheId && tokens.some(t => t.type === "emoji")) {
       setRenderCacheTokens(cacheId, contentHash, tokens);

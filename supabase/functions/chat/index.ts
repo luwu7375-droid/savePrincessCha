@@ -620,6 +620,31 @@ function makeAssistantSseResponse(content: string): Response {
   );
 }
 
+/**
+ * Enforce the public reply envelope at the server boundary.
+ * Providers sometimes append citations, dates or policy commentary after the
+ * final </reply>. Only complete, UI-supported blocks may reach chat/history.
+ */
+function sanitizeAssistantEnvelope(content: string | null): string {
+  const raw = content?.trim() ?? "";
+  if (!raw) return "";
+
+  const supportedBlock = /<(visible_thought|reply|reply_to_message|image_action)(?:\s+[^>]*)?>[\s\S]*?<\/\1>/gi;
+  const blocks = raw.match(supportedBlock) ?? [];
+  const hasReply = blocks.some((block) => /^<reply(?:\s|>)/i.test(block));
+
+  // A valid protocol response is rebuilt exclusively from recognized blocks.
+  // Text outside them is untrusted transport residue and is intentionally lost.
+  if (hasReply) return blocks.join("");
+
+  // Keep chat usable if every provider ignores the envelope. Escape stray
+  // protocol tags so malformed markup cannot leak into the renderer.
+  const fallback = raw
+    .replace(/<\/?(?:visible_thought|reply|reply_to_message|image_action)(?:\s+[^>]*)?>/gi, "")
+    .trim();
+  return fallback ? `<reply>${fallback}</reply>` : "";
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function jsonResponse(body: unknown, status = 200) {
@@ -3371,6 +3396,12 @@ CedarToy 的实时工具结果是唯一事实来源。
       messages.push(...toolResults);
       toolNames.push(...toolInfo.toolCalls.map(tc => tc.function.name));
 
+      messages.push({
+        role: "system",
+        content:
+          "只用工具结果回答用户的问题。除非用户明确要求来源，否则不要把来源列表、检索标题、抓取日期、URL、引用元数据或工具执行过程写进 <reply>。绝不在最后一个 </reply> 后追加任何文字。",
+      });
+
       // Let the model either call the next tool or generate the final reply.
       console.log("[chat] calling model with tool results");
       result = await callModelWithFallback(tierProviders, messages, chatTools);
@@ -3640,7 +3671,16 @@ CedarToy 的实时工具结果是唯一事实来源。
     const backgroundModel = backgroundProviderConfig.primary.model;
     const backgroundBaseUrl = backgroundProviderConfig.primary.baseUrl;
     const backgroundApiKey = backgroundProviderConfig.primary.apiKey;
-    let responseBody: ReadableStream<Uint8Array> | null = result.response.body;
+    const finalAssistant = await extractToolCallsFromStream(result.response.clone());
+    const sanitizedAssistantContent = sanitizeAssistantEnvelope(
+      finalAssistant.assistantContent,
+    );
+    if (!sanitizedAssistantContent) {
+      console.error("[chat] empty_sanitized_assistant_response", { requestId });
+    }
+    let responseBody: ReadableStream<Uint8Array> | null = makeAssistantSseResponse(
+      sanitizedAssistantContent || "<reply>我刚刚的回复格式坏了，重新发我一次</reply>",
+    ).body;
 
     if (
       !disableAfterChat && supabaseUrl && serviceRoleKey &&
