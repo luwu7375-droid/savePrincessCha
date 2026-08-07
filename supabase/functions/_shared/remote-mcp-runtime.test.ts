@@ -11,7 +11,7 @@ function assertEquals(actual: unknown, expected: unknown) {
 function row(
   name: string,
   description: string,
-  risk: "read" | "write" = "read",
+  risk: "read" | "write" | "high_risk" = "read",
   confirmation = false,
 ) {
   return {
@@ -60,4 +60,20 @@ Deno.test("external MCP selector excludes tools that require confirmation", () =
     "look this up",
   );
   assertEquals(selected.map((tool) => tool.remote_name), ["lookup"]);
+});
+
+Deno.test("external MCP planner catalog includes confirmation-gated tools", () => {
+  const read = row("lookup", "Look up public data");
+  const write = row("create_item", "Create an item", "write", true);
+  const highRisk = row("delete_item", "Delete an item", "high_risk", true);
+  const selected = selectRemoteMcpRows(
+    [write, highRisk, read],
+    "delete the old item",
+    { includeConfirmationRequired: true },
+  );
+  assertEquals(selected.map((tool) => tool.remote_name).sort(), [
+    "create_item",
+    "delete_item",
+    "lookup",
+  ]);
 });

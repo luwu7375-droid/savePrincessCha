@@ -46,7 +46,7 @@ function buildQuotePreview(msg) {
 // Track conversation start time for timeContext
 let _conversationStartedAt = null;
 
-async function callChatAPI(messages, replyMode = "auto") {
+async function callChatAPI(messages, replyMode = "auto", options = {}) {
   const endpoint = getConfigValue("CHAT_API_ENDPOINT", "YOUR_SUPABASE_EDGE_FUNCTION_CHAT_URL");
   const modelName = getConfigValue("MODEL_NAME", "YOUR_MODEL_NAME"); // optional — backend routes by modelTier
   if (!endpoint) throw new Error("CHAT_API_ENDPOINT 未配置");
@@ -376,7 +376,7 @@ async function callChatAPI(messages, replyMode = "auto") {
     console.warn("[chat-tools] could not read auth session; ordinary chat will continue", error);
   }
 
-  const requestBody = JSON.stringify({
+  let requestBody = JSON.stringify({
     model: modelName,
     messages: compiledMessages,
     stream: true,
@@ -414,6 +414,7 @@ async function callChatAPI(messages, replyMode = "auto") {
     visualContext,
     emojiGuide: buildEmojiGuide() || undefined,
     quoteCandidates: quoteCandidates.length > 0 ? quoteCandidates : null,
+    remoteMcpApprovalId: options.remoteMcpApprovalId || null,
   });
 
   let response = await fetch(endpoint, {
@@ -421,6 +422,54 @@ async function callChatAPI(messages, replyMode = "auto") {
     headers: requestHeaders,
     body: requestBody,
   });
+
+  if (response.status === 409 && !options.remoteMcpApprovalId) {
+    let confirmation = null;
+    try {
+      const body = await response.clone().json();
+      if (body?.error === "remote_mcp_confirmation_required" && body.approval?.id) {
+        confirmation = body.approval;
+      }
+    } catch (_) {}
+
+    if (confirmation) {
+      const riskLabel = confirmation.riskLevel === "high_risk"
+        ? "高风险操作"
+        : confirmation.riskLevel === "write"
+        ? "写入操作"
+        : "需确认操作";
+      const argsPreview = JSON.stringify(confirmation.arguments || {}, null, 2).slice(0, 1200);
+      const approved = window.confirm(
+        `小cha 想调用外部 MCP：${confirmation.toolName}\n\n` +
+        `${confirmation.description || riskLabel}\n风险：${riskLabel}\n\n参数：\n${argsPreview}\n\n确认后才会执行。`,
+      );
+      if (!approved) {
+        const cancelled = {
+          choices: [{
+            index: 0,
+            delta: {
+              role: "assistant",
+              content: "<visible_thought>停在你划下的边界前</visible_thought><reply>好，这次不调用。</reply>",
+            },
+            finish_reason: "stop",
+          }],
+        };
+        return new Response(
+          `data: ${JSON.stringify(cancelled)}\n\ndata: [DONE]\n\n`,
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+
+      const approvedBody = JSON.parse(requestBody);
+      approvedBody.remoteMcpApprovalId = confirmation.id;
+      requestBody = JSON.stringify(approvedBody);
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: requestHeaders,
+        body: requestBody,
+      });
+    }
+  }
 
   // Supabase sessions can expire while the PWA remains open. Refresh once and
   // replay the exact same request instead of surfacing a transient 401/403.

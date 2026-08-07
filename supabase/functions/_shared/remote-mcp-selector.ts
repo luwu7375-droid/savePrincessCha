@@ -26,9 +26,13 @@ function relevance(tool: SelectableRemoteMcpTool, message: string) {
 export function selectRemoteMcpRows<T extends SelectableRemoteMcpTool>(
   rows: T[],
   message: string,
+  options: { includeConfirmationRequired?: boolean } = {},
 ): T[] {
   return rows
-    .filter((row) => row.risk_level === "read" && !row.requires_confirmation)
+    .filter((row) =>
+      options.includeConfirmationRequired ||
+      (row.risk_level === "read" && !row.requires_confirmation)
+    )
     .map((row, index) => ({ row, index, score: relevance(row, message) }))
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .slice(0, MAX_REMOTE_TOOLS_PER_TURN)

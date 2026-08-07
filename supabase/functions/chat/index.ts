@@ -116,6 +116,7 @@ type ChatRequest = {
   conversation_state?: ConversationState;
   userMessageId?: number | null; // messages.id of the triggering user message
   rawUserMessage?: string | null; // original user input before any frontend wrapping
+  remoteMcpApprovalId?: string | null; // one-time server-issued confirmation
   emojiGuide?: string | null; // client-built guide of usable custom emoji shortcodes
   webContext?: string | null; // injected by phone.js after user confirms URL read
   visualContext?: string | null; // injected by G's Eyes local camera state
@@ -3199,7 +3200,16 @@ CedarToy 的实时工具结果是唯一事实来源。
         providers: tierProviders,
         messages,
         context: runtimeContext,
+        approvalId: typeof payload.remoteMcpApprovalId === "string"
+          ? payload.remoteMcpApprovalId
+          : null,
       });
+      if (remotePrepared.approvalRequest) {
+        return jsonResponse({
+          error: "remote_mcp_confirmation_required",
+          approval: remotePrepared.approvalRequest,
+        }, 409);
+      }
       messages = remotePrepared.messages;
       toolNames.push(...remotePrepared.names);
     } catch (error) {

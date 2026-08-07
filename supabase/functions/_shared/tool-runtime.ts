@@ -9,6 +9,8 @@ import {
 } from "./mcp-registry.ts";
 import { getActiveSession } from "./game-session-manager.ts";
 import {
+  createRemoteMcpApproval,
+  executeApprovedRemoteMcpTool,
   executeRemoteMcpTool,
   getRemoteMcpTools,
   getRemoteMcpToolDefinitions,
@@ -40,14 +42,47 @@ export async function prepareRemoteMcpMessages(params: {
   providers: TierProviders;
   messages: unknown[];
   context: McpToolContext;
-}): Promise<ToolPlanResult & { matched: boolean; capabilitySummary: boolean }> {
+  approvalId?: string | null;
+}): Promise<ToolPlanResult & {
+  matched: boolean;
+  capabilitySummary: boolean;
+  approvalRequest?: {
+    id: string;
+    toolName: string;
+    description: string;
+    arguments: Record<string, unknown>;
+    riskLevel: "read" | "write" | "high_risk";
+    expiresAt: string;
+  };
+}> {
   const { providers, messages, context } = params;
-  const tools = await getRemoteMcpTools(context);
+  const tools = await getRemoteMcpTools(context, {
+    includeConfirmationRequired: true,
+  });
+
+  if (params.approvalId) {
+    const approved = await executeApprovedRemoteMcpTool(params.approvalId, context);
+    return {
+      used: true,
+      names: [approved.name],
+      matched: true,
+      capabilitySummary: false,
+      messages: [...messages, {
+        role: "system",
+        content:
+          '<tool_results source="user_approved_external_mcp" trust="external">\n' +
+          JSON.stringify([{ name: approved.name, ok: true, content: approved.content }]) +
+          "\n</tool_results>\n用户已在授权弹窗中确认，外部 MCP 已真实执行。只依据结果回答。禁止再次询问授权、改用联网搜索或声称看不到配置。",
+      }],
+    };
+  }
 
   if (asksAboutMcpCapabilities(context.rawUserMessage)) {
     const summary = tools.map((tool) => ({
       name: tool.remoteName,
       description: tool.description,
+      availability: tool.requiresConfirmation ? "requires_confirmation" : "automatic",
+      riskLevel: tool.riskLevel,
     }));
     return {
       used: true,
@@ -59,7 +94,7 @@ export async function prepareRemoteMcpMessages(params: {
         content:
           '<external_mcp_capabilities source="server" trust="internal">\n' +
           JSON.stringify(summary) +
-          "\n</external_mcp_capabilities>\n这是本轮服务端实际加载的外部 MCP 工具。列表为空就明确说当前没有已启用且允许自动调用的只读外部工具；否则按名称和说明概括。禁止说看不到用户配置，也不要调用联网搜索来解释 MCP。",
+          "\n</external_mcp_capabilities>\n这是本轮服务端实际加载的全部外部 MCP 工具，包括需授权的写入或高风险能力。列表为空就明确说当前没有已启用工具；否则按名称、说明和是否需授权概括。禁止说看不到用户配置，也不要调用联网搜索来解释 MCP。",
       }],
     };
   }
@@ -72,12 +107,14 @@ export async function prepareRemoteMcpMessages(params: {
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
+    requiresConfirmation: tool.requiresConfirmation,
+    riskLevel: tool.riskLevel,
   }));
   const plan = await callModelTextWithFallback(providers, [{
     role: "system",
     content:
       "你是只负责外部 MCP 路由的服务端规划器。判断用户请求是否需要下列工具中的真实外部数据。" +
-      "需要则选择最多两个工具并严格按 inputSchema 生成参数；不需要则返回空 calls。" +
+      "需要则选择最多两个工具并严格按 inputSchema 生成参数；需确认工具也应正常选择，服务端会弹窗授权；不需要则返回空 calls。" +
       '只能输出 JSON：{"calls":[{"name":"工具名","arguments":{}}]}。禁止输出解释。\n' +
       JSON.stringify(catalog),
   }, {
@@ -101,6 +138,26 @@ export async function prepareRemoteMcpMessages(params: {
 
   if (!calls.length) {
     return { messages, used: false, names: [], matched: false, capabilitySummary: false };
+  }
+
+  const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
+  const confirmationCall = calls.find((call) =>
+    toolByName.get(call.name)?.requiresConfirmation
+  );
+  if (confirmationCall) {
+    const approvalRequest = await createRemoteMcpApproval(
+      confirmationCall.name,
+      confirmationCall.args,
+      context,
+    );
+    return {
+      messages,
+      used: false,
+      names: [],
+      matched: true,
+      capabilitySummary: false,
+      approvalRequest,
+    };
   }
 
   const results = [];
