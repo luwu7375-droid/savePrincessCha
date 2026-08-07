@@ -18,7 +18,7 @@ var SETTINGS_SUBPAGE_META = {
   memory:                 { title: "记忆管理",          subtitle: "查看、禁用与清理记忆" },
   voice:                  { title: "声音与朗读",        subtitle: "声音引擎、语速与音量" },
   api:                    { title: "API 设置",          subtitle: "模型、接口与连接状态" },
-  mcp:                    { title: "MCP 能力",          subtitle: "添加成熟服务或你自己搭建的远程 MCP" },
+  mcp:                    { title: "外部 MCP",          subtitle: "添加和配置你自己的远程 MCP 连接" },
   backup:                 { title: "备份与导入",        subtitle: "导出、恢复与记忆书上传" },
   debug:                  { title: "Debug",             subtitle: "日志、版本与诊断工具" },
   cost:                   { title: "成本驾驶舱",        subtitle: "花费、调用与缓存监控" },

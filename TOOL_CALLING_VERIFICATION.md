@@ -46,7 +46,7 @@ const definitions: McpToolDefinition[] = [
   {
     name: "cedar_list_games",
     description: "通过 CedarToy MCP 列出当前支持的游戏...",
-    source: "mcp",
+    source: "builtin_mcp",
     readOnly: true,
     requiresConfirmation: false,
     timeoutMs: 8_000,
@@ -55,7 +55,7 @@ const definitions: McpToolDefinition[] = [
   {
     name: "cedar_get_guide",
     description: "通过 CedarToy MCP 查询某个游戏的玩法说明...",
-    source: "mcp",
+    source: "builtin_mcp",
     readOnly: true,
     requiresConfirmation: false,
     timeoutMs: 8_000,
@@ -64,7 +64,7 @@ const definitions: McpToolDefinition[] = [
   {
     name: "cedar_play",
     description: "通过 CedarToy MCP 执行游戏操作（仅限已绑定的小机账号）",
-    source: "mcp",
+    source: "builtin_mcp",
     readOnly: false,
     requiresConfirmation: true,
     timeoutMs: 10_000,

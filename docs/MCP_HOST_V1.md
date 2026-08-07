@@ -1,11 +1,15 @@
-# MCP Host v1
+# External MCP Host v1
 
 SavePrincessCha can connect to user-owned or third-party MCP servers without a
 service-specific adapter. v1 supports remote **Streamable HTTP** MCP endpoints.
 
+This host is only for connections added by the user. CedarToy is a built-in MCP
+capability backed by the dedicated `game-proxy`; it is always registered in the
+chat runtime and is intentionally absent from the external connection list.
+
 ## Add and verify a server
 
-1. Open **设置 → MCP 能力 → 添加远程 MCP**.
+1. Open **设置 → 外部 MCP → 添加远程 MCP**.
 2. Enter a display name and an HTTPS MCP endpoint.
 3. If required, add headers as JSON. Example:
 
@@ -43,3 +47,12 @@ addresses are rejected. Browser code never calls the MCP server directly.
 v1 intentionally does not implement OAuth, legacy HTTP+SSE, stdio, or chat-side
 confirmation for writes. The transport is an explicit adapter type so those
 can be added without changing connection and tool records or the settings UI.
+
+## Built-in CedarToy boundary
+
+CedarToy does not require an entry in `mcp_connections`. Its built-in flow
+includes machine-account creation, binding-code generation, binding-status
+refresh, live game discovery, guide lookup, game actions, and active-session
+resume. The user-facing game center manages account binding; chat uses the
+server-side CedarToy tools. Deleting or editing an external MCP connection must
+never affect CedarToy.

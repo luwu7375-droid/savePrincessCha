@@ -52,7 +52,7 @@
     if (!mountEl) return;
     mountEl.innerHTML = `
       <div class="settings-section">
-        <div class="settings-section-label">远程 MCP</div>
+        <div class="settings-section-label">用户配置的 MCP</div>
         <div class="settings-card">
           ${connections.length ? connections.map((connection) => `
             <div class="settings-card-row settings-card-row--stacked">
@@ -64,11 +64,11 @@
               ${connection.last_error ? `<small style="color:#b64b4b">${escapeHtml(connection.last_error)}</small>` : ""}
             </div>
             ${toolRows(connection)}
-          `).join("") : '<div class="settings-card-row"><small>还没有连接。成熟 MCP 和自建 MCP 都从这里添加。</small></div>'}
+          `).join("") : '<div class="settings-card-row"><small>还没有外部连接。你可以添加第三方或自己搭建的 MCP。</small></div>'}
           <div class="settings-card-row"><button class="settings-row-action-btn" id="mcpAddConnection">+ 添加远程 MCP</button></div>
         </div>
       </div>
-      <div class="settings-notice">当前支持 Streamable HTTP。凭证只由后端保存，页面只显示 Header 名称。新发现的工具默认关闭，写入工具不会自动执行。</div>`;
+      <div class="settings-notice">这里仅管理你添加的外部 MCP。CedarToy 是小 Cha 的内置游戏能力，不会显示在连接列表里。当前支持 Streamable HTTP；新发现的工具默认关闭，写入工具不会自动执行。</div>`;
     bind();
   }
 

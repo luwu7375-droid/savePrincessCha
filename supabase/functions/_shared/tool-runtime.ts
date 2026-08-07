@@ -28,12 +28,15 @@ type ToolPlanResult = {
 
 const MAX_TOOL_CALLS_PER_TURN = 2;
 
+// Built-in tools are product capabilities, not user-managed MCP connections.
+// CedarToy therefore stays available even when the user has configured no
+// external MCP servers, and it must never be rendered by mcp-host settings.
 export const CHAT_TOOLS = getOpenAiToolDefinitions();
 
 export async function getChatToolDefinitions(context: McpToolContext) {
   try {
-    const remote = await getRemoteMcpToolDefinitions(context);
-    return [...CHAT_TOOLS, ...remote];
+    const userConfigured = await getRemoteMcpToolDefinitions(context);
+    return [...CHAT_TOOLS, ...userConfigured];
   } catch (error) {
     console.warn("[tool-runtime] remote MCP discovery failed safely", {
       error: error instanceof Error ? error.message : String(error),

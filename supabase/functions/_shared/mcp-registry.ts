@@ -18,7 +18,7 @@ export type McpToolContext = {
 export type McpToolDefinition = {
   name: string;
   description: string;
-  source: "internal" | "mcp";
+  source: "internal" | "builtin_mcp";
   readOnly: boolean;
   requiresConfirmation: boolean;
   timeoutMs: number;
@@ -48,7 +48,7 @@ const definitions: McpToolDefinition[] = [
   {
     name: "cedar_list_games",
     description: "通过 CedarToy MCP 列出当前支持的游戏。只读，不创建房间，也不开始游戏。",
-    source: "mcp",
+    source: "builtin_mcp",
     readOnly: true,
     requiresConfirmation: false,
     timeoutMs: 8_000,
@@ -61,7 +61,7 @@ const definitions: McpToolDefinition[] = [
   {
     name: "cedar_get_guide",
     description: "通过 CedarToy MCP 查询某个游戏的玩法说明。只读，不创建房间，也不开始游戏。",
-    source: "mcp",
+    source: "builtin_mcp",
     readOnly: true,
     requiresConfirmation: false,
     timeoutMs: 8_000,
@@ -77,7 +77,7 @@ const definitions: McpToolDefinition[] = [
   {
     name: "cedar_play",
     description: "通过已绑定的小机账号执行 CedarToy 游戏操作。创建或加入房间、开始普通游戏、查询状态和进行回合操作无需用户逐步确认。参数必须来自游戏攻略或上游返回，不能编造。",
-    source: "mcp",
+    source: "builtin_mcp",
     readOnly: false,
     requiresConfirmation: false,
     timeoutMs: 10_000,
