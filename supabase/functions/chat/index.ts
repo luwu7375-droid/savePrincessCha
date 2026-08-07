@@ -602,8 +602,11 @@ function hasMeaningfulAssistantContent(content: string | null): boolean {
 
 function hasCompleteVisibleThoughtProtocol(content: string | null): boolean {
   if (!content?.trim() || content.trim() === "<NO_REPLY>") return true;
-  return /<visible_thought>[\s\S]+?<\/visible_thought>/i.test(content) &&
-    /<reply>[\s\S]+?<\/reply>/i.test(content);
+  const raw = content.trim();
+  const sanitized = sanitizeAssistantEnvelope(raw);
+  return sanitized === raw &&
+    /^<visible_thought>[\s\S]+?<\/visible_thought>/i.test(raw) &&
+    /<reply>[\s\S]+?<\/reply>$/i.test(raw);
 }
 
 function makeAssistantSseResponse(content: string): Response {
@@ -629,13 +632,35 @@ function sanitizeAssistantEnvelope(content: string | null): string {
   const raw = content?.trim() ?? "";
   if (!raw) return "";
 
-  const supportedBlock = /<(visible_thought|reply|reply_to_message|image_action)(?:\s+[^>]*)?>[\s\S]*?<\/\1>/gi;
-  const blocks = raw.match(supportedBlock) ?? [];
-  const hasReply = blocks.some((block) => /^<reply(?:\s|>)/i.test(block));
+  // Parse protocol tags as a stream. A regex matched an outer <reply> through
+  // an inner </reply>, which let trailing citations escape the envelope.
+  const tagRe = /<\/?(visible_thought|reply|reply_to_message|image_action)(?:\s+[^>]*)?>/gi;
+  const blocks: Array<{ tag: string; content: string }> = [];
+  let activeTag = "";
+  let activeStart = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tagRe.exec(raw)) !== null) {
+    const tag = match[1].toLowerCase();
+    const closing = match[0].startsWith("</");
+    if (!closing) {
+      // Prefer the innermost complete block when a provider nests tags.
+      activeTag = tag;
+      activeStart = tagRe.lastIndex;
+      continue;
+    }
+    if (activeTag !== tag) continue;
+    const body = raw.slice(activeStart, match.index).trim();
+    if (body && !/<\/?(?:visible_thought|reply|reply_to_message|image_action)\b/i.test(body)) {
+      blocks.push({ tag, content: body });
+    }
+    activeTag = "";
+    activeStart = 0;
+  }
 
-  // A valid protocol response is rebuilt exclusively from recognized blocks.
-  // Text outside them is untrusted transport residue and is intentionally lost.
-  if (hasReply) return blocks.join("");
+  const hasReply = blocks.some((block) => block.tag === "reply");
+  if (hasReply) {
+    return blocks.map(({ tag, content: body }) => `<${tag}>${body}</${tag}>`).join("");
+  }
 
   // Keep chat usable if every provider ignores the envelope. Escape stray
   // protocol tags so malformed markup cannot leak into the renderer.
@@ -3399,7 +3424,7 @@ CedarToy 的实时工具结果是唯一事实来源。
       messages.push({
         role: "system",
         content:
-          "只用工具结果回答用户的问题。除非用户明确要求来源，否则不要把来源列表、检索标题、抓取日期、URL、引用元数据或工具执行过程写进 <reply>。绝不在最后一个 </reply> 后追加任何文字。",
+          "只用工具结果回答用户的问题，并继续严格遵守主 system prompt 的 execution_rules：自然短句，不写报告腔，不列清单，不用标题或总结句。除非用户明确要求来源，否则不要写来源列表、检索标题、抓取日期、URL、引用元数据或工具过程。输出必须且只能是一个 <visible_thought>，随后 1–3 个 <reply>；标签外不得有任何文字，禁止嵌套 <reply>。",
       });
 
       // Let the model either call the next tool or generate the final reply.
@@ -3430,7 +3455,7 @@ CedarToy 的实时工具结果是唯一事实来源。
       messages.push({
         role: "system",
         content:
-          "工具轮次已结束。不要执行或声称完成尚未执行的操作。只依据上方真实 tool 结果生成面向用户的最终回复；没有 cedar_play 成功结果时必须明确说尚未创建或完成游戏。禁止编造游戏、房间号、题目、进度或结果。",
+          "工具轮次已结束。不要执行或声称完成尚未执行的操作。只依据上方真实 tool 结果生成面向用户的最终回复；没有 cedar_play 成功结果时必须明确说尚未创建或完成游戏。禁止编造游戏、房间号、题目、进度或结果。继续严格遵守 execution_rules。只输出一个 <visible_thought> 和 1–3 个不嵌套的 <reply>，标签外不得有文字。",
       });
       result = await callModelWithFallback(tierProviders, messages);
       totalModelCallMs += result.modelCallMs;

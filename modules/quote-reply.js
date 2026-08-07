@@ -247,7 +247,17 @@ function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false
     return;
   }
 
-  const content = typeof rawContent === "string" ? rawContent : "";
+  let content = typeof rawContent === "string" ? rawContent : "";
+  // Repair malformed protocol rows already stored before the server-side fix.
+  // This is display-only; it does not rewrite or risk the history table.
+  if (/<\/?(?:visible_thought|reply)\b/i.test(content) ||
+      /(?:^|\n)\s*(?:sources?|来源|参考来源)\s*[:：]/i.test(content)) {
+    try {
+      content = parseVisibleThought(content).reply || content;
+    } catch (error) {
+      console.warn("[addAssistantBubbles] legacy reply cleanup failed", error);
+    }
+  }
   // History must remain readable even if the optional bubble splitter fails to load.
   // Rendering one unsplit bubble is safer than aborting the entire history reload.
   let bubbles;
@@ -327,14 +337,27 @@ function stripThinking(text) {
 function parseVisibleThought(raw) {
   console.log("[parseVisibleThought] Input raw (first 500 chars):", raw.slice(0, 500));
   const bubbles = [];
-  const pattern = /<(visible_thought|reply)>([\s\S]*?)<\/\1>/g;
+  // Parse protocol tags as a stream. Nested tags previously exposed the text
+  // after the inner </reply>, including source lists saved in old history.
+  const pattern = /<\/?(visible_thought|reply)(?:\s+[^>]*)?>/gi;
+  let activeTag = null;
+  let activeStart = 0;
   let match;
 
   while ((match = pattern.exec(raw)) !== null) {
-    const tag = match[1];
-    const content = match[2].trim();
+    const tag = match[1].toLowerCase();
+    const closing = match[0].startsWith("</");
+    if (!closing) {
+      activeTag = tag;
+      activeStart = pattern.lastIndex;
+      continue;
+    }
+    if (activeTag !== tag) continue;
+    const content = raw.slice(activeStart, match.index).trim();
+    activeTag = null;
+    activeStart = 0;
     console.log(`[parseVisibleThought] Found tag: ${tag}, content length: ${content.length}`);
-    if (!content) continue;
+    if (!content || /<\/?(?:visible_thought|reply)\b/i.test(content)) continue;
 
     if (tag === "visible_thought") {
       bubbles.push({ type: "thought", content: content.slice(0, 60) });
@@ -348,7 +371,9 @@ function parseVisibleThought(raw) {
   // 如果没有解析到任何标签，fallback 到纯 reply
   if (bubbles.length === 0) {
     console.log("[parseVisibleThought] No tags found, using fallback");
-    const cleaned = stripThinking(raw);
+    const cleaned = stripThinking(raw)
+      .replace(/(?:^|\n)\s*(?:sources?|来源|参考来源)\s*[:：][\s\S]*$/i, "")
+      .trim();
     if (cleaned.trim()) {
       bubbles.push({ type: "reply", content: cleaned });
     }
@@ -358,7 +383,11 @@ function parseVisibleThought(raw) {
   const replyParts = bubbles.filter(b => b.type === "reply").map(b => b.content);
   // Preserve explicit reply boundaries in storage so a refresh renders the
   // same separate bubbles that were shown live.
-  const cleanReply = replyParts.length > 0 ? replyParts.join(" ||| ") : stripThinking(raw);
+  const cleanReply = replyParts.length > 0
+    ? replyParts.join(" ||| ")
+    : stripThinking(raw)
+      .replace(/(?:^|\n)\s*(?:sources?|来源|参考来源)\s*[:：][\s\S]*$/i, "")
+      .trim();
 
   const firstThought = bubbles.find(b => b.type === "thought");
   console.log("[parseVisibleThought] Returning:", { bubbles: bubbles.length, hasThought: !!firstThought, replyLength: cleanReply.length });
