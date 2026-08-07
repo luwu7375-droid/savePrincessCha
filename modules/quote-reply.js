@@ -247,7 +247,18 @@ function addAssistantBubbles(rawContent, createdAt, msgId, isAlreadyRead = false
     return;
   }
 
-  const bubbles = splitBubbles(typeof rawContent === "string" ? rawContent : "");
+  const content = typeof rawContent === "string" ? rawContent : "";
+  // History must remain readable even if the optional bubble splitter fails to load.
+  // Rendering one unsplit bubble is safer than aborting the entire history reload.
+  let bubbles;
+  try {
+    bubbles = typeof window.splitBubbles === "function"
+      ? window.splitBubbles(content)
+      : (content.trim() ? [content.trim()] : []);
+  } catch (error) {
+    console.warn("[addAssistantBubbles] bubble splitting failed; rendering raw content", error);
+    bubbles = content.trim() ? [content.trim()] : [];
+  }
   if (bubbles.length === 0) return;
   if (thought) insertThoughtSync(thought, createdAt);
   const firstRow = insertBubbleSync(bubbles[0], createdAt, msgId, null, replyTo);

@@ -236,7 +236,6 @@ function splitLongSegment(text, maxChars) {
   const rest  = text.slice(splitAt).trim();
   if (!first || !rest) return [text];
   return [first, ...splitLongSegment(rest, maxChars)];
->>>>>>> 5679339 (fix(renderer): 支持 markdown 链接渲染，链接独立气泡，改进3行自然截断)
 }
 
 /** Merge short segments and cap total count for fallback splitting */
