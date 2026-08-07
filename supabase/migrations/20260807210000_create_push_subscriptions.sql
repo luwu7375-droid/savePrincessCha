@@ -26,41 +26,47 @@ CREATE TABLE IF NOT EXISTS public.push_subscriptions (
 );
 
 -- Index for fast user lookup
-CREATE INDEX idx_push_subscriptions_user_id ON public.push_subscriptions(user_id) WHERE enabled = true;
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON public.push_subscriptions(user_id) WHERE enabled = true;
 
 -- Index for endpoint uniqueness check
-CREATE INDEX idx_push_subscriptions_endpoint ON public.push_subscriptions(endpoint);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON public.push_subscriptions(endpoint);
 
 -- RLS policies
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 
 -- Users can insert their own subscriptions
+DROP POLICY IF EXISTS "Users can insert own subscriptions" ON public.push_subscriptions;
 CREATE POLICY "Users can insert own subscriptions" ON public.push_subscriptions
   FOR INSERT TO authenticated
   WITH CHECK (auth.uid() = user_id);
 
 -- Users can view their own subscriptions
+DROP POLICY IF EXISTS "Users can view own subscriptions" ON public.push_subscriptions;
 CREATE POLICY "Users can view own subscriptions" ON public.push_subscriptions
   FOR SELECT TO authenticated
   USING (auth.uid() = user_id);
 
 -- Users can update their own subscriptions (e.g., disable)
+DROP POLICY IF EXISTS "Users can update own subscriptions" ON public.push_subscriptions;
 CREATE POLICY "Users can update own subscriptions" ON public.push_subscriptions
   FOR UPDATE TO authenticated
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
 -- Users can delete their own subscriptions
+DROP POLICY IF EXISTS "Users can delete own subscriptions" ON public.push_subscriptions;
 CREATE POLICY "Users can delete own subscriptions" ON public.push_subscriptions
   FOR DELETE TO authenticated
   USING (auth.uid() = user_id);
 
 -- Service role can read all (for push-send function)
+DROP POLICY IF EXISTS "Service role can read all subscriptions" ON public.push_subscriptions;
 CREATE POLICY "Service role can read all subscriptions" ON public.push_subscriptions
   FOR SELECT TO service_role
   USING (true);
 
 -- Service role can update subscription status (failure tracking)
+DROP POLICY IF EXISTS "Service role can update subscription status" ON public.push_subscriptions;
 CREATE POLICY "Service role can update subscription status" ON public.push_subscriptions
   FOR UPDATE TO service_role
   USING (true);
