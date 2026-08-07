@@ -160,23 +160,83 @@ function addMessage(text, role, createdAt = new Date().toISOString(), options = 
 /**
  * 按 ||| 切分原始回复（模型显式分段），最多 5 条。
  * fallback 自动切分最多 3 条，保守兜底。
+ * 含 markdown 链接时自动拆出独立气泡；每条气泡控制在 ~3 行以内。
  */
 function splitBubbles(rawText) {
-  const MAX_EXPLICIT = 3;
-  const MIN_BUBBLE_CHARS = 10;
+  const MAX_EXPLICIT = 3;   // 远程保守设置：||| 最多 3 条
+  const MAX_WITH_LINKS = 5; // 提取链接后允许稍多
+  const MIN_BUBBLE_CHARS = 10; // 远程保守设置
+  const MAX_CHARS_PER_BUBBLE = 65; // ~3 行 CJK 内容
 
   // ── Primary split: explicit ||| separator ────────────────────────────────
   if (rawText.includes("|||")) {
     const parts = rawText.split("|||").map(s => s.trim()).filter(s => s.length > 0);
-    if (parts.length <= 1) return [rawText.trim()];
-    // The model sometimes over-separates one thought into several tiny bubbles.
-    // Merge those fragments before applying the cap so the rhythm stays human.
-    return mergeFallbackSegments(parts, MAX_EXPLICIT, MIN_BUBBLE_CHARS);
+    if (parts.length <= 1) return extractLinkBubbles([rawText.trim()], MAX_WITH_LINKS);
+    // Merge short fragments to keep human rhythm, then extract links
+    const merged = mergeFallbackSegments(parts, MAX_EXPLICIT, MIN_BUBBLE_CHARS);
+    return extractLinkBubbles(merged, MAX_WITH_LINKS);
   }
 
-  // No explicit semantic boundary means one bubble. Length, punctuation and
-  // line breaks are presentation details, not reliable conversational turns.
-  return [rawText.trim()];
+  // No explicit separator: one bubble, but still extract any inline links
+  const text = rawText.trim();
+  const longSplit = splitLongSegment(text, MAX_CHARS_PER_BUBBLE).slice(0, 2);
+  return extractLinkBubbles(longSplit, MAX_WITH_LINKS);
+}
+
+/**
+ * 把含 markdown 链接的气泡拆分：文字部分 + 独立链接气泡。
+ * [text](url) 会单独成一条气泡。
+ */
+function extractLinkBubbles(parts, maxTotal) {
+  const LINK_RE = /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+  const result = [];
+  for (const part of parts) {
+    if (!LINK_RE.test(part)) {
+      result.push(part);
+      LINK_RE.lastIndex = 0;
+      continue;
+    }
+    LINK_RE.lastIndex = 0;
+    let lastEnd = 0;
+    let match;
+    while ((match = LINK_RE.exec(part)) !== null) {
+      const before = part.slice(lastEnd, match.index).trim();
+      if (before) result.push(before);
+      result.push(match[0]); // link as its own bubble
+      lastEnd = match.index + match[0].length;
+    }
+    const after = part.slice(lastEnd).trim();
+    if (after) result.push(after);
+  }
+  const filtered = result.filter(s => s.length > 0);
+  if (filtered.length <= maxTotal) return filtered;
+  // Cap: keep first (maxTotal-1), merge the rest into the last
+  const capped = filtered.slice(0, maxTotal - 1);
+  capped.push(filtered.slice(maxTotal - 1).join(""));
+  return capped;
+}
+
+/**
+ * 当单段内容超过 maxChars 时，在末尾句号/问号/换行处自然截断，递归拆分。
+ */
+function splitLongSegment(text, maxChars) {
+  if (text.length <= maxChars) return [text];
+  // Search backward from maxChars for a natural break
+  const breakRe = /[。！？；\n]/;
+  let splitAt = -1;
+  const searchFrom = Math.min(maxChars, text.length - 1);
+  for (let i = searchFrom; i >= Math.floor(maxChars * 0.4); i--) {
+    if (breakRe.test(text[i])) {
+      splitAt = i + 1;
+      break;
+    }
+  }
+  if (splitAt === -1) return [text]; // no good break — keep as is
+  const first = text.slice(0, splitAt).trim();
+  const rest  = text.slice(splitAt).trim();
+  if (!first || !rest) return [text];
+  return [first, ...splitLongSegment(rest, maxChars)];
+>>>>>>> 5679339 (fix(renderer): 支持 markdown 链接渲染，链接独立气泡，改进3行自然截断)
 }
 
 /** Merge short segments and cap total count for fallback splitting */

@@ -146,35 +146,43 @@
 
   // ── Token parsing ─────────────────────────────────────────────────────────
 
-  const EMOJI_TOKEN_RE = /:([a-zA-Z0-9_\-.]+):/g;
+  // Matches markdown links [text](url) OR emoji tokens :name:
+  // Group 1+2 = link text + url; Group 3 = emoji name
+  const COMBINED_TOKEN_RE = /\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)|:([a-zA-Z0-9_\-.]+):/g;
 
   function parseEmojiTokens(text) {
     const tokens = [];
     if (!text) return tokens;
     let lastIndex = 0;
     let match;
-    EMOJI_TOKEN_RE.lastIndex = 0;
-    while ((match = EMOJI_TOKEN_RE.exec(text)) !== null) {
-      const [fullMatch] = match;
+    COMBINED_TOKEN_RE.lastIndex = 0;
+    while ((match = COMBINED_TOKEN_RE.exec(text)) !== null) {
       const start = match.index;
       if (start > lastIndex) {
         tokens.push({ type: "text", value: text.slice(lastIndex, start) });
       }
-      const emoji = window.SPEmoji.resolveEmojiToken(fullMatch);
-      if (emoji) {
-        tokens.push({
-          type: "emoji",
-          token: fullMatch,
-          emojiId: emoji.id,
-          shortcode: emoji.shortcode,
-          url: emoji.url,
-          staticUrl: emoji.staticUrl,
-          alt: fullMatch,
-        });
+      if (match[2] !== undefined) {
+        // markdown link
+        tokens.push({ type: "link", linkText: match[1] || match[2], url: match[2] });
       } else {
-        tokens.push({ type: "unknown", value: fullMatch });
+        // emoji token
+        const fullMatch = match[0];
+        const emoji = window.SPEmoji.resolveEmojiToken(fullMatch);
+        if (emoji) {
+          tokens.push({
+            type: "emoji",
+            token: fullMatch,
+            emojiId: emoji.id,
+            shortcode: emoji.shortcode,
+            url: emoji.url,
+            staticUrl: emoji.staticUrl,
+            alt: fullMatch,
+          });
+        } else {
+          tokens.push({ type: "unknown", value: fullMatch });
+        }
       }
-      lastIndex = start + fullMatch.length;
+      lastIndex = start + match[0].length;
     }
     if (lastIndex < text.length) {
       tokens.push({ type: "text", value: text.slice(lastIndex) });
@@ -193,6 +201,14 @@
         img.className = "custom-emoji";
         img.loading = "lazy";
         frag.appendChild(img);
+      } else if (t.type === "link") {
+        const a = document.createElement("a");
+        a.href = t.url;
+        a.textContent = t.linkText || t.url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.className = "msg-link";
+        frag.appendChild(a);
       } else {
         frag.appendChild(document.createTextNode(t.value));
       }
