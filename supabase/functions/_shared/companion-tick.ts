@@ -81,7 +81,13 @@ async function updateCompanionState(
 }
 
 /**
- * Send proactive contact message via chat API
+ * Send proactive contact message via chat API.
+ *
+ * Flow:
+ *   1. Fetch user's most recent conversation id
+ *   2. POST to /functions/v1/chat with proactive_trigger=true
+ *      (chat/index.ts reads this flag and skips the user-message requirement)
+ *   3. On success, write a proactive_contact entry to cha_activity_log
  */
 async function sendProactiveContact(
   supabaseUrl: string,
@@ -90,28 +96,155 @@ async function sendProactiveContact(
   action: CompanionStateAction,
   nlContext: string
 ): Promise<boolean> {
-  // TODO: Implement actual chat API call
-  // For now, just log the intent
+  const dbHeaders = {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    "Content-Type": "application/json",
+  };
+
+  // ── Step 1: resolve most recent conversation ──────────────────────────────
+  const convUrl =
+    `${supabaseUrl}/rest/v1/conversations` +
+    `?user_id=eq.${encodeURIComponent(userId)}` +
+    `&order=updated_at.desc&limit=1&select=id`;
+
+  const convRes = await fetch(convUrl, { headers: dbHeaders });
+  if (!convRes.ok) {
+    console.error(JSON.stringify({
+      fn: "sendProactiveContact", event: "conv_fetch_failed",
+      userId: userId.slice(0, 6), status: convRes.status,
+    }));
+    return false;
+  }
+
+  const conversations = await convRes.json() as Array<{ id: string }>;
+  if (!conversations || conversations.length === 0) {
+    console.log(JSON.stringify({
+      fn: "sendProactiveContact", event: "no_conversation",
+      userId: userId.slice(0, 6),
+    }));
+    return false;
+  }
+
+  const conversationId = conversations[0].id;
+
+  // ── Step 2: call chat Edge Function ──────────────────────────────────────
+  // chat/index.ts detects proactive_trigger=true and:
+  //   - skips requiring a real user message
+  //   - injects nlContext into the system prompt's 【当前状态参考】block
+  //   - saves the assistant message to messages table (same as normal chat)
+  const chatBody = {
+    userId,
+    conversationId,
+    modelTier: "general",
+    stream: false,
+    proactive_trigger: true,       // handled by chat/index.ts
+    proactive_context: nlContext,  // injected into status block
+    proactive_urgency: action.urgency ?? "medium",
+    proactive_hint: action.context ?? "",
+    // Empty messages array — chat function will build context from DB history
+    messages: [],
+  };
+
+  const chatRes = await fetch(`${supabaseUrl}/functions/v1/chat`, {
+    method: "POST",
+    headers: dbHeaders,
+    body: JSON.stringify(chatBody),
+  });
+
+  if (!chatRes.ok) {
+    const errBody = await chatRes.text().catch(() => "(unreadable)");
+    console.error(JSON.stringify({
+      fn: "sendProactiveContact", event: "chat_call_failed",
+      userId: userId.slice(0, 6), status: chatRes.status,
+      body: errBody.slice(0, 200),
+    }));
+    return false;
+  }
+
+  // ── Step 2.5: Send Web Push notification ─────────────────────────────────
+  // After successfully sending the proactive message, notify all subscribed devices
+  try {
+    const pushRes = await fetch(`${supabaseUrl}/functions/v1/push-send`, {
+      method: "POST",
+      headers: dbHeaders,
+      body: JSON.stringify({
+        userId,
+        payload: {
+          title: "小钗",
+          body: "有新消息",
+          tag: "proactive-contact",
+          icon: "/assets/pwa/icon-192.png",
+          badge: "/assets/pwa/badge-72.png",
+          data: {
+            url: "/",
+            type: "proactive_contact",
+            urgency: action.urgency ?? "medium",
+          },
+        },
+      }),
+    });
+
+    if (!pushRes.ok) {
+      // Non-fatal — chat message was already sent successfully
+      console.warn(JSON.stringify({
+        fn: "sendProactiveContact", event: "push_send_failed",
+        userId: userId.slice(0, 6), status: pushRes.status,
+      }));
+    } else {
+      const pushResult = await pushRes.json();
+      console.log(JSON.stringify({
+        fn: "sendProactiveContact", event: "push_sent",
+        userId: userId.slice(0, 6),
+        delivered: pushResult.delivered ?? 0,
+      }));
+    }
+  } catch (pushError) {
+    // Non-fatal — log and continue
+    console.warn(JSON.stringify({
+      fn: "sendProactiveContact", event: "push_send_error",
+      userId: userId.slice(0, 6),
+      error: pushError instanceof Error ? pushError.message : String(pushError),
+    }));
+  }
+
+  // ── Step 3: log to cha_activity_log ──────────────────────────────────────
+  const logRes = await fetch(`${supabaseUrl}/rest/v1/cha_activity_log`, {
+    method: "POST",
+    headers: dbHeaders,
+    body: JSON.stringify({
+      user_id: userId,
+      activity_type: "proactive_contact",
+      label: (action.context ?? "主动联系").slice(0, 100),
+      metadata: {
+        urgency: action.urgency ?? "medium",
+        nlContext,
+        connection: action.reason ?? "",
+      },
+      started_at: new Date().toISOString(),
+    }),
+  });
+
+  if (!logRes.ok) {
+    // Non-fatal — message was already sent
+    console.warn(JSON.stringify({
+      fn: "sendProactiveContact", event: "log_write_failed",
+      userId: userId.slice(0, 6), status: logRes.status,
+    }));
+  }
+
   console.log(JSON.stringify({
-    fn: "sendProactiveContact",
-    event: "contact_triggered",
-    userId: userId.slice(0, 6),
-    urgency: action.urgency,
-    context: action.context,
-    nlContext,
+    fn: "sendProactiveContact", event: "contact_sent",
+    userId: userId.slice(0, 6), urgency: action.urgency,
+    conversationId,
   }));
 
-  // In production, this would:
-  // 1. Create a synthetic user message or system trigger
-  // 2. Call the chat function with special flag for proactive contact
-  // 3. Include nlContext in the system prompt
-  // 4. Send the response to the user via notification or message
-
-  return true; // Placeholder
+  return true;
 }
 
 /**
- * Log observation (internal thought, not sent to user)
+ * Log observation (internal thought, not sent to user).
+ * Written to cha_activity_log so diary/memory pipelines can pick it up.
  */
 async function logObservation(
   supabaseUrl: string,
@@ -119,13 +252,28 @@ async function logObservation(
   userId: string,
   context: string
 ): Promise<void> {
-  // TODO: Write to cha_activity_log or diary
-  console.log(JSON.stringify({
-    fn: "logObservation",
-    event: "observation_logged",
-    userId: userId.slice(0, 6),
-    context,
-  }));
+  const res = await fetch(`${supabaseUrl}/rest/v1/cha_activity_log`, {
+    method: "POST",
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      activity_type: "observation",
+      label: context.slice(0, 100),
+      metadata: { nlContext: context },
+      started_at: new Date().toISOString(),
+    }),
+  });
+
+  if (!res.ok) {
+    console.warn(JSON.stringify({
+      fn: "logObservation", event: "write_failed",
+      userId: userId.slice(0, 6), status: res.status,
+    }));
+  }
 }
 
 /**
@@ -239,9 +387,10 @@ export async function runCompanionTick(
           nlContext: advanceResult.nlContext,
         });
 
-        // Update database
+        // Update database — include pride so the new column stays in sync
         await updateCompanionState(supabaseUrl, serviceRoleKey, currentState.user_id, {
           connection: advanceResult.newState.connection,
+          pride: advanceResult.newState.pride,
           valence: advanceResult.newState.valence,
           arousal: advanceResult.newState.arousal,
           immersion: advanceResult.newState.immersion,
