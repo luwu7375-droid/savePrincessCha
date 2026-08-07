@@ -128,6 +128,11 @@
       window.SPCompanionWorld.refresh();
     }
 
+    // Initialize Web Push subscription manager
+    if (window.PushSubscription && window.PushSubscription.isSupported()) {
+      window.PushSubscription.init(window.supabaseClient, window.currentUserId);
+    }
+
     // Desktop only: auto-focus on init. Mobile must not trigger soft keyboard.
     if (typeof window.isMobileLayout === "function" && !window.isMobileLayout()) {
       const messageInput = document.getElementById("messageInput");
