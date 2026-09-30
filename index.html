@@ -45,12 +45,15 @@
     window.splashReady=function(){appReady=true;dismiss();};
   })();
   </script>
-  <!-- Public access startup error overlay (normally hidden). -->
+  <!-- 登录 overlay -->
   <div id="loginOverlay" class="overlay hidden">
     <div class="modal" style="max-width:360px;max-height:none">
       <div class="modal-header"><span>救公主</span></div>
       <div style="padding:0 18px 18px">
-        <div id="loginMsg" style="font-size:13px;color:var(--text-muted);min-height:20px"></div>
+        <input id="loginEmail" type="email" placeholder="邮箱地址">
+        <input id="loginPassword" type="password" placeholder="密码">
+        <div id="loginMsg" style="font-size:13px;color:var(--text-muted);min-height:20px;margin-bottom:12px"></div>
+        <button id="loginBtn" type="button">登录</button>
       </div>
     </div>
   </div>
@@ -66,6 +69,7 @@
       <div class="sidebar-footer">
         <button id="systemButton" type="button" class="sidebar-footer-btn">系统</button>
         <button id="memoryCenterBtn" type="button" class="sidebar-footer-btn">记忆</button>
+        <button id="logoutBtn" type="button" class="sidebar-footer-btn hidden">退出</button>
         <!-- 기능 버튼: 숨김이지만 JS 참조 유지 -->
         <button id="distillButton" type="button" style="display:none"></button>
         <button id="toggleMemoryButton" type="button" style="display:none"></button>
