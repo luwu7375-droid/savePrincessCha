@@ -11,6 +11,24 @@
 
 // In-memory cache of the conversation list for the current session
 let conversationsCache = [];
+const GUEST_CONVERSATIONS_KEY = "save_princess_guest_conversations_v1";
+
+function isLocalGuest() {
+  return window.isGuestMode || window.currentUserId === "anon";
+}
+
+function readGuestConversations() {
+  try {
+    const value = JSON.parse(localStorage.getItem(GUEST_CONVERSATIONS_KEY) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeGuestConversations() {
+  localStorage.setItem(GUEST_CONVERSATIONS_KEY, JSON.stringify(conversationsCache));
+}
 
 function getActiveConversationId() {
   return localStorage.getItem("active_conversation_id");
@@ -21,6 +39,7 @@ function setActiveConversationId(id) {
 }
 
 async function loadConversationsFromDB() {
+  if (isLocalGuest()) return readGuestConversations();
   const { data, error } = await supabaseClient
     .from("conversations")
     .select("id, title, pinned, created_at, updated_at")
@@ -56,6 +75,19 @@ async function initConversations() {
 }
 
 async function createConversation(title) {
+  if (isLocalGuest()) {
+    const now = new Date().toISOString();
+    const conversation = {
+      id: `guest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title,
+      pinned: false,
+      created_at: now,
+      updated_at: now,
+    };
+    conversationsCache.unshift(conversation);
+    writeGuestConversations();
+    return conversation.id;
+  }
   const { data: { user } } = await supabaseClient.auth.getUser();
   const { data, error } = await supabaseClient
     .from("conversations")
@@ -73,6 +105,7 @@ async function updateConvTitle(id, firstUserMessage) {
   const title = firstUserMessage.slice(0, 20);
   conv.title = title;
   renderConvList();
+  if (isLocalGuest()) { writeGuestConversations(); return; }
   await supabaseClient.from("conversations").update({ title }).eq("id", id);
 }
 
@@ -175,6 +208,7 @@ function renameConv(id) {
       const title = name || "新会话";
       conv.title = title;
       renderConvList();
+      if (isLocalGuest()) { writeGuestConversations(); return; }
       await supabaseClient.from("conversations").update({ title }).eq("id", id);
     }
   });
@@ -186,6 +220,7 @@ async function pinConv(id) {
   conv.pinned = !conv.pinned;
   conversationsCache.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
   renderConvList();
+  if (isLocalGuest()) { writeGuestConversations(); return; }
   await supabaseClient.from("conversations").update({ pinned: conv.pinned }).eq("id", id);
 }
 
@@ -197,8 +232,13 @@ async function deleteConv(id) {
     confirmClass: "btn-danger",
     onConfirm: async () => {
       conversationsCache = conversationsCache.filter(c => c.id !== id);
-      await supabaseClient.from("messages").delete().eq("conversation_id", id);
-      await supabaseClient.from("conversations").delete().eq("id", id);
+      if (isLocalGuest()) {
+        writeGuestConversations();
+        localStorage.removeItem(`save_princess_guest_messages_v1:${id}`);
+      } else {
+        await supabaseClient.from("messages").delete().eq("conversation_id", id);
+        await supabaseClient.from("conversations").delete().eq("id", id);
+      }
 
       if (getActiveConversationId() === id) {
         if (conversationsCache.length) {

@@ -1,8 +1,9 @@
 // ============================================================================
-// Auth Module - Authentication & Login Flow
+// Auth Module - Public Access & Anonymous Session Flow
 // ============================================================================
 // Extracted from app.js lines 5040-5091
-// Handles password-based authentication and logout flow
+// Existing sessions are preserved. New visitors receive an isolated anonymous
+// Supabase session when available, with a local-only guest fallback.
 
 (function() {
   "use strict";
@@ -14,81 +15,34 @@
 
   // ── DOM refs ────────────────────────────────────────────────────────────────
   const loginOverlay      = document.getElementById("loginOverlay");
-  const loginEmail        = document.getElementById("loginEmail");
-  const loginMsg          = document.getElementById("loginMsg");
-  const loginPassword     = document.getElementById("loginPassword");
-  const loginBtn          = document.getElementById("loginBtn");
   const logoutBtn         = document.getElementById("logoutBtn");
 
-  // ── Sign In ─────────────────────────────────────────────────────────────────
-  async function signIn() {
-    const email = loginEmail.value.trim();
-    const password = loginPassword.value;
-
-    if (!email) {
-      loginMsg.textContent = "请输入邮箱地址。";
-      return;
-    }
-    if (!password) {
-      loginMsg.textContent = "请输入密码。";
-      return;
-    }
-
-    loginBtn.disabled = true;
-    loginMsg.textContent = "";
-
-    const { error } = await window.supabaseClient.auth.signInWithPassword({ email, password });
-
-    if (error) {
-      loginMsg.textContent = error.message === "Invalid login credentials"
-        ? "邮箱或密码错误。"
-        : error.message;
-      loginBtn.disabled = false;
-    }
-  }
-
-  // ── Event Listeners ─────────────────────────────────────────────────────────
-  loginBtn.addEventListener("click", signIn);
-  loginEmail.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") loginPassword.focus();
-  });
-  loginPassword.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") signIn();
-  });
-
-  logoutBtn.addEventListener("click", async () => {
-    await window.supabaseClient.auth.signOut();
-
-    // Clear session state
-    if (window.conversationsCache) {
-      window.conversationsCache = [];
-    }
-    if (window.chatMessages) {
-      window.chatMessages.length = 0;
-    }
-
-    const messageList = document.getElementById("messageList");
-    if (messageList) {
-      messageList.innerHTML = "";
-    }
-
-    window.currentUserId = "";
-    logoutBtn.classList.add("hidden");
-    loginOverlay.classList.remove("hidden");
-  });
+  let initializedSessionKey = "";
 
   // ── Hide Login and Initialize App ──────────────────────────────────────────
   async function hideLoginAndInit(session) {
-    window.currentUserId = session?.user?.id || "";
-    loginOverlay.classList.add("hidden");
+    const userId = session?.user?.id || "anon";
+    const sessionKey = `${userId}:${session ? "cloud" : "local"}`;
+    if (initializedSessionKey === sessionKey) return;
+    initializedSessionKey = sessionKey;
+
+    window.currentUserId = userId;
+    window.isGuestMode = !session?.user;
+    loginOverlay?.classList.add("hidden");
+
+    const loginStatus = document.getElementById("settingsLoginStatus");
+    if (loginStatus) {
+      loginStatus.textContent = session?.user?.is_anonymous ? "匿名访客" :
+        session?.user ? "云端会话" : "本地访客";
+    }
 
     // Sync user preferences from server (API keys, model mappings, voice config)
-    if (window.SPUserPreferences) {
+    if (session?.user && window.SPUserPreferences) {
       window.SPUserPreferences.pullPreferences();
     }
 
     if (logoutBtn) {
-      logoutBtn.classList.remove("hidden");
+      logoutBtn.classList.add("hidden");
     }
 
     // Initialize app components (these functions must be available globally)
@@ -129,7 +83,7 @@
     }
 
     // Initialize Web Push subscription manager
-    if (window.PushSubscription && window.PushSubscription.isSupported()) {
+    if (session?.user && window.PushSubscription && window.PushSubscription.isSupported()) {
       window.PushSubscription.init(window.supabaseClient, window.currentUserId);
     }
 
@@ -142,16 +96,33 @@
     }
   }
 
+  async function startPublicSession() {
+    try {
+      const { data: { session }, error: sessionError } =
+        await window.supabaseClient.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (session) {
+        await hideLoginAndInit(session);
+        return;
+      }
+
+      const { data, error } = await window.supabaseClient.auth.signInAnonymously();
+      if (error) throw error;
+      await hideLoginAndInit(data?.session || null);
+    } catch (error) {
+      console.warn("[auth] Anonymous session unavailable; using local guest mode:", error);
+      await hideLoginAndInit(null);
+    }
+  }
+
   // ── Auth State Change Listener ──────────────────────────────────────────────
   function initAuthListener(retryCount = 0) {
     const MAX_RETRIES = 50; // 5 seconds total (50 * 100ms)
 
     if (!window.supabaseClient) {
       if (retryCount >= MAX_RETRIES) {
-        console.error("❌ Supabase client initialization timeout after 5 seconds");
-        // Show login overlay with error message
-        loginOverlay.classList.remove("hidden");
-        loginMsg.textContent = "初始化失败，请刷新页面重试。";
+        console.warn("[auth] Supabase client unavailable; using local guest mode");
+        hideLoginAndInit(null);
         return;
       }
       setTimeout(() => initAuthListener(retryCount + 1), 100);
@@ -164,20 +135,7 @@
       }
     });
 
-    // Check initial session on page load
-    window.supabaseClient.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        hideLoginAndInit(session);
-      } else {
-        // No session - show login overlay
-        loginOverlay.classList.remove("hidden");
-      }
-    }).catch((error) => {
-      console.error("❌ Failed to get session:", error);
-      // Show login overlay even if getSession fails
-      loginOverlay.classList.remove("hidden");
-      loginMsg.textContent = "连接失败，请检查网络后重试。";
-    });
+    startPublicSession();
   }
 
   // Start auth listener (will retry if supabaseClient not ready)
@@ -185,8 +143,8 @@
 
   // ── Public API ──────────────────────────────────────────────────────────────
   window.SavePrincessAuth = {
-    signIn,
     hideLoginAndInit,
+    startPublicSession,
   };
 
 })();

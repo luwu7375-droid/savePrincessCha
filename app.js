@@ -194,11 +194,6 @@ const convList          = document.getElementById("convList");
 const sidebar           = document.getElementById("sidebar");
 const sidebarToggle     = document.getElementById("sidebarToggle");
 const loginOverlay      = document.getElementById("loginOverlay");
-const loginEmail        = document.getElementById("loginEmail");
-const loginMsg          = document.getElementById("loginMsg");
-const loginPassword      = document.getElementById("loginPassword");
-const loginBtn          = document.getElementById("loginBtn");
-const logoutBtn         = document.getElementById("logoutBtn");
 const imageInput        = document.getElementById("imageInput");
 const imagePreviewBar   = document.getElementById("imagePreviewBar");
 const imageAttachBtn    = document.getElementById("imageAttachBtn");
@@ -828,8 +823,29 @@ function buildMessageEventFields(fields = {}) {
 }
 
 async function saveMessage(role, content, imageStoragePath = null, eventFields = {}, replyTo = null, thought = null) {
-  if (!supabaseClient) return null;
   const conversationId = getActiveConversationId();
+  if (window.isGuestMode || window.currentUserId === "anon") {
+    const storageKey = `save_princess_guest_messages_v1:${conversationId}`;
+    let messages = [];
+    try {
+      const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      if (Array.isArray(stored)) messages = stored;
+    } catch (_) {}
+    messages.push({
+      role,
+      content,
+      conversation_id: conversationId,
+      created_at: new Date().toISOString(),
+      thought: thought || null,
+      reply_to_message_id: replyTo?.id || null,
+      reply_to_preview: replyTo?.preview || null,
+      reply_to_role: replyTo?.role || null,
+      ...buildMessageEventFields(eventFields),
+    });
+    localStorage.setItem(storageKey, JSON.stringify(messages.slice(-200)));
+    return null;
+  }
+  if (!supabaseClient) return null;
   const { data: { user } } = await supabaseClient.auth.getUser();
   const row = {
     role,
@@ -1792,7 +1808,6 @@ function playVoiceIndicatorAudio(button) {
 }
 
 async function reloadHistory(opts = {}) {
-  if (!supabaseClient) { renderWelcomeMessage(); return; }
   const conversationId = getActiveConversationId();
   if (!conversationId) { renderWelcomeMessage(); return; }
   clearAllImages();
@@ -1802,12 +1817,26 @@ async function reloadHistory(opts = {}) {
   historyLoadingOlder = false;
   oldestLoadedMessageCreatedAt = null;
 
-  const { data, error } = await supabaseClient
-    .from("messages")
-    .select("id, role, content, type, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_type_explicit, audio_transcribed_text, edited, edited_at, edit_count, edit_history, thought")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
-    .limit(HISTORY_PAGE_SIZE);
+  let data;
+  let error = null;
+  if (window.isGuestMode || window.currentUserId === "anon") {
+    try {
+      const stored = JSON.parse(localStorage.getItem(`save_princess_guest_messages_v1:${conversationId}`) || "[]");
+      data = (Array.isArray(stored) ? stored : []).slice(-HISTORY_PAGE_SIZE).reverse();
+    } catch (_) {
+      data = [];
+    }
+  } else {
+    if (!supabaseClient) { renderWelcomeMessage(); return; }
+    const result = await supabaseClient
+      .from("messages")
+      .select("id, role, content, type, created_at, image_storage_path, read_by_cha_at, read_by_user_at, reply_to_message_id, reply_to_preview, reply_to_role, is_deleted, is_recalled, original_content, is_favorited, favorited_at, image_description, image_prompt, audio_url, audio_duration, audio_type, audio_type_explicit, audio_transcribed_text, edited, edited_at, edit_count, edit_history, thought")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(HISTORY_PAGE_SIZE);
+    data = result.data;
+    error = result.error;
+  }
 
   if (error) {
     console.error("❌ reloadHistory error:", error);
